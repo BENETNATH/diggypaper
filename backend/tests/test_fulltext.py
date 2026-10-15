@@ -164,3 +164,121 @@ async def test_download_pdf_refuses_redirect_to_internal_host(monkeypatch):
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
         assert await _download_pdf("https://open.example/a.pdf", http) is None
     assert hits == ["open.example"]  # le saut interne n'a jamais été requêté
+
+
+# --- le PDF est-il bien cet article ? ---------------------------------------------------
+
+TITLE = "An automated machine vision-based index for Rett Syndrome in mouse models"
+
+
+def _sec(text):
+    return [{"title": "", "kind": "other", "text": text}]
+
+
+def test_pdf_matches_article_title_doi_and_unverifiable():
+    from app.fulltext import pdf_matches_article as match
+
+    ok = _sec("Berger. An Automated machine-vision based INDEX for Rett syndrome in mouse models. ")
+    assert match(TITLE, None, ok) is True  # casse, tirets, ponctuation ignorés
+    other = _sec("Deep learning for protein folding prediction across large genomes " * 5)
+    assert match(TITLE, None, other) is False
+    # titre mal extrait, mais DOI de l'article en tête de document
+    garbled = _sec("doi: 10.64898/2026.09.21.753377 xx qq rr")
+    assert match(TITLE, "10.64898/2026.09.21.753377", garbled) is True
+    assert match("Short", None, other) is None and match(None, None, other) is None
+
+
+async def test_find_open_fulltext_skips_pdf_of_another_article():
+    wrong = make_pdf(
+        ["Cancer genomics of rare tumours"] + [BODY[i : i + 80] for i in range(0, 2400, 80)]
+    )
+    right = make_pdf([TITLE] + [BODY[i : i + 80] for i in range(0, 2400, 80)])
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        url = str(req.url)
+        if "unpaywall" in url:
+            return httpx.Response(
+                200,
+                json={
+                    "oa_locations": [
+                        {"url_for_pdf": "https://a.org/wrong.pdf", "version": "publishedVersion"},
+                        {"url_for_pdf": "https://b.org/right.pdf", "version": "submittedVersion"},
+                    ]
+                },
+            )
+        if "openalex" in url:
+            return httpx.Response(200, json={"locations": []})
+        return {
+            "https://a.org/wrong.pdf": httpx.Response(200, content=wrong),
+            "https://b.org/right.pdf": httpx.Response(200, content=right),
+        }.get(url, httpx.Response(404))
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        _, source, url, _ = await find_open_fulltext("1", None, "10.1/x", "a@b.fr", http, TITLE)
+    assert url == "https://b.org/right.pdf" and source == "pdf:preprint"
+
+
+async def _lead_article(session, user, **art):
+    from app.db.models import Article, Project, ProjectMember, ProjectMemberRole
+
+    project = Project(title="P", created_by=user.id)
+    session.add(project)
+    await session.commit()
+    session.add(
+        ProjectMember(
+            project_id=project.id, user_id=user.id, role_in_project=ProjectMemberRole.LEAD
+        )
+    )
+    a = Article(project_id=project.id, pmid="1", **art)
+    session.add(a)
+    await session.commit()
+    return project, a
+
+
+async def test_upload_pdf_of_another_article_needs_force(
+    client, session, researcher_user, do_login
+):
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project, art = await _lead_article(session, researcher_user, title=TITLE, abstract="A")
+    wrong = make_pdf(
+        ["Cancer genomics of rare tumours"] + [BODY[i : i + 80] for i in range(0, 2400, 80)]
+    )
+    right = make_pdf([TITLE] + [BODY[i : i + 80] for i in range(0, 2400, 80)])
+    url = f"/api/v1/projects/{project.id}/articles/{art.id}/fulltext"
+    hdr = {"content-type": "application/pdf"}
+    r = await client.post(url, content=wrong, headers=hdr)
+    assert r.status_code == 422 and r.json()["detail"] == "pdf_mismatch"
+    r = await client.post(url + "?force=true", content=wrong, headers=hdr)
+    assert r.status_code == 200 and r.json()["pdf_check"] == "forced"
+    r = await client.post(url, content=right, headers=hdr)
+    assert r.status_code == 200 and r.json()["pdf_check"] == "match"
+
+
+async def test_search_fulltext_relaunch_for_one_article(
+    client, session, researcher_user, do_login, monkeypatch
+):
+    calls = []
+
+    async def fake_refresh(db, art, http):
+        calls.append("refresh")
+        art.pmcid = "PMC42"  # le préprint a été publié entre-temps
+
+    async def fake_find(pmid, pmcid, doi, email, http, title=None):
+        calls.append((pmcid, title))
+        secs = [{"title": "Methods", "kind": "methods", "text": "mice " * 400}]
+        return secs, "europepmc", "https://europepmc.org/article/PMC/PMC42", None
+
+    monkeypatch.setattr("app.fulltext.refresh_article_metadata", fake_refresh)
+    monkeypatch.setattr("app.fulltext.find_open_fulltext", fake_find)
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project, art = await _lead_article(session, researcher_user, title=TITLE, abstract="A")
+    url = f"/api/v1/projects/{project.id}/articles/{art.id}/fulltext/search"
+    r = await client.post(url)
+    assert r.status_code == 200 and r.json()["found"] and r.json()["source"] == "europepmc"
+    assert r.json()["article"]["has_fulltext"] and r.json()["article"]["pmcid"] == "PMC42"
+    assert calls == ["refresh", ("PMC42", TITLE)]
+    # un PDF déposé à la main n'est pas écrasé par la recherche automatique
+    art.fulltext_source = "pdf:upload"
+    await session.commit()
+    r = await client.post(url)
+    assert r.json()["found"] is False and len(calls) == 3  # refresh seulement

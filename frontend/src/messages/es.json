@@ -410,7 +410,13 @@
     "reviewEditHint": "Puede corregir o completar y guardar: la revisión se actualiza a su nombre.",
     "saved_VALIDATED": "Revisión guardada: respuestas de la IA validadas.",
     "saved_CORRECTED": "Revisión guardada: respuestas corregidas.",
-    "saved_MANUAL": "Revisión guardada."
+    "saved_MANUAL": "Revisión guardada.",
+    "pdfMismatch": "Este PDF no parece ser este artículo (el título no aparece al inicio del documento). ¿Usarlo igualmente?",
+    "searchFulltext": "Repetir la búsqueda del texto completo",
+    "searching": "Buscando…",
+    "searchFound": "Texto completo encontrado ({source}).",
+    "searchNone": "No se encontró texto completo de acceso abierto.",
+    "replacePdf": "Reemplazar con un PDF"
   },
   "sex": {
     "MALE_ONLY": "Solo machos",

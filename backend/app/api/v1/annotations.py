@@ -11,6 +11,7 @@ projet (404 sinon) — pas de fuite inter-projets.
 
 import asyncio
 import json
+import logging
 import uuid
 from typing import Annotated, Literal
 
@@ -19,7 +20,7 @@ from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_db
+from app.api.deps import get_current_user, get_db, rate_limit_user
 from app.api.v1.projects import (
     _require_project_member,
     biblio_payload,
@@ -29,6 +30,8 @@ from app.api.v1.projects import (
 from app.article_text import compose_text
 from app.db.models import Article, ArticlePrediction, HumanAnnotation, Project, User
 from app.schema import validate_decision
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/projects", tags=["annotations"])
 
@@ -108,15 +111,64 @@ async def get_article(
     return _article_payload(article, project.text_sections if project else None)
 
 
+@router.post(
+    "/{project_id}/articles/{article_id}/fulltext/search",
+    dependencies=[Depends(rate_limit_user("fulltext_search", 10))],
+)
+async def search_fulltext(
+    project_id: uuid.UUID, article_id: uuid.UUID, db: DbDep, user: UserDep
+) -> dict:
+    """Relance la recherche du texte intégral de CET article (sources ouvertes), après avoir
+    relu sa notice PubMed (un préprint publié change de PMCID/DOI/titre). Un texte déposé à la
+    main n'est pas écrasé. Renvoie ``{found, source, article}``."""
+    import httpx
+
+    from app import fulltext as ft
+    from app.settings.service import get_setting
+
+    article = await _require_article(db, project_id, article_id, user)
+    email = (
+        await get_setting(db, "contact_email")
+        or await get_setting(db, "smtp_from_email")
+        or "diggypaper@example.org"
+    )
+    async with httpx.AsyncClient(timeout=45.0) as http:
+        try:
+            await ft.refresh_article_metadata(db, article, http)
+        except Exception:  # noqa: BLE001 - NCBI indisponible : on cherche avec ce qu'on a
+            logger.warning("metadata refresh failed for article %s", article.id, exc_info=True)
+        source = await ft.complete_article(db, article, email, http)
+    await db.commit()
+    project = await db.get(Project, project_id)
+    return {
+        "found": source is not None,
+        "source": source,
+        "article": _article_payload(article, project.text_sections if project else None),
+    }
+
+
 @router.post("/{project_id}/articles/{article_id}/fulltext")
 async def upload_fulltext(
-    project_id: uuid.UUID, article_id: uuid.UUID, request: Request, db: DbDep, user: UserDep
+    project_id: uuid.UUID,
+    article_id: uuid.UUID,
+    request: Request,
+    db: DbDep,
+    user: UserDep,
+    force: bool = False,
 ) -> dict:
     """Dépôt manuel du PDF d'un article (accès institutionnel) : corps = octets du PDF.
 
     Le texte est extrait et découpé en sections ; il remplace le texte intégral existant.
+    Le PDF doit être celui de l'article (titre, à défaut DOI, en tête de document) : sinon 422
+    ``pdf_mismatch``, sauf ``force=true`` (scan, titre illisible…).
     """
-    from app.fulltext import MAX_PDF_BYTES, MIN_CHARS, pdf_to_sections, store_pdf
+    from app.fulltext import (
+        MAX_PDF_BYTES,
+        MIN_CHARS,
+        pdf_matches_article,
+        pdf_to_sections,
+        store_pdf,
+    )
 
     article = await _require_article(db, project_id, article_id, user)
     from app.api.v1.projects import _require_lead_or_admin
@@ -131,6 +183,9 @@ async def upload_fulltext(
         raise HTTPException(status_code=422, detail="unreadable PDF") from None
     if sum(len(s["text"]) for s in sections) < MIN_CHARS:
         raise HTTPException(status_code=422, detail="no text found in the PDF (scanned?)")
+    verdict = pdf_matches_article(article.title, article.doi, sections)
+    if verdict is False and not force:
+        raise HTTPException(status_code=422, detail="pdf_mismatch")
     article.sections = sections
     article.fulltext_source = "pdf:upload"
     article.fulltext_url = None
@@ -138,7 +193,9 @@ async def upload_fulltext(
     article.methods_text = " ".join(s["text"] for s in sections if s["kind"] == "methods") or None
     await db.commit()
     project = await db.get(Project, project_id)
-    return _article_payload(article, project.text_sections if project else None)
+    payload = _article_payload(article, project.text_sections if project else None)
+    payload["pdf_check"] = {True: "match", False: "forced", None: "unverified"}[verdict]
+    return payload
 
 
 @router.get("/{project_id}/articles/{article_id}/prediction")

@@ -12,7 +12,8 @@ import asyncio
 import io
 import logging
 import re
-from urllib.parse import quote
+import unicodedata
+from urllib.parse import quote, urlsplit
 
 import httpx
 from sqlalchemy import delete
@@ -179,12 +180,46 @@ def long_enough(sections: list[dict]) -> bool:
     return sum(len(s["text"]) for s in sections) >= MIN_CHARS
 
 
+_STOPWORDS = {
+    "the", "and", "for", "with", "from", "that", "this", "are", "not", "into", "using",
+    "between", "during", "after", "before", "among", "its", "via", "les", "des", "une",
+    "dans", "pour", "sur", "par", "avec", "der", "die", "das", "und", "von", "mit", "los",
+    "las", "del", "con", "por", "una",
+}  # fmt: skip
+HEAD_CHARS = 6000  # ≈ les deux premières pages : titre, auteurs, résumé
+TITLE_COVERAGE = 0.8
+
+
+def _words(text: str) -> list[str]:
+    plain = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode().lower()
+    return re.findall(r"[a-z0-9]+", plain)
+
+
+def pdf_matches_article(title: str | None, doi: str | None, sections: list[dict]) -> bool | None:
+    """Le texte extrait est-il bien celui de cet article ? True / False / None (invérifiable).
+
+    Les mots significatifs du titre doivent figurer (≥ 80 %) en tête du document ; à défaut, le
+    DOI de l'article en tête de document suffit (titre à symboles, grec, mal extrait…).
+    """
+    head = " ".join(s["text"] for s in sections)[:HEAD_CHARS]
+    wanted = {w for w in _words(title or "") if len(w) >= 3 and w not in _STOPWORDS}
+    if len(wanted) < 3:
+        return None  # titre absent ou trop court pour trancher
+    if len(wanted & set(_words(head))) / len(wanted) >= TITLE_COVERAGE:
+        return True
+    squashed = "".join(_words(head))
+    if doi and "".join(_words(doi)) in squashed:
+        return True
+    return False
+
+
 async def find_open_fulltext(
     pmid: str | None,
     pmcid: str | None,
     doi: str | None,
     email: str,
     http: httpx.AsyncClient,
+    title: str | None = None,
 ) -> tuple[list[dict], str | None, str | None, bytes | None]:
     """Texte intégral en sources ouvertes → (sections, source, url, pdf) ou 4 × vide."""
     epmc_pmcid, epmc_doi = await _epmc_ids(pmid, http) if not (pmcid and doi) else (None, None)
@@ -202,6 +237,53 @@ async def find_open_fulltext(
         except Exception:  # noqa: BLE001 - PDF illisible/chiffré : candidat suivant
             logger.info("pdf unreadable for pmid %s", pmid)
             continue
-        if long_enough(sections):
-            return sections, (f"pdf:{version}" if version else "pdf"), url, data
+        if not long_enough(sections):
+            continue
+        if pdf_matches_article(title, doi, sections) is False:
+            logger.info("pdf from %s is not pmid %s: skipped", urlsplit(url).hostname, pmid)
+            continue  # PDF d'un autre article (mauvaise ressource, page de couverture…)
+        return sections, (f"pdf:{version}" if version else "pdf"), url, data
     return [], None, None, None
+
+
+async def refresh_article_metadata(session: AsyncSession, art, http: httpx.AsyncClient) -> None:
+    """Relit la notice PubMed (PMCID/DOI/titre/résumé/biblio ayant pu changer : préprint publié)."""
+    from app.pubmed import fetch_metadata
+    from app.settings.service import get_setting
+    from app.tasks import _biblio
+
+    if not art.pmid:
+        return
+    metas = await fetch_metadata([art.pmid], await get_setting(session, "ncbi_api_key"), http)
+    meta = next((m for m in metas if m.get("pmid") == art.pmid), None)
+    if meta is None:
+        return
+    for field in ("pmcid", "doi", "title", "abstract"):
+        if meta.get(field):
+            setattr(art, field, meta[field])
+    for key, value in _biblio(meta).items():
+        if value is not None:
+            setattr(art, key, value)
+
+
+async def complete_article(
+    session: AsyncSession, art, email: str, http: httpx.AsyncClient
+) -> str | None:
+    """Cherche le texte intégral de cet article ; source trouvée, ou None (rien n'est modifié).
+
+    Un texte déposé à la main (``pdf:upload``) n'est jamais écrasé par une recherche automatique.
+    """
+    if art.fulltext_source == "pdf:upload" and long_enough(art.sections or []):
+        return None
+    sections, source, url, pdf = await find_open_fulltext(
+        art.pmid, art.pmcid, art.doi, email, http, art.title
+    )
+    if not sections:
+        return None
+    art.sections, art.fulltext_source, art.fulltext_url = sections, source, url
+    if pdf:
+        await store_pdf(session, art.id, pdf)
+    art.methods_text = (
+        " ".join(s["text"] for s in sections if s["kind"] == "methods") or art.methods_text
+    )
+    return source

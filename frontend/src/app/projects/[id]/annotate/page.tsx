@@ -18,6 +18,7 @@ import {
   SchemaField,
   submitAnnotation,
   uploadArticlePdf,
+  searchArticleFulltext,
 } from "@/lib/api";
 
 /**
@@ -132,15 +133,39 @@ export default function AnnotatePage() {
       setPdfBusy(true);
       setPdfError(null);
       try {
-        setArticle(await uploadArticlePdf(projectId, articleId, file));
+        try {
+          setArticle(await uploadArticlePdf(projectId, articleId, file));
+        } catch (e) {
+          // Le PDF ne ressemble pas à cet article : on laisse l'utilisateur trancher.
+          if (!(e instanceof Error && e.message === "pdf_mismatch")) throw e;
+          if (!window.confirm(t("pdfMismatch"))) return;
+          setArticle(await uploadArticlePdf(projectId, articleId, file, true));
+        }
       } catch (e) {
         setPdfError((e as Error).message);
       } finally {
         setPdfBusy(false);
       }
     },
-    [projectId, articleId]
+    [projectId, articleId, t]
   );
+
+  const [searching, setSearching] = useState(false);
+  const [searchNote, setSearchNote] = useState<string | null>(null);
+  const handleSearch = useCallback(async () => {
+    setSearching(true);
+    setSearchNote(null);
+    setPdfError(null);
+    try {
+      const r = await searchArticleFulltext(projectId, articleId);
+      setArticle(r.article);
+      setSearchNote(r.found ? t("searchFound", { source: r.source ?? "" }) : t("searchNone"));
+    } catch (e) {
+      setPdfError((e as Error).message);
+    } finally {
+      setSearching(false);
+    }
+  }, [projectId, articleId, t]);
 
   const handleSwipeRight = useCallback(() => {
     void confirmPrediction();
@@ -237,22 +262,35 @@ export default function AnnotatePage() {
             <h2 className="mb-2 text-sm font-medium text-muted">
               {t("methods")}
             </h2>
-            {!article.has_fulltext && (
-              <div className="mb-2 rounded border border-warning/40 bg-warning/10 p-2 text-xs">
-                <p className="text-foreground">{t("abstractOnlyNote")}</p>
-                <label className="mt-1 inline-block cursor-pointer font-medium text-primary hover:underline">
-                  {pdfBusy ? t("pdfBusy") : t("addPdf")}
+            <div
+              className={`mb-2 rounded border p-2 text-xs ${
+                article.has_fulltext ? "border-border" : "border-warning/40 bg-warning/10"
+              }`}
+            >
+              {!article.has_fulltext && <p className="text-foreground">{t("abstractOnlyNote")}</p>}
+              <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1">
+                <button
+                  type="button"
+                  className="font-medium text-primary hover:underline disabled:opacity-50"
+                  disabled={searching || pdfBusy}
+                  onClick={() => void handleSearch()}
+                >
+                  {searching ? t("searching") : t("searchFulltext")}
+                </button>
+                <label className="cursor-pointer font-medium text-primary hover:underline">
+                  {pdfBusy ? t("pdfBusy") : article.has_fulltext ? t("replacePdf") : t("addPdf")}
                   <input
                     type="file"
                     accept="application/pdf"
                     className="hidden"
-                    disabled={pdfBusy}
+                    disabled={pdfBusy || searching}
                     onChange={(e) => void handlePdf(e.target.files?.[0])}
                   />
                 </label>
-                {pdfError && <span className="ml-2 text-danger">{pdfError}</span>}
+                {searchNote && <span className="text-muted">{searchNote}</span>}
+                {pdfError && <span className="text-danger">{pdfError}</span>}
               </div>
-            )}
+            </div>
             {prediction && !prediction.evidence_quotes?.length && (
               <p className="mb-2 rounded bg-surface-muted p-2 text-xs text-muted">{t("noEvidence")}</p>
             )}

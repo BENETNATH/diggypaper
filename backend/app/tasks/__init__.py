@@ -49,7 +49,7 @@ from app.db.models import (
     Project,
     ProjectStatus,
 )
-from app.fulltext import long_enough, store_pdf
+from app.fulltext import complete_article, long_enough
 from app.pubmed import (
     NCBIError,
     _esearch_max,
@@ -457,8 +457,6 @@ async def _complete_fulltext(
     project_id: str, session_factory=None, http: httpx.AsyncClient | None = None, job_id=None
 ) -> dict:
     """Cherche (sources ouvertes) le texte intégral des articles qui n'en ont pas."""
-    from app.fulltext import find_open_fulltext
-
     session_factory = session_factory or _session_factory_override
     if session_factory is not None:
         factory, engine = session_factory, None
@@ -512,25 +510,13 @@ async def _complete_fulltext(
             try:
                 for art in todo:
                     try:
-                        sections, source, url, pdf = await find_open_fulltext(
-                            art.pmid, art.pmcid, art.doi, email, client
-                        )
+                        source = await complete_article(session, art, email, client)
                     except Exception:
                         logger.exception("open fulltext failed for pmid %s", art.pmid)
-                        sections, source, url, pdf = [], None, None, None
-                    if sections:
-                        art.sections = sections
-                        art.fulltext_source = source
-                        art.fulltext_url = url
-                        if pdf:
-                            await store_pdf(session, art.id, pdf)
-                        art.methods_text = (
-                            art.methods_text
-                            or " ".join(s["text"] for s in sections if s["kind"] == "methods")
-                            or None
-                        )
+                        source = None
+                    if source:
                         found += 1
-                        key = (source or "").split(":")[0]
+                        key = source.split(":")[0]
                         sources[key] = sources.get(key, 0) + 1
                     done += 1
                     job.result_json = state("fulltext")

@@ -413,14 +413,22 @@ export async function getArticleWithPrediction(
 export async function uploadArticlePdf(
   projectId: string,
   articleId: string,
-  file: File
-): Promise<Article> {
-  return request<Article>(`/projects/${projectId}/articles/${articleId}/fulltext`, {
+  file: File,
+  force = false
+): Promise<Article & { pdf_check?: "match" | "unverified" | "forced" }> {
+  return request(`/projects/${projectId}/articles/${articleId}/fulltext${force ? "?force=true" : ""}`, {
     method: "POST",
     headers: { "Content-Type": "application/pdf" },
     body: file,
   });
 }
+
+/** Relit la notice PubMed de l'article puis relance la recherche de son texte intégral. */
+export const searchArticleFulltext = (
+  projectId: string,
+  articleId: string
+): Promise<{ found: boolean; source: string | null; article: Article }> =>
+  request(`/projects/${projectId}/articles/${articleId}/fulltext/search`, { method: "POST" });
 
 export async function submitAnnotation(
   projectId: string,

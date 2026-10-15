@@ -410,7 +410,13 @@
     "reviewEditHint": "Vous pouvez corriger ou compléter, puis enregistrer : la relecture est mise à jour à votre nom.",
     "saved_VALIDATED": "Relecture enregistrée : réponses de l'IA validées.",
     "saved_CORRECTED": "Relecture enregistrée : réponses corrigées.",
-    "saved_MANUAL": "Relecture enregistrée."
+    "saved_MANUAL": "Relecture enregistrée.",
+    "pdfMismatch": "Ce PDF ne semble pas être cet article (le titre n'apparaît pas en tête du document). Le déposer quand même ?",
+    "searchFulltext": "Relancer la recherche du texte intégral",
+    "searching": "Recherche en cours…",
+    "searchFound": "Texte intégral trouvé ({source}).",
+    "searchNone": "Aucun texte intégral libre d'accès trouvé.",
+    "replacePdf": "Remplacer par un PDF"
   },
   "sex": {
     "MALE_ONLY": "Mâles uniquement",
