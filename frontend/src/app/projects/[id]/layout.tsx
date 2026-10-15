@@ -4,7 +4,7 @@ import { ReactNode, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, usePathname } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { getProject, getInference, listJobs, ImportJob, InferenceJob, Project } from "@/lib/api";
+import { cancelInference, getProject, getInference, listJobs, ImportJob, InferenceJob, Project } from "@/lib/api";
 import { Badge, statusColor } from "@/components/ui/Card";
 import { ProgressBar } from "@/components/ui/Feedback";
 import { JobProgress } from "@/components/JobProgress";
@@ -128,6 +128,15 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
       clearInterval(timer);
     };
   }, [id, pathname, analysing, searchId]);
+  async function stopAnalysis() {
+    if (!window.confirm(t("stopConfirm"))) return;
+    try {
+      await cancelInference(id);
+      setInf(await getInference(id, searchId));
+    } catch {
+      /* l'état réel est relu au prochain tick */
+    }
+  }
   const ir = inf?.result ?? {};
   const itotal = typeof ir.total === "number" ? ir.total : 0;
   const idone = typeof ir.done === "number" ? ir.done : 0;
@@ -151,9 +160,41 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
           <span className="mx-1">/</span>
           <span className="font-medium text-foreground">{project?.title ?? "…"}</span>
         </nav>
-        {project && (
-          <Badge color={statusColor(project.status)}>{project.status}</Badge>
-        )}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          {analysing && (
+            <JobProgress
+              inline
+              title={t("analysisBannerTitle")}
+              done={idone}
+              total={itotal}
+              segments={{
+                accepted: typeof ir.auto_accepted === "number" ? ir.auto_accepted : 0,
+                rejected: typeof ir.auto_rejected === "number" ? ir.auto_rejected : 0,
+                review: typeof ir.needs_review === "number" ? ir.needs_review : 0,
+              }}
+              action={
+                <span className="flex items-center gap-2">
+                  {!pathname.endsWith("/inference") && (
+                    <Link href={withSearch(`${base}/inference`, searchId)} className="text-primary hover:underline">
+                      {t("detailsLink")}
+                    </Link>
+                  )}
+                  {isLead && (
+                    <button
+                      type="button"
+                      onClick={() => void stopAnalysis()}
+                      className="rounded-md border border-danger/40 px-2 py-0.5 text-danger hover:bg-danger/10"
+                      title={t("stopTitle")}
+                    >
+                      ■ {t("stopShort")}
+                    </button>
+                  )}
+                </span>
+              }
+            />
+          )}
+          {project && <Badge color={statusColor(project.status)}>{project.status}</Badge>}
+        </div>
       </div>
 
       {importing && (
@@ -187,22 +228,6 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
               </Link>
             )}
           </p>
-        </div>
-      )}
-
-      {analysing && !pathname.endsWith("/inference") && (  // la page d'analyse a déjà sa propre jauge
-        <div className="rounded-lg border border-primary/30 bg-primary/5 px-3 py-2">
-          <JobProgress
-            compact
-            title={t("analysisBannerTitle")}
-            done={idone}
-            total={itotal}
-            action={
-              <Link href={withSearch(`${base}/inference`, searchId)} className="shrink-0 text-xs text-primary hover:underline">
-                {t("importBannerLink")} →
-              </Link>
-            }
-          />
         </div>
       )}
 

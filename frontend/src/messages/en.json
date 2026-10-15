@@ -120,7 +120,11 @@
     "kind_standard": "standard",
     "kind_tuning": "tuning",
     "kind_blind": "blind",
-    "analysisBannerTitle": "Analysis"
+    "analysisBannerTitle": "Analysis",
+    "detailsLink": "Details",
+    "stopShort": "Stop",
+    "stopTitle": "Stop the analysis (articles already analysed are kept)",
+    "stopConfirm": "Stop the running analysis?"
   },
   "import": {
     "title": "PubMed import",

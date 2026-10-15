@@ -120,7 +120,11 @@
     "kind_standard": "Standard",
     "kind_tuning": "Feinabstimmung",
     "kind_blind": "blind",
-    "analysisBannerTitle": "Analyse"
+    "analysisBannerTitle": "Analyse",
+    "detailsLink": "Details",
+    "stopShort": "Stopp",
+    "stopTitle": "Analyse stoppen (bereits analysierte Artikel bleiben erhalten)",
+    "stopConfirm": "Laufende Analyse stoppen?"
   },
   "import": {
     "title": "PubMed-Import",
