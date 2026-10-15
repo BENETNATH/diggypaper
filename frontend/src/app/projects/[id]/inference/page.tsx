@@ -18,16 +18,19 @@ import {
   SchemaField,
   isScorer,
   Validation,
+  createSearch,
+  Selection,
 } from "@/lib/api";
 import { MAX_GOLD_EXAMPLES } from "@/lib/benchmark";
 import { ExportMenu } from "@/components/ExportMenu";
 import { RequireAuth } from "@/components/RequireAuth";
 import { QuestionEditor } from "@/components/QuestionEditor";
 import { Button } from "@/components/ui/Button";
-import { Checkbox, Field, Select } from "@/components/ui/Field";
+import { Checkbox, Field, Input, Select } from "@/components/ui/Field";
 import { ValidationView } from "@/components/ValidationView";
-import { withSearch } from "@/lib/search";
-import { useSearchId, useSearches, useSelectSearch } from "@/lib/useSearch";
+import { cleanSelection, withSearch } from "@/lib/search";
+import { notifySearchesChanged, storeSearchId, useSearchId, useSearches, useSelectSearch } from "@/lib/useSearch";
+import { ArticleSelector } from "@/components/ArticleSelector";
 import { Card, Badge, statusColor } from "@/components/ui/Card";
 import { ErrorBanner, ProgressBar } from "@/components/ui/Feedback";
 
@@ -48,6 +51,11 @@ function InferenceContent() {
   const searchId = useSearchId(projectId);
   const { searches, current } = useSearches(projectId, searchId);
   const selectSearch = useSelectSearch(projectId);
+  // Sur quels articles : une recherche existante, ou une nouvelle sélection créée au lancement.
+  const [scopeMode, setScopeMode] = useState<"existing" | "new">("existing");
+  const [newSel, setNewSel] = useState<Selection>({});
+  const [newName, setNewName] = useState("");
+  const [newCount, setNewCount] = useState<number | null>(null);
   // Préremplissage depuis un benchmark : ?model=<nom>&prompt=<id du prompt enregistré>.
   const sp = useSearchParams();
   const wantedModel = sp.get("model");
@@ -201,23 +209,45 @@ function InferenceContent() {
     setSubmitting(true);
     setError(null);
     try {
-      // La question est enregistrée au lancement (une seule étape pour l'utilisateur).
-      await updateProject(projectId, {
-        question: q.question,
-        fields: q.fields.map((f) => ({
-          ...f,
-          options: f.type === "choice" ? (f.options ?? []).filter(Boolean) : undefined,
-        })),
-        text_sections: q.sections,
-        read_windows: q.readWindows,
-      }, searchId);
+      const cleanFields = q.fields.map((f) => ({
+        ...f,
+        options: f.type === "choice" ? (f.options ?? []).filter(Boolean) : undefined,
+      }));
+      let runSearchId = searchId;
+      if (scopeMode === "new") {
+        // Nouvelle sélection : on crée la recherche (avec la question affichée) puis on l'analyse.
+        const created = await createSearch(projectId, {
+          name: newName.trim() || t("scopeDefaultName", { date: new Date().toLocaleDateString() }),
+          question: q.question,
+          fields: cleanFields,
+          text_sections: q.sections,
+          read_windows: q.readWindows,
+          kind: "standard",
+          selection: { from_search_id: searchId, ...cleanSelection(newSel) },
+        });
+        runSearchId = created.id;
+        storeSearchId(projectId, created.id);
+        notifySearchesChanged();
+        setScopeMode("existing");
+        setNewSel({});
+        setNewName("");
+        selectSearch(created.id);
+      } else {
+        // La question est enregistrée au lancement (une seule étape pour l'utilisateur).
+        await updateProject(projectId, {
+          question: q.question,
+          fields: cleanFields,
+          text_sections: q.sections,
+          read_windows: q.readWindows,
+        }, searchId);
+      }
       // Étage 2 vide : l'étage 1 décide seul.
       await triggerInference(projectId, {
         model: stage2 || stage1,
         ...(stage2 && stage1 && stage2 !== stage1 ? { prefilter_model: stage1 } : {}),
         ...(promptId ? { prompt_template_id: promptId } : {}),
         ...goldOptions(),
-        ...(searchId ? { search_id: searchId } : {}),
+        ...(runSearchId ? { search_id: runSearchId } : {}),
       });
       await load();
       setLaunched(true);
@@ -243,16 +273,39 @@ function InferenceContent() {
       {error && <ErrorBanner message={error} />}
 
       {searches && searches.length > 0 && (
-        <Card>
-          <Field label={t("searchTitle")} hint={t("searchHint")}>
-            <Select value={current?.id ?? ""} onChange={(e) => selectSearch(e.target.value)} disabled={active}>
-              {searches.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name} — {t("lotSize", { n: s.lot_size })}
-                </option>
-              ))}
-            </Select>
-          </Field>
+        <Card title={t("scopeTitle")}>
+          <div className="mb-3 flex flex-wrap gap-4 text-sm">
+            <label className="flex items-center gap-2">
+              <input type="radio" checked={scopeMode === "existing"} onChange={() => setScopeMode("existing")} disabled={active} />
+              {t("scopeExisting")}
+            </label>
+            <label className="flex items-center gap-2">
+              <input type="radio" checked={scopeMode === "new"} onChange={() => setScopeMode("new")} disabled={active} />
+              {t("scopeNew")}
+            </label>
+          </div>
+          {scopeMode === "existing" ? (
+            <Field label={t("searchTitle")} hint={t("searchHint")}>
+              <Select value={current?.id ?? ""} onChange={(e) => selectSearch(e.target.value)} disabled={active}>
+                {searches.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} — {t("lotSize", { n: s.lot_size })}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          ) : (
+            <div className="flex flex-col gap-3">
+              <p className="text-xs text-muted">{t("scopeNewHint")}</p>
+              <Field label={t("scopeNewName")}>
+                <Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder={t("scopeDefaultName", { date: new Date().toLocaleDateString() })} />
+              </Field>
+              <ArticleSelector projectId={projectId} searches={searches} value={{ from_search_id: searchId, ...newSel }} onChange={(s) => setNewSel(s)} onCount={setNewCount} />
+              <p className="text-sm font-medium text-foreground">
+                {newCount === null ? "…" : t("scopeCount", { n: newCount })}
+              </p>
+            </div>
+          )}
         </Card>
       )}
 
@@ -351,7 +404,7 @@ function InferenceContent() {
               {goldCount !== null && !noGold && <p className="text-xs text-muted">{t("goldCount", { n: goldCount })}</p>}
             </div>
             <div className="flex flex-wrap items-center gap-3">
-              <Button type="submit" loading={submitting} disabled={active || (!stage2 && !stage1) || !q || q.sections.length === 0}>
+              <Button type="submit" loading={submitting} disabled={active || (!stage2 && !stage1) || !q || q.sections.length === 0 || (scopeMode === "new" && !newCount)}>
                 {job ? t("rerun") : t("run")}
               </Button>
               {launched && active && <span className="text-sm text-success">✓ {t("launched")}</span>}

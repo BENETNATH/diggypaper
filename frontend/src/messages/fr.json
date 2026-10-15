@@ -454,7 +454,14 @@
     "validateHint": "Une fois l'analyse terminée, les réponses sont comparées aux références du gold présentes dans le lot.",
     "goldCount": "{n} référence(s) au gold.",
     "goldExamplesUsed": "{n} exemple(s) du gold utilisé(s) dans le prompt.",
-    "validationTitle": "Validation avec le gold"
+    "validationTitle": "Validation avec le gold",
+    "scopeTitle": "Sur quels articles ?",
+    "scopeExisting": "Une recherche existante",
+    "scopeNew": "Une nouvelle sélection d'articles",
+    "scopeNewHint": "Choisissez les articles par critères (réponses d'une analyse précédente, relus, texte intégral, tirage au hasard…). Une recherche est créée avec la question ci-dessous, puis analysée : elle reste consultable dans « Toutes les recherches ».",
+    "scopeNewName": "Nom de la nouvelle recherche",
+    "scopeDefaultName": "Analyse du {date}",
+    "scopeCount": "{n, plural, one {# article sera analysé} other {# articles seront analysés}}"
   },
   "settings": {
     "title": "Paramètres système",
