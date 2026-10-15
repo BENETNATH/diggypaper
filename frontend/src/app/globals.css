@@ -1,0 +1,117 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Design tokens — 3 niveaux (design-system skill) :
+ *   primitives (valeurs OKLCH) -> sémantiques (variables) -> composants (classes Tailwind).
+ * Couleurs OKLCH avec teinte (jamais de gris pur / noir pur) — frontend-design-pro.
+ */
+:root {
+  /* Neutres froids (teinte ~250) */
+  --background: oklch(0.985 0.002 250);
+  --foreground: oklch(0.24 0.02 260);
+  --surface: oklch(1 0 0);
+  --surface-muted: oklch(0.962 0.004 250);
+  --border: oklch(0.9 0.006 250);
+  --muted: oklch(0.52 0.015 255);
+  --muted-foreground: oklch(0.44 0.02 258);
+
+  /* Accent (bleu teinté) */
+  --primary: oklch(0.55 0.19 258);
+  --primary-hover: oklch(0.49 0.2 258);
+  --primary-foreground: oklch(0.985 0 0);
+
+  /* États */
+  --danger: oklch(0.55 0.2 25);
+  --danger-foreground: oklch(0.985 0 0);
+  --success: oklch(0.55 0.16 155);
+  --warning: oklch(0.72 0.15 75);
+
+  /* Focus (WCAG 2.4.11 : ≥ 2px, contraste ≥ 3:1) */
+  --focus: oklch(0.55 0.19 258);
+
+  /* Motion — frontend-design-pro : cubic-bezier(0.16,1,0.3,1), 100-200ms */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --duration-fast: 120ms;
+  --duration-base: 180ms;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: oklch(0.17 0.01 260);
+    --foreground: oklch(0.93 0.005 250);
+    --surface: oklch(0.22 0.012 260);
+    --surface-muted: oklch(0.26 0.014 260);
+    --border: oklch(0.32 0.015 260);
+    --muted: oklch(0.7 0.01 255);
+    --muted-foreground: oklch(0.78 0.01 255);
+    --primary: oklch(0.65 0.19 258);
+    --primary-hover: oklch(0.7 0.19 258);
+    --primary-foreground: oklch(0.15 0.01 260);
+    --danger: oklch(0.65 0.2 25);
+    --danger-foreground: oklch(0.15 0.01 260);
+    --success: oklch(0.7 0.15 155);
+    --warning: oklch(0.8 0.14 75);
+    --focus: oklch(0.7 0.19 258);
+  }
+}
+
+@layer base {
+  html {
+    font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    background: var(--background);
+    color: var(--foreground);
+  }
+  /* Focus visible global (WCAG 2.4.7 / 2.4.11) */
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+  /* Respect prefers-reduced-motion (WCAG 2.3.3) */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+  /* Skeleton (frontend-design-pro : skeleton > spinner) */
+  .skeleton {
+    position: relative;
+    overflow: hidden;
+    background: var(--surface-muted);
+  }
+  .skeleton::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(
+      90deg,
+      transparent,
+      color-mix(in oklch, var(--surface) 60%, transparent),
+      transparent
+    );
+    animation: skeleton-shimmer 1.4s var(--ease-out) infinite;
+  }
+  @keyframes skeleton-shimmer {
+    100% {
+      transform: translateX(100%);
+    }
+  }
+}

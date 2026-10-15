@@ -1,0 +1,858 @@
+/**
+ * Client API (frontend → backend FastAPI).
+ *
+ * Les appels sont faits côté client (fetch, same-origin). En prod, nginx proxy
+ * /api/v1 vers le backend ; en dev, le rewrite next.config.mjs fait le même.
+ * L'auth est un cookie JWT httpOnly posé par le backend (credentials: include).
+ */
+
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "/api/v1";
+
+// --- Types partagés ---------------------------------------------------------
+
+export interface User {
+  id: string;
+  email: string;
+  full_name: string | null;
+  role: "ADMIN" | "RESEARCHER";
+  language_preference: string;
+  data_consent_given: boolean;
+  created_at: string;
+}
+
+export interface SchemaField {
+  key: string;
+  label: string;
+  type: "boolean" | "choice" | "text";
+  options?: string[];
+}
+
+export interface Project {
+  id: string;
+  title: string;
+  description: string | null;
+  status: "DRAFT" | "PROCESSING" | "FROZEN" | "COMPLETED";
+  created_by: string | null;
+  default_language: string;
+  text_sections?: string[];
+  question?: string;
+  read_windows?: number;
+  fields?: SchemaField[];
+  custom_schema?: boolean;
+  question_set?: boolean;
+  created_at: string | null;
+  article_count?: number;
+  fulltext_count?: number;
+  role_in_project?: "LEAD" | "ANNOTATOR" | null;
+}
+
+export interface Article {
+  id: string;
+  pmid: string | null;
+  pmcid: string | null;
+  doi: string | null;
+  title: string | null;
+  abstract: string | null;
+  methods_text: string | null;
+  text?: string;
+  has_fulltext?: boolean;
+  fulltext_source?: string | null;
+  doi_url?: string | null;
+  fulltext_url?: string | null;
+  journal?: string | null;
+  pub_date?: string | null;
+  authors?: string[];
+  first_author?: string | null;
+  last_author?: string | null;
+  pub_types?: string[];
+  answers?: { key: string; label: string; value: unknown; confidence: number | null }[];
+  prediction_status?: "AUTO_ACCEPTED" | "AUTO_REJECTED" | "NEEDS_HUMAN_REVIEW" | null;
+  confidence?: number | null;
+  annotated?: boolean;
+  review?: Review | null;
+  original_language: string | null;
+  created_at: string | null;
+}
+
+/** Dernière relecture humaine d'un article. */
+export interface Review {
+  by: string | null;
+  at: string | null;
+  status: "VALIDATED" | "CORRECTED" | "MANUAL" | null;
+}
+
+export interface ArticleReview extends Review {
+  decision_json: Record<string, unknown> | null;
+  notes: string | null;
+}
+
+export interface ArticlePrediction {
+  id: string;
+  article_id: string;
+  prompt_template_id: string | null;
+  model_used: string;
+  decision_json: Record<string, unknown> | null;
+  confidence_score: number | null;
+  evidence_quotes: string[] | null;
+  status: "AUTO_ACCEPTED" | "AUTO_REJECTED" | "NEEDS_HUMAN_REVIEW";
+  created_at: string | null;
+}
+
+/** Décision : un champ par SchemaField du projet + clés standard. */
+export type AnnotationPayload = Record<string, unknown>;
+
+export interface ImportJob {
+  id: string;
+  task: string;
+  kind?: "import" | "fulltext";
+  status: "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
+  query: string | null;
+  result: Record<string, unknown> | null;
+  error: string | null;
+  created_at: string | null;
+  completed_at: string | null;
+}
+
+export interface GoldArticle {
+  id: string;
+  project_id: string | null;
+  article_id: string | null;
+  article_title: string | null;
+  ground_truth_json: Record<string, unknown>;
+}
+
+export interface PromptTemplate {
+  id: string;
+  project_id: string | null;
+  version_number: string;
+  title: string | null;
+  system_prompt: string | null;
+  user_prompt_schema: string | null;
+  prompt_type: string | null;
+  status: "DRAFT" | "VALIDATED" | "ARCHIVED";
+}
+
+export interface ModelInfo {
+  id: string;
+  name: string;
+  backend_type: string | null;
+  model_identifier: string;
+  ram_usage_mb: number | null;
+  is_active: boolean | null;
+  /** Modèle défini par l'utilisateur courant. */
+  mine?: boolean;
+  /** Modèle de la plateforme (installé par un administrateur). */
+  platform?: boolean;
+}
+
+export interface BenchmarkResult {
+  model_name: string;
+  execution_time_seconds: number | null;
+  accuracy: number | null;
+  precision_score: number | null;
+  recall_score: number | null;
+  f1_score: number | null;
+}
+
+export interface BenchmarkRun {
+  id: string;
+  project_id: string | null;
+  prompt_template_id: string | null;
+  models_tested: string[] | null;
+  progress?: { done: number; total: number; model?: string } | null;
+  status: "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
+  created_at: string | null;
+  results?: BenchmarkResult[];
+}
+
+export interface InferenceJob {
+  id: string;
+  project_id: string | null;
+  prompt_template_id: string | null;
+  model_used: string;
+  prefilter_model?: string | null;
+  status: "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
+  result: Record<string, unknown> | null;
+  error: string | null;
+  created_at: string | null;
+  completed_at: string | null;
+}
+
+// --- Client générique -------------------------------------------------------
+
+export class ApiError extends Error {
+  status: number;
+  detail: string;
+  constructor(status: number, detail: string) {
+    super(detail);
+    this.status = status;
+    this.detail = detail;
+  }
+}
+
+async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const resp = await fetch(`${API_BASE}${path}`, {
+    credentials: "include",
+    headers: { "Content-Type": "application/json", ...(options?.headers ?? {}) },
+    ...options,
+  });
+  if (!resp.ok) {
+    let detail = resp.statusText;
+    try {
+      const body = await resp.json();
+      detail = body.detail ?? body.error ?? detail;
+    } catch {
+      /* pas de body JSON */
+    }
+    throw new ApiError(resp.status, detail);
+  }
+  if (resp.status === 204) return undefined as T;
+  return resp.json();
+}
+
+// --- Auth -------------------------------------------------------------------
+
+export async function login(
+  email: string,
+  password: string,
+  consent?: boolean
+): Promise<User> {
+  const body: Record<string, unknown> = { email, password };
+  if (consent !== undefined) body.consent = consent;
+  const data = await request<{ user: User }>("/auth/login", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+  return data.user;
+}
+
+export async function register(
+  token: string,
+  password: string,
+  fullName?: string
+): Promise<User> {
+  return request<User>("/auth/register", {
+    method: "POST",
+    body: JSON.stringify({ token, password, full_name: fullName ?? null }),
+  });
+}
+
+export async function me(): Promise<User> {
+  return request<User>("/auth/me");
+}
+
+/** Déconnexion côté client (le cookie est httpOnly → on ne peut que demander
+ *  au serveur de l'effacer ; ici on force un rechargement vers /login). */
+export async function logout(): Promise<void> {
+  try {
+    await request("/auth/logout", { method: "POST" });
+  } finally {
+    window.location.href = "/login";
+  }
+}
+
+export async function updateProfile(patch: {
+  full_name?: string;
+  language_preference?: string;
+}): Promise<User> {
+  return request<User>("/auth/me", { method: "PATCH", body: JSON.stringify(patch) });
+}
+
+export async function changePassword(current_password: string, new_password: string): Promise<void> {
+  await request("/auth/change-password", {
+    method: "POST",
+    body: JSON.stringify({ current_password, new_password }),
+  });
+}
+
+export async function exportMyData(): Promise<unknown> {
+  return request("/users/me/export-data");
+}
+
+export async function anonymizeMe(): Promise<void> {
+  await request("/users/me/anonymize", { method: "DELETE" });
+}
+
+// --- Projets ----------------------------------------------------------------
+
+export async function listProjects(): Promise<Project[]> {
+  const data = await request<{ items: Project[] }>("/projects");
+  return data.items;
+}
+
+export async function createProject(payload: {
+  title: string;
+  description?: string;
+  default_language?: string;
+}): Promise<Project> {
+  return request<Project>("/projects", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getProject(projectId: string): Promise<Project> {
+  return request<Project>(`/projects/${projectId}`);
+}
+
+export async function deleteProject(projectId: string): Promise<void> {
+  await request<void>(`/projects/${projectId}`, { method: "DELETE" });
+}
+
+// --- Import (MODULE 2) ------------------------------------------------------
+
+export async function queryVolume(
+  projectId: string,
+  query: string
+): Promise<{ count: number }> {
+  return request<{ count: number }>(`/projects/${projectId}/query-volume`, {
+    method: "POST",
+    body: JSON.stringify({ query }),
+  });
+}
+
+export async function triggerImport(
+  projectId: string,
+  query: string
+): Promise<{ job_id: string; status: string }> {
+  return request<{ job_id: string; status: string }>(
+    `/projects/${projectId}/import`,
+    { method: "POST", body: JSON.stringify({ query }) }
+  );
+}
+
+export async function completeFulltext(projectId: string): Promise<void> {
+  await request(`/projects/${projectId}/fulltext`, { method: "POST" });
+}
+
+export async function listJobs(projectId: string): Promise<ImportJob[]> {
+  const data = await request<{ jobs: ImportJob[] }>(`/projects/${projectId}/jobs`);
+  return data.jobs;
+}
+
+export async function updateProject(
+  projectId: string,
+  patch: {
+    text_sections?: string[];
+    question?: string;
+    fields?: SchemaField[];
+    read_windows?: number;
+  }
+): Promise<Project> {
+  return request<Project>(`/projects/${projectId}`, {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
+}
+
+export async function generatePrompt(projectId: string): Promise<PromptTemplate> {
+  return request<PromptTemplate>(`/projects/${projectId}/prompts/generate`, { method: "POST" });
+}
+
+// --- Articles (MODULE 2/5) --------------------------------------------------
+
+export type PredictionFilter = "AUTO_ACCEPTED" | "AUTO_REJECTED" | "NEEDS_HUMAN_REVIEW" | "NONE" | "TO_REVIEW";
+
+export async function listArticles(
+  projectId: string,
+  page = 1,
+  perPage = 50,
+  status?: PredictionFilter,
+  sort: "added" | "date_desc" | "date_asc" | "score_desc" = "added",
+  answers: Record<string, string | boolean> = {}
+): Promise<{
+  items: Article[];
+  total: number;
+  page: number;
+  per_page: number;
+  stats: Record<string, number>;
+}> {
+  const active = Object.fromEntries(Object.entries(answers).filter(([, v]) => v !== "" && v != null));
+  const q =
+    (status ? `&status=${status}` : "") +
+    `&sort=${sort}` +
+    (Object.keys(active).length ? `&answers=${encodeURIComponent(JSON.stringify(active))}` : "");
+  return request(`/projects/${projectId}/articles?page=${page}&per_page=${perPage}${q}`);
+}
+
+export async function getArticle(
+  projectId: string,
+  articleId: string
+): Promise<Article> {
+  return request<Article>(`/projects/${projectId}/articles/${articleId}`);
+}
+
+export async function getPrediction(
+  projectId: string,
+  articleId: string
+): Promise<ArticlePrediction | null> {
+  return request<ArticlePrediction | null>(
+    `/projects/${projectId}/articles/${articleId}/prediction`
+  );
+}
+
+export async function getReview(projectId: string, articleId: string): Promise<ArticleReview | null> {
+  return request<ArticleReview | null>(`/projects/${projectId}/articles/${articleId}/annotation`);
+}
+
+export async function getArticleWithPrediction(
+  projectId: string,
+  articleId: string
+): Promise<{ article: Article; prediction: ArticlePrediction | null; review: ArticleReview | null }> {
+  const article = await getArticle(projectId, articleId);
+  const prediction = await getPrediction(projectId, articleId).catch(() => null);
+  const review = await getReview(projectId, articleId).catch(() => null);
+  return { article, prediction, review };
+}
+
+/** Dépôt manuel du PDF d'un article : le texte est extrait et remplace le texte intégral. */
+export async function uploadArticlePdf(
+  projectId: string,
+  articleId: string,
+  file: File
+): Promise<Article> {
+  return request<Article>(`/projects/${projectId}/articles/${articleId}/fulltext`, {
+    method: "POST",
+    headers: { "Content-Type": "application/pdf" },
+    body: file,
+  });
+}
+
+export async function submitAnnotation(
+  projectId: string,
+  articleId: string,
+  annotation: AnnotationPayload
+): Promise<Review> {
+  return request<Review>(`/projects/${projectId}/articles/${articleId}/annotation`, {
+    method: "POST",
+    body: JSON.stringify(annotation),
+  });
+}
+
+// --- Gold (MODULE 3) --------------------------------------------------------
+
+export async function listGold(projectId: string): Promise<GoldArticle[]> {
+  const data = await request<{ items: GoldArticle[] }>(`/projects/${projectId}/gold`);
+  return data.items;
+}
+
+export async function createGold(
+  projectId: string,
+  articleId: string,
+  groundTruthJson: Record<string, unknown>
+): Promise<GoldArticle> {
+  return request<GoldArticle>(`/projects/${projectId}/gold`, {
+    method: "POST",
+    body: JSON.stringify({ article_id: articleId, ground_truth_json: groundTruthJson }),
+  });
+}
+
+export async function deleteGold(projectId: string, goldId: string): Promise<void> {
+  await request(`/projects/${projectId}/gold/${goldId}`, { method: "DELETE" });
+}
+
+// --- Prompts (MODULE 3) -----------------------------------------------------
+
+export async function listPrompts(projectId: string): Promise<PromptTemplate[]> {
+  const data = await request<{ items: PromptTemplate[] }>(
+    `/projects/${projectId}/prompts`
+  );
+  return data.items;
+}
+
+export async function getPrompt(
+  projectId: string,
+  promptId: string
+): Promise<PromptTemplate> {
+  return request<PromptTemplate>(`/projects/${projectId}/prompts/${promptId}`);
+}
+
+export async function createPrompt(
+  projectId: string,
+  payload: {
+    version_number: string;
+    title?: string;
+    system_prompt?: string;
+    user_prompt_schema?: string;
+    prompt_type?: string;
+  }
+): Promise<PromptTemplate> {
+  return request<PromptTemplate>(`/projects/${projectId}/prompts`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updatePrompt(
+  projectId: string,
+  promptId: string,
+  payload: Partial<{
+    version_number: string;
+    title: string;
+    system_prompt: string;
+    user_prompt_schema: string;
+    status: string;
+  }>
+): Promise<PromptTemplate> {
+  return request<PromptTemplate>(`/projects/${projectId}/prompts/${promptId}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+// --- Modèles (MODULE 3) -----------------------------------------------------
+
+/** Modèles que l'utilisateur peut utiliser (dans ce projet si `projectId`). */
+export async function listModels(projectId?: string): Promise<ModelInfo[]> {
+  const q = projectId ? `?project_id=${projectId}` : "";
+  const data = await request<{ items: ModelInfo[] }>(`/models${q}`);
+  return data.items;
+}
+
+export interface ModelShare {
+  id: string;
+  type: "user" | "project";
+  label: string;
+  email: string | null;
+  project_id: string | null;
+}
+
+export const listModelShares = async (modelId: string): Promise<ModelShare[]> =>
+  (await request<{ items: ModelShare[] }>(`/models/${modelId}/shares`)).items;
+
+export const addModelShare = (modelId: string, target: { email?: string; project_id?: string }): Promise<void> =>
+  request(`/models/${modelId}/shares`, { method: "POST", body: JSON.stringify(target) });
+
+export const removeModelShare = (modelId: string, shareId: string): Promise<void> =>
+  request(`/models/${modelId}/shares/${shareId}`, { method: "DELETE" });
+
+export async function createModel(payload: {
+  name: string;
+  model_identifier: string;
+  backend_type?: string;
+  ram_usage_mb?: number;
+}): Promise<ModelInfo> {
+  return request<ModelInfo>("/models", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export async function updateModel(
+  modelId: string,
+  payload: Partial<{
+    name: string;
+    model_identifier: string;
+    ram_usage_mb: number;
+    is_active: boolean;
+  }>
+): Promise<ModelInfo> {
+  return request<ModelInfo>(`/models/${modelId}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteModel(modelId: string): Promise<void> {
+  await request(`/models/${modelId}`, { method: "DELETE" });
+}
+
+export interface OllamaModel {
+  name: string;
+  size: number | null;
+  registered: boolean;
+}
+export interface PullState {
+  state: "running" | "done" | "error";
+  status: string;
+  completed: number;
+  total: number;
+  error?: string;
+}
+
+export interface HfModel {
+  id: string;
+  downloads: number;
+  likes: number;
+}
+export interface HfFile {
+  file: string;
+  quant?: string | null;
+  size?: number | null;
+  recommended?: boolean;
+}
+
+export async function searchHf(q: string, kind: "chat" | "encoder"): Promise<HfModel[]> {
+  return (
+    await request<{ items: HfModel[] }>(
+      `/models/search?q=${encodeURIComponent(q)}&kind=${kind}`
+    )
+  ).items;
+}
+
+export async function hfFiles(
+  repo: string,
+  kind: "chat" | "encoder"
+): Promise<{ items: HfFile[]; tokenizer?: boolean }> {
+  return request(`/models/hf/files?repo=${encodeURIComponent(repo)}&kind=${kind}`);
+}
+
+export async function installHf(payload: {
+  repo: string;
+  kind: "chat" | "encoder";
+  quant?: string;
+  file?: string;
+}): Promise<void> {
+  await request("/models/hf/install", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export async function listOllama(): Promise<{
+  items: OllamaModel[];
+  pulls: Record<string, PullState>;
+}> {
+  return request("/models/ollama");
+}
+
+export async function pullOllama(name: string): Promise<void> {
+  await request("/models/ollama/pull", { method: "POST", body: JSON.stringify({ name }) });
+}
+
+export interface ExternalModelInput {
+  name: string;
+  base_url: string;
+  model: string;
+  api_key?: string;
+}
+
+export async function testExternalModel(p: ExternalModelInput): Promise<{ ok: boolean; error?: string }> {
+  return request("/models/external/test", { method: "POST", body: JSON.stringify(p) });
+}
+
+export async function addExternalModel(p: ExternalModelInput): Promise<void> {
+  await request("/models/external", { method: "POST", body: JSON.stringify(p) });
+}
+
+export async function registerOllama(name: string): Promise<void> {
+  await request("/models/ollama/register", { method: "POST", body: JSON.stringify({ name }) });
+}
+
+// --- Benchmarks (MODULE 3) --------------------------------------------------
+
+export async function triggerBenchmark(
+  projectId: string,
+  payload: { models: string[]; prompt_template_id?: string }
+): Promise<{ run_id: string; status: string }> {
+  return request<{ run_id: string; status: string }>(
+    `/projects/${projectId}/benchmarks`,
+    { method: "POST", body: JSON.stringify(payload) }
+  );
+}
+
+export async function listBenchmarks(projectId: string): Promise<BenchmarkRun[]> {
+  const data = await request<{ items: BenchmarkRun[] }>(
+    `/projects/${projectId}/benchmarks`
+  );
+  return data.items;
+}
+
+export async function getBenchmark(
+  projectId: string,
+  runId: string
+): Promise<BenchmarkRun> {
+  return request<BenchmarkRun>(`/projects/${projectId}/benchmarks/${runId}`);
+}
+
+// --- Inférence (MODULE 4) ---------------------------------------------------
+
+export async function triggerInference(
+  projectId: string,
+  payload: { model: string; prefilter_model?: string; prompt_template_id?: string; resume?: boolean }
+): Promise<{ job_id: string; status: string }> {
+  return request<{ job_id: string; status: string }>(
+    `/projects/${projectId}/inference`,
+    { method: "POST", body: JSON.stringify(payload) }
+  );
+}
+
+export async function getInference(projectId: string): Promise<InferenceJob | null> {
+  const r = await request<{ job: InferenceJob | null }>(`/projects/${projectId}/inference`);
+  return r.job;
+}
+
+// --- Settings (MODULE 7, admin) --------------------------------------------
+
+export type SettingsScope = "GLOBAL" | "PROJECT" | "USER";
+
+export async function getSettings(params?: {
+  scope?: SettingsScope;
+  project_id?: string;
+  user_id?: string;
+}): Promise<Record<string, Record<string, string | null>>> {
+  const qs = new URLSearchParams();
+  if (params?.scope) qs.set("scope", params.scope);
+  if (params?.project_id) qs.set("project_id", params.project_id);
+  if (params?.user_id) qs.set("user_id", params.user_id);
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+  return request<Record<string, Record<string, string | null>>>(
+    `/admin/settings${suffix}`
+  );
+}
+
+export async function updateSettings(payload: {
+  scope: SettingsScope;
+  project_id?: string;
+  user_id?: string;
+  values: Record<string, string>;
+}): Promise<Record<string, Record<string, string | null>>> {
+  return request<Record<string, Record<string, string | null>>>("/admin/settings", {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function testSmtp(to?: string): Promise<{ sent: boolean; error?: string }> {
+  return request<{ sent: boolean; error?: string }>("/admin/settings/smtp/test", {
+    method: "POST",
+    body: JSON.stringify({ to: to ?? null }),
+  });
+}
+
+// --- Utilisateur (RGPD) -----------------------------------------------------
+
+export async function anonymize(): Promise<void> {
+  await request("/users/me/anonymize", { method: "DELETE" });
+}
+
+export async function exportData(): Promise<Record<string, unknown>> {
+  return request<Record<string, unknown>>("/users/me/export-data");
+}
+
+
+/** Famille d'un modèle du registre : scoreur (décision / encodeur) ou génératif. */
+export function isScorer(m: Pick<ModelInfo, "backend_type">): boolean {
+  return m.backend_type === "SYSTEMONE" || m.backend_type === "ONNX_LOCAL";
+}
+
+// --- Équipe + export ---------------------------------------------------------
+
+export interface Member {
+  user_id: string;
+  email: string;
+  full_name: string | null;
+  role: "LEAD" | "ANNOTATOR";
+}
+
+export const listMembers = async (projectId: string): Promise<Member[]> =>
+  (await request<{ items: Member[] }>(`/projects/${projectId}/members`)).items;
+
+export const inviteMember = (
+  projectId: string,
+  email: string,
+  role: Member["role"],
+  language?: string
+): Promise<{ status: "added" | "invited"; email_sent: boolean; link: string | null }> =>
+  request(`/projects/${projectId}/members/invite`, {
+    method: "POST",
+    body: JSON.stringify({ email, role, language }),
+  });
+
+export const removeMember = (projectId: string, userId: string): Promise<void> =>
+  request(`/projects/${projectId}/members/${userId}`, { method: "DELETE" });
+
+/** Lien de téléchargement du classeur Excel (le cookie d'authentification suffit). */
+export const exportUrl = (projectId: string): string => `${API_BASE}/projects/${projectId}/export.xlsx`;
+
+/** Références RIS (Zotero, EndNote, Mendeley…) ou BibTeX, avec les mêmes filtres que la liste. */
+export function referencesUrl(
+  projectId: string,
+  fmt: "ris" | "bib",
+  status?: string,
+  answers: Record<string, string> = {}
+): string {
+  const active = Object.fromEntries(Object.entries(answers).filter(([, v]) => v !== ""));
+  const q = new URLSearchParams();
+  if (status) q.set("status", status);
+  if (Object.keys(active).length) q.set("answers", JSON.stringify(active));
+  const qs = q.toString();
+  return `${API_BASE}/projects/${projectId}/export.${fmt}${qs ? `?${qs}` : ""}`;
+}
+
+export interface CrateExport {
+  id: string;
+  status: "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
+  result: { done?: number; total?: number; size?: number; articles?: number; pdf?: number } | null;
+  error: string | null;
+  created_at: string | null;
+  download: boolean;
+}
+
+/** Diagramme PRISMA 2020 (SVG) ; ``lang`` = langue des libellés. */
+export const prismaUrl = (projectId: string, lang: string): string =>
+  `${API_BASE}/projects/${projectId}/prisma.svg?lang=${lang}`;
+
+/** RO-Crate (.zip) : tâche de fond (e-mail à la fin) puis téléchargement. */
+export const startCrateExport = (projectId: string): Promise<CrateExport> =>
+  request(`/projects/${projectId}/export/crate`, { method: "POST" });
+export const getCrateExport = (projectId: string): Promise<CrateExport | null> =>
+  request(`/projects/${projectId}/export/crate`);
+export const crateDownloadUrl = (projectId: string, jobId: string): string =>
+  `${API_BASE}/projects/${projectId}/export/crate/${jobId}/download`;
+
+// --- Administration des comptes ---------------------------------------------
+
+export interface AdminUser {
+  id: string;
+  email: string;
+  full_name: string | null;
+  role: "ADMIN" | "RESEARCHER";
+  language_preference: string | null;
+  is_active: boolean;
+  anonymized: boolean;
+  created_at: string | null;
+  projects: number;
+  created_projects: number;
+  models: number;
+  annotations: number;
+}
+
+export interface AdminInvitation {
+  id: string;
+  email: string;
+  language: string;
+  project: string | null;
+  role: string | null;
+  invited_by: string | null;
+  created_at: string | null;
+}
+
+export interface AdminProject {
+  id: string;
+  title: string;
+  created_by: string | null;
+  created_at: string | null;
+  members: number;
+  articles: number;
+}
+
+export const listAdminUsers = async (): Promise<AdminUser[]> =>
+  (await request<{ items: AdminUser[] }>("/admin/users")).items;
+
+export const patchAdminUser = (
+  id: string,
+  patch: Partial<Pick<AdminUser, "full_name" | "role" | "language_preference" | "is_active">>
+): Promise<void> => request(`/admin/users/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
+
+export const deleteAdminUser = (
+  id: string,
+  deleteTheirProjects: boolean
+): Promise<{ deleted_projects: number; orphaned_projects: string[] }> =>
+  request(`/admin/users/${id}?delete_their_projects=${deleteTheirProjects}`, { method: "DELETE" });
+
+export const listAdminInvitations = async (): Promise<AdminInvitation[]> =>
+  (await request<{ items: AdminInvitation[] }>("/admin/invitations")).items;
+
+export const resendInvitation = (id: string): Promise<{ email_sent: boolean; link: string | null }> =>
+  request(`/admin/invitations/${id}/resend`, { method: "POST" });
+
+export const revokeInvitation = (id: string): Promise<void> =>
+  request(`/admin/invitations/${id}`, { method: "DELETE" });
+
+export const listAdminProjects = async (): Promise<AdminProject[]> =>
+  (await request<{ items: AdminProject[] }>("/admin/projects")).items;

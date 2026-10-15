@@ -1,0 +1,142 @@
+"""Équipe d'un projet : liste des membres, invitation par e-mail, retrait.
+
+L'invitation d'une adresse inconnue envoie un lien d'inscription (JWT 7 j portant le projet
+et le rôle) ; une adresse déjà inscrite est ajoutée directement. Si l'e-mail ne part pas
+(SMTP absent/en panne), le lien est renvoyé pour que le LEAD le transmette lui-même.
+"""
+
+import logging
+import uuid
+from typing import Annotated, Literal
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, EmailStr
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.api.deps import get_current_user, get_db
+from app.api.v1.projects import _require_project_member
+from app.core.config import get_settings
+from app.db.models import Project, ProjectMember, ProjectMemberRole, User, UserRole
+from app.emails import mailer_from_db
+from app.i18n import default_lang, t
+from app.invitations import render_invitation, upsert_invitation
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/projects", tags=["team"])
+
+DbDep = Annotated[AsyncSession, Depends(get_db)]
+UserDep = Annotated[User, Depends(get_current_user)]
+
+
+class MemberInvite(BaseModel):
+    email: EmailStr
+    role: Literal["LEAD", "ANNOTATOR"] = "ANNOTATOR"
+    language: Literal["fr", "en", "de", "es"] | None = None
+
+
+async def _require_lead(db: AsyncSession, project_id: uuid.UUID, user: User) -> Project:
+    project = await _require_project_member(db, project_id, user)
+    if user.role != UserRole.ADMIN:
+        member = await db.get(ProjectMember, (project_id, user.id))
+        if member is None or member.role_in_project != ProjectMemberRole.LEAD:
+            raise HTTPException(status_code=403, detail="lead required")
+    return project
+
+
+@router.get("/{project_id}/members")
+async def list_members(project_id: uuid.UUID, db: DbDep, user: UserDep) -> dict:
+    await _require_project_member(db, project_id, user)
+    rows = (
+        await db.execute(
+            select(ProjectMember, User)
+            .join(User, User.id == ProjectMember.user_id)
+            .where(ProjectMember.project_id == project_id)
+            .order_by(User.email)
+        )
+    ).all()
+    return {
+        "items": [
+            {
+                "user_id": str(u.id),
+                "email": u.email,
+                "full_name": u.full_name,
+                "role": m.role_in_project.value if m.role_in_project else "ANNOTATOR",
+            }
+            for m, u in rows
+        ]
+    }
+
+
+@router.post("/{project_id}/members/invite", status_code=201)
+async def invite_member(
+    project_id: uuid.UUID, payload: MemberInvite, db: DbDep, user: UserDep
+) -> dict:
+    project = await _require_lead(db, project_id, user)
+    settings = get_settings()
+    inviter = user.full_name or user.email
+    existing = (
+        await db.execute(select(User).where(func.lower(User.email) == payload.email.lower()))
+    ).scalar_one_or_none()
+    if existing is not None:
+        if await db.get(ProjectMember, (project_id, existing.id)) is not None:
+            raise HTTPException(status_code=409, detail="already a member")
+        db.add(
+            ProjectMember(
+                project_id=project_id,
+                user_id=existing.id,
+                role_in_project=ProjectMemberRole(payload.role),
+            )
+        )
+        await db.commit()
+        status, lang = "added", existing.language_preference.value
+        link = f"{settings.app_base_url}/projects/{project_id}"
+        kind = "project_added"
+    else:
+        lang = payload.language or default_lang()
+        inv = await upsert_invitation(
+            db, payload.email, lang, user.id, project_id=project_id, role=payload.role
+        )
+        status, kind = "invited", "project_invite"
+        invite_subject, invite_body, link = await render_invitation(db, inv)
+        await db.commit()
+    mailer = await mailer_from_db(db)
+    sent = False
+    if mailer is not None:
+        fields = dict(project=project.title, inviter=inviter, role=payload.role, link=link)
+        subject = t(lang, f"{kind}_subject", project=project.title)
+        body = t(lang, f"{kind}_body", **fields)
+        if status == "invited":
+            subject, body = invite_subject, invite_body
+        try:
+            await mailer.send(to=payload.email, subject=subject, body=body)
+            sent = True
+        except Exception:  # noqa: BLE001 - SMTP en panne : on renvoie le lien à la place
+            logger.exception("project invitation e-mail failed")
+    return {"status": status, "email_sent": sent, "link": None if sent else link}
+
+
+@router.delete("/{project_id}/members/{user_id}", status_code=204)
+async def remove_member(
+    project_id: uuid.UUID, user_id: uuid.UUID, db: DbDep, user: UserDep
+) -> None:
+    await _require_lead(db, project_id, user)
+    member = await db.get(ProjectMember, (project_id, user_id))
+    if member is None:
+        raise HTTPException(status_code=404, detail="member not found")
+    if member.role_in_project == ProjectMemberRole.LEAD:
+        leads = (
+            await db.execute(
+                select(func.count())
+                .select_from(ProjectMember)
+                .where(
+                    ProjectMember.project_id == project_id,
+                    ProjectMember.role_in_project == ProjectMemberRole.LEAD,
+                )
+            )
+        ).scalar_one()
+        if leads <= 1:
+            raise HTTPException(status_code=409, detail="cannot remove the last lead")
+    await db.delete(member)
+    await db.commit()

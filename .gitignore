@@ -1,0 +1,30 @@
+# secrets et configuration locale
+.env
+.env.*
+!.env.example
+
+# environnements et dépendances
+.venv/
+.node/
+node_modules/
+
+# builds et caches
+.next/
+out/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.tsbuildinfo
+*.bak
+*.swp
+*~
+
+# données générées à l'exécution
+exports/
+*.log
+.DS_Store
+*.egg-info/
+specs_opencode_qwen38_final.md
+frontend_ux_flow.md

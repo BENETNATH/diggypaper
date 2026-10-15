@@ -1,0 +1,120 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-diggypaper}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-diggypaper}
+      POSTGRES_DB: ${POSTGRES_DB:-diggypaper}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-diggypaper}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Serveur d'inférence local (CPU) : les modèles de chat (Kev, Qwen…) y sont téléchargés
+  # depuis l'interface (page Modèles). Les poids persistent dans le volume « ollama ».
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama:/root/.ollama
+    restart: unless-stopped
+
+  # Modèles de décision Laya (encodeur type BERT, scores calibrés, CPU) : protocole /v1/systemone.
+  # Pour Kev (GGUF) : ajouter un service `llama serve -hf ggml-org/Kev-4B-GGUF` et renseigner KEV_URL.
+  laya:
+    build: ./laya
+    volumes:
+      - hf:/hf
+    restart: unless-stopped
+
+  backend:
+    build: ./backend
+    volumes:
+      - models:/app/models
+      - exports:/app/exports  # zips RO-Crate générés par le worker, servis par le backend
+    environment:
+      LLM_API_BASE_URL: ${LLM_API_BASE_URL:-http://ollama:11434/v1}
+      DEFAULT_LANGUAGE: ${DEFAULT_LANGUAGE:-fr}
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:8123}  # base des liens des e-mails (invitations, exports)
+      LAYA_URL: ${LAYA_URL:-http://laya:8000}
+      KEV_URL: ${KEV_URL:-}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-diggypaper}:${POSTGRES_PASSWORD:-diggypaper}@postgres:5432/${POSTGRES_DB:-diggypaper}
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET manquant dans .env}
+      ANON_SALT: ${ANON_SALT:?ANON_SALT manquant dans .env}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY manquant dans .env}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-60}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:8080}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build: ./backend
+    command: ["celery", "-A", "app.celery_app.celery_app", "worker", "--loglevel=info"]
+    volumes:
+      - models:/app/models  # encodeurs ONNX (Laya) téléchargés par le backend, lus par le worker
+      - exports:/app/exports
+    environment:
+      LLM_API_BASE_URL: ${LLM_API_BASE_URL:-http://ollama:11434/v1}
+      LAYA_URL: ${LAYA_URL:-http://laya:8000}
+      KEV_URL: ${KEV_URL:-}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-diggypaper}:${POSTGRES_PASSWORD:-diggypaper}@postgres:5432/${POSTGRES_DB:-diggypaper}
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET manquant dans .env}
+      ANON_SALT: ${ANON_SALT:?ANON_SALT manquant dans .env}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY manquant dans .env}
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:8123}  # base des liens des e-mails (invitations, exports)
+      DEFAULT_LANGUAGE: ${DEFAULT_LANGUAGE:-fr}
+      SMTP_HOST: ${SMTP_HOST:-}  # e-mails de fin d'analyse / d'export envoyés par le worker
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  frontend:
+    build: ./frontend
+    environment:
+      DEFAULT_LANGUAGE: ${DEFAULT_LANGUAGE:-fr}
+
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - "${NGINX_PORT:-8080}:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - backend
+      - frontend
+
+volumes:
+  exports:
+  pgdata:
+  ollama:
+  models:
+  hf:

@@ -1,0 +1,138 @@
+"""Texte intégral hors PMC : PDF → sections, chaîne Europe PMC / Unpaywall / OpenAlex (offline)."""
+
+import httpx
+
+from app.fulltext import find_open_fulltext, pdf_to_sections
+
+BODY = "lorem ipsum dolor sit amet " * 100
+
+
+def make_pdf(lines: list[str]) -> bytes:
+    """PDF 1 page minimal (police Helvetica) contenant ``lines``."""
+    content = "BT /F1 10 Tf 12 TL 40 760 Td " + " ".join(f"({x}) Tj T*" for x in lines) + " ET"
+    objs = [
+        "<< /Type /Catalog /Pages 2 0 R >>",
+        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R "
+        "/Resources << /Font << /F1 5 0 R >> >> >>",
+        f"<< /Length {len(content)} >>\nstream\n{content}\nendstream",
+        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    ]
+    out, offs = b"%PDF-1.4\n", []
+    for i, o in enumerate(objs, 1):
+        offs.append(len(out))
+        out += f"{i} 0 obj\n{o}\nendobj\n".encode()
+    xref = len(out)
+    out += f"xref\n0 {len(objs) + 1}\n0000000000 65535 f \n".encode()
+    out += b"".join(f"{o:010d} 00000 n \n".encode() for o in offs)
+    out += f"trailer\n<< /Size {len(objs) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF".encode()
+    return out
+
+
+def test_pdf_to_sections_splits_imrad_and_stops_at_references():
+    pdf = make_pdf(
+        [
+            "Title of paper",
+            "Abstract",
+            "short abstract",
+            "1. Introduction",
+            "why we did it",
+            "Materials and Methods",
+            "mice were housed",
+            "Results",
+            "they ran",
+            "References",
+            "[1] x",
+        ]
+    )
+    secs = pdf_to_sections(pdf)
+    assert [s["kind"] for s in secs] == ["other", "other", "introduction", "methods", "results"]
+    assert "mice were housed" in secs[3]["text"]
+    assert all("[1] x" not in s["text"] for s in secs)
+
+
+async def test_find_open_fulltext_falls_back_to_preprint_pdf():
+    pdf = make_pdf(["Methods"] + [BODY[i : i + 80] for i in range(0, 2400, 80)])
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        url = str(req.url)
+        if "europepmc" in url and "search" in url:
+            return httpx.Response(200, json={"resultList": {"result": [{"doi": "10.1/x"}]}})
+        if "unpaywall" in url:
+            return httpx.Response(
+                200,
+                json={
+                    "oa_locations": [
+                        {"url_for_pdf": "https://repo.org/a.pdf", "version": "submittedVersion"}
+                    ]
+                },
+            )
+        if "openalex" in url:
+            return httpx.Response(200, json={"locations": []})
+        if url == "https://repo.org/a.pdf":
+            return httpx.Response(200, content=pdf)
+        return httpx.Response(404)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        secs, source, url, pdf_bytes = await find_open_fulltext("123", None, None, "a@b.fr", http)
+    assert source == "pdf:preprint" and url == "https://repo.org/a.pdf"
+    assert pdf_bytes == pdf
+    assert secs and secs[0]["kind"] == "methods"
+
+
+async def test_find_open_fulltext_nothing_found():
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda r: httpx.Response(404))
+    ) as http:
+        assert await find_open_fulltext("1", None, "10.1/x", "a@b.fr", http) == (
+            [],
+            None,
+            None,
+            None,
+        )
+
+
+async def test_upload_pdf_sets_fulltext(client, session, researcher_user, do_login):
+    import uuid
+
+    from app.db.models import Article, Project, ProjectMember, ProjectMemberRole
+
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project = Project(title="P", created_by=researcher_user.id)
+    session.add(project)
+    await session.commit()
+    session.add(
+        ProjectMember(
+            project_id=project.id,
+            user_id=researcher_user.id,
+            role_in_project=ProjectMemberRole.LEAD,
+        )
+    )
+    art = Article(project_id=project.id, pmid="1", title="T", abstract="A")
+    session.add(art)
+    await session.commit()
+    pdf = make_pdf(["Methods"] + [BODY[i : i + 80] for i in range(0, 2400, 80)])
+    url = f"/api/v1/projects/{project.id}/articles/{art.id}/fulltext"
+    resp = await client.post(url, content=pdf, headers={"content-type": "application/pdf"})
+    assert resp.status_code == 200
+    assert resp.json()["has_fulltext"] and resp.json()["fulltext_source"] == "pdf:upload"
+    bad = await client.post(url, content=b"not a pdf", headers={"content-type": "application/pdf"})
+    assert bad.status_code == 422
+    assert uuid.UUID(resp.json()["id"]) == art.id
+
+
+def test_pdf_to_sections_strips_nul_chars(monkeypatch):
+    """NUL → JSONB Postgres refuse (« unsupported Unicode escape sequence »)."""
+    import pypdf
+
+    class Page:
+        def extract_text(self):
+            return "Methods\nmice\x00 were housed"
+
+    class Reader:
+        def __init__(self, _):
+            self.pages = [Page()]
+
+    monkeypatch.setattr(pypdf, "PdfReader", Reader)
+    secs = pdf_to_sections(b"%PDF")
+    assert "\x00" not in secs[0]["text"] and "mice were housed" in secs[0]["text"]
