@@ -28,8 +28,9 @@ from app.api.v1.projects import (
     review_payload,
 )
 from app.article_text import compose_text
-from app.db.models import Article, ArticlePrediction, HumanAnnotation, Project, User
-from app.schema import validate_decision
+from app.db.models import Article, ArticlePrediction, HumanAnnotation, Project, Search, User
+from app.schema import project_fields, validate_decision
+from app.searches import get_search, in_search
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +69,12 @@ async def _require_article(
     return article
 
 
+async def _scope(db: AsyncSession, project_id: uuid.UUID, search_id: uuid.UUID | None) -> Search:
+    """Recherche demandée (par défaut la recherche initiale) : question, items, parties de texte."""
+    project = await db.get(Project, project_id)
+    return await get_search(db, project, search_id)
+
+
 def _article_payload(a: Article, kinds: list[str] | None = None) -> dict:
     return {
         "id": str(a.id),
@@ -104,12 +111,17 @@ def _prediction_payload(p: ArticlePrediction) -> dict:
 
 @router.get("/{project_id}/articles/{article_id}")
 async def get_article(
-    project_id: uuid.UUID, article_id: uuid.UUID, db: DbDep, user: UserDep
+    project_id: uuid.UUID,
+    article_id: uuid.UUID,
+    db: DbDep,
+    user: UserDep,
+    search: uuid.UUID | None = None,
 ) -> dict:
-    """Article seul (avec methods_text) pour le viewer d'annotation."""
+    """Article seul (avec methods_text) pour le viewer d'annotation ; le texte « fourni aux
+    modèles » suit les parties de la recherche."""
     article = await _require_article(db, project_id, article_id, user)
-    project = await db.get(Project, project_id)
-    return _article_payload(article, project.text_sections if project else None)
+    scope = await _scope(db, project_id, search)
+    return _article_payload(article, scope.text_sections)
 
 
 @router.post(
@@ -117,7 +129,11 @@ async def get_article(
     dependencies=[Depends(rate_limit_user("fulltext_search", 10))],
 )
 async def search_fulltext(
-    project_id: uuid.UUID, article_id: uuid.UUID, db: DbDep, user: UserDep
+    project_id: uuid.UUID,
+    article_id: uuid.UUID,
+    db: DbDep,
+    user: UserDep,
+    search: uuid.UUID | None = None,
 ) -> dict:
     """Relance la recherche du texte intégral de CET article (sources ouvertes), après avoir
     relu sa notice PubMed (un préprint publié change de PMCID/DOI/titre). Un texte déposé à la
@@ -140,11 +156,11 @@ async def search_fulltext(
             logger.warning("metadata refresh failed for article %s", article.id, exc_info=True)
         source = await ft.complete_article(db, article, email, http)
     await db.commit()
-    project = await db.get(Project, project_id)
+    scope = await _scope(db, project_id, search)
     return {
         "found": source is not None,
         "source": source,
-        "article": _article_payload(article, project.text_sections if project else None),
+        "article": _article_payload(article, scope.text_sections),
     }
 
 
@@ -204,6 +220,7 @@ async def upload_fulltext(
     db: DbDep,
     user: UserDep,
     force: bool = False,
+    search: uuid.UUID | None = None,
 ) -> dict:
     """Dépôt manuel du PDF d'un article (accès institutionnel) : corps = octets du PDF.
 
@@ -237,23 +254,46 @@ async def upload_fulltext(
         raise HTTPException(status_code=422, detail="pdf_mismatch")
     await apply_uploaded_pdf(db, article, sections, data)
     await db.commit()
-    project = await db.get(Project, project_id)
-    payload = _article_payload(article, project.text_sections if project else None)
+    scope = await _scope(db, project_id, search)
+    payload = _article_payload(article, scope.text_sections)
     payload["pdf_check"] = {True: "match", False: "forced", None: "unverified"}[verdict]
     return payload
 
 
 @router.get("/{project_id}/articles/{article_id}/prediction")
 async def get_prediction(
-    project_id: uuid.UUID, article_id: uuid.UUID, db: DbDep, user: UserDep
+    project_id: uuid.UUID,
+    article_id: uuid.UUID,
+    db: DbDep,
+    user: UserDep,
+    search: uuid.UUID | None = None,
 ) -> dict | None:
-    """Prédiction la plus récente de l'article (null si aucune)."""
+    """Prédiction la plus récente de l'article dans cette recherche (null si aucune)."""
     article = await _require_article(db, project_id, article_id, user)
+    scope = await _scope(db, project_id, search)
+    if scope.kind == "blind":
+        # Échantillon à l'aveugle : prédiction visible seulement après la relecture de l'user.
+        mine = (
+            await db.execute(
+                select(HumanAnnotation.id)
+                .where(
+                    HumanAnnotation.article_id == article.id,
+                    HumanAnnotation.user_id == user.id,
+                    in_search(HumanAnnotation.search_id, scope),
+                )
+                .limit(1)
+            )
+        ).first()
+        if mine is None:
+            return None
     prediction = (
         (
             await db.execute(
                 select(ArticlePrediction)
-                .where(ArticlePrediction.article_id == article.id)
+                .where(
+                    ArticlePrediction.article_id == article.id,
+                    in_search(ArticlePrediction.search_id, scope),
+                )
                 .order_by(
                     ArticlePrediction.created_at.desc().nulls_last(),
                     ArticlePrediction.id.desc(),
@@ -270,11 +310,17 @@ async def get_prediction(
 
 @router.get("/{project_id}/articles/{article_id}/annotation")
 async def get_annotation(
-    project_id: uuid.UUID, article_id: uuid.UUID, db: DbDep, user: UserDep
+    project_id: uuid.UUID,
+    article_id: uuid.UUID,
+    db: DbDep,
+    user: UserDep,
+    search: uuid.UUID | None = None,
 ) -> dict | None:
-    """Dernière relecture humaine de l'article (réponses + relecteur + statut), null si aucune."""
+    """Dernière relecture humaine de l'article dans cette recherche (réponses + relecteur +
+    statut), null si aucune."""
     article = await _require_article(db, project_id, article_id, user)
-    ann, reviewer = (await latest_reviews(db, [article.id])).get(article.id, (None, None))
+    scope = await _scope(db, project_id, search)
+    ann, reviewer = (await latest_reviews(db, [article.id], scope)).get(article.id, (None, None))
     if ann is None:
         return None
     return {
@@ -300,20 +346,23 @@ async def create_annotation(
     payload: Annotated[dict, Body()],
     db: DbDep,
     user: UserDep,
+    search: uuid.UUID | None = None,
+    blind: bool = False,
 ) -> dict:
-    """Soumet une annotation humaine (MODULE 5).
+    """Soumet une annotation humaine pour la recherche ``search`` (``blind`` : faite sans voir la
+    prédiction du modèle, cf. échantillon à l'aveugle).
 
     Le payload est stocké dans ``decision_json`` (schéma spec §5) ; le
     ``reasoning_summary`` est aussi conservé dans ``notes`` (colonne Text).
     """
     article = await _require_article(db, project_id, article_id, user)
-    project = await db.get(Project, project_id)
-    if project is not None and project.fields is not None:
-        # Schéma propre au projet : champs définis + clés standard optionnelles.
-        errors = validate_decision(project.fields, payload)
+    scope = await _scope(db, project_id, search)
+    if scope.fields is not None:
+        # Schéma propre à la recherche : champs définis + clés standard optionnelles.
+        errors = validate_decision(project_fields(scope), payload)
         if errors:
             raise HTTPException(status_code=422, detail=errors)
-        decision = {f["key"]: payload[f["key"]] for f in project.fields}
+        decision = {f["key"]: payload[f["key"]] for f in project_fields(scope)}
         decision["confidence_score"] = payload.get("confidence_score", 1.0)
         decision["evidence_quotes"] = [str(q) for q in payload.get("evidence_quotes") or []][:100]
         decision["reasoning_summary"] = str(payload.get("reasoning_summary") or "")[:5000]
@@ -326,7 +375,10 @@ async def create_annotation(
         (
             await db.execute(
                 select(ArticlePrediction)
-                .where(ArticlePrediction.article_id == article.id)
+                .where(
+                    ArticlePrediction.article_id == article.id,
+                    in_search(ArticlePrediction.search_id, scope),
+                )
                 .order_by(
                     ArticlePrediction.created_at.desc().nulls_last(), ArticlePrediction.id.desc()
                 )
@@ -340,6 +392,8 @@ async def create_annotation(
     ann = HumanAnnotation(
         article_id=article.id,
         user_id=user.id,
+        search_id=scope.id,
+        blind=blind or scope.kind == "blind",
         decision_json=decision,
         notes=decision["reasoning_summary"],
     )

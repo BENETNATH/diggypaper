@@ -19,6 +19,7 @@ from app.celery_app import celery_app
 from app.core.config import get_settings
 from app.db.models import ExportJob, Project, User
 from app.i18n import t
+from app.searches import ScopedProject, get_search
 from app.tasks import inference as _inf
 
 logger = logging.getLogger(__name__)
@@ -108,6 +109,8 @@ async def _run_export(
             if job.status in ("COMPLETED", "FAILED"):
                 return {}  # tâche redélivrée : déjà close
             project = await session.get(Project, job.project_id)
+            scope = await get_search(session, project, job.search_id)
+            project = ScopedProject(project, scope)
             user = await session.get(User, job.user_id) if job.user_id else None
             job.status, job.result_json = "RUNNING", {"done": 0, "total": 0}
             await session.commit()
@@ -124,7 +127,7 @@ async def _run_export(
                 tmp = out_dir / f"{filename}.part"
                 with tmp.open("wb") as fh:
                     stats = await write_crate(
-                        session, project, user.email if user else "", fh, progress
+                        session, project, user.email if user else "", fh, progress, scope
                     )
                 tmp.replace(out_dir / filename)
                 job.status, job.filename = "COMPLETED", filename

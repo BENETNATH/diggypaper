@@ -13,6 +13,8 @@ import {
   ImportJob,
   Project,
 } from "@/lib/api";
+import { withSearch } from "@/lib/search";
+import { useSearchId } from "@/lib/useSearch";
 import { RequireAuth } from "@/components/RequireAuth";
 import { Button } from "@/components/ui/Button";
 import { Field, Input } from "@/components/ui/Field";
@@ -105,6 +107,7 @@ function ImportContent() {
   const t = useTranslations("import");
   const params = useParams<{ id: string }>();
   const projectId = params.id;
+  const searchId = useSearchId(projectId);
 
   const [project, setProject] = useState<Project | null>(null);
   const [jobs, setJobs] = useState<ImportJob[] | null>(null);
@@ -243,7 +246,7 @@ function ImportContent() {
           ) : null}
           {lastJob?.status === "COMPLETED" && !polling && (
             <Link
-              href={`/projects/${projectId}/articles`}
+              href={withSearch(`/projects/${projectId}/articles`, searchId)}
               className="mt-3 inline-block text-sm font-medium text-primary hover:underline"
             >
               {t("viewArticles")} →

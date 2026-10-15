@@ -1,7 +1,8 @@
 "use client";
 
 import { useTranslations } from "next-intl";
-import { SchemaField } from "@/lib/api";
+import { RankMetric, SchemaField } from "@/lib/api";
+import { RANK_METRICS } from "@/lib/benchmark";
 import { Button } from "@/components/ui/Button";
 import { Checkbox, Field, Input, Select, Textarea } from "@/components/ui/Field";
 
@@ -16,6 +17,7 @@ const SECTION_KINDS = [
 ];
 
 const DEPTHS = [1, 2, 4, 8, 16];
+const CHOICE_METRICS: RankMetric[] = ["accuracy"];
 
 /** Durée lisible à partir de secondes. */
 function fmtDuration(sec: number): string {
@@ -70,7 +72,24 @@ export function QuestionEditor({
         if (optionsText !== undefined) next.options = optionsText.split(",").map((o) => o.trim());
         if (rest.label !== undefined && f.key.startsWith("new_")) next.key = slug(rest.label) || f.key;
         if (rest.type === "choice" && !next.options?.length) next.options = ["YES", "NO"];
+        // Un item à choix n'a que l'exactitude (pas de rappel / précision).
+        if (next.type === "choice" && next.primary) next.metric = "accuracy";
+        if (next.type === "text") {
+          delete next.primary; // le critère de classement est un item booléen ou à choix
+          delete next.metric;
+        }
         return next;
+      }),
+    });
+  }
+
+  /** Un seul critère de classement : le choisir retire l'ancien ; `null` n'en garde aucun. */
+  function setPrimary(i: number | null) {
+    set({
+      fields: fields.map((f, j) => {
+        const { primary, metric, ...rest } = f;
+        void primary;
+        return j === i ? { ...rest, primary: true, metric: f.type === "choice" ? "accuracy" : (metric ?? "recall") } : rest;
       }),
     });
   }
@@ -112,6 +131,40 @@ export function QuestionEditor({
                   {t("remove")}
                 </Button>
               </div>
+              {f.type !== "text" && (
+                <div className="flex flex-wrap items-center gap-3 text-sm sm:col-span-3">
+                  <label className="flex items-center gap-2 text-foreground">
+                    <input
+                      type="radio"
+                      name="primary-criterion"
+                      className="h-4 w-4 border-border text-primary focus:ring-2 focus:ring-focus/40"
+                      checked={!!f.primary}
+                      onChange={() => setPrimary(i)}
+                    />
+                    {t("primaryLabel")}
+                  </label>
+                  {f.primary && (
+                    <>
+                      <Select
+                        className="!w-auto !py-1"
+                        aria-label={t("metricLabel")}
+                        value={f.metric ?? "recall"}
+                        onChange={(e) => patchField(i, { metric: e.target.value as RankMetric })}
+                      >
+                        {(f.type === "choice" ? CHOICE_METRICS : RANK_METRICS).map((m) => (
+                          <option key={m} value={m}>
+                            {t(`metric_${m}`)}
+                          </option>
+                        ))}
+                      </Select>
+                      <Button type="button" variant="ghost" size="sm" onClick={() => setPrimary(null)}>
+                        {t("primaryClear")}
+                      </Button>
+                    </>
+                  )}
+                  <span className="basis-full text-xs text-muted">{t("primaryHint")}</span>
+                </div>
+              )}
               {f.type === "choice" && (
                 <div className="sm:col-span-3">
                   <Field label={t("options")} hint={t("optionsHint")}>

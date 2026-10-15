@@ -6,6 +6,8 @@ import { useParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { getProject, deleteProject, listJobs, listModels, Project, ImportJob } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { withSearch } from "@/lib/search";
+import { useSearchId } from "@/lib/useSearch";
 import { RequireAuth } from "@/components/RequireAuth";
 import { Badge, statusColor } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -43,6 +45,7 @@ function ProjectDashboard() {
   const t = useTranslations("project");
   const params = useParams<{ id: string }>();
   const projectId = params.id;
+  const searchId = useSearchId(projectId);
 
   const [project, setProject] = useState<Project | null>(null);
   const [jobs, setJobs] = useState<ImportJob[] | null>(null);
@@ -54,13 +57,13 @@ function ProjectDashboard() {
   const load = useCallback(async () => {
     setError(null);
     try {
-      const [p, js] = await Promise.all([getProject(projectId), listJobs(projectId)]);
+      const [p, js] = await Promise.all([getProject(projectId, searchId), listJobs(projectId)]);
       setProject(p);
       setJobs(js);
     } catch (e) {
       setError(e instanceof Error ? e.message : "error");
     }
-  }, [projectId]);
+  }, [projectId, searchId]);
 
   useEffect(() => {
     void load();
@@ -105,6 +108,12 @@ function ProjectDashboard() {
 
       {project.description && (
         <p className="text-sm text-muted">{project.description}</p>
+      )}
+      {project.question && (
+        <p className="text-sm">
+          <span className="text-muted">{t("question")} : </span>
+          <span className="text-foreground">{project.question}</span>
+        </p>
       )}
 
       {project.status === "PROCESSING" && (
@@ -217,7 +226,7 @@ function ProjectDashboard() {
                           {t(s.ctaKey)}
                         </Button>
                       ) : (
-                        <Link href={`/projects/${projectId}/${s.href}`} className="shrink-0">
+                        <Link href={withSearch(`/projects/${projectId}/${s.href}`, searchId)} className="shrink-0">
                           <Button variant={isNext ? "primary" : "secondary"} size="sm">
                             {t(s.ctaKey)}
                           </Button>

@@ -41,6 +41,7 @@ from app.db.models import (
     User,
 )
 from app.schema import project_fields
+from app.searches import ScopedProject, default_search, get_search, in_search, lot_condition
 
 router = APIRouter(prefix="/projects", tags=["export"])
 
@@ -187,13 +188,15 @@ def build_workbook(project, articles, preds, annos, import_jobs, inf_job, user_e
     return buf.getvalue()
 
 
-async def _load(db: AsyncSession, project, where=None):
-    """Articles du projet + dernière prédiction / annotations par article + jobs."""
+async def _load(db: AsyncSession, project, where=None, search=None):
+    """Articles + dernière prédiction / annotations par article + jobs, ceux de ``search`` (par
+    défaut : toute la recherche initiale)."""
+    search = search or await default_search(db, project)
     articles = (
         (
             await db.execute(
                 select(Article)
-                .where(*(where or [Article.project_id == project.id]))
+                .where(*(where or [lot_condition(search)]))
                 .order_by(Article.created_at, Article.id)
             )
         )
@@ -207,7 +210,10 @@ async def _load(db: AsyncSession, project, where=None):
         for p in (
             await db.execute(
                 select(ArticlePrediction)
-                .where(ArticlePrediction.article_id.in_(ids))
+                .where(
+                    ArticlePrediction.article_id.in_(ids),
+                    in_search(ArticlePrediction.search_id, search),
+                )
                 .order_by(ArticlePrediction.created_at.nulls_first(), ArticlePrediction.id)
             )
         ).scalars():
@@ -215,7 +221,10 @@ async def _load(db: AsyncSession, project, where=None):
         for h in (
             await db.execute(
                 select(HumanAnnotation)
-                .where(HumanAnnotation.article_id.in_(ids))
+                .where(
+                    HumanAnnotation.article_id.in_(ids),
+                    in_search(HumanAnnotation.search_id, search),
+                )
                 .order_by(HumanAnnotation.created_at.nulls_first(), HumanAnnotation.id)
             )
         ).scalars():
@@ -251,7 +260,10 @@ async def _load(db: AsyncSession, project, where=None):
         (
             await db.execute(
                 select(InferenceJob)
-                .where(InferenceJob.project_id == project.id)
+                .where(
+                    InferenceJob.project_id == project.id,
+                    in_search(InferenceJob.search_id, search),
+                )
                 .order_by(InferenceJob.created_at.desc())
                 .limit(1)
             )
@@ -267,9 +279,13 @@ def _slug(project) -> str:
 
 
 @router.get("/{project_id}/export.xlsx")
-async def export_xlsx(project_id: uuid.UUID, db: DbDep, user: UserDep) -> Response:
+async def export_xlsx(
+    project_id: uuid.UUID, db: DbDep, user: UserDep, search: uuid.UUID | None = None
+) -> Response:
     project = await _require_project_member(db, project_id, user)
-    articles, preds, annos, import_jobs, inf_job = await _load(db, project)
+    scope = await get_search(db, project, search)
+    articles, preds, annos, import_jobs, inf_job = await _load(db, project, search=scope)
+    project = ScopedProject(project, scope)
     data = await asyncio.to_thread(
         build_workbook, project, articles, preds, annos, import_jobs, inf_job, user.email
     )
@@ -294,10 +310,12 @@ def _notes(articles, preds: dict, fields: list[dict]) -> dict:
     return out
 
 
-async def _references(project_id, db, user, status, answers, fmt: str) -> Response:
+async def _references(project_id, db, user, status, answers, fmt: str, search=None) -> Response:
     project = await _require_project_member(db, project_id, user)
-    where = article_filter(project, status, answers)[0]
-    articles, preds, *_ = await _load(db, project, where)
+    scope = await get_search(db, project, search)
+    where = article_filter(scope, status, answers)[0]
+    articles, preds, *_ = await _load(db, project, where, scope)
+    project = ScopedProject(project, scope)
     notes = _notes(articles, preds, project_fields(project))
     if fmt == "ris":
         body, mime = references.to_ris(articles, notes), references.RIS_MIME
@@ -314,10 +332,13 @@ PRISMA_LANGS = "^(fr|en|de|es)$"
 
 
 @router.get("/{project_id}/prisma")
-async def get_prisma(project_id: uuid.UUID, db: DbDep, user: UserDep) -> dict:
-    """Effectifs du diagramme de flux PRISMA 2020 du projet."""
+async def get_prisma(
+    project_id: uuid.UUID, db: DbDep, user: UserDep, search: uuid.UUID | None = None
+) -> dict:
+    """Effectifs du diagramme de flux PRISMA 2020 d'une recherche."""
     project = await _require_project_member(db, project_id, user)
-    articles, preds, annos, import_jobs, _ = await _load(db, project)
+    scope = await get_search(db, project, search)
+    articles, preds, annos, import_jobs, _ = await _load(db, project, search=scope)
     return prisma.prisma_counts(articles, preds, annos, import_jobs)
 
 
@@ -327,10 +348,12 @@ async def get_prisma_svg(
     db: DbDep,
     user: UserDep,
     lang: Annotated[str | None, Query(pattern=PRISMA_LANGS)] = None,
+    search: uuid.UUID | None = None,
 ) -> Response:
     """Diagramme PRISMA 2020 en SVG (langue : ``lang`` sinon celle du projet)."""
     project = await _require_project_member(db, project_id, user)
-    articles, preds, annos, import_jobs, _ = await _load(db, project)
+    scope = await get_search(db, project, search)
+    articles, preds, annos, import_jobs, _ = await _load(db, project, search=scope)
     counts = prisma.prisma_counts(articles, preds, annos, import_jobs)
     svg = prisma.render_svg(counts, lang or project.default_language or "fr")
     return Response(
@@ -346,10 +369,12 @@ async def get_prisma_pdf(
     db: DbDep,
     user: UserDep,
     lang: Annotated[str | None, Query(pattern=PRISMA_LANGS)] = None,
+    search: uuid.UUID | None = None,
 ) -> Response:
     """Diagramme PRISMA 2020 en PDF vectoriel (même contenu que le SVG)."""
     project = await _require_project_member(db, project_id, user)
-    articles, preds, annos, import_jobs, _ = await _load(db, project)
+    scope = await get_search(db, project, search)
+    articles, preds, annos, import_jobs, _ = await _load(db, project, search=scope)
     counts = prisma.prisma_counts(articles, preds, annos, import_jobs)
     pdf = prisma.svg_to_pdf(prisma.render_svg(counts, lang or project.default_language or "fr"))
     return Response(
@@ -366,9 +391,10 @@ async def export_ris(
     user: UserDep,
     status: Annotated[str | None, Query(pattern=STATUS_PATTERN)] = None,
     answers: Annotated[str | None, Query(max_length=4000)] = None,
+    search: uuid.UUID | None = None,
 ) -> Response:
     """Références RIS (Zotero, EndNote, Mendeley…) ; mêmes filtres que la liste des articles."""
-    return await _references(project_id, db, user, status, answers, "ris")
+    return await _references(project_id, db, user, status, answers, "ris", search)
 
 
 @router.get("/{project_id}/export.bib")
@@ -378,17 +404,20 @@ async def export_bibtex(
     user: UserDep,
     status: Annotated[str | None, Query(pattern=STATUS_PATTERN)] = None,
     answers: Annotated[str | None, Query(max_length=4000)] = None,
+    search: uuid.UUID | None = None,
 ) -> Response:
     """Références BibTeX ; mêmes filtres que la liste des articles."""
-    return await _references(project_id, db, user, status, answers, "bib")
+    return await _references(project_id, db, user, status, answers, "bib", search)
 
 
-async def write_crate(db: AsyncSession, project, user_email: str, tmp, progress=None) -> dict:
+async def write_crate(
+    db: AsyncSession, project, user_email: str, tmp, progress=None, search=None
+) -> dict:
     """Écrit le RO-Crate (zip) dans le fichier binaire ``tmp`` → {articles, pdf, text}.
 
     ``progress(done, total)`` (async, optionnel) est appelé tous les 10 articles.
     """
-    articles, preds, annos, import_jobs, inf_job = await _load(db, project)
+    articles, preds, annos, import_jobs, inf_job = await _load(db, project, search=search)
     fields = project_fields(project)
     names = {n for n in (inf_job.model_used, inf_job.prefilter_model) if n} if inf_job else set()
     models = {}
@@ -463,12 +492,16 @@ def _export_payload(job: ExportJob) -> dict:
     }
 
 
-async def _latest_export(db: AsyncSession, project_id: uuid.UUID) -> ExportJob | None:
+async def _latest_export(db: AsyncSession, project_id: uuid.UUID, search=None) -> ExportJob | None:
+    """Dernier export du projet (ou de cette recherche si ``search`` est donnée)."""
+    cond = [ExportJob.project_id == project_id]
+    if search is not None:
+        cond.append(in_search(ExportJob.search_id, search))
     return (
         (
             await db.execute(
                 select(ExportJob)
-                .where(ExportJob.project_id == project_id)
+                .where(*cond)
                 .order_by(ExportJob.created_at.desc(), ExportJob.id.desc())
                 .limit(1)
             )
@@ -479,7 +512,9 @@ async def _latest_export(db: AsyncSession, project_id: uuid.UUID) -> ExportJob |
 
 
 @router.post("/{project_id}/export/crate", status_code=202)
-async def start_crate_export(project_id: uuid.UUID, db: DbDep, user: UserDep) -> dict:
+async def start_crate_export(
+    project_id: uuid.UUID, db: DbDep, user: UserDep, search: uuid.UUID | None = None
+) -> dict:
     """Lance l'export RO-Crate en tâche de fond (e-mail à la fin) ; un seul à la fois."""
     from app.tasks.export import export_task
 
@@ -487,7 +522,10 @@ async def start_crate_export(project_id: uuid.UUID, db: DbDep, user: UserDep) ->
     await _require_lead_or_admin(db, project_id, user)
     job = await _latest_export(db, project.id)
     if job is None or job.status not in ("PENDING", "RUNNING"):
-        job = ExportJob(project_id=project.id, user_id=user.id, status="PENDING")
+        scope = await get_search(db, project, search)
+        job = ExportJob(
+            project_id=project.id, user_id=user.id, search_id=scope.id, status="PENDING"
+        )
         db.add(job)
         await db.commit()
         await db.refresh(job)
@@ -497,10 +535,12 @@ async def start_crate_export(project_id: uuid.UUID, db: DbDep, user: UserDep) ->
 
 
 @router.get("/{project_id}/export/crate")
-async def get_crate_export(project_id: uuid.UUID, db: DbDep, user: UserDep) -> dict | None:
-    """Dernier export RO-Crate du projet (statut, progression, téléchargeable ?)."""
-    await _require_project_member(db, project_id, user)
-    job = await _latest_export(db, project_id)
+async def get_crate_export(
+    project_id: uuid.UUID, db: DbDep, user: UserDep, search: uuid.UUID | None = None
+) -> dict | None:
+    """Dernier export RO-Crate de la recherche (statut, progression, téléchargeable ?)."""
+    project = await _require_project_member(db, project_id, user)
+    job = await _latest_export(db, project_id, await get_search(db, project, search))
     return _export_payload(job) if job else None
 
 

@@ -32,6 +32,7 @@ from app.db.models import (
     UserRole,
 )
 from app.model_access import usable_models
+from app.searches import get_search, in_search
 from app.tasks.inference import inference_task
 
 router = APIRouter(prefix="/projects", tags=["inference"])
@@ -47,6 +48,9 @@ class InferenceCreate(BaseModel):
     model: str = Field(min_length=1)
     prefilter_model: str | None = None  # étage 1 ONNX (ex. Laya-400M), optionnel
     resume: bool = False  # reprend la dernière analyse interrompue (saute les articles déjà faits)
+    search_id: uuid.UUID | None = None  # recherche analysée (défaut : la recherche initiale)
+    gold_examples: int = Field(default=0, ge=0, le=20)  # exemples du gold ajoutés au prompt
+    validate_with_gold: bool = False  # noter les résultats contre le gold (articles du lot au gold)
 
 
 async def _require_lead(db: AsyncSession, project_id: uuid.UUID, user: User) -> None:
@@ -64,6 +68,7 @@ def _job_payload(job: InferenceJob) -> dict:
         "prompt_template_id": str(job.prompt_template_id) if job.prompt_template_id else None,
         "model_used": job.model_used,
         "prefilter_model": job.prefilter_model,
+        "search_id": str(job.search_id) if job.search_id else None,
         "status": job.status,
         "result": job.result_json,
         "error": job.error,
@@ -86,8 +91,9 @@ async def trigger_inference(
     # Garde : le corpus doit être FROZEN (reproductibilité, spec MODULE 2/4).
     if project.status not in (ProjectStatus.FROZEN, ProjectStatus.COMPLETED):
         raise HTTPException(status_code=409, detail="project corpus not frozen")
+    scope = await get_search(db, project, payload.search_id)
     if payload.prompt_template_id is None:
-        prompt = await ensure_prompt(db, project)
+        prompt = await ensure_prompt(db, project, scope)
     else:
         prompt = await db.get(PromptTemplate, payload.prompt_template_id)
         if prompt is None or prompt.project_id != project_id:
@@ -118,7 +124,10 @@ async def trigger_inference(
             (
                 await db.execute(
                     select(InferenceJob)
-                    .where(InferenceJob.project_id == project_id)
+                    .where(
+                        InferenceJob.project_id == project_id,
+                        in_search(InferenceJob.search_id, scope),
+                    )
                     .order_by(InferenceJob.created_at.desc(), InferenceJob.id.desc())
                     .limit(1)
                 )
@@ -133,6 +142,8 @@ async def trigger_inference(
         resume_after = last.resume_after or last.created_at
     job = InferenceJob(
         project_id=project_id,
+        search_id=scope.id,
+        options={"gold_examples": payload.gold_examples, "validate": payload.validate_with_gold},
         resume_after=resume_after,
         prompt_template_id=prompt.id,
         model_used=payload.model,
@@ -183,14 +194,19 @@ async def cancel_inference(project_id: uuid.UUID, db: DbDep, user: UserDep) -> d
 
 
 @router.get("/{project_id}/inference")
-async def get_inference(project_id: uuid.UUID, db: DbDep, user: UserDep) -> dict:
-    """Statut du dernier job d'inférence + statistiques (notifications in-app)."""
-    await _require_project_member(db, project_id, user)
+async def get_inference(
+    project_id: uuid.UUID, db: DbDep, user: UserDep, search: uuid.UUID | None = None
+) -> dict:
+    """Statut du dernier job d'inférence de la recherche + statistiques (notifications in-app)."""
+    project = await _require_project_member(db, project_id, user)
+    scope = await get_search(db, project, search)
     job = (
         (
             await db.execute(
                 select(InferenceJob)
-                .where(InferenceJob.project_id == project_id)
+                .where(
+                    InferenceJob.project_id == project_id, in_search(InferenceJob.search_id, scope)
+                )
                 .order_by(InferenceJob.created_at.desc(), InferenceJob.id.desc())
                 .limit(1)
             )

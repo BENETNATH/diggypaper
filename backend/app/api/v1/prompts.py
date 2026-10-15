@@ -23,6 +23,7 @@ from app.db.models import (
     UserRole,
 )
 from app.schema import build_system_prompt, project_fields
+from app.searches import get_search
 
 router = APIRouter(prefix="/projects", tags=["prompts"])
 
@@ -105,9 +106,11 @@ async def create_prompt(
     return _payload(p)
 
 
-async def ensure_prompt(db: AsyncSession, project) -> PromptTemplate:
-    """Prompt généré depuis la question + champs ; réutilise l'identique, sinon nouvelle version."""
-    system = build_system_prompt(project.question, project_fields(project))
+async def ensure_prompt(db: AsyncSession, project, search=None) -> PromptTemplate:
+    """Prompt généré depuis la question + items de la recherche (par défaut ceux du projet) ;
+    réutilise l'identique, sinon nouvelle version."""
+    src = search or project
+    system = build_system_prompt(src.question, project_fields(src))
     user = "Article text:\n{article_text}"
     existing = (
         (await db.execute(select(PromptTemplate).where(PromptTemplate.project_id == project.id)))
@@ -133,11 +136,14 @@ async def ensure_prompt(db: AsyncSession, project) -> PromptTemplate:
 
 
 @router.post("/{project_id}/prompts/generate", status_code=201)
-async def generate_prompt(project_id: uuid.UUID, db: DbDep, user: UserDep) -> dict:
-    """Génère (ou retrouve) le prompt du projet depuis sa question et ses champs."""
+async def generate_prompt(
+    project_id: uuid.UUID, db: DbDep, user: UserDep, search: uuid.UUID | None = None
+) -> dict:
+    """Génère (ou retrouve) le prompt d'une recherche depuis sa question et ses items."""
     project = await _require_project_member(db, project_id, user)
     await _require_lead(db, project_id, user)
-    return _payload(await ensure_prompt(db, project))
+    scope = await get_search(db, project, search)
+    return _payload(await ensure_prompt(db, project, scope))
 
 
 @router.get("/{project_id}/prompts")

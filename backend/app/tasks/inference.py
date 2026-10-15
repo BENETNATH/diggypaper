@@ -26,6 +26,7 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app import metrics
 from app.article_text import fill_prompt
 from app.celery_app import celery_app
 from app.core.config import get_settings
@@ -34,6 +35,7 @@ from app.db.base import make_engine
 from app.db.models import (
     Article,
     ArticlePrediction,
+    GoldArticle,
     InferenceJob,
     InferenceJobStatus,
     ModelRegistry,
@@ -43,6 +45,7 @@ from app.db.models import (
     PromptTemplate,
 )
 from app.emails import Mailer
+from app.gold_examples import examples_block, pick_examples
 from app.inference import (
     InferenceError,
     OpenAICompatibleService,
@@ -50,6 +53,8 @@ from app.inference import (
     make_inference_service,
 )
 from app.inference.scoring import is_scorer, score_prediction
+from app.schema import project_fields
+from app.searches import ScopedProject, get_search, gold_condition, in_search, lot_condition
 from app.settings.service import get_setting
 from app.tasks.notify import notify_job_complete
 
@@ -196,13 +201,48 @@ async def _do_inference(
     if prompt is None:
         raise LookupError(f"prompt template not found: {job.prompt_template_id}")
 
-    project = await session.get(Project, job.project_id)
-    if project is None:
+    base_project = await session.get(Project, job.project_id)
+    if base_project is None:
         raise LookupError(f"project not found: {job.project_id}")
+    search = await get_search(session, base_project, job.search_id)
+    # question, items et parties de texte : ceux de la recherche (le projet pour le reste)
+    project = ScopedProject(base_project, search)
 
     articles = (
-        (await session.execute(select(Article).where(Article.project_id == project.id))).scalars()
-    ).all()
+        (await session.execute(select(Article).where(lot_condition(search)).order_by(Article.id)))
+        .scalars()
+        .all()
+    )
+
+    # Gold : exemples ajoutés au prompt (« éduquer » le modèle) et/ou validation des résultats.
+    opts = job.options or {}
+    gold_all: dict = {}
+    example_ids: list = []
+    shots = ""
+    if opts.get("gold_examples") or opts.get("validate"):
+        gold_all = {
+            g.article_id: g.ground_truth_json
+            for g in (
+                await session.execute(
+                    select(GoldArticle).where(await gold_condition(session, base_project, search))
+                )
+            ).scalars()
+            if g.article_id
+        }
+    if opts.get("gold_examples") and gold_all:
+        lot = {a.id for a in articles}
+        outside = {i: g for i, g in gold_all.items() if i not in lot}
+        k = int(opts["gold_examples"])
+        example_ids = pick_examples(outside if len(outside) >= k else gold_all, k, seed=1)
+        ex = {
+            a.id: a
+            for a in (
+                await session.execute(select(Article).where(Article.id.in_(example_ids)))
+            ).scalars()
+        }
+        shots = examples_block(
+            ex, gold_all, example_ids, project_fields(project), project.text_sections
+        )
 
     # Reprise : articles déjà prédits (même prompt) depuis la date du job interrompu.
     done_status: dict = {}
@@ -210,6 +250,7 @@ async def _do_inference(
         rows = await session.execute(
             select(ArticlePrediction.article_id, ArticlePrediction.status).where(
                 ArticlePrediction.prompt_template_id == prompt.id,
+                in_search(ArticlePrediction.search_id, search),
                 ArticlePrediction.created_at >= job.resume_after,
                 ArticlePrediction.article_id.in_([a.id for a in articles]),
             )
@@ -250,9 +291,10 @@ async def _do_inference(
             return await score_prediction(model, project, article, light=light)
         kinds = ["abstract"] if light else project.text_sections
         user_prompt = fill_prompt(prompt.user_prompt_schema, article, kinds)
-        return await infer_with(
-            model, inference, prompt.system_prompt or "", user_prompt, name=job.model_used
-        )
+        system = prompt.system_prompt or ""
+        if shots and not light:
+            system = (system + "\n\n" + shots).strip()
+        return await infer_with(model, inference, system, user_prompt, name=job.model_used)
 
     async def cancelled() -> bool:
         # Arrêt demandé depuis l'interface (POST …/inference/cancel : statut FAILED en base).
@@ -302,6 +344,7 @@ async def _do_inference(
         session.add(
             ArticlePrediction(
                 article_id=article.id,
+                search_id=search.id,
                 prompt_template_id=prompt.id,
                 model_used=model_name,
                 decision_json=prediction,
@@ -313,6 +356,26 @@ async def _do_inference(
         await _progress(session, job, processed, len(articles), invalid, counts())
 
     duration = time.monotonic() - start
+    validation = None
+    if opts.get("validate") and gold_all:
+        in_lot = {a.id for a in articles}
+        latest = {  # dernière prédiction de chaque article du lot dans cette recherche
+            r.article_id: r.decision_json or {}
+            for r in (
+                await session.execute(
+                    select(ArticlePrediction)
+                    .where(
+                        in_search(ArticlePrediction.search_id, search),
+                        ArticlePrediction.article_id.in_(in_lot),
+                    )
+                    .order_by(ArticlePrediction.created_at.nulls_first(), ArticlePrediction.id)
+                )
+            ).scalars()
+        }
+        gold = {i: g for i, g in gold_all.items() if i in in_lot}
+        scored = metrics.score(project_fields(project), latest, gold, exclude=set(example_ids))
+        target, metric, value = metrics.primary_value(scored, project_fields(project))
+        validation = {**scored, "primary": {"item": target, "metric": metric, "value": value}}
     stats = {
         "processed": processed,
         "auto_accepted": auto_accepted,
@@ -322,11 +385,15 @@ async def _do_inference(
         "prefiltered": prefiltered,
         "duration_seconds": round(duration, 2),
     }
+    if example_ids:
+        stats["gold_examples"] = len(example_ids)
+    if validation is not None:
+        stats["validation"] = validation
     job.status = InferenceJobStatus.COMPLETED
     job.result_json = stats
     job.completed_at = datetime.now(UTC)
     # m10 : l'inférence terminée marque le projet COMPLETED (réservé au MODULE 4).
-    project.status = ProjectStatus.COMPLETED
+    base_project.status = ProjectStatus.COMPLETED
     await session.commit()
     return stats
 

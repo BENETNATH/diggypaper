@@ -21,11 +21,17 @@ export interface User {
   created_at: string;
 }
 
+/** Métrique de classement d'un item (benchmark) : rappel par défaut. */
+export type RankMetric = "recall" | "precision" | "f1" | "accuracy";
+
 export interface SchemaField {
   key: string;
   label: string;
   type: "boolean" | "choice" | "text";
   options?: string[];
+  /** Critère de classement des modèles / prompts du benchmark (un seul item) et sa métrique. */
+  primary?: boolean;
+  metric?: RankMetric;
 }
 
 export interface Project {
@@ -117,10 +123,59 @@ export interface ImportJob {
 
 export interface GoldArticle {
   id: string;
-  project_id: string | null;
+  project_id?: string | null;
   article_id: string | null;
   article_title: string | null;
   ground_truth_json: Record<string, unknown>;
+  search_id?: string | null;
+  /** Relecture dont la référence est la copie (null : saisie manuelle ancienne). */
+  source?: {
+    annotation_id: string;
+    by: string | null;
+    at: string | null;
+    status: "VALIDATED" | "CORRECTED" | "MANUAL" | null;
+    blind: boolean;
+  } | null;
+  added_by?: string | null;
+  /** La relecture a changé depuis la copie : « mettre à jour ». */
+  stale?: boolean;
+}
+
+// --- Recherches -------------------------------------------------------------
+
+export type SearchKind = "standard" | "tuning" | "blind";
+
+/** Une recherche : une question (ses items) posée à un lot d'articles. */
+export interface SearchInfo {
+  id: string;
+  name: string;
+  kind: SearchKind;
+  is_default: boolean;
+  question: string;
+  fields: SchemaField[];
+  text_sections: string[] | null;
+  parent: { id: string; name: string } | null;
+  parent_spec: Selection | null;
+  created_at: string | null;
+  created_by: string | null;
+  lot_size: number;
+  predicted: number;
+  reviewed: number;
+  last_job: { status: InferenceJob["status"]; model: string } | null;
+}
+
+/** Quels articles : critères cumulés sur les résultats d'une recherche (aucun = tout le corpus). */
+export interface Selection {
+  from_search_id?: string;
+  status?: PredictionFilter;
+  answers?: Record<string, string | boolean>;
+  reviewed?: boolean;
+  has_fulltext?: boolean;
+  confidence_min?: number;
+  confidence_max?: number;
+  ids?: string[];
+  sample_n?: number;
+  seed?: number;
 }
 
 export interface PromptTemplate {
@@ -147,24 +202,96 @@ export interface ModelInfo {
   platform?: boolean;
 }
 
+/** Matrice de confusion et métriques de la pertinence ou d'un item booléen. */
+export interface Prf {
+  tp: number;
+  fp: number;
+  fn: number;
+  tn: number;
+  precision: number;
+  recall: number;
+  f1: number;
+  accuracy: number;
+  specificity: number;
+}
+
+/** Métriques d'un item : booléen (confusion + prf), choix (exactitude), texte (f1 de mots). */
+export interface ItemMetrics extends Partial<Prf> {
+  type: SchemaField["type"];
+  n: number;
+}
+
+/** Réponses du modèle comparées au gold (benchmark : details.scored ; analyse : validation). */
+export interface Scored {
+  n: number;
+  relevance: Prf;
+  items: Record<string, ItemMetrics>;
+  accuracy: number | null;
+}
+
+/** Critère de classement : item (ou « relevance ») + métrique + valeur. */
+export interface PrimaryCriterion {
+  item: string;
+  metric: RankMetric;
+  value: number | null;
+}
+
+export type Validation = Scored & { primary?: PrimaryCriterion };
+
+/** Une formulation à comparer dans un benchmark. */
+export interface BenchmarkVariant {
+  name: string;
+  system_prompt?: string;
+  user_prompt_schema?: string;
+  prompt_template_id?: string;
+}
+
 export interface BenchmarkResult {
   model_name: string;
+  variant?: string | null;
+  n_scored?: number | null;
   execution_time_seconds: number | null;
   accuracy: number | null;
   precision_score: number | null;
   recall_score: number | null;
   f1_score: number | null;
+  details?: {
+    articles?: number;
+    /** Accord (0..1) avec la majorité des variantes. */
+    agreement?: number | null;
+    scored?: Scored;
+    primary?: PrimaryCriterion;
+  } | null;
 }
 
 export interface BenchmarkRun {
   id: string;
   project_id: string | null;
+  search_id?: string | null;
   prompt_template_id: string | null;
   models_tested: string[] | null;
-  progress?: { done: number; total: number; model?: string } | null;
+  variants?: BenchmarkVariant[] | null;
+  options?: { use_gold?: boolean; gold_examples?: number } | null;
+  progress?: { done: number; total: number; model?: string; variant?: string } | null;
   status: "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
   created_at: string | null;
   results?: BenchmarkResult[];
+}
+
+/** Réponse d'un (modèle, variante) pour un article. */
+export interface BenchmarkOutput {
+  model: string;
+  variant: string | null;
+  decision: Record<string, unknown> | null;
+  error: string | null;
+}
+
+export interface BenchmarkArticleRow {
+  article_id: string;
+  title: string | null;
+  gold: Record<string, unknown> | null;
+  disagree: boolean;
+  outputs: BenchmarkOutput[];
 }
 
 export interface InferenceJob {
@@ -210,6 +337,14 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   }
   if (resp.status === 204) return undefined as T;
   return resp.json();
+}
+
+/** Chaîne de requête `?a=1&b=2` sans les valeurs vides (chaîne vide si aucune). */
+function qs(params: Record<string, string | boolean | undefined>): string {
+  const q = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== "" && v !== false) q.set(k, String(v));
+  const s = q.toString();
+  return s ? `?${s}` : "";
 }
 
 // --- Auth -------------------------------------------------------------------
@@ -296,8 +431,9 @@ export async function createProject(payload: {
   });
 }
 
-export async function getProject(projectId: string): Promise<Project> {
-  return request<Project>(`/projects/${projectId}`);
+/** Le projet ; question, items et parties de texte sont ceux de la recherche `searchId` (déf. initiale). */
+export async function getProject(projectId: string, searchId?: string): Promise<Project> {
+  return request<Project>(`/projects/${projectId}${qs({ search: searchId })}`);
 }
 
 export async function deleteProject(projectId: string): Promise<void> {
@@ -342,16 +478,19 @@ export async function updateProject(
     question?: string;
     fields?: SchemaField[];
     read_windows?: number;
-  }
+  },
+  searchId?: string
 ): Promise<Project> {
-  return request<Project>(`/projects/${projectId}`, {
+  return request<Project>(`/projects/${projectId}${qs({ search: searchId })}`, {
     method: "PATCH",
     body: JSON.stringify(patch),
   });
 }
 
-export async function generatePrompt(projectId: string): Promise<PromptTemplate> {
-  return request<PromptTemplate>(`/projects/${projectId}/prompts/generate`, { method: "POST" });
+export async function generatePrompt(projectId: string, searchId?: string): Promise<PromptTemplate> {
+  return request<PromptTemplate>(`/projects/${projectId}/prompts/generate${qs({ search: searchId })}`, {
+    method: "POST",
+  });
 }
 
 // --- Articles (MODULE 2/5) --------------------------------------------------
@@ -364,7 +503,8 @@ export async function listArticles(
   perPage = 50,
   status?: PredictionFilter,
   sort: "added" | "date_desc" | "date_asc" | "score_desc" = "added",
-  answers: Record<string, string | boolean> = {}
+  answers: Record<string, string | boolean> = {},
+  searchId?: string
 ): Promise<{
   items: Article[];
   total: number;
@@ -375,6 +515,7 @@ export async function listArticles(
   const active = Object.fromEntries(Object.entries(answers).filter(([, v]) => v !== "" && v != null));
   const q =
     (status ? `&status=${status}` : "") +
+    (searchId ? `&search=${searchId}` : "") +
     `&sort=${sort}` +
     (Object.keys(active).length ? `&answers=${encodeURIComponent(JSON.stringify(active))}` : "");
   return request(`/projects/${projectId}/articles?page=${page}&per_page=${perPage}${q}`);
@@ -382,31 +523,40 @@ export async function listArticles(
 
 export async function getArticle(
   projectId: string,
-  articleId: string
+  articleId: string,
+  searchId?: string
 ): Promise<Article> {
-  return request<Article>(`/projects/${projectId}/articles/${articleId}`);
+  return request<Article>(`/projects/${projectId}/articles/${articleId}${qs({ search: searchId })}`);
 }
 
 export async function getPrediction(
   projectId: string,
-  articleId: string
+  articleId: string,
+  searchId?: string
 ): Promise<ArticlePrediction | null> {
   return request<ArticlePrediction | null>(
-    `/projects/${projectId}/articles/${articleId}/prediction`
+    `/projects/${projectId}/articles/${articleId}/prediction${qs({ search: searchId })}`
   );
 }
 
-export async function getReview(projectId: string, articleId: string): Promise<ArticleReview | null> {
-  return request<ArticleReview | null>(`/projects/${projectId}/articles/${articleId}/annotation`);
+export async function getReview(
+  projectId: string,
+  articleId: string,
+  searchId?: string
+): Promise<ArticleReview | null> {
+  return request<ArticleReview | null>(
+    `/projects/${projectId}/articles/${articleId}/annotation${qs({ search: searchId })}`
+  );
 }
 
 export async function getArticleWithPrediction(
   projectId: string,
-  articleId: string
+  articleId: string,
+  searchId?: string
 ): Promise<{ article: Article; prediction: ArticlePrediction | null; review: ArticleReview | null }> {
-  const article = await getArticle(projectId, articleId);
-  const prediction = await getPrediction(projectId, articleId).catch(() => null);
-  const review = await getReview(projectId, articleId).catch(() => null);
+  const article = await getArticle(projectId, articleId, searchId);
+  const prediction = await getPrediction(projectId, articleId, searchId).catch(() => null);
+  const review = await getReview(projectId, articleId, searchId).catch(() => null);
   return { article, prediction, review };
 }
 
@@ -415,9 +565,10 @@ export async function uploadArticlePdf(
   projectId: string,
   articleId: string,
   file: File,
-  force = false
+  force = false,
+  searchId?: string
 ): Promise<Article & { pdf_check?: "match" | "unverified" | "forced" }> {
-  return request(`/projects/${projectId}/articles/${articleId}/fulltext${force ? "?force=true" : ""}`, {
+  return request(`/projects/${projectId}/articles/${articleId}/fulltext${qs({ force, search: searchId })}`, {
     method: "POST",
     headers: { "Content-Type": "application/pdf" },
     body: file,
@@ -439,16 +590,21 @@ export async function matchArticlePdf(
 /** Relit la notice PubMed de l'article puis relance la recherche de son texte intégral. */
 export const searchArticleFulltext = (
   projectId: string,
-  articleId: string
+  articleId: string,
+  searchId?: string
 ): Promise<{ found: boolean; source: string | null; article: Article }> =>
-  request(`/projects/${projectId}/articles/${articleId}/fulltext/search`, { method: "POST" });
+  request(`/projects/${projectId}/articles/${articleId}/fulltext/search${qs({ search: searchId })}`, {
+    method: "POST",
+  });
 
 export async function submitAnnotation(
   projectId: string,
   articleId: string,
-  annotation: AnnotationPayload
+  annotation: AnnotationPayload,
+  searchId?: string,
+  blind = false
 ): Promise<Review> {
-  return request<Review>(`/projects/${projectId}/articles/${articleId}/annotation`, {
+  return request<Review>(`/projects/${projectId}/articles/${articleId}/annotation${qs({ search: searchId, blind })}`, {
     method: "POST",
     body: JSON.stringify(annotation),
   });
@@ -456,21 +612,24 @@ export async function submitAnnotation(
 
 // --- Gold (MODULE 3) --------------------------------------------------------
 
-export async function listGold(projectId: string): Promise<GoldArticle[]> {
-  const data = await request<{ items: GoldArticle[] }>(`/projects/${projectId}/gold`);
+export async function listGold(projectId: string, searchId?: string): Promise<GoldArticle[]> {
+  const data = await request<{ items: GoldArticle[] }>(`/projects/${projectId}/gold${qs({ search: searchId })}`);
   return data.items;
 }
 
-export async function createGold(
+/** Ajoute au gold la dernière relecture des articles donnés (défaut : tous les articles relus). */
+export const goldFromReviews = (
   projectId: string,
-  articleId: string,
-  groundTruthJson: Record<string, unknown>
-): Promise<GoldArticle> {
-  return request<GoldArticle>(`/projects/${projectId}/gold`, {
+  opts: { articleIds?: string[]; refresh?: boolean } = {},
+  searchId?: string
+): Promise<{ added: number; updated: number; skipped: number }> =>
+  request(`/projects/${projectId}/gold/from-reviews${qs({ search: searchId })}`, {
     method: "POST",
-    body: JSON.stringify({ article_id: articleId, ground_truth_json: groundTruthJson }),
+    body: JSON.stringify({
+      ...(opts.articleIds ? { article_ids: opts.articleIds } : {}),
+      ...(opts.refresh ? { refresh: true } : {}),
+    }),
   });
-}
 
 export async function deleteGold(projectId: string, goldId: string): Promise<void> {
   await request(`/projects/${projectId}/gold/${goldId}`, { method: "DELETE" });
@@ -661,11 +820,20 @@ export async function registerOllama(name: string): Promise<void> {
 
 // --- Benchmarks (MODULE 3) --------------------------------------------------
 
+export interface BenchmarkCreate {
+  models: string[];
+  search_id?: string;
+  variants?: BenchmarkVariant[];
+  prompt_template_id?: string;
+  use_gold?: boolean;
+  gold_examples?: number;
+}
+
 export async function triggerBenchmark(
   projectId: string,
-  payload: { models: string[]; prompt_template_id?: string }
-): Promise<{ run_id: string; status: string }> {
-  return request<{ run_id: string; status: string }>(
+  payload: BenchmarkCreate
+): Promise<{ run_id: string; status: string; calls?: number }> {
+  return request<{ run_id: string; status: string; calls?: number }>(
     `/projects/${projectId}/benchmarks`,
     { method: "POST", body: JSON.stringify(payload) }
   );
@@ -685,11 +853,33 @@ export async function getBenchmark(
   return request<BenchmarkRun>(`/projects/${projectId}/benchmarks/${runId}`);
 }
 
+/** Grille article × (modèle, variante) d'un benchmark, désaccords d'abord. */
+export const listBenchmarkArticles = (
+  projectId: string,
+  runId: string,
+  opts: { disagree?: boolean; page?: number; perPage?: number } = {}
+): Promise<{ total: number; page: number; per_page: number; items: BenchmarkArticleRow[] }> =>
+  request(
+    `/projects/${projectId}/benchmarks/${runId}/articles${qs({
+      disagree: opts.disagree,
+      page: String(opts.page ?? 1),
+      per_page: String(opts.perPage ?? 25),
+    })}`
+  );
+
 // --- Inférence (MODULE 4) ---------------------------------------------------
 
 export async function triggerInference(
   projectId: string,
-  payload: { model: string; prefilter_model?: string; prompt_template_id?: string; resume?: boolean }
+  payload: {
+    model: string;
+    prefilter_model?: string;
+    prompt_template_id?: string;
+    resume?: boolean;
+    search_id?: string;
+    gold_examples?: number;
+    validate_with_gold?: boolean;
+  }
 ): Promise<{ job_id: string; status: string }> {
   return request<{ job_id: string; status: string }>(
     `/projects/${projectId}/inference`,
@@ -703,8 +893,8 @@ export const cancelInference = (projectId: string): Promise<unknown> =>
 export const cancelBenchmark = (projectId: string, runId: string): Promise<unknown> =>
   request(`/projects/${projectId}/benchmarks/${runId}/cancel`, { method: "POST" });
 
-export async function getInference(projectId: string): Promise<InferenceJob | null> {
-  const r = await request<{ job: InferenceJob | null }>(`/projects/${projectId}/inference`);
+export async function getInference(projectId: string, searchId?: string): Promise<InferenceJob | null> {
+  const r = await request<{ job: InferenceJob | null }>(`/projects/${projectId}/inference${qs({ search: searchId })}`);
   return r.job;
 }
 
@@ -796,17 +986,20 @@ export const removeMember = (projectId: string, userId: string): Promise<void> =
   request(`/projects/${projectId}/members/${userId}`, { method: "DELETE" });
 
 /** Lien de téléchargement du classeur Excel (le cookie d'authentification suffit). */
-export const exportUrl = (projectId: string): string => `${API_BASE}/projects/${projectId}/export.xlsx`;
+export const exportUrl = (projectId: string, searchId?: string): string =>
+  `${API_BASE}/projects/${projectId}/export.xlsx${qs({ search: searchId })}`;
 
 /** Références RIS (Zotero, EndNote, Mendeley…) ou BibTeX, avec les mêmes filtres que la liste. */
 export function referencesUrl(
   projectId: string,
   fmt: "ris" | "bib",
   status?: string,
-  answers: Record<string, string> = {}
+  answers: Record<string, string> = {},
+  searchId?: string
 ): string {
   const active = Object.fromEntries(Object.entries(answers).filter(([, v]) => v !== ""));
   const q = new URLSearchParams();
+  if (searchId) q.set("search", searchId);
   if (status) q.set("status", status);
   if (Object.keys(active).length) q.set("answers", JSON.stringify(active));
   const qs = q.toString();
@@ -822,18 +1015,18 @@ export interface CrateExport {
   download: boolean;
 }
 
-export const prismaPdfUrl = (projectId: string, lang: string): string =>
-  `${API_BASE}/projects/${projectId}/prisma.pdf?lang=${lang}`;
+export const prismaPdfUrl = (projectId: string, lang: string, searchId?: string): string =>
+  `${API_BASE}/projects/${projectId}/prisma.pdf${qs({ lang, search: searchId })}`;
 
 /** Diagramme PRISMA 2020 (SVG) ; ``lang`` = langue des libellés. */
-export const prismaUrl = (projectId: string, lang: string): string =>
-  `${API_BASE}/projects/${projectId}/prisma.svg?lang=${lang}`;
+export const prismaUrl = (projectId: string, lang: string, searchId?: string): string =>
+  `${API_BASE}/projects/${projectId}/prisma.svg${qs({ lang, search: searchId })}`;
 
 /** RO-Crate (.zip) : tâche de fond (e-mail à la fin) puis téléchargement. */
-export const startCrateExport = (projectId: string): Promise<CrateExport> =>
-  request(`/projects/${projectId}/export/crate`, { method: "POST" });
-export const getCrateExport = (projectId: string): Promise<CrateExport | null> =>
-  request(`/projects/${projectId}/export/crate`);
+export const startCrateExport = (projectId: string, searchId?: string): Promise<CrateExport> =>
+  request(`/projects/${projectId}/export/crate${qs({ search: searchId })}`, { method: "POST" });
+export const getCrateExport = (projectId: string, searchId?: string): Promise<CrateExport | null> =>
+  request(`/projects/${projectId}/export/crate${qs({ search: searchId })}`);
 export const crateDownloadUrl = (projectId: string, jobId: string): string =>
   `${API_BASE}/projects/${projectId}/export/crate/${jobId}/download`;
 
@@ -911,3 +1104,36 @@ export const revokeInvitation = (id: string): Promise<void> =>
 
 export const listAdminProjects = async (): Promise<AdminProject[]> =>
   (await request<{ items: AdminProject[] }>("/admin/projects")).items;
+
+// --- Recherches (une question posée à un lot d'articles) ---------------------
+
+export const listSearches = async (projectId: string): Promise<SearchInfo[]> =>
+  (await request<{ items: SearchInfo[] }>(`/projects/${projectId}/searches`)).items;
+
+/** Nombre d'articles qui répondent à la sélection (avant de créer la recherche). */
+export const previewSelection = async (projectId: string, selection: Selection): Promise<number> =>
+  (
+    await request<{ count: number }>(`/projects/${projectId}/searches/preview`, {
+      method: "POST",
+      body: JSON.stringify(selection),
+    })
+  ).count;
+
+export interface SearchCreate {
+  name: string;
+  question?: string;
+  fields?: SchemaField[];
+  text_sections?: string[];
+  read_windows?: number;
+  kind?: SearchKind;
+  selection: Selection;
+}
+
+export const createSearch = (projectId: string, payload: SearchCreate): Promise<SearchInfo> =>
+  request(`/projects/${projectId}/searches`, { method: "POST", body: JSON.stringify(payload) });
+
+export const renameSearch = (projectId: string, searchId: string, name: string): Promise<SearchInfo> =>
+  request(`/projects/${projectId}/searches/${searchId}`, { method: "PATCH", body: JSON.stringify({ name }) });
+
+export const deleteSearch = (projectId: string, searchId: string): Promise<void> =>
+  request(`/projects/${projectId}/searches/${searchId}`, { method: "DELETE" });

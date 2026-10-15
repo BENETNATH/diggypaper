@@ -25,8 +25,13 @@ s'exportent en tableur, en RO-Crate et en diagramme PRISMA.
 - **Recherche relancée par article** : relit la notice PubMed (un préprint publié change de
   PMCID ou de DOI) puis cherche à nouveau le texte intégral.
 
-### Poser une question au corpus
-- Une **question** et ses **items** de réponse : oui/non, choix dans une liste, texte libre.
+### Poser des questions au corpus : les recherches
+Un projet contient plusieurs **recherches**. Une recherche, c'est une **question** (ses items de
+réponse : oui/non, choix, texte libre) posée à un **lot d'articles**, avec ses propres résultats,
+relectures, analyses et références. Le lot est tout le corpus, ou un sous-ensemble choisi par
+critères — par exemple « les articles où la recherche 1 a répondu oui », avec relecture humaine
+ou texte intégral, dans une plage de pertinence, un tirage au hasard ou une liste. On pose ainsi
+une seconde question aux seuls articles retenus par la première, sans rien réanalyser.
 - Choix des **parties du texte** lues par les modèles (résumé, méthodes, résultats…).
 - **Modèles de décision** (Laya, Kev) : un seul passage, probabilités calibrées, très
   rapides sur CPU — adaptés au tri et aux items oui/non ou à choix.
@@ -35,8 +40,23 @@ s'exportent en tableur, en RO-Crate et en diagramme PRISMA.
 - **Pré-filtre** rapide avant le modèle principal, **triage automatique** (accepté, rejeté,
   à relire) selon des seuils de confiance, estimation du temps, **reprise** d'une analyse
   interrompue et **arrêt** d'une analyse en cours (les articles déjà traités sont conservés).
-- **Gold standard**, **prompts versionnés** et **benchmark** (précision, rappel, F1, temps)
-  pour comparer des modèles et des formulations.
+
+### Gold standard, échantillon à l'aveugle et benchmark
+- **Gold standard** : une référence vient d'une **relecture humaine**. N'importe quel membre du
+  projet ajoute une relecture au gold depuis la fiche article, ou toutes les relectures d'un coup.
+  Chaque référence est une copie figée, avec un lien vers sa fiche d'origine, son relecteur et
+  son statut (validée, corrigée, à l'aveugle) ; elle est signalée « obsolète » si la relecture a
+  changé depuis. Le gold vaut pour toutes les recherches de même question.
+- **Échantillon à l'aveugle**, avant l'analyse complète : N articles tirés au hasard (N réglable)
+  à relire **sans voir les réponses de l'IA**, pour constituer un gold non biaisé.
+- **Éduquer les modèles** : à chaque analyse, case « utiliser N exemples du gold dans le prompt »
+  (ces exemples sont exclus de la notation) et case « valider les résultats avec le gold » (rappel,
+  précision, F1 de la pertinence et de chaque item).
+- **Benchmark** (mise au point) : mêmes modèles et mêmes articles (un sous-lot), plusieurs
+  **formulations de prompt** en saisie libre, pour trouver les meilleures questions et la meilleure
+  sortie. Les variantes sont classées selon un **critère défini sur un item de la question** (par
+  défaut le rappel de la pertinence), avec l'accord entre variantes, le détail par item, la
+  liste des articles où elles divergent et, si on le demande, la notation contre le gold.
 
 ### Relire
 - Fiche de relecture : texte avec **surlignage des preuves**, réponses du modèle et certitude
@@ -356,6 +376,9 @@ SameSite=Strict, révoqué au changement de mot de passe et à la déconnexion).
 | GET | `/projects/{id}/articles` | Liste des articles |
 | GET | `/projects/{id}/articles/{aid}` | Article + texte méthodes |
 | POST | `/projects/{id}/articles/{aid}/annotation` | Soumettre une annotation |
+| GET/POST | `/projects/{id}/searches` | Recherches (question + lot d'articles) ; `?search=<id>` sur les routes de résultats |
+| POST | `/projects/{id}/searches/preview` | Nombre d'articles d'une sélection |
+| GET/POST | `/projects/{id}/gold` · `/gold/from-reviews` | Références (gold) et ajout depuis les relectures |
 | GET/POST | `/projects/{id}/prompts` | Prompts versionnés |
 | GET/POST | `/projects/{id}/benchmarks` | Benchmarks (métriques) |
 | GET/POST | `/projects/{id}/inference` | Inférence (job) |

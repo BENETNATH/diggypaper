@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import {
   updateProject,
@@ -10,17 +10,24 @@ import {
   cancelInference,
   getInference,
   getProject,
+  getPrompt,
+  listGold,
   listModels,
   InferenceJob,
   ModelInfo,
   SchemaField,
   isScorer,
+  Validation,
 } from "@/lib/api";
+import { MAX_GOLD_EXAMPLES } from "@/lib/benchmark";
 import { ExportMenu } from "@/components/ExportMenu";
 import { RequireAuth } from "@/components/RequireAuth";
 import { QuestionEditor } from "@/components/QuestionEditor";
 import { Button } from "@/components/ui/Button";
-import { Select } from "@/components/ui/Field";
+import { Checkbox, Field, Select } from "@/components/ui/Field";
+import { ValidationView } from "@/components/ValidationView";
+import { withSearch } from "@/lib/search";
+import { useSearchId, useSearches, useSelectSearch } from "@/lib/useSearch";
 import { Card, Badge, statusColor } from "@/components/ui/Card";
 import { ErrorBanner, ProgressBar } from "@/components/ui/Feedback";
 
@@ -38,6 +45,13 @@ function Stat({ label, value, tone }: { label: string; value: number; tone?: str
 function InferenceContent() {
   const t = useTranslations("inference");
   const projectId = useParams<{ id: string }>().id;
+  const searchId = useSearchId(projectId);
+  const { searches, current } = useSearches(projectId, searchId);
+  const selectSearch = useSelectSearch(projectId);
+  // Préremplissage depuis un benchmark : ?model=<nom>&prompt=<id du prompt enregistré>.
+  const sp = useSearchParams();
+  const wantedModel = sp.get("model");
+  const wantedPrompt = sp.get("prompt");
 
   const [job, setJob] = useState<InferenceJob | null>(null);
   const [models, setModels] = useState<ModelInfo[]>([]);
@@ -48,11 +62,16 @@ function InferenceContent() {
     sections: string[];
     readWindows: number;
   } | null>(null);
-  const [articleCount, setArticleCount] = useState(0);
   const [stage1, setStage1] = useState("");
   const [stage2, setStage2] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [launched, setLaunched] = useState(false);
+  const [promptId, setPromptId] = useState<string | null>(wantedPrompt);
+  const [promptTitle, setPromptTitle] = useState<string | null>(null);
+  const [goldCount, setGoldCount] = useState<number | null>(null);
+  const [examplesOn, setExamplesOn] = useState(false);
+  const [exampleN, setExampleN] = useState(5);
+  const [validate, setValidate] = useState(false);
   const progressRef = useRef<HTMLDivElement>(null);
 
   const active = job?.status === "PENDING" || job?.status === "RUNNING";
@@ -63,17 +82,21 @@ function InferenceContent() {
 
   const load = useCallback(async () => {
     try {
-      setJob(await getInference(projectId));
+      setJob(await getInference(projectId, searchId));
       setError(null);
     } catch (e) {
       if (e instanceof Error && /404/.test(e.message)) setJob(null);
       else setError(e instanceof Error ? e.message : "error");
     }
-  }, [projectId]);
+  }, [projectId, searchId]);
 
+  // Changer de recherche recharge sa question, ses items et son état d'analyse.
   useEffect(() => {
+    setJob(null);
+    setQ(null);
+    setLaunched(false);
     void load();
-    getProject(projectId)
+    getProject(projectId, searchId)
       .then((p) => {
         setQ({
           question: p.question ?? "",
@@ -81,11 +104,37 @@ function InferenceContent() {
           sections: p.text_sections ?? ["methods"],
           readWindows: p.read_windows ?? 4,
         });
-        setArticleCount(p.article_count ?? 0);
       })
       .catch(() => {});
+  }, [load, projectId, searchId]);
+
+  useEffect(() => {
     listModels(projectId).then(setModels).catch(() => {});
-  }, [load, projectId]);
+  }, [projectId]);
+
+  // Prompt venu d'un benchmark : on affiche son titre pour que le choix soit visible.
+  useEffect(() => {
+    setPromptTitle(null);
+    if (!promptId) return;
+    getPrompt(projectId, promptId)
+      .then((p) => setPromptTitle(p.title ?? p.version_number))
+      .catch(() => setPromptId(null)); // prompt introuvable : retour au prompt généré
+  }, [projectId, promptId]);
+
+  // Références du gold de la recherche : sans elles, ni exemples ni validation.
+  useEffect(() => {
+    setGoldCount(null);
+    listGold(projectId, searchId)
+      .then((g) => setGoldCount(g.length))
+      .catch(() => setGoldCount(null));
+  }, [projectId, searchId]);
+  const noGold = goldCount === 0;
+  useEffect(() => {
+    if (noGold) {
+      setExamplesOn(false);
+      setValidate(false);
+    }
+  }, [noGold]);
 
   useEffect(() => {
     if (!active) return;
@@ -96,9 +145,14 @@ function InferenceContent() {
   // Sélection par défaut : pas d'étage 1 ; étage 2 = modèle le plus léger dont la RAM est connue.
   useEffect(() => {
     if (models.length === 0 || stage2) return;
+    const wanted = models.find((m) => m.name === wantedModel);
+    if (wanted) {
+      setStage2(wanted.name);
+      return;
+    }
     const known = models.filter((m) => m.ram_usage_mb).sort((a, b) => a.ram_usage_mb! - b.ram_usage_mb!);
     setStage2((known[0] ?? models[0]).name);
-  }, [models, stage2]);
+  }, [models, stage2, wantedModel]);
 
   /** Reprend une analyse interrompue : les articles déjà analysés sont sautés. */
   async function handleStop() {
@@ -115,6 +169,11 @@ function InferenceContent() {
     }
   }
 
+  const goldOptions = () => ({
+    ...(examplesOn ? { gold_examples: exampleN } : {}),
+    ...(validate ? { validate_with_gold: true } : {}),
+  });
+
   async function handleResume() {
     if (!job) return;
     setSubmitting(true);
@@ -124,7 +183,9 @@ function InferenceContent() {
         model: job.model_used,
         ...(job.prefilter_model ? { prefilter_model: job.prefilter_model } : {}),
         ...(job.prompt_template_id ? { prompt_template_id: job.prompt_template_id } : {}),
+        ...goldOptions(),
         resume: true,
+        ...(searchId ? { search_id: searchId } : {}),
       });
       await load();
     } catch (err) {
@@ -149,11 +210,14 @@ function InferenceContent() {
         })),
         text_sections: q.sections,
         read_windows: q.readWindows,
-      });
+      }, searchId);
       // Étage 2 vide : l'étage 1 décide seul.
       await triggerInference(projectId, {
         model: stage2 || stage1,
         ...(stage2 && stage1 && stage2 !== stage1 ? { prefilter_model: stage1 } : {}),
+        ...(promptId ? { prompt_template_id: promptId } : {}),
+        ...goldOptions(),
+        ...(searchId ? { search_id: searchId } : {}),
       });
       await load();
       setLaunched(true);
@@ -178,9 +242,23 @@ function InferenceContent() {
 
       {error && <ErrorBanner message={error} />}
 
+      {searches && searches.length > 0 && (
+        <Card>
+          <Field label={t("searchTitle")} hint={t("searchHint")}>
+            <Select value={current?.id ?? ""} onChange={(e) => selectSearch(e.target.value)} disabled={active}>
+              {searches.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name} — {t("lotSize", { n: s.lot_size })}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        </Card>
+      )}
+
       <Card title={`1. ${t("questionTitle")}`}>
         {q ? (
-          <QuestionEditor {...q} articleCount={articleCount} onChange={setQ} />
+          <QuestionEditor {...q} articleCount={current?.lot_size ?? 0} onChange={setQ} />
         ) : (
           <p className="text-sm text-muted">…</p>
         )}
@@ -228,6 +306,50 @@ function InferenceContent() {
               </div>
             </div>
             <p className="text-xs text-muted">{t("routingHint")}</p>
+            {promptId && (
+              <div className="flex flex-wrap items-center gap-2 rounded-lg bg-primary/5 p-3 text-sm text-foreground">
+                <span>{t("promptChosen", { title: promptTitle ?? "…" })}</span>
+                <Button type="button" variant="ghost" size="sm" onClick={() => setPromptId(null)} disabled={active}>
+                  {t("promptGenerated")}
+                </Button>
+              </div>
+            )}
+            <div className="flex flex-col gap-2 rounded-lg border border-border p-3">
+              <p className="text-sm font-semibold text-foreground">{t("goldTitle")}</p>
+              <p className="text-xs text-muted">{noGold ? t("goldNone") : t("goldHint")}</p>
+              <div className="flex flex-wrap items-center gap-3">
+                <Checkbox
+                  label={t("useExamples")}
+                  checked={examplesOn}
+                  disabled={noGold || active}
+                  onChange={(e) => setExamplesOn(e.target.checked)}
+                />
+                {examplesOn && (
+                  <label className="flex items-center gap-2 text-sm text-foreground">
+                    N =
+                    <input
+                      type="number"
+                      min={1}
+                      max={MAX_GOLD_EXAMPLES}
+                      value={exampleN}
+                      onChange={(e) =>
+                        setExampleN(Math.min(MAX_GOLD_EXAMPLES, Math.max(1, parseInt(e.target.value, 10) || 1)))
+                      }
+                      className="w-20 rounded border border-border bg-surface p-1 text-sm text-foreground"
+                    />
+                  </label>
+                )}
+              </div>
+              {examplesOn && <p className="text-xs text-muted">{t("examplesHint")}</p>}
+              <Checkbox
+                label={t("validateGold")}
+                checked={validate}
+                disabled={noGold || active}
+                onChange={(e) => setValidate(e.target.checked)}
+              />
+              {validate && <p className="text-xs text-muted">{t("validateHint")}</p>}
+              {goldCount !== null && !noGold && <p className="text-xs text-muted">{t("goldCount", { n: goldCount })}</p>}
+            </div>
             <div className="flex flex-wrap items-center gap-3">
               <Button type="submit" loading={submitting} disabled={active || (!stage2 && !stage1) || !q || q.sections.length === 0}>
                 {job ? t("rerun") : t("run")}
@@ -268,11 +390,20 @@ function InferenceContent() {
               <Stat label={t("needsReview")} value={num(r.needs_review)} tone="bg-warning/10" />
             </div>
           )}
+          {num(r.gold_examples) > 0 && (
+            <p className="mt-2 text-xs text-muted">{t("goldExamplesUsed", { n: num(r.gold_examples) })}</p>
+          )}
           {num(r.prefiltered) > 0 && (
             <p className="mt-2 text-xs text-muted">{t("prefilteredCount", { n: num(r.prefiltered) })}</p>
           )}
           {num(r.invalid_json) > 0 && (
             <p className="mt-2 text-xs text-warning">{t("invalidJson", { n: num(r.invalid_json) })}</p>
+          )}
+          {job.status === "COMPLETED" && !!r.validation && (
+            <div className="mt-4 rounded-lg border border-border p-3">
+              <h3 className="mb-2 text-sm font-semibold text-foreground">{t("validationTitle")}</h3>
+              <ValidationView scored={r.validation as Validation} primary={(r.validation as Validation).primary} fields={q?.fields ?? []} />
+            </div>
           )}
           {job.status === "FAILED" && job.error === "cancelled" && (
             <p className="mt-3 rounded-lg bg-warning/10 p-3 text-sm text-foreground">{t("stopped", { n: num(r.done) })}</p>
@@ -290,12 +421,12 @@ function InferenceContent() {
           )}
           {job.status === "COMPLETED" && (
             <div className="mt-4 flex flex-wrap gap-2">
-              <Link href={`/projects/${projectId}/articles`}>
+              <Link href={withSearch(`/projects/${projectId}/articles`, searchId)}>
                 <Button variant="secondary">{t("seeResults")}</Button>
               </Link>
               <ExportMenu projectId={projectId} />
               {num(r.needs_review) > 0 && (
-                <Link href={`/projects/${projectId}/annotate?queue=review`}>
+                <Link href={withSearch(`/projects/${projectId}/annotate?queue=review`, searchId)}>
                   <Button>{t("annotateReview")}</Button>
                 </Link>
               )}

@@ -8,12 +8,17 @@ import { ArticleLinks, biblioLine } from "@/components/Certainty";
 import { AnnotationForm, Annotation } from "@/components/AnnotationForm";
 import { EvidenceHighlighter } from "@/components/EvidenceHighlighter";
 import { SwipeableCard } from "@/components/SwipeableCard";
+import { Button } from "@/components/ui/Button";
+import { articlesStoreKey, withSearch } from "@/lib/search";
+import { useSearchId, useSearches } from "@/lib/useSearch";
 import {
   Article,
   ArticlePrediction,
   ArticleReview,
   getArticleWithPrediction,
+  getPrediction,
   getProject,
+  goldFromReviews,
   listArticles,
   PredictionFilter,
   SchemaField,
@@ -42,6 +47,10 @@ export default function AnnotatePage() {
   // queue=review : les cas à relire (défaut après un tri), restreints aux filtres de réponses de
   // la liste ; list : exactement la liste filtrée/triée qu'on vient de quitter ; all : tous.
   const queueMode = searchParams.get("queue") ?? "review";
+  const searchId = useSearchId(projectId);
+  const { searches, current } = useSearches(projectId, searchId);
+  // Recherche à l'aveugle : on relit sans voir la réponse du modèle (gold non biaisé).
+  const isBlind = current?.kind === "blind";
 
   const [article, setArticle] = useState<Article | null>(null);
   const [prediction, setPrediction] = useState<ArticlePrediction | null>(null);
@@ -56,6 +65,8 @@ export default function AnnotatePage() {
   const [status, setStatus] = useState<
     "idle" | "accepted" | "rejected" | "submitted"
   >("idle");
+  const [goldBusy, setGoldBusy] = useState(false);
+  const [goldNote, setGoldNote] = useState<string | null>(null);
 
   // File des articles du projet : sert à ouvrir le premier, puis à enchaîner.
   useEffect(() => {
@@ -64,7 +75,7 @@ export default function AnnotatePage() {
       // Filtres de la liste d'articles (mémorisés par l'onglet).
       let saved: { filter?: string; sort?: "added" | "date_desc" | "date_asc" | "score_desc"; answers?: Record<string, string | boolean> } = {};
       try {
-        saved = JSON.parse(sessionStorage.getItem(`diggy:articles:${projectId}`) ?? "{}");
+        saved = JSON.parse(sessionStorage.getItem(articlesStoreKey(projectId, searchId)) ?? "{}");
       } catch {
         /* pas de filtres mémorisés */
       }
@@ -72,14 +83,14 @@ export default function AnnotatePage() {
         queueMode === "review" ? "TO_REVIEW" : queueMode === "list" && saved.filter && saved.filter !== "ALL" ? (saved.filter as PredictionFilter) : undefined;
       const sort = queueMode === "list" ? (saved.sort ?? "added") : "added";
       const answers = queueMode === "all" ? {} : (saved.answers ?? {});
-      let r = await listArticles(projectId, 1, 200, status, sort, answers);
+      let r = await listArticles(projectId, 1, 200, status, sort, answers, searchId);
       // La liste est paginée par 200 : on poursuit jusqu'à trouver l'article ouvert.
       const ids = r.items.map((a) => a.id);
       for (let p = 2; articleId && !ids.includes(articleId) && ids.length < r.total && p <= 5; p++) {
-        ids.push(...(await listArticles(projectId, p, 200, status, sort, answers)).items.map((a) => a.id));
+        ids.push(...(await listArticles(projectId, p, 200, status, sort, answers, searchId)).items.map((a) => a.id));
       }
       // Rien à relire (pas encore trié / tout validé) : on propose tous les articles.
-      if (ids.length === 0 && queueMode === "review") r = await listArticles(projectId, 1, 200);
+      if (ids.length === 0 && queueMode === "review") r = await listArticles(projectId, 1, 200, undefined, "added", {}, searchId);
       return { ...r, items: ids.length ? ids.map((id) => ({ id })) : r.items };
     };
     load()
@@ -88,7 +99,7 @@ export default function AnnotatePage() {
         if (!articleId) {
           if (r.items.length > 0) {
             router.replace(
-              `/projects/${projectId}/annotate?article=${r.items[0].id}&queue=${queueMode}`
+              withSearch(`/projects/${projectId}/annotate?article=${r.items[0].id}&queue=${queueMode}`, searchId)
             );
           } else {
             setLoading(false);
@@ -99,24 +110,25 @@ export default function AnnotatePage() {
         setError(e.message);
         setLoading(false);
       });
-  }, [projectId, articleId, router, queueMode]);
+  }, [projectId, articleId, router, queueMode, searchId]);
 
   useEffect(() => {
     if (!projectId || !articleId) return;
     setLoading(true);
-    getProject(projectId)
+    getProject(projectId, searchId)
       .then((p) => setFields(p.fields ?? []))
       .catch(() => {});
-    getArticleWithPrediction(projectId, articleId)
+    getArticleWithPrediction(projectId, articleId, searchId)
       .then(({ article, prediction, review }) => {
         setArticle(article);
         setPrediction(prediction);
         setReview(review);
         setSaved(null);
+        setGoldNote(null);
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [projectId, articleId]);
+  }, [projectId, articleId, searchId]);
 
   // Swipe : droite = confirmer la réponse du modèle telle quelle ;
   // gauche = désaccord, on bascule sur le formulaire pour corriger.
@@ -130,13 +142,13 @@ export default function AnnotatePage() {
         ...prediction.decision_json,
         confidence_score: prediction.confidence_score ?? 0.5,
         evidence_quotes: prediction.evidence_quotes ?? [],
-      });
+      }, searchId, isBlind);
       setReview({ ...r, decision_json: prediction.decision_json, notes: null });
       setStatus("accepted");
     } catch (e) {
       setError((e as Error).message);
     }
-  }, [projectId, articleId, prediction]);
+  }, [projectId, articleId, prediction, searchId, isBlind]);
 
   const [pdfBusy, setPdfBusy] = useState(false);
   const [pdfError, setPdfError] = useState<string | null>(null);
@@ -147,12 +159,12 @@ export default function AnnotatePage() {
       setPdfError(null);
       try {
         try {
-          setArticle(await uploadArticlePdf(projectId, articleId, file));
+          setArticle(await uploadArticlePdf(projectId, articleId, file, false, searchId));
         } catch (e) {
           // Le PDF ne ressemble pas à cet article : on laisse l'utilisateur trancher.
           if (!(e instanceof Error && e.message === "pdf_mismatch")) throw e;
           if (!window.confirm(t("pdfMismatch"))) return;
-          setArticle(await uploadArticlePdf(projectId, articleId, file, true));
+          setArticle(await uploadArticlePdf(projectId, articleId, file, true, searchId));
         }
       } catch (e) {
         setPdfError((e as Error).message);
@@ -160,7 +172,7 @@ export default function AnnotatePage() {
         setPdfBusy(false);
       }
     },
-    [projectId, articleId, t]
+    [projectId, articleId, searchId, t]
   );
 
   const [searching, setSearching] = useState(false);
@@ -170,7 +182,7 @@ export default function AnnotatePage() {
     setSearchNote(null);
     setPdfError(null);
     try {
-      const r = await searchArticleFulltext(projectId, articleId);
+      const r = await searchArticleFulltext(projectId, articleId, searchId);
       setArticle(r.article);
       setSearchNote(r.found ? t("searchFound", { source: r.source ?? "" }) : t("searchNone"));
     } catch (e) {
@@ -178,7 +190,7 @@ export default function AnnotatePage() {
     } finally {
       setSearching(false);
     }
-  }, [projectId, articleId, t]);
+  }, [projectId, articleId, searchId, t]);
 
   const handleSwipeRight = useCallback(() => {
     void confirmPrediction();
@@ -190,24 +202,40 @@ export default function AnnotatePage() {
   const handleSubmit = useCallback(
     async (annotation: Annotation) => {
       try {
-        const r = await submitAnnotation(projectId, articleId, annotation);
+        const r = await submitAnnotation(projectId, articleId, annotation, searchId, isBlind);
         setReview({ ...r, decision_json: annotation, notes: String(annotation.reasoning_summary ?? "") });
         setSaved(r.status ?? "MANUAL");
         setStatus("submitted");
+        setGoldNote(null);
+        // À l'aveugle, la réponse du modèle n'est révélée qu'une fois la relecture enregistrée.
+        if (isBlind) setPrediction(await getPrediction(projectId, articleId, searchId).catch(() => null));
       } catch (e) {
         setError((e as Error).message);
       }
     },
-    [projectId, articleId]
+    [projectId, articleId, searchId, isBlind]
   );
 
-  if (loading) return <div className="p-4">{tc("loading")}</div>;
+  const addToGold = useCallback(async () => {
+    setGoldBusy(true);
+    setGoldNote(null);
+    try {
+      const r = await goldFromReviews(projectId, { articleIds: [articleId], refresh: true }, searchId);
+      setGoldNote(r.added ? t("goldAdded") : r.updated ? t("goldUpdated") : t("goldSkipped"));
+    } catch (e) {
+      setGoldNote((e as Error).message);
+    } finally {
+      setGoldBusy(false);
+    }
+  }, [projectId, articleId, searchId, t]);
+
+  if (loading || searches === null) return <div className="p-4">{tc("loading")}</div>;
   if (error) return <div className="p-4 text-danger">{error}</div>;
   if (!article)
     return (
       <div className="p-4 text-sm">
         {t("noArticles")}{" "}
-        <Link href={`/projects/${projectId}/import`} className="text-primary hover:underline">
+        <Link href={withSearch(`/projects/${projectId}/import`, searchId)} className="text-primary hover:underline">
           {t("goImport")} →
         </Link>
       </div>
@@ -215,14 +243,18 @@ export default function AnnotatePage() {
 
   const nextId = queue[queue.indexOf(articleId) + 1] ?? null;
 
+  // À l'aveugle et pas encore relu : rien du modèle (ni réponses, ni preuves surlignées).
+  const blindLocked = isBlind && !review;
+  const shownPrediction = blindLocked ? null : prediction;
+
   // Une relecture existante prime sur la réponse de l'IA : on corrige à partir d'elle.
   const initialAnnotation = review?.decision_json
-    ? { ...review.decision_json, field_confidence: prediction?.decision_json?.field_confidence }
-    : prediction?.decision_json
+    ? { ...review.decision_json, field_confidence: shownPrediction?.decision_json?.field_confidence }
+    : shownPrediction?.decision_json
     ? {
-        ...prediction.decision_json,
-        confidence_score: prediction.confidence_score ?? 0.5,
-        evidence_quotes: prediction.evidence_quotes ?? [],
+        ...shownPrediction.decision_json,
+        confidence_score: shownPrediction.confidence_score ?? 0.5,
+        evidence_quotes: shownPrediction.evidence_quotes ?? [],
       }
     : undefined;
 
@@ -231,7 +263,7 @@ export default function AnnotatePage() {
       {/* Barre supérieure (desktop) */}
       <header className="hidden border-b p-4 md:block">
         <Link
-          href={`/projects/${projectId}/articles`}
+          href={withSearch(`/projects/${projectId}/articles`, searchId)}
           className="text-sm text-primary hover:underline"
         >
           ← {t("backToArticles")}
@@ -241,10 +273,10 @@ export default function AnnotatePage() {
         </h1>
         {biblioLine(article) && <p className="text-sm text-foreground/80">{biblioLine(article)}</p>}
         <ArticleLinks article={article} className="mt-0.5" />
-        {prediction && (
+        {shownPrediction && (
           <p className="text-sm text-muted">
-            {t("model")}: {prediction.model_used} · {t("status")}:{" "}
-            {prediction.status}
+            {t("model")}: {shownPrediction.model_used} · {t("status")}:{" "}
+            {shownPrediction.status}
           </p>
         )}
       </header>
@@ -252,12 +284,19 @@ export default function AnnotatePage() {
       {/* Barre supérieure (mobile) : retour aux articles */}
       <header className="border-b p-3 md:hidden">
         <Link
-          href={`/projects/${projectId}/articles`}
+          href={withSearch(`/projects/${projectId}/articles`, searchId)}
           className="text-sm text-primary hover:underline"
         >
           ← {t("backToArticles")}
         </Link>
       </header>
+
+      {isBlind && (
+        <div className="border-b border-warning/40 bg-warning/10 p-3 text-sm text-foreground" role="status">
+          <strong>{t("blindBanner")}</strong>{" "}
+          {blindLocked ? t("blindHidden") : t("blindRevealed")}
+        </div>
+      )}
 
       {/* Corps : double colonne (desktop) / mono-colonne à onglets (mobile) */}
       <main className="flex flex-col md:h-[calc(100vh_-_14rem)] md:flex-row md:overflow-hidden">
@@ -308,12 +347,12 @@ export default function AnnotatePage() {
                 {pdfError && <span className="text-danger">{pdfError}</span>}
               </div>
             </div>
-            {prediction && !prediction.evidence_quotes?.length && (
+            {shownPrediction && !shownPrediction.evidence_quotes?.length && (
               <p className="mb-2 rounded bg-surface-muted p-2 text-xs text-muted">{t("noEvidence")}</p>
             )}
             <EvidenceHighlighter
               text={article.text ?? article.methods_text ?? ""}
-              quotes={prediction?.evidence_quotes}
+              quotes={shownPrediction?.evidence_quotes}
             />
             {status !== "idle" && (
               <div className="mt-4">
@@ -332,14 +371,14 @@ export default function AnnotatePage() {
                 </p>
                 {nextId ? (
                   <Link
-                    href={`/projects/${projectId}/annotate?article=${nextId}&queue=${queueMode}`}
+                    href={withSearch(`/projects/${projectId}/annotate?article=${nextId}&queue=${queueMode}`, searchId)}
                     className="mt-2 inline-block text-sm font-medium text-primary hover:underline"
                   >
                     {t("nextArticle")} →
                   </Link>
                 ) : (
                   <Link
-                    href={`/projects/${projectId}/articles`}
+                    href={withSearch(`/projects/${projectId}/articles`, searchId)}
                     className="mt-2 inline-block text-sm font-medium text-primary hover:underline"
                   >
                     {t("backToArticles")} →
@@ -368,6 +407,16 @@ export default function AnnotatePage() {
               })}
               {review.status && ` — ${t(`reviewStatus_${review.status}`)}`}
               <span className="mt-1 block text-muted">{t("reviewEditHint")}</span>
+              <span className="mt-2 flex flex-wrap items-center gap-2">
+                <Button type="button" size="sm" variant="secondary" loading={goldBusy} onClick={() => void addToGold()}>
+                  {t("addToGold")}
+                </Button>
+                {goldNote && (
+                  <span className="text-foreground" role="status">
+                    {goldNote}
+                  </span>
+                )}
+              </span>
             </p>
           )}
           <AnnotationForm

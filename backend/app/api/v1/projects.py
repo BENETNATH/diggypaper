@@ -36,12 +36,14 @@ from app.db.models import (
     ProjectMember,
     ProjectMemberRole,
     ProjectStatus,
+    Search,
     User,
     UserRole,
 )
 from app.inference.scoring import DEFAULT_WINDOWS
 from app.pubmed import NCBIError, search_volume
 from app.schema import DEFAULT_QUESTION, check_fields, project_fields
+from app.searches import default_search, definition_hash, get_search, in_search, lot_condition
 from app.settings.service import get_setting
 from app.tasks import complete_fulltext_task, import_pubmed_task
 
@@ -146,15 +148,18 @@ def review_payload(ann: HumanAnnotation | None, user: User | None) -> dict | Non
     }
 
 
-async def latest_reviews(db: AsyncSession, article_ids: list) -> dict:
-    """{article_id: (annotation la plus récente, relecteur)} pour ces articles."""
+async def latest_reviews(db: AsyncSession, article_ids: list, search: Search) -> dict:
+    """{article_id: (annotation la plus récente, relecteur)} de cette recherche."""
     out: dict = {}
     if not article_ids:
         return out
     rows = await db.execute(
         select(HumanAnnotation, User)
         .join(User, User.id == HumanAnnotation.user_id, isouter=True)
-        .where(HumanAnnotation.article_id.in_(article_ids))
+        .where(
+            HumanAnnotation.article_id.in_(article_ids),
+            in_search(HumanAnnotation.search_id, search),
+        )
         .order_by(HumanAnnotation.created_at.nulls_first(), HumanAnnotation.id)
     )
     for ann, u in rows:
@@ -177,7 +182,7 @@ def biblio_payload(a: Article) -> dict:
     }
 
 
-def _answers(project: Project, decision: dict | None, human: dict | None = None) -> list[dict]:
+def _answers(src, decision: dict | None, human: dict | None = None) -> list[dict]:
     """Réponses aux champs du projet : celles de la dernière relecture humaine quand elle existe
     (``source`` = human, certitude absente), sinon celles du modèle avec leur certitude."""
     human = human or {}
@@ -186,7 +191,7 @@ def _answers(project: Project, decision: dict | None, human: dict | None = None)
     decision = decision or {}
     conf = decision.get("field_confidence") or {}
     out = []
-    for f in project_fields(project):
+    for f in project_fields(src):
         k = f["key"]
         if k in human:
             out.append(
@@ -202,8 +207,14 @@ def _answers(project: Project, decision: dict | None, human: dict | None = None)
 
 
 def _project_payload(
-    project: Project, article_count: int | None = None, fulltext_count: int | None = None
+    project: Project,
+    article_count: int | None = None,
+    fulltext_count: int | None = None,
+    search: Search | None = None,
 ) -> dict:
+    """Le projet ; question, items et parties de texte sont ceux de ``search`` quand on le fournit
+    (chaque recherche a la sienne), sinon ceux du projet."""
+    src = search or project
     payload = {
         "id": str(project.id),
         "title": project.title,
@@ -211,12 +222,13 @@ def _project_payload(
         "status": project.status,
         "created_by": str(project.created_by) if project.created_by else None,
         "default_language": project.default_language,
-        "text_sections": project.text_sections or DEFAULT_KINDS,
-        "question": project.question or DEFAULT_QUESTION,
-        "read_windows": project.read_windows or DEFAULT_WINDOWS,
-        "fields": project_fields(project),
-        "custom_schema": project.fields is not None,
-        "question_set": project.question is not None or project.fields is not None,
+        "text_sections": src.text_sections or DEFAULT_KINDS,
+        "question": src.question or DEFAULT_QUESTION,
+        "read_windows": src.read_windows or DEFAULT_WINDOWS,
+        "fields": project_fields(src),
+        "custom_schema": src.fields is not None,
+        "question_set": src.question is not None or src.fields is not None,
+        "search_id": str(search.id) if search else None,
         "created_at": project.created_at.isoformat() if project.created_at else None,
     }
     if article_count is not None:
@@ -240,6 +252,7 @@ async def create_project(payload: ProjectCreate, db: DbDep, user: UserDep) -> di
     )
     db.add(project)
     await db.flush()  # assigne project.id (défaut Python uuid4) pour la membership
+    await default_search(db, project)
     db.add(
         ProjectMember(
             project_id=project.id, user_id=user.id, role_in_project=ProjectMemberRole.LEAD
@@ -303,9 +316,13 @@ async def list_projects(db: DbDep, user: UserDep) -> dict:
 
 
 @router.get("/{project_id}")
-async def get_project(project_id: uuid.UUID, db: DbDep, user: UserDep) -> dict:
-    """Détails du projet (status, nb articles, created_by)."""
+async def get_project(
+    project_id: uuid.UUID, db: DbDep, user: UserDep, search: uuid.UUID | None = None
+) -> dict:
+    """Détails du projet (status, nb articles, created_by) ; question de la recherche ``search``
+    (par défaut : la recherche initiale)."""
     project = await _require_project_member(db, project_id, user)
+    scope = await get_search(db, project, search)
     article_count = (
         await db.execute(
             select(func.count()).select_from(Article).where(Article.project_id == project.id)
@@ -318,29 +335,42 @@ async def get_project(project_id: uuid.UUID, db: DbDep, user: UserDep) -> dict:
             .where(Article.project_id == project.id, Article.fulltext_source.is_not(None))
         )
     ).scalar_one()
-    return _project_payload(project, article_count=article_count, fulltext_count=fulltext_count)
+    return _project_payload(
+        project, article_count=article_count, fulltext_count=fulltext_count, search=scope
+    )
 
 
 @router.patch("/{project_id}")
 async def update_project(
-    project_id: uuid.UUID, payload: ProjectUpdate, db: DbDep, user: UserDep
+    project_id: uuid.UUID,
+    payload: ProjectUpdate,
+    db: DbDep,
+    user: UserDep,
+    search: uuid.UUID | None = None,
 ) -> dict:
-    """Parties de texte, question et champs de réponse du projet (LEAD ou ADMIN)."""
+    """Parties de texte, question et items de réponse (LEAD ou ADMIN) : ceux de la recherche
+    ``search`` (par défaut la recherche initiale, dont les réglages sont aussi ceux du projet)."""
     project = await _require_project_member(db, project_id, user)
+    scope = await get_search(db, project, search)
     if user.role != UserRole.ADMIN:
         member = await db.get(ProjectMember, (project_id, user.id))
         if member is None or member.role_in_project != ProjectMemberRole.LEAD:
             raise HTTPException(status_code=403, detail="lead required")
-    if payload.text_sections is not None:
-        project.text_sections = payload.text_sections
-    if payload.question is not None:
-        project.question = payload.question.strip() or None
-    if payload.fields is not None:
-        project.fields = payload.fields
-    if payload.read_windows is not None:
-        project.read_windows = payload.read_windows
+    targets = (
+        [scope, project] if scope.is_default else [scope]
+    )  # le projet suit sa recherche initiale
+    for t in targets:
+        if payload.text_sections is not None:
+            t.text_sections = payload.text_sections
+        if payload.question is not None:
+            t.question = payload.question.strip() or None
+        if payload.fields is not None:
+            t.fields = payload.fields
+        if payload.read_windows is not None:
+            t.read_windows = payload.read_windows
+    scope.definition_hash = definition_hash(scope.question, scope.fields)
     await db.commit()
-    return _project_payload(project)
+    return _project_payload(project, search=scope)
 
 
 @router.delete("/{project_id}", status_code=204)
@@ -467,7 +497,7 @@ async def query_volume(
     return {"count": count}
 
 
-def _answer_filters(project: Project, raw: str | None, pdec, hdec) -> list:
+def _answer_filters(search: Search, raw: str | None, pdec, hdec) -> list:
     """Conditions SQL « réponse au champ X = valeur » (JSON ``{clé: valeur}``) : la réponse
     de la dernière relecture humaine l'emporte sur celle du modèle."""
     if not raw:
@@ -477,7 +507,7 @@ def _answer_filters(project: Project, raw: str | None, pdec, hdec) -> list:
         assert isinstance(wanted, dict)
     except (ValueError, AssertionError):
         raise HTTPException(status_code=422, detail="answers must be a JSON object") from None
-    types = {f["key"]: f["type"] for f in project_fields(project)}
+    types = {f["key"]: f["type"] for f in project_fields(search)}
     conds = []
     for key, value in wanted.items():
         if key not in types:
@@ -500,8 +530,9 @@ def _answer_filters(project: Project, raw: str | None, pdec, hdec) -> list:
 STATUS_PATTERN = "^(AUTO_ACCEPTED|AUTO_REJECTED|NEEDS_HUMAN_REVIEW|NONE|TO_REVIEW)$"
 
 
-def article_filter(project: Project, status: str | None, answers: str | None):
-    """Conditions de la liste des articles (statut IA + réponses) et sous-requêtes associées.
+def article_filter(search: Search, status: str | None, answers: str | None):
+    """Conditions de la liste des articles d'une recherche (statut IA + réponses) et
+    sous-requêtes associées : seuls comptent les résultats et relectures de CETTE recherche.
 
     → (where, pstatus, pconf, pdec, annotated). Partagé par la liste et les exports.
     """
@@ -509,7 +540,10 @@ def article_filter(project: Project, status: str | None, answers: str | None):
     def latest(col):
         return (
             select(col)
-            .where(ArticlePrediction.article_id == Article.id)
+            .where(
+                ArticlePrediction.article_id == Article.id,
+                in_search(ArticlePrediction.search_id, search),
+            )
             .order_by(ArticlePrediction.created_at.desc().nulls_last(), ArticlePrediction.id.desc())
             .limit(1)
             .scalar_subquery()
@@ -520,20 +554,29 @@ def article_filter(project: Project, status: str | None, answers: str | None):
     pdec = latest(ArticlePrediction.decision_json)
     hdec = (  # dernière relecture humaine : ses réponses priment sur celles du modèle
         select(HumanAnnotation.decision_json)
-        .where(HumanAnnotation.article_id == Article.id)
+        .where(
+            HumanAnnotation.article_id == Article.id,
+            in_search(HumanAnnotation.search_id, search),
+        )
         .order_by(HumanAnnotation.created_at.desc().nulls_last(), HumanAnnotation.id.desc())
         .limit(1)
         .scalar_subquery()
     )
-    annotated = select(HumanAnnotation.id).where(HumanAnnotation.article_id == Article.id).exists()
-    where = [Article.project_id == project.id]
+    annotated = (
+        select(HumanAnnotation.id)
+        .where(
+            HumanAnnotation.article_id == Article.id, in_search(HumanAnnotation.search_id, search)
+        )
+        .exists()
+    )
+    where = [lot_condition(search)]
     if status == "NONE":
         where.append(pstatus.is_(None))
     elif status == "TO_REVIEW":  # à relire : incertain ET pas encore annoté
         where += [pstatus == "NEEDS_HUMAN_REVIEW", ~annotated]
     elif status:
         where.append(pstatus == status)
-    where += _answer_filters(project, answers, pdec, hdec)
+    where += _answer_filters(search, answers, pdec, hdec)
     return where, pstatus, pconf, pdec, annotated
 
 
@@ -547,16 +590,19 @@ async def list_articles(
     status: Annotated[str | None, Query(pattern=STATUS_PATTERN)] = None,
     sort: Annotated[str, Query(pattern="^(added|date_desc|date_asc|score_desc)$")] = "added",
     answers: Annotated[str | None, Query(max_length=4000)] = None,
+    search: uuid.UUID | None = None,
 ) -> dict:
-    """Articles du projet avec le statut de leur dernière prédiction.
+    """Articles du lot d'une recherche (par défaut la recherche initiale = tout le corpus) avec
+    le statut de leur dernière prédiction dans cette recherche.
 
     ``status`` filtre (``NONE`` = pas encore trié). ``answers`` = JSON ``{champ: valeur}`` :
     filtre sur la réponse du modèle (booléen exact, option exacte, texte contenu).
     Réponse : {items, total, page, per_page, stats} ; ``stats`` = articles par statut.
     """
     project = await _require_project_member(db, project_id, user)
+    scope = await get_search(db, project, search)
 
-    where, pstatus, pconf, pdec, annotated = article_filter(project, status, answers)
+    where, pstatus, pconf, pdec, annotated = article_filter(scope, status, answers)
     total = (await db.execute(select(func.count()).select_from(Article).where(*where))).scalar_one()
     order = {
         "date_desc": [Article.pub_date.desc().nulls_last()],
@@ -583,17 +629,17 @@ async def list_articles(
         await db.execute(
             select(pstatus.label("s"), func.count())
             .select_from(Article)
-            .where(Article.project_id == project.id)
+            .where(lot_condition(scope))
             .group_by("s")
         )
     ).all()
     stats = {(k or "NONE"): n for k, n in stats_rows}
-    reviews = await latest_reviews(db, [r[0].id for r in rows])
+    reviews = await latest_reviews(db, [r[0].id for r in rows], scope)
     stats["TO_REVIEW"] = (
         await db.execute(
             select(func.count())
             .select_from(Article)
-            .where(Article.project_id == project.id, pstatus == "NEEDS_HUMAN_REVIEW", ~annotated)
+            .where(lot_condition(scope), pstatus == "NEEDS_HUMAN_REVIEW", ~annotated)
         )
     ).scalar_one()
     return {
@@ -612,7 +658,7 @@ async def list_articles(
                 "prediction_status": st,
                 # la pertinence de la relecture (curseur) remplace celle du modèle
                 "confidence": (_human(reviews, a.id) or {}).get("confidence_score", conf),
-                "answers": _answers(project, dec, _human(reviews, a.id)),
+                "answers": _answers(scope, dec, _human(reviews, a.id)),
                 "annotated": bool(ann),
                 "review": review_payload(*reviews.get(a.id, (None, None))),
             }

@@ -7,6 +7,8 @@ import { useTranslations } from "next-intl";
 import { getProject, getInference, listJobs, ImportJob, InferenceJob, Project } from "@/lib/api";
 import { Badge, statusColor } from "@/components/ui/Card";
 import { ProgressBar } from "@/components/ui/Feedback";
+import { withSearch } from "@/lib/search";
+import { useSearchId, useSearches, useSelectSearch } from "@/lib/useSearch";
 
 const STEPS = [
   { key: "overview", href: "", needsCorpus: false, leadOnly: false, optional: false },
@@ -14,7 +16,7 @@ const STEPS = [
   { key: "inference", href: "/inference", needsCorpus: true, leadOnly: true, optional: false },
   { key: "articles", href: "/articles", needsCorpus: true, leadOnly: false, optional: false },
   { key: "team", href: "/team", needsCorpus: false, leadOnly: false, optional: false },
-  { key: "gold", href: "/gold", needsCorpus: true, leadOnly: true, optional: true },
+  { key: "gold", href: "/gold", needsCorpus: true, leadOnly: false, optional: true },
   { key: "benchmarks", href: "/benchmarks", needsCorpus: true, leadOnly: true, optional: true },
   { key: "prompts", href: "/prompts", needsCorpus: true, leadOnly: true, optional: true },
 ] as const;
@@ -25,6 +27,16 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
   const id = useParams<{ id: string }>().id;
   const pathname = usePathname();
   const [project, setProject] = useState<Project | null>(null);
+
+  // Recherche courante. Le layout est rendu côté serveur : tant que le client n'a pas monté, on
+  // ne lit pas le sessionStorage (sinon les liens des onglets diffèrent entre serveur et client).
+  const hookSearchId = useSearchId(id);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  const searchId = mounted ? hookSearchId : undefined;
+  // Les recherches changent (création, renommage, suppression, analyses) : on relit à chaque page.
+  const { searches, current } = useSearches(id, searchId, pathname);
+  const selectSearch = useSelectSearch(id);
 
   // Recharge à chaque changement de page : le statut évolue (import → corpus figé).
   useEffect(() => {
@@ -101,7 +113,7 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
     let stopped = false;
     const check = async () => {
       try {
-        const j = await getInference(id);
+        const j = await getInference(id, searchId);
         if (!stopped) setInf(j);
       } catch {
         /* ignoré */
@@ -114,7 +126,7 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
       stopped = true;
       clearInterval(timer);
     };
-  }, [id, pathname, analysing]);
+  }, [id, pathname, analysing, searchId]);
   const ir = inf?.result ?? {};
   const itotal = typeof ir.total === "number" ? ir.total : 0;
   const idone = typeof ir.done === "number" ? ir.done : 0;
@@ -186,11 +198,34 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
           <p className="mt-2 text-xs text-muted">
             {t("importBannerHint")}{" "}
             {!pathname.endsWith("/inference") && (
-              <Link href={`${base}/inference`} className="text-primary hover:underline">
+              <Link href={withSearch(`${base}/inference`, searchId)} className="text-primary hover:underline">
                 {t("importBannerLink")} →
               </Link>
             )}
           </p>
+        </div>
+      )}
+
+      {searches && searches.length > 0 && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+          <label className="flex items-center gap-2 text-muted">
+            {t("searchLabel")}
+            <select
+              value={current?.id ?? ""}
+              onChange={(e) => selectSearch(e.target.value)}
+              className="max-w-[16rem] rounded border border-border bg-surface p-1 text-sm text-foreground"
+            >
+              {searches.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                  {s.kind !== "standard" ? ` (${t(`kind_${s.kind}`)})` : ""} — {s.lot_size}
+                </option>
+              ))}
+            </select>
+          </label>
+          <Link href={withSearch(`${base}/searches`, searchId)} className="text-primary hover:underline">
+            {t("allSearches")} →
+          </Link>
         </div>
       )}
 
@@ -200,6 +235,7 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
       >
         {STEPS.filter((s) => !s.leadOnly || isLead).map((s, i, arr) => {
           const href = `${base}${s.href}`;
+          const linkHref = withSearch(href, searchId);
           const active =
             s.href === ""
               ? pathname === base
@@ -219,7 +255,7 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
               {label}
             </span>
           ) : (
-            <Link key={s.key} href={href} className={cls} aria-current={active ? "page" : undefined}>
+            <Link key={s.key} href={linkHref} className={cls} aria-current={active ? "page" : undefined}>
               {label}
             </Link>
           );

@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { getProject, prismaUrl, prismaPdfUrl, listArticles, Article, PredictionFilter, SchemaField } from "@/lib/api";
+import { AnswerFilters, Answers } from "@/components/AnswerFilters";
 import { ArticleLinks, Certainty, biblioLine } from "@/components/Certainty";
 import { BulkPdfUpload } from "@/components/BulkPdfUpload";
 import { ExportMenu } from "@/components/ExportMenu";
@@ -12,71 +13,21 @@ import { RequireAuth } from "@/components/RequireAuth";
 import { Card, Badge, statusColor } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Skeleton, ErrorBanner, EmptyState } from "@/components/ui/Feedback";
+import { articlesStoreKey, prefillStoreKey, selectionFromFilters, withSearch } from "@/lib/search";
+import { useSearchId } from "@/lib/useSearch";
 
 type Filter = PredictionFilter | "ALL";
 const FILTERS: Filter[] = ["ALL", "TO_REVIEW", "AUTO_ACCEPTED", "AUTO_REJECTED", "NONE"];
 const PER_PAGE = 100;
 
 type Sort = "added" | "date_desc" | "date_asc" | "score_desc";
-type Answers = Record<string, string>;
-
-/** Filtres mémorisés par projet : retrouvés au retour d'un article (ou d'un rechargement). */
-const storeKey = (projectId: string) => `diggy:articles:${projectId}`;
-
-function loadSaved(projectId: string): { filter?: Filter; sort?: Sort; page?: number; answers?: Answers } {
+/** Filtres mémorisés par projet et par recherche : retrouvés au retour d'un article (ou d'un rechargement). */
+function loadSaved(projectId: string, searchId?: string): { filter?: Filter; sort?: Sort; page?: number; answers?: Answers } {
   try {
-    return JSON.parse(sessionStorage.getItem(storeKey(projectId)) ?? "{}");
+    return JSON.parse(sessionStorage.getItem(articlesStoreKey(projectId, searchId)) ?? "{}");
   } catch {
     return {};
   }
-}
-
-const selectCls = "rounded border border-border bg-surface p-1 text-xs text-foreground";
-
-function AnswerFilters({
-  fields,
-  values,
-  onChange,
-}: {
-  fields: SchemaField[];
-  values: Answers;
-  onChange: (key: string, value: string) => void;
-}) {
-  const t = useTranslations("articles");
-  return (
-    <>
-      {fields.map((f) => (
-        <label key={f.key} className="flex flex-col gap-0.5 text-xs text-muted">
-          {f.label}
-          {f.type === "text" ? (
-            <input
-              type="search"
-              value={values[f.key] ?? ""}
-              placeholder={t("containsText")}
-              onChange={(e) => onChange(f.key, e.target.value)}
-              className={`${selectCls} w-40`}
-            />
-          ) : (
-            <select value={values[f.key] ?? ""} onChange={(e) => onChange(f.key, e.target.value)} className={selectCls}>
-              <option value="">{t("anyAnswer")}</option>
-              {f.type === "boolean" ? (
-                <>
-                  <option value="true">{t("yes")}</option>
-                  <option value="false">{t("no")}</option>
-                </>
-              ) : (
-                f.options?.map((o) => (
-                  <option key={o} value={o}>
-                    {o}
-                  </option>
-                ))
-              )}
-            </select>
-          )}
-        </label>
-      ))}
-    </>
-  );
 }
 
 function ResultsContent() {
@@ -84,6 +35,8 @@ function ResultsContent() {
   const tc = useTranslations("common");
   const locale = useLocale();
   const projectId = useParams<{ id: string }>().id;
+  const searchId = useSearchId(projectId);
+  const router = useRouter();
 
   const [articles, setArticles] = useState<Article[] | null>(null);
   const [stats, setStats] = useState<Record<string, number>>({});
@@ -97,29 +50,39 @@ function ResultsContent() {
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout>>();
+  const restoredFor = useRef(""); // clé de stockage dont les filtres sont restaurés (évite d'écraser une autre recherche)
 
-  // Restaure filtres / tri / page mémorisés, puis charge la définition des questions.
+  // Restaure filtres / tri / page mémorisés (propres à la recherche), puis charge ses items.
   useEffect(() => {
-    const saved = loadSaved(projectId);
-    if (saved.filter) setFilter(saved.filter);
-    if (saved.sort) setSort(saved.sort);
-    if (saved.page) setPage(saved.page);
+    const key = articlesStoreKey(projectId, searchId);
+    restoredFor.current = "";
+    setReady(false);
+    const saved = loadSaved(projectId, searchId);
+    setFilter(saved.filter ?? "ALL");
+    setSort(saved.sort ?? "added");
+    setPage(saved.page ?? 1);
     setAnswers(saved.answers ?? {});
     setDraft(saved.answers ?? {});
-    getProject(projectId)
+    getProject(projectId, searchId)
       .then((p) => setFields(p.fields ?? []))
       .catch(() => setFields([]))
-      .finally(() => setReady(true));
-  }, [projectId]);
+      .finally(() => {
+        restoredFor.current = key;
+        setReady(true);
+      });
+  }, [projectId, searchId]);
 
   useEffect(() => {
-    if (!ready) return;
+    if (!ready || restoredFor.current !== articlesStoreKey(projectId, searchId)) return;
     try {
-      sessionStorage.setItem(storeKey(projectId), JSON.stringify({ filter, sort, page, answers }));
+      sessionStorage.setItem(
+        articlesStoreKey(projectId, searchId),
+        JSON.stringify({ filter, sort, page, answers })
+      );
     } catch {
       /* stockage indisponible : filtres non mémorisés */
     }
-  }, [ready, projectId, filter, sort, page, answers]);
+  }, [ready, projectId, searchId, filter, sort, page, answers]);
 
   function setAnswer(key: string, value: string, text: boolean) {
     setDraft((d) => ({ ...d, [key]: value }));
@@ -143,23 +106,36 @@ function ResultsContent() {
   const load = useCallback(async () => {
     setError(null);
     try {
-      const res = await listArticles(projectId, page, PER_PAGE, filter === "ALL" ? undefined : filter, sort, answers);
+      const res = await listArticles(projectId, page, PER_PAGE, filter === "ALL" ? undefined : filter, sort, answers, searchId);
       setArticles(res.items);
       setTotal(res.total);
       setStats(res.stats);
     } catch (e) {
       setError(e instanceof Error ? e.message : "error");
     }
-  }, [projectId, page, filter, sort, answers]);
+  }, [projectId, page, filter, sort, answers, searchId]);
 
   useEffect(() => {
-    if (ready) void load();
-  }, [ready, load]);
+    if (ready && restoredFor.current === articlesStoreKey(projectId, searchId)) void load();
+  }, [ready, load, projectId, searchId]);
 
   const count = (f: Filter) =>
     f === "ALL" ? Object.values(stats).reduce((a, b) => a + b, 0) : stats[f] ?? 0;
   const triaged = count("ALL") - count("NONE") > 0;
   const queue = "list"; // la file de relecture reprend la liste affichée (filtres, tri)
+
+  /** Ouvre la page Recherches avec une sélection préremplie par les filtres courants. */
+  function newSearchFromFilters() {
+    try {
+      sessionStorage.setItem(
+        prefillStoreKey(projectId),
+        JSON.stringify(selectionFromFilters(filter, answers, searchId))
+      );
+    } catch {
+      /* stockage indisponible : la page Recherches s'ouvre sans préremplissage */
+    }
+    router.push(withSearch(`/projects/${projectId}/searches`, searchId));
+  }
 
   if (error) return <ErrorBanner message={error} onRetry={() => void load()} />;
   if (!articles) return <Skeleton rows={5} />;
@@ -170,7 +146,7 @@ function ResultsContent() {
         <h1 className="text-xl font-bold text-foreground">{t("title")}</h1>
         <ExportMenu projectId={projectId} status={filter === "ALL" ? undefined : filter} answers={answers} />
         {count("TO_REVIEW") > 0 && (
-          <Link href={`/projects/${projectId}/annotate?queue=review`}>
+          <Link href={withSearch(`/projects/${projectId}/annotate?queue=review`, searchId)}>
             <Button>
               {t("startReview")} ({count("TO_REVIEW")})
             </Button>
@@ -189,11 +165,11 @@ function ResultsContent() {
         <summary className="cursor-pointer text-sm font-medium text-foreground">{t("prisma")}</summary>
         <div className="mt-3 flex flex-col items-start gap-2">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={prismaUrl(projectId, locale)} alt={t("prisma")} className="w-full max-w-3xl rounded border border-border" />
-          <a href={prismaUrl(projectId, locale)} download="prisma.svg" className="text-xs text-primary hover:underline">
+          <img src={prismaUrl(projectId, locale, searchId)} alt={t("prisma")} className="w-full max-w-3xl rounded border border-border" />
+          <a href={prismaUrl(projectId, locale, searchId)} download="prisma.svg" className="text-xs text-primary hover:underline">
             ⬇ {t("prismaDownload")}
           </a>
-          <a href={prismaPdfUrl(projectId, locale)} download className="text-xs text-primary hover:underline">
+          <a href={prismaPdfUrl(projectId, locale, searchId)} download className="text-xs text-primary hover:underline">
             ⬇ {t("prismaDownloadPdf")}
           </a>
         </div>
@@ -202,7 +178,7 @@ function ResultsContent() {
       {!triaged && count("ALL") > 0 && (
         <div className="rounded-lg border border-primary/40 bg-primary/5 p-3 text-sm">
           {t("notTriaged")}{" "}
-          <Link href={`/projects/${projectId}/inference`} className="font-medium text-primary hover:underline">
+          <Link href={withSearch(`/projects/${projectId}/inference`, searchId)} className="font-medium text-primary hover:underline">
             {t("goTriage")} →
           </Link>
         </div>
@@ -265,6 +241,14 @@ function ResultsContent() {
         </div>
       )}
 
+      {total > 0 && (
+        <div className="flex justify-end">
+          <Button variant="secondary" size="sm" onClick={newSearchFromFilters}>
+            {t("newSearchOnThese", { n: total })}
+          </Button>
+        </div>
+      )}
+
       {articles.length === 0 ? (
         <EmptyState title={t("empty")} hint={t("emptyHint")} />
       ) : (
@@ -273,7 +257,7 @@ function ResultsContent() {
             {articles.map((a) => (
               <li key={a.id} className="py-1">
                 <Link
-                  href={`/projects/${projectId}/annotate?article=${a.id}&queue=${queue}`}
+                  href={withSearch(`/projects/${projectId}/annotate?article=${a.id}&queue=${queue}`, searchId)}
                   className="flex items-center justify-between gap-3 py-2 hover:bg-surface-muted"
                 >
                   <div className="min-w-0">

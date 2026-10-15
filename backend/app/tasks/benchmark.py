@@ -1,12 +1,12 @@
-"""Task benchmark multi-modèles (Arena) — Module 3.
+"""Task benchmark (mise au point) : comparer des variantes (modèle × prompt) sur un lot d'articles.
 
-Même pattern d'exécution que ``import_pubmed_task`` (C1/C2) : wrapper sync Celery
-→ thread dédié → ``asyncio.run`` du core async ; engine par run (ou
-``session_factory`` injecté en tests).
+Même pattern d'exécution que ``import_pubmed_task`` : wrapper sync Celery → thread dédié →
+``asyncio.run`` du core async ; engine par run (ou ``session_factory`` injecté en tests).
 
-Le benchmark exécute les inférences **séquentiellement** sur le Gold Dataset,
-pour chaque modèle testé, et calcule les métriques (accuracy, précision, rappel,
-F1) en comparant chaque prédiction au ``ground_truth_json``.
+Le banc d'essai est le lot d'une recherche. Chaque variante répond à chaque article ; les réponses
+sont conservées (``benchmark_predictions``) pour comparer côte à côte. Si le gold est demandé, les
+variantes sont notées contre lui (articles du lot présents au gold, hors exemples du prompt) ;
+sinon on mesure leur accord. Les variantes de prompt ne concernent que les modèles génératifs.
 """
 
 import asyncio
@@ -19,6 +19,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app import metrics
 from app.article_text import fill_prompt
 from app.celery_app import celery_app
 from app.db.base import DATABASE_URL as _IMPORT_TIME_DATABASE_URL
@@ -26,6 +27,7 @@ from app.db.base import make_engine
 from app.db.models import (
     Article,
     BackendType,
+    BenchmarkPrediction,
     BenchmarkResult,
     BenchmarkRun,
     BenchmarkStatus,
@@ -34,6 +36,7 @@ from app.db.models import (
     Project,
     PromptTemplate,
 )
+from app.gold_examples import examples_block, pick_examples
 from app.inference import (
     InferenceError,
     OpenAICompatibleService,
@@ -43,12 +46,15 @@ from app.inference import (
 )
 from app.inference.onnx_driver import unload as onnx_unload
 from app.inference.scoring import is_scorer, score_prediction
-from app.schema import compute_metrics
+from app.schema import project_fields
+from app.searches import ScopedProject, get_search, gold_condition, lot_condition
 
 logger = logging.getLogger(__name__)
 
 #: Hook de test : session_factory injecté pour le vrai chemin thread+asyncio.run.
 _session_factory_override: async_sessionmaker[AsyncSession] | None = None
+
+DEFAULT_USER_PROMPT = "Article text:\n{article_text}"
 
 
 def _make_session_factory():
@@ -57,36 +63,6 @@ def _make_session_factory():
     url = os.environ.get("DATABASE_URL", _IMPORT_TIME_DATABASE_URL)
     engine = make_engine(url)
     return engine, async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-
-
-def _compute_metrics(prediction: dict, ground_truth: dict) -> dict:
-    """Métriques déterministes entre une prédiction et le gold (spec §5).
-
-    - ``accuracy`` : fraction des 3 champs scalaires (``use_ai_behavior``,
-      ``animal_sex``, ``confidence_score``) exacts.
-    - ``precision_score`` / ``recall_score`` / ``f1_score`` : sur
-      ``evidence_quotes`` (comparaison d'ensembles) ; 1.0 si le gold n'a pas de
-      quotes (rien à extraire).
-    """
-    scalar_fields = ("use_ai_behavior", "animal_sex", "confidence_score")
-    exact = sum(1 for f in scalar_fields if prediction.get(f) == ground_truth.get(f))
-    accuracy = exact / len(scalar_fields)
-
-    pred_quotes = set(prediction.get("evidence_quotes") or [])
-    gold_quotes = set(ground_truth.get("evidence_quotes") or [])
-    if not gold_quotes:
-        precision = recall = f1 = 1.0
-    else:
-        inter = pred_quotes & gold_quotes
-        precision = len(inter) / len(pred_quotes) if pred_quotes else 0.0
-        recall = len(inter) / len(gold_quotes)
-        f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
-    return {
-        "accuracy": accuracy,
-        "precision_score": precision,
-        "recall_score": recall,
-        "f1_score": f1,
-    }
 
 
 @celery_app.task(name="diggypaper.benchmark")
@@ -157,140 +133,194 @@ async def _run_benchmark(
             await engine.dispose()
 
 
+async def _prompts(session: AsyncSession, run: BenchmarkRun) -> list[tuple[str, str, str]]:
+    """Variantes résolues : [(nom, prompt système, schéma du prompt utilisateur)]."""
+    out = []
+    for v in run.variants or [{}]:
+        pid = v.get("prompt_template_id") or (
+            None if v.get("system_prompt") else run.prompt_template_id
+        )
+        if pid:
+            pt = await session.get(PromptTemplate, uuid.UUID(str(pid)))
+            if pt is None:
+                raise LookupError(f"prompt template not found: {pid}")
+            system, user = pt.system_prompt or "", pt.user_prompt_schema or DEFAULT_USER_PROMPT
+            name = v.get("name") or pt.title or pt.version_number
+        else:
+            system = v.get("system_prompt") or ""
+            user = v.get("user_prompt_schema") or DEFAULT_USER_PROMPT
+            name = v.get("name") or f"variante {len(out) + 1}"
+        out.append((name, system, user))
+    return out
+
+
 async def _do_benchmark(
     session: AsyncSession, run: BenchmarkRun, inference: OpenAICompatibleService
 ) -> dict:
-    """Corps du benchmark : pour chaque modèle, inférence sur chaque gold article."""
-    prompt = await session.get(PromptTemplate, run.prompt_template_id)
-    if prompt is None:
-        raise LookupError(f"prompt template not found: {run.prompt_template_id}")
-
-    project = await session.get(Project, run.project_id)
-    project_sections = project.text_sections if project else None
-    project_fields_custom = project.fields if project else None
-    gold_rows = (
-        await session.execute(
-            select(GoldArticle, Article)
-            .join(Article, GoldArticle.article_id == Article.id)
-            .where(GoldArticle.project_id == run.project_id)
-        )
-    ).all()
-    if not gold_rows:
-        raise LookupError(f"no gold articles for project {run.project_id}")
-
-    models = (
-        (
-            await session.execute(
-                select(ModelRegistry).where(ModelRegistry.name.in_(run.models_tested or []))
-            )
-        )
+    """Corps du benchmark : chaque (modèle, variante) répond à chaque article du lot."""
+    base_project = await session.get(Project, run.project_id)
+    search = await get_search(session, base_project, run.search_id)
+    project = ScopedProject(base_project, search)  # question / items / parties de la recherche
+    fields = project_fields(project)
+    lot = (
+        (await session.execute(select(Article).where(lot_condition(search)).order_by(Article.id)))
         .scalars()
         .all()
     )
+    if not lot:
+        raise LookupError(f"no articles in the benchmark lot of search {search.id}")
+    lot_ids = {a.id for a in lot}
+    opts = run.options or {}
+
+    # Références : exemples du prompt (hors lot de préférence) et notes de validation
+    gold_all: dict = {}
+    if opts.get("use_gold") or opts.get("gold_examples"):
+        rows = await session.execute(
+            select(GoldArticle).where(await gold_condition(session, base_project, search))
+        )
+        gold_all = {g.article_id: g.ground_truth_json for g in rows.scalars() if g.article_id}
+    example_ids: list = []
+    if opts.get("gold_examples") and gold_all:
+        outside = {i: g for i, g in gold_all.items() if i not in lot_ids}
+        pool = outside if len(outside) >= opts["gold_examples"] else gold_all
+        example_ids = pick_examples(pool, int(opts["gold_examples"]), seed=1)
+    shots = ""
+    if example_ids:
+        ex_articles = {
+            a.id: a
+            for a in (
+                await session.execute(select(Article).where(Article.id.in_(example_ids)))
+            ).scalars()
+        }
+        shots = examples_block(ex_articles, gold_all, example_ids, fields, project.text_sections)
+    gold = {i: g for i, g in gold_all.items() if i in lot_ids} if opts.get("use_gold") else {}
+    if opts.get("use_gold") and not (set(gold) - set(example_ids)):
+        raise LookupError("no gold articles in the benchmark lot")
+
+    variants = await _prompts(session, run)
+    names = run.models_tested or []
+    found = {
+        m.name: m
+        for m in (await session.execute(select(ModelRegistry).where(ModelRegistry.name.in_(names))))
+        .scalars()
+        .all()
+    }
+    models = [found[n] for n in names if n in found]
     if not models:
         raise LookupError(f"no registered models for {run.models_tested}")
 
-    results_payload = []
-    total_steps = len(models) * len(gold_rows)
+    total_steps = sum(len(lot) * (1 if is_scorer(m) else len(variants)) for m in models)
     done_steps = 0
+    results_payload = []
+    ram_mb = 0.0
     for model in models:
-        total_time = 0.0
-        metrics_sum = {
-            "accuracy": 0.0,
-            "precision_score": 0.0,
-            "recall_score": 0.0,
-            "f1_score": 0.0,
-        }
-        is_onnx = is_scorer(model)  # scoreur : métriques de pertinence (pas de champs génératifs)
-        tp = fp = fn = correct = (
-            0  # encodeur : pertinent prédit vs gold (clé « relevant », déf. True)
-        )
-        for gold, article in gold_rows:
-            if await _cancelled(session, run):
-                return {"cancelled": True, "models": len(results_payload)}
-            start = time.monotonic()
-            if is_onnx:
-                score = (await score_prediction(model, project, article, light=False))[
-                    "confidence_score"
-                ]
-                total_time += time.monotonic() - start
-                predicted = score >= 0.5
-                truth = bool(gold.ground_truth_json.get("relevant", True))
-                tp += predicted and truth
-                fp += predicted and not truth
-                fn += truth and not predicted
-                correct += predicted == truth
+        scorer = is_scorer(model)  # un scoreur ignore le prompt : une seule « variante »
+        todo = variants[:1] if scorer else variants
+        by_variant: dict[str, dict] = {}
+        pending: list[BenchmarkResult] = []
+        for vname, system, user_schema in todo:
+            preds: dict = {}
+            total_time = 0.0
+            for article in lot:
+                if await _cancelled(session, run):
+                    return {"cancelled": True, "models": len(results_payload)}
+                start = time.monotonic()
+                error = None
+                try:
+                    if scorer:
+                        prediction = await score_prediction(model, project, article, light=False)
+                    else:
+                        prediction = await infer_with(
+                            model,
+                            inference,
+                            (system + "\n\n" + shots).strip() if shots else system,
+                            fill_prompt(user_schema, article, project.text_sections),
+                        )
+                except InferenceError as exc:
+                    if str(exc) != "invalid_json":
+                        raise
+                    prediction, error = {}, "invalid_json"  # sortie non-JSON : réponse fausse
+                took = time.monotonic() - start
+                total_time += took
+                preds[article.id] = prediction
+                session.add(
+                    BenchmarkPrediction(
+                        benchmark_run_id=run.id,
+                        article_id=article.id,
+                        model_name=model.name,
+                        variant=vname,
+                        decision_json=prediction,
+                        confidence_score=prediction.get("confidence_score"),
+                        error=error,
+                        seconds=took,
+                    )
+                )
                 done_steps += 1
-                run.progress = {"done": done_steps, "total": total_steps, "model": model.name}
+                run.progress = {
+                    "done": done_steps,
+                    "total": total_steps,
+                    "model": model.name,
+                    "variant": vname,
+                }
                 await session.commit()
                 ram_mb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
-                continue
-            user_prompt = fill_prompt(prompt.user_prompt_schema, article, project_sections)
-            try:
-                prediction = await infer_with(
-                    model, inference, prompt.system_prompt or "", user_prompt
+            by_variant[vname] = preds
+            res = BenchmarkResult(
+                benchmark_run_id=run.id,
+                model_name=model.name,
+                variant=vname if len(variants) > 1 else None,
+                execution_time_seconds=total_time,
+            )
+            details: dict = {"articles": len(lot)}
+            if gold:
+                scored = metrics.score(fields, preds, gold, exclude=set(example_ids))
+                target, metric, value = metrics.primary_value(scored, fields)
+                rel = scored["relevance"]
+                res.n_scored = scored["n"]
+                res.accuracy = (
+                    scored["accuracy"] if scored["accuracy"] is not None else rel["accuracy"]
                 )
-            except InferenceError as exc:
-                if str(exc) != "invalid_json":
-                    raise
-                prediction = {}  # sortie non-JSON : comptée comme réponse fausse
-            total_time += time.monotonic() - start
-            done_steps += 1
-            run.progress = {"done": done_steps, "total": total_steps, "model": model.name}
-            await session.commit()
-            if project_fields_custom is not None:
-                metrics = compute_metrics(project_fields_custom, prediction, gold.ground_truth_json)
-            else:
-                metrics = _compute_metrics(prediction, gold.ground_truth_json)
-            for k, v in metrics.items():
-                metrics_sum[k] += v
-            # RAM pic (ru_maxrss, Ko sur Linux) — empreinte du process.
-            ram_mb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
-        n = len(gold_rows)
-        if is_onnx:
-            prec = tp / (tp + fp) if tp + fp else 0.0
-            rec = tp / (tp + fn) if tp + fn else 0.0
-            avg = {
-                "accuracy": correct / n,
-                "precision_score": prec,
-                "recall_score": rec,
-                "f1_score": 2 * prec * rec / (prec + rec) if prec + rec else 0.0,
-            }
-            if model.backend_type == BackendType.ONNX_LOCAL:
-                onnx_unload(model.model_identifier)
-        else:
-            avg = {k: v / n for k, v in metrics_sum.items()}
-            base = getattr(inference, "base_url", None)
-            if model.backend_type == BackendType.OLLAMA and isinstance(base, str):
-                await unload_ollama(base, model.model_identifier)  # libère la RAM avant le suivant
-        result = BenchmarkResult(
-            benchmark_run_id=run.id,
-            model_name=model.name,
-            execution_time_seconds=total_time,
-            accuracy=avg["accuracy"],
-            precision_score=avg["precision_score"],
-            recall_score=avg["recall_score"],
-            f1_score=avg["f1_score"],
-        )
-        session.add(result)
-        results_payload.append(
-            {
-                "model_name": model.name,
-                "execution_time_seconds": total_time,
-                "accuracy": avg["accuracy"],
-                "precision_score": avg["precision_score"],
-                "recall_score": avg["recall_score"],
-                "f1_score": avg["f1_score"],
-                "ram_usage_mb": ram_mb,
-            }
-        )
+                res.precision_score, res.recall_score, res.f1_score = (
+                    rel["precision"],
+                    rel["recall"],
+                    rel["f1"],
+                )
+                details.update(
+                    scored=scored, primary={"item": target, "metric": metric, "value": value}
+                )
+            res.details = details
+            pending.append(res)
+        if len(by_variant) > 1:  # accord entre variantes (sans référence)
+            agree = metrics.agreement(by_variant, fields)
+            for r in pending:
+                r.details = {**(r.details or {}), "agreement": agree.get(r.variant)}
+        for r in pending:
+            session.add(r)
+            results_payload.append(
+                {
+                    "model_name": r.model_name,
+                    "variant": r.variant,
+                    "execution_time_seconds": r.execution_time_seconds,
+                    "accuracy": r.accuracy,
+                    "precision_score": r.precision_score,
+                    "recall_score": r.recall_score,
+                    "f1_score": r.f1_score,
+                    "ram_usage_mb": ram_mb,
+                }
+            )
+        if scorer and model.backend_type == BackendType.ONNX_LOCAL:
+            onnx_unload(model.model_identifier)
+        base = getattr(inference, "base_url", None)
+        if model.backend_type == BackendType.OLLAMA and isinstance(base, str):
+            await unload_ollama(base, model.model_identifier)  # libère la RAM avant le suivant
         await session.commit()
 
     run.status = BenchmarkStatus.COMPLETED
     await session.commit()
     return {
         "models": len(models),
-        "articles": len(gold_rows),
+        "articles": len(lot),
+        "variants": len(variants),
         "results": results_payload,
     }
 

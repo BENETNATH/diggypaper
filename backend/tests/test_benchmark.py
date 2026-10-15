@@ -1,10 +1,12 @@
 """Tests de la task benchmark (app/tasks/benchmark.py) — 100 % offline."""
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.db.models import (
     Article,
+    BenchmarkPrediction,
     BenchmarkRun,
     BenchmarkStatus,
     GoldArticle,
@@ -12,7 +14,7 @@ from app.db.models import (
     Project,
     PromptTemplate,
 )
-from app.tasks.benchmark import _compute_metrics, _run_benchmark
+from app.tasks.benchmark import _run_benchmark
 
 
 class FakeInference:
@@ -35,58 +37,6 @@ def _gt(use_ai=True, sex="BOTH_SEXES", conf=0.9, quotes=("mice were randomized",
         "evidence_quotes": list(quotes),
         "reasoning_summary": "ok",
     }
-
-
-# --- _compute_metrics ---
-
-
-def test_metrics_exact_match():
-    gt = _gt()
-    m = _compute_metrics(gt, gt)
-    assert m["accuracy"] == 1.0
-    assert m["precision_score"] == 1.0
-    assert m["recall_score"] == 1.0
-    assert m["f1_score"] == 1.0
-
-
-def test_metrics_partial_quotes():
-    gt = _gt(quotes=("a", "b", "c"))
-    pred = _gt(quotes=("a", "b", "x"))
-    m = _compute_metrics(pred, gt)
-    # intersection {a,b} = 2 ; precision 2/3, recall 2/3
-    assert m["precision_score"] == pytest.approx(2 / 3)
-    assert m["recall_score"] == pytest.approx(2 / 3)
-    assert m["f1_score"] == pytest.approx(2 / 3)
-
-
-def test_metrics_wrong_scalar():
-    gt = _gt(use_ai=True)
-    pred = _gt(use_ai=False)
-    m = _compute_metrics(pred, gt)
-    # 2/3 scalaires exacts (animal_sex + confidence_score)
-    assert m["accuracy"] == pytest.approx(2 / 3)
-
-
-def test_metrics_empty_gold_quotes():
-    gt = _gt(quotes=())
-    pred = _gt(quotes=("a",))
-    m = _compute_metrics(pred, gt)
-    # gold vide → precision/recall/f1 = 1.0 (rien à extraire)
-    assert m["precision_score"] == 1.0
-    assert m["recall_score"] == 1.0
-    assert m["f1_score"] == 1.0
-
-
-def test_metrics_pred_empty_quotes():
-    gt = _gt(quotes=("a",))
-    pred = _gt(quotes=())
-    m = _compute_metrics(pred, gt)
-    assert m["precision_score"] == 0.0
-    assert m["recall_score"] == 0.0
-    assert m["f1_score"] == 0.0
-
-
-# --- _run_benchmark ---
 
 
 async def _seed(session: AsyncSession, project, prompt, model, gold_gt):
@@ -120,6 +70,7 @@ async def test_run_benchmark_completes(engine, session):
         project_id=project.id,
         prompt_template_id=prompt.id,
         models_tested=["Kev-4B"],
+        options={"use_gold": True},
         status=BenchmarkStatus.PENDING,
     )
     session.add(run)
@@ -153,6 +104,7 @@ async def test_run_benchmark_no_gold_raises(engine, session):
         project_id=project.id,
         prompt_template_id=prompt.id,
         models_tested=["Kev-4B"],
+        options={"use_gold": True},
         status=BenchmarkStatus.PENDING,
     )
     session.add(run)
@@ -180,6 +132,7 @@ async def test_run_benchmark_inference_failure_marks_failed(engine, session, mon
         project_id=project.id,
         prompt_template_id=prompt.id,
         models_tested=["Kev-4B"],
+        options={"use_gold": True},
         status=BenchmarkStatus.PENDING,
     )
     session.add(run)
@@ -194,3 +147,87 @@ async def test_run_benchmark_inference_failure_marks_failed(engine, session, mon
         await _run_benchmark(str(run.id), session_factory=factory)
     await session.refresh(run)
     assert run.status == BenchmarkStatus.FAILED
+
+
+class RecordingInference(FakeInference):
+    """Mémorise les prompts système reçus (variantes, exemples du gold)."""
+
+    def __init__(self, prediction: dict):
+        super().__init__(prediction)
+        self.systems: list[str] = []
+
+    async def infer(self, model, system_prompt, user_prompt) -> dict:
+        self.systems.append(system_prompt)
+        return await super().infer(model, system_prompt, user_prompt)
+
+
+async def _project_with_articles(session, n=4):
+    project = Project(title="P", created_by=None)
+    session.add(project)
+    await session.commit()
+    prompt = PromptTemplate(
+        project_id=project.id, version_number="v1.0", system_prompt="AUTO", user_prompt_schema=None
+    )
+    session.add_all([prompt, ModelRegistry(name="Kev-4B", model_identifier="x")])
+    arts = [
+        Article(project_id=project.id, pmid=str(i), title=f"A{i}", abstract=f"abstract {i}")
+        for i in range(n)
+    ]
+    session.add_all(arts)
+    await session.commit()
+    return project, prompt, arts
+
+
+async def test_benchmark_variants_store_predictions_and_agreement(engine, session):
+    project, prompt, arts = await _project_with_articles(session, 3)
+    run = BenchmarkRun(
+        project_id=project.id,
+        models_tested=["Kev-4B"],
+        variants=[
+            {"name": "strict", "system_prompt": "Be strict."},
+            {"name": "libre", "system_prompt": "Be free."},
+        ],
+        options={},
+        status=BenchmarkStatus.PENDING,
+    )
+    session.add(run)
+    await session.commit()
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    fake = RecordingInference(_gt())
+    res = await _run_benchmark(str(run.id), session_factory=factory, inference=fake)
+    assert res["variants"] == 2 and fake.calls == 6  # 3 articles × 2 variantes
+    assert sorted(set(fake.systems)) == ["Be free.", "Be strict."]
+    rows = (await session.execute(select(BenchmarkPrediction))).scalars().all()
+    assert len(rows) == 6 and {r.variant for r in rows} == {"strict", "libre"}
+    out = {(r["variant"]): r for r in res["results"]}
+    assert (
+        set(out) == {"strict", "libre"} and out["strict"]["f1_score"] is None
+    )  # pas de gold demandé
+    # accord entre variantes mesuré sans référence
+    from app.db.models import BenchmarkResult
+
+    results = (await session.execute(select(BenchmarkResult))).scalars().all()
+    assert all(r.details["agreement"] == 1.0 for r in results)
+
+
+async def test_benchmark_gold_examples_in_prompt_and_excluded_from_scoring(engine, session):
+    project, prompt, arts = await _project_with_articles(session, 4)
+    for a in arts:  # les 4 articles sont au gold ; 2 serviront d'exemples (hors validation)
+        session.add(GoldArticle(project_id=project.id, article_id=a.id, ground_truth_json=_gt()))
+    run = BenchmarkRun(
+        project_id=project.id,
+        prompt_template_id=prompt.id,
+        models_tested=["Kev-4B"],
+        options={"use_gold": True, "gold_examples": 2},
+        status=BenchmarkStatus.PENDING,
+    )
+    session.add(run)
+    await session.commit()
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    fake = RecordingInference(_gt())
+    res = await _run_benchmark(str(run.id), session_factory=factory, inference=fake)
+    assert all("verified answers" in s for s in fake.systems)  # exemples dans le prompt
+    from app.db.models import BenchmarkResult
+
+    (r,) = (await session.execute(select(BenchmarkResult))).scalars().all()
+    assert r.n_scored == 2 and res["results"][0]["f1_score"] == 1.0  # 4 gold − 2 exemples

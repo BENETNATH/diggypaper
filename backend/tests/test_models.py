@@ -67,6 +67,9 @@ EXPECTED_TABLES = {
     "export_jobs",  # export RO-Crate asynchrone
     "model_shares",  # droits d'usage des modèles
     "invitations",  # invitations en attente
+    "searches",  # recherches : question + lot d'articles
+    "search_articles",  # lot figé d'une recherche
+    "benchmark_predictions",  # réponses de chaque variante du banc d'essai
 }
 
 
@@ -376,6 +379,9 @@ def test_benchmark_runs_columns():
         "id",
         "project_id",
         "prompt_template_id",
+        "search_id",
+        "variants",
+        "options",
         "progress",
         "models_tested",
         "status",
@@ -400,6 +406,9 @@ def test_benchmark_results_columns():
         "id",
         "benchmark_run_id",
         "model_name",
+        "variant",
+        "n_scored",
+        "details",
         "execution_time_seconds",
         "accuracy",
         "precision_score",
@@ -453,7 +462,15 @@ def test_prompt_templates_columns():
 
 def test_gold_articles_columns():
     c = GoldArticle.__table__.columns
-    assert set(c.keys()) == {"id", "project_id", "article_id", "ground_truth_json"}
+    assert set(c.keys()) == {
+        "id",
+        "project_id",
+        "article_id",
+        "ground_truth_json",
+        "search_id",
+        "source_annotation_id",
+        "added_by",
+    }
     assert c["id"].primary_key
     assert fk(c["project_id"]).column is Project.__table__.c.id
     assert fk(c["project_id"]).ondelete == "CASCADE"
@@ -476,6 +493,7 @@ def test_article_predictions_columns():
         "decision_json",
         "confidence_score",
         "evidence_quotes",
+        "search_id",
         "status",
         "created_at",
     }
@@ -502,6 +520,8 @@ def test_human_annotations_columns():
         "article_id",
         "user_id",
         "annotator_hash",
+        "search_id",
+        "blind",
         "decision_json",
         "notes",
         "created_at",

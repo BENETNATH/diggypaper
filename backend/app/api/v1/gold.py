@@ -13,16 +13,18 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db
-from app.api.v1.projects import _require_project_member
+from app.api.v1.projects import _require_project_member, latest_reviews
 from app.db.models import (
     Article,
     GoldArticle,
+    HumanAnnotation,
     ProjectMember,
     ProjectMemberRole,
     User,
     UserRole,
 )
 from app.schema import project_fields, validate_decision
+from app.searches import get_search, gold_condition, in_search
 
 router = APIRouter(prefix="/projects", tags=["gold"])
 
@@ -42,6 +44,13 @@ _GROUND_TRUTH_KEYS = {
 class GoldCreate(BaseModel):
     article_id: uuid.UUID
     ground_truth_json: dict = Field(min_length=1)
+
+
+class GoldFromReviews(BaseModel):
+    """Ajoute au gold les relectures humaines (dernière relecture de chaque article)."""
+
+    article_ids: list[uuid.UUID] | None = None  # None : tous les articles relus de la recherche
+    refresh: bool = False  # remplace la copie des articles déjà au gold par la relecture actuelle
 
 
 async def _require_lead(db: AsyncSession, project_id: uuid.UUID, user: User) -> None:
@@ -65,55 +74,209 @@ def _validate_ground_truth(gt: dict, project=None) -> None:
         )
 
 
-def _payload(g: GoldArticle, title: str | None = None) -> dict:
+def _snapshot(ann: HumanAnnotation, fields: list[dict]) -> dict:
+    """Copie figée d'une relecture : réponses aux items + pertinence, preuves, raisonnement."""
+    d = ann.decision_json or {}
+    out = {f["key"]: d.get(f["key"]) for f in fields}
+    out["confidence_score"] = d.get("confidence_score", 1.0)
+    out["evidence_quotes"] = d.get("evidence_quotes") or []
+    out["reasoning_summary"] = d.get("reasoning_summary") or ""
+    return out
+
+
+def _answers_of(gt: dict | None, fields: list[dict]) -> dict:
+    return {f["key"]: (gt or {}).get(f["key"]) for f in fields}
+
+
+def _payload(
+    g: GoldArticle,
+    title: str | None,
+    fields: list[dict],
+    ann: HumanAnnotation | None,
+    names: dict,
+    latest: HumanAnnotation | None,
+) -> dict:
+    """Une ligne du gold : réponses, lien vers sa fiche source, relecteur, obsolescence."""
+    d = (ann.decision_json or {}) if ann else {}
+    stale = bool(
+        latest is not None
+        and ann is not None
+        and latest.id != ann.id
+        and _answers_of(latest.decision_json, fields) != _answers_of(g.ground_truth_json, fields)
+    )
     return {
         "id": str(g.id),
         "project_id": str(g.project_id) if g.project_id else None,
         "article_id": str(g.article_id) if g.article_id else None,
         "article_title": title,
         "ground_truth_json": g.ground_truth_json,
+        "search_id": str(g.search_id) if g.search_id else None,
+        "source": {
+            "annotation_id": str(ann.id),
+            "by": names.get(ann.user_id),
+            "at": ann.created_at.isoformat() if ann.created_at else None,
+            "status": d.get("review_status"),
+            "blind": bool(ann.blind),
+        }
+        if ann
+        else None,
+        "added_by": names.get(g.added_by),
+        "stale": stale,  # la relecture a changé depuis la copie : « mettre à jour »
     }
 
 
+async def _names(db: AsyncSession, user_ids: set) -> dict:
+    ids = {i for i in user_ids if i}
+    if not ids:
+        return {}
+    rows = await db.execute(select(User).where(User.id.in_(ids)))
+    return {u.id: u.full_name or u.email for u in rows.scalars()}
+
+
+async def _items(db: AsyncSession, project, scope, rows) -> list[dict]:
+    """Lignes du gold + relecture source, relecteurs, dernière relecture (pour « obsolète »)."""
+    fields = project_fields(scope)
+    anns = {}
+    ann_ids = [g.source_annotation_id for g, _ in rows if g.source_annotation_id]
+    if ann_ids:
+        for a in (
+            await db.execute(select(HumanAnnotation).where(HumanAnnotation.id.in_(ann_ids)))
+        ).scalars():
+            anns[a.id] = a
+    latest = await latest_reviews(db, [g.article_id for g, _ in rows if g.article_id], scope)
+    names = await _names(
+        db,
+        {a.user_id for a in anns.values()} | {g.added_by for g, _ in rows},
+    )
+    return [
+        _payload(
+            g,
+            title,
+            fields,
+            anns.get(g.source_annotation_id),
+            names,
+            (latest.get(g.article_id) or (None, None))[0],
+        )
+        for g, title in rows
+    ]
+
+
 @router.post("/{project_id}/gold", status_code=201)
-async def create_gold(project_id: uuid.UUID, payload: GoldCreate, db: DbDep, user: UserDep) -> dict:
+async def create_gold(
+    project_id: uuid.UUID,
+    payload: GoldCreate,
+    db: DbDep,
+    user: UserDep,
+    search: uuid.UUID | None = None,
+) -> dict:
+    """Saisie manuelle d'une référence (LEAD). Préférer « Ajouter au gold » depuis une relecture."""
     project = await _require_project_member(db, project_id, user)
     await _require_lead(db, project_id, user)
-    _validate_ground_truth(payload.ground_truth_json, project)
+    scope = await get_search(db, project, search)
+    _validate_ground_truth(payload.ground_truth_json, scope)
     article = await db.get(Article, payload.article_id)
     if article is None or article.project_id != project_id:
         raise HTTPException(status_code=422, detail="article not in this project")
     g = GoldArticle(
         project_id=project_id,
+        search_id=scope.id,
         article_id=payload.article_id,
         ground_truth_json=payload.ground_truth_json,
+        added_by=user.id,
     )
     db.add(g)
     await db.commit()
     await db.refresh(g)
-    return _payload(g, title=article.title)
+    return (await _items(db, project, scope, [(g, article.title)]))[0]
+
+
+@router.post("/{project_id}/gold/from-reviews", status_code=201)
+async def gold_from_reviews(
+    project_id: uuid.UUID,
+    payload: GoldFromReviews,
+    db: DbDep,
+    user: UserDep,
+    search: uuid.UUID | None = None,
+) -> dict:
+    """Ajoute au gold standard la dernière relecture humaine des articles (tout membre).
+
+    La référence est une copie figée des réponses du relecteur, avec un lien vers sa fiche. Un
+    article déjà au gold n'est pas dupliqué (``refresh`` : on met sa copie à jour)."""
+    project = await _require_project_member(db, project_id, user)
+    scope = await get_search(db, project, search)
+    fields = project_fields(scope)
+    reviews = await latest_reviews(db, payload.article_ids or await _reviewed_ids(db, scope), scope)
+    wanted = set(payload.article_ids) if payload.article_ids else set(reviews)
+    existing = {
+        g.article_id: g
+        for g in (
+            await db.execute(select(GoldArticle).where(await gold_condition(db, project, scope)))
+        ).scalars()
+    }
+    added = updated = skipped = 0
+    for article_id in wanted:
+        review = reviews.get(article_id)
+        if review is None:
+            skipped += 1
+            continue
+        ann = review[0]
+        g = existing.get(article_id)
+        if g is None:
+            db.add(
+                GoldArticle(
+                    project_id=project_id,
+                    search_id=scope.id,
+                    article_id=article_id,
+                    ground_truth_json=_snapshot(ann, fields),
+                    source_annotation_id=ann.id,
+                    added_by=user.id,
+                )
+            )
+            added += 1
+        elif payload.refresh:
+            g.ground_truth_json, g.source_annotation_id = _snapshot(ann, fields), ann.id
+            updated += 1
+        else:
+            skipped += 1
+    await db.commit()
+    return {"added": added, "updated": updated, "skipped": skipped}
+
+
+async def _reviewed_ids(db: AsyncSession, scope) -> list:
+    rows = await db.execute(
+        select(HumanAnnotation.article_id)
+        .where(in_search(HumanAnnotation.search_id, scope))
+        .distinct()
+    )
+    return [r for r in rows.scalars() if r]
 
 
 @router.get("/{project_id}/gold")
-async def list_gold(project_id: uuid.UUID, db: DbDep, user: UserDep) -> dict:
-    await _require_project_member(db, project_id, user)
+async def list_gold(
+    project_id: uuid.UUID, db: DbDep, user: UserDep, search: uuid.UUID | None = None
+) -> dict:
+    """Références valables pour la recherche (celles de toute recherche de même question)."""
+    project = await _require_project_member(db, project_id, user)
+    scope = await get_search(db, project, search)
     rows = (
         await db.execute(
             select(GoldArticle, Article.title)
             .join(Article, GoldArticle.article_id == Article.id)
-            .where(GoldArticle.project_id == project_id)
+            .where(await gold_condition(db, project, scope))
             .order_by(GoldArticle.id)
         )
     ).all()
-    return {"items": [_payload(g, title=title) for g, title in rows]}
+    return {"items": await _items(db, project, scope, rows)}
 
 
 @router.delete("/{project_id}/gold/{gold_id}", status_code=204)
 async def delete_gold(project_id: uuid.UUID, gold_id: uuid.UUID, db: DbDep, user: UserDep) -> None:
+    """Retire une référence du gold (LEAD, ou la personne qui l'avait ajoutée)."""
     await _require_project_member(db, project_id, user)
-    await _require_lead(db, project_id, user)
     g = await db.get(GoldArticle, gold_id)
     if g is None or g.project_id != project_id:
         raise HTTPException(status_code=404, detail="gold article not found")
+    if g.added_by != user.id:
+        await _require_lead(db, project_id, user)
     await db.delete(g)
     await db.commit()

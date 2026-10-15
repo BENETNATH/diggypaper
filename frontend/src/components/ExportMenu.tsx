@@ -11,9 +11,10 @@ import {
   startCrateExport,
 } from "@/lib/api";
 import { Button } from "@/components/ui/Button";
+import { useSearchId } from "@/lib/useSearch";
 
 /**
- * Exports du projet : Excel, références (RIS / BibTeX, suivent les filtres de la liste) et
+ * Exports de la recherche courante : Excel, références (RIS / BibTeX, suivent les filtres de la liste) et
  * corpus complet RO-Crate (tâche de fond : suivi ici + e-mail à la fin).
  */
 export function ExportMenu({
@@ -26,6 +27,7 @@ export function ExportMenu({
   answers?: Record<string, string>;
 }) {
   const t = useTranslations("articles");
+  const searchId = useSearchId(projectId);
   const [job, setJob] = useState<CrateExport | null>(null);
   const [error, setError] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout>>();
@@ -33,13 +35,13 @@ export function ExportMenu({
 
   const poll = useCallback(async () => {
     try {
-      const j = await getCrateExport(projectId);
+      const j = await getCrateExport(projectId, searchId);
       setJob(j);
       if (j && (j.status === "PENDING" || j.status === "RUNNING")) timer.current = setTimeout(poll, 3000);
     } catch {
       /* réessaie à la prochaine visite */
     }
-  }, [projectId]);
+  }, [projectId, searchId]);
 
   useEffect(() => {
     void poll();
@@ -49,7 +51,7 @@ export function ExportMenu({
   async function start() {
     setError(null);
     try {
-      setJob(await startCrateExport(projectId));
+      setJob(await startCrateExport(projectId, searchId));
       clearTimeout(timer.current);
       timer.current = setTimeout(poll, 3000);
     } catch (e) {
@@ -64,13 +66,13 @@ export function ExportMenu({
   return (
     <div className="flex flex-col gap-1">
       <div className="flex flex-wrap items-center gap-2">
-        <a href={exportUrl(projectId)} download>
+        <a href={exportUrl(projectId, searchId)} download>
           <Button variant="secondary">⬇ {t("exportXlsx")}</Button>
         </a>
-        <a href={referencesUrl(projectId, "ris", status, answers)} download>
+        <a href={referencesUrl(projectId, "ris", status, answers, searchId)} download>
           <Button variant="secondary" title={t("exportRefsHelp")}>⬇ {t("exportRis")}</Button>
         </a>
-        <a href={referencesUrl(projectId, "bib", status, answers)} download>
+        <a href={referencesUrl(projectId, "bib", status, answers, searchId)} download>
           <Button variant="secondary">⬇ BibTeX</Button>
         </a>
         <Button variant="secondary" onClick={start} disabled={busy} title={t("exportZipHelp")}>

@@ -338,6 +338,10 @@ class ExportJob(Base):
     user_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("users.id", ondelete="SET NULL")
     )  # destinataire de l'e-mail de fin
+    # Recherche exportée (NULL = recherche initiale du projet).
+    search_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("searches.id", ondelete="CASCADE")
+    )
     # PENDING | RUNNING | COMPLETED | FAILED
     status: Mapped[str] = mapped_column(String, server_default="PENDING")
     # {done, total} pendant le RUNNING, puis {size, articles, pdf, text}
@@ -427,6 +431,14 @@ class BenchmarkRun(Base):
         Uuid, ForeignKey("projects.id", ondelete="CASCADE")
     )
     prompt_template_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    # Recherche dont le lot sert de banc d'essai (NULL = recherche initiale).
+    search_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("searches.id", ondelete="CASCADE")
+    )
+    # Variantes comparées : [{name, prompt_template_id | system_prompt | None (= généré)}].
+    variants: Mapped[list[dict] | None] = mapped_column(JSONB)
+    # {use_gold: valider contre le gold, gold_examples: k exemples du gold dans le prompt}
+    options: Mapped[dict | None] = mapped_column(JSONB)
     models_tested: Mapped[list[str] | None] = mapped_column(JSONB)
     progress: Mapped[dict | None] = mapped_column(JSONB)  # {done, total} pendant le RUNNING
     status: Mapped[BenchmarkStatus | None] = mapped_column(
@@ -451,6 +463,10 @@ class BenchmarkResult(Base):
         Uuid, ForeignKey("benchmark_runs.id", ondelete="CASCADE")
     )
     model_name: Mapped[str] = mapped_column(String, nullable=False)
+    variant: Mapped[str | None] = mapped_column(String)  # variante de prompt (NULL = unique)
+    n_scored: Mapped[int | None] = mapped_column(Integer)  # articles notés (gold hors exemples)
+    # Métriques par item, matrice de confusion, accord entre variantes…
+    details: Mapped[dict | None] = mapped_column(JSONB)
     execution_time_seconds: Mapped[float | None] = mapped_column(Float)
     accuracy: Mapped[float | None] = mapped_column(Float)
     precision_score: Mapped[float | None] = mapped_column(Float)
@@ -458,6 +474,28 @@ class BenchmarkResult(Base):
     f1_score: Mapped[float | None] = mapped_column(Float)
 
     benchmark_run: Mapped["BenchmarkRun | None"] = relationship(back_populates="results")
+
+
+class BenchmarkPrediction(Base):
+    """Réponse d'une variante (modèle × prompt) pour un article du banc d'essai : comparaison côte
+    à côte, désaccords, recalcul des métriques sans relancer les modèles."""
+
+    __tablename__ = "benchmark_predictions"
+    __table_args__ = (Index("ix_benchmark_predictions_run_id", "benchmark_run_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, **_uuid_pk())
+    benchmark_run_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("benchmark_runs.id", ondelete="CASCADE"), nullable=False
+    )
+    article_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("articles.id", ondelete="CASCADE"), nullable=False
+    )
+    model_name: Mapped[str] = mapped_column(String, nullable=False)
+    variant: Mapped[str | None] = mapped_column(String)
+    decision_json: Mapped[dict | None] = mapped_column(JSONB)
+    confidence_score: Mapped[float | None] = mapped_column(Float)
+    error: Mapped[str | None] = mapped_column(String)  # ex. invalid_json
+    seconds: Mapped[float | None] = mapped_column(Float)
 
 
 class PromptTemplate(Base):
@@ -480,6 +518,57 @@ class PromptTemplate(Base):
     project: Mapped["Project | None"] = relationship(back_populates="prompt_templates")
 
 
+class Search(Base):
+    """Une recherche : une (ou plusieurs) questions posées à un lot d'articles du projet.
+
+    Elle porte sa propre question, ses items de réponse et ses parties de texte lues ; ses
+    prédictions, relectures, analyses et références (gold) lui sont rattachées. Le lot est soit
+    tout le corpus (``lot_all``, dynamique), soit une liste figée (``search_articles``), par
+    exemple « les articles où la recherche X a répondu oui » (``parent_id`` + ``parent_spec``).
+    """
+
+    __tablename__ = "searches"
+    __table_args__ = (Index("ix_searches_project_id", "project_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, **_uuid_pk())
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    question: Mapped[str | None] = mapped_column(Text)
+    fields: Mapped[list[dict] | None] = mapped_column(JSONB)
+    text_sections: Mapped[list[str] | None] = mapped_column(JSONB)
+    read_windows: Mapped[int | None] = mapped_column(Integer)
+    # Empreinte de (question, items) : même empreinte = même question, références partagées.
+    definition_hash: Mapped[str | None] = mapped_column(String)
+    kind: Mapped[str] = mapped_column(String, server_default="standard", default="standard")
+    is_default: Mapped[bool] = mapped_column(Boolean, server_default=text("false"), default=False)
+    lot_all: Mapped[bool] = mapped_column(Boolean, server_default=text("false"), default=False)
+    parent_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("searches.id", ondelete="SET NULL")
+    )
+    parent_spec: Mapped[dict | None] = mapped_column(JSONB)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class SearchArticle(Base):
+    """Lot figé d'une recherche (absent quand ``Search.lot_all``)."""
+
+    __tablename__ = "search_articles"
+
+    search_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("searches.id", ondelete="CASCADE"), primary_key=True
+    )
+    article_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("articles.id", ondelete="CASCADE"), primary_key=True
+    )
+
+
 class GoldArticle(Base):
     __tablename__ = "gold_articles"
     __table_args__ = (
@@ -495,6 +584,17 @@ class GoldArticle(Base):
         Uuid, ForeignKey("articles.id", ondelete="CASCADE")
     )
     ground_truth_json: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    # Recherche (donc question) dont c'est la référence ; NULL = recherche par défaut du projet.
+    search_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("searches.id", ondelete="CASCADE")
+    )
+    # Relecture d'origine (lien retour vers la fiche) et relecteur ; copie figée des réponses.
+    source_annotation_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("human_annotations.id", ondelete="SET NULL")
+    )
+    added_by: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="SET NULL")
+    )
 
     project: Mapped["Project | None"] = relationship(back_populates="gold_articles")
     article: Mapped["Article | None"] = relationship(back_populates="gold_articles")
@@ -518,6 +618,10 @@ class ArticlePrediction(Base):
     decision_json: Mapped[dict | None] = mapped_column(JSONB)
     confidence_score: Mapped[float | None] = mapped_column(Float)
     evidence_quotes: Mapped[list[str] | None] = mapped_column(JSONB)
+    # Recherche qui l'a produite ; NULL = recherche par défaut du projet (données anciennes).
+    search_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("searches.id", ondelete="CASCADE")
+    )
     status: Mapped[PredictionStatus | None] = mapped_column(
         _enum(PredictionStatus), server_default="NEEDS_HUMAN_REVIEW"
     )
@@ -543,6 +647,12 @@ class HumanAnnotation(Base):
         Uuid, ForeignKey("users.id", ondelete="SET NULL")
     )
     annotator_hash: Mapped[str | None] = mapped_column(String)
+    # Recherche (question) à laquelle cette relecture répond ; NULL = recherche par défaut.
+    search_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("searches.id", ondelete="CASCADE")
+    )
+    # Relecture à l'aveugle : faite sans voir la prédiction du modèle.
+    blind: Mapped[bool] = mapped_column(Boolean, server_default=text("false"), default=False)
     decision_json: Mapped[dict | None] = mapped_column(JSONB)
     notes: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime | None] = mapped_column(
@@ -660,6 +770,11 @@ class InferenceJob(Base):
     model_used: Mapped[str] = mapped_column(String, nullable=False)
     # Étage 1 optionnel (encodeur ONNX sur abstracts) ; NULL = pas de pré-filtre.
     prefilter_model: Mapped[str | None] = mapped_column(String)
+    search_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("searches.id", ondelete="CASCADE")
+    )
+    # {gold_examples: k exemples du gold dans le prompt, validate_with_gold: bool}
+    options: Mapped[dict | None] = mapped_column(JSONB)
     # Reprise d'un job interrompu : les articles déjà prédits depuis cette date sont sautés.
     resume_after: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     status: Mapped[InferenceJobStatus | None] = mapped_column(
