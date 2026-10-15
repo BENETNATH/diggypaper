@@ -35,8 +35,22 @@ def _prf(tp: int, fp: int, fn: int, tn: int) -> dict:
     }
 
 
+def as_bool(v) -> bool:
+    """Booléen d'une sortie de modèle : "true"/"false"/"oui"/"non"/0/1 (bool("false") est True)."""
+    if isinstance(v, str):
+        return v.strip().lower() in ("true", "yes", "oui", "1", "vrai")
+    return bool(v)
+
+
+def as_float(v) -> float:
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def relevant(decision: dict | None) -> bool:
-    return float((decision or {}).get("confidence_score") or 0.0) >= RELEVANT_AT
+    return as_float((decision or {}).get("confidence_score")) >= RELEVANT_AT
 
 
 def _tokens(text) -> set[str]:
@@ -62,8 +76,11 @@ def score(fields: list[dict], preds: dict, gold: dict, exclude: set | None = Non
     """
     ids = [i for i in gold if i in preds and i not in (exclude or set())]
     rel = [0, 0, 0, 0]
+    invalid = 0
     for i in ids:
         p, g = relevant(preds[i]), relevant(gold[i])
+        if not preds[i]:  # sortie invalide : une erreur, jamais un « non pertinent » avantageux
+            p, invalid = not g, invalid + 1
         rel[0] += p and g
         rel[1] += p and not g
         rel[2] += g and not p
@@ -75,7 +92,7 @@ def score(fields: list[dict], preds: dict, gold: dict, exclude: set | None = Non
         if t == "boolean":
             c = [0, 0, 0, 0]
             for i in known:
-                p, g = bool(preds[i][k]), bool(gold[i][k])
+                p, g = as_bool(preds[i][k]), as_bool(gold[i][k])
                 c[0] += p and g
                 c[1] += p and not g
                 c[2] += g and not p
@@ -90,6 +107,7 @@ def score(fields: list[dict], preds: dict, gold: dict, exclude: set | None = Non
     accs = [v["accuracy"] for v in items.values() if "accuracy" in v and v["n"]]
     return {
         "n": len(ids),
+        "invalid": invalid,
         "relevance": _prf(*rel),
         "items": items,
         "accuracy": sum(accs) / len(accs) if accs else None,

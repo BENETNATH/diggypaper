@@ -7,7 +7,7 @@ garde « un benchmark PENDING/RUNNING par projet ».
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -253,8 +253,8 @@ async def benchmark_articles(
     db: DbDep,
     user: UserDep,
     disagree: bool = False,
-    page: int = 1,
-    per_page: int = 25,
+    page: Annotated[int, Query(ge=1, le=1000)] = 1,
+    per_page: Annotated[int, Query(ge=1, le=100)] = 25,
 ) -> dict:
     """Grille article × variante : la réponse de chaque (modèle, variante), la référence si elle
     existe, et si les variantes divergent. ``disagree`` ne garde que les désaccords."""

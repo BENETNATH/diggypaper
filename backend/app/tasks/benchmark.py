@@ -163,7 +163,13 @@ async def _do_benchmark(
     project = ScopedProject(base_project, search)  # question / items / parties de la recherche
     fields = project_fields(project)
     lot = (
-        (await session.execute(select(Article).where(lot_condition(search)).order_by(Article.id)))
+        (
+            await session.execute(
+                select(Article)
+                .where(lot_condition(search))
+                .order_by(Article.created_at, Article.id)
+            )
+        )
         .scalars()
         .all()
     )
@@ -236,6 +242,8 @@ async def _do_benchmark(
                             (system + "\n\n" + shots).strip() if shots else system,
                             fill_prompt(user_schema, article, project.text_sections),
                         )
+                    if not isinstance(prediction, dict):
+                        raise InferenceError("invalid_json")  # JSON valide mais pas un objet
                 except InferenceError as exc:
                     if str(exc) != "invalid_json":
                         raise

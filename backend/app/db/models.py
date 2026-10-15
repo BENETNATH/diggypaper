@@ -565,7 +565,7 @@ class SearchArticle(Base):
         Uuid, ForeignKey("searches.id", ondelete="CASCADE"), primary_key=True
     )
     article_id: Mapped[uuid.UUID] = mapped_column(
-        Uuid, ForeignKey("articles.id", ondelete="CASCADE"), primary_key=True
+        Uuid, ForeignKey("articles.id", ondelete="CASCADE"), primary_key=True, index=True
     )
 
 
@@ -574,6 +574,7 @@ class GoldArticle(Base):
     __table_args__ = (
         Index("ix_gold_articles_project_id", "project_id"),
         Index("ix_gold_articles_article_id", "article_id"),
+        Index("uq_gold_articles_search_article", "search_id", "article_id", unique=True),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, **_uuid_pk())
@@ -586,7 +587,7 @@ class GoldArticle(Base):
     ground_truth_json: Mapped[dict] = mapped_column(JSONB, nullable=False)
     # Recherche (donc question) dont c'est la référence ; NULL = recherche par défaut du projet.
     search_id: Mapped[uuid.UUID | None] = mapped_column(
-        Uuid, ForeignKey("searches.id", ondelete="CASCADE")
+        Uuid, ForeignKey("searches.id", ondelete="CASCADE"), index=True
     )
     # Relecture d'origine (lien retour vers la fiche) et relecteur ; copie figée des réponses.
     source_annotation_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -620,7 +621,7 @@ class ArticlePrediction(Base):
     evidence_quotes: Mapped[list[str] | None] = mapped_column(JSONB)
     # Recherche qui l'a produite ; NULL = recherche par défaut du projet (données anciennes).
     search_id: Mapped[uuid.UUID | None] = mapped_column(
-        Uuid, ForeignKey("searches.id", ondelete="CASCADE")
+        Uuid, ForeignKey("searches.id", ondelete="CASCADE"), index=True
     )
     status: Mapped[PredictionStatus | None] = mapped_column(
         _enum(PredictionStatus), server_default="NEEDS_HUMAN_REVIEW"
@@ -649,7 +650,7 @@ class HumanAnnotation(Base):
     annotator_hash: Mapped[str | None] = mapped_column(String)
     # Recherche (question) à laquelle cette relecture répond ; NULL = recherche par défaut.
     search_id: Mapped[uuid.UUID | None] = mapped_column(
-        Uuid, ForeignKey("searches.id", ondelete="CASCADE")
+        Uuid, ForeignKey("searches.id", ondelete="CASCADE"), index=True
     )
     # Relecture à l'aveugle : faite sans voir la prédiction du modèle.
     blind: Mapped[bool] = mapped_column(Boolean, server_default=text("false"), default=False)
@@ -771,7 +772,7 @@ class InferenceJob(Base):
     # Étage 1 optionnel (encodeur ONNX sur abstracts) ; NULL = pas de pré-filtre.
     prefilter_model: Mapped[str | None] = mapped_column(String)
     search_id: Mapped[uuid.UUID | None] = mapped_column(
-        Uuid, ForeignKey("searches.id", ondelete="CASCADE")
+        Uuid, ForeignKey("searches.id", ondelete="CASCADE"), index=True
     )
     # {gold_examples: k exemples du gold dans le prompt, validate_with_gold: bool}
     options: Mapped[dict | None] = mapped_column(JSONB)

@@ -209,7 +209,13 @@ async def _do_inference(
     project = ScopedProject(base_project, search)
 
     articles = (
-        (await session.execute(select(Article).where(lot_condition(search)).order_by(Article.id)))
+        (
+            await session.execute(
+                select(Article)
+                .where(lot_condition(search))
+                .order_by(Article.created_at, Article.id)
+            )
+        )
         .scalars()
         .all()
     )
@@ -294,7 +300,10 @@ async def _do_inference(
         system = prompt.system_prompt or ""
         if shots and not light:
             system = (system + "\n\n" + shots).strip()
-        return await infer_with(model, inference, system, user_prompt, name=job.model_used)
+        out = await infer_with(model, inference, system, user_prompt, name=job.model_used)
+        if not isinstance(out, dict):
+            raise InferenceError("invalid_json")  # JSON valide mais pas un objet
+        return out
 
     async def cancelled() -> bool:
         # Arrêt demandé depuis l'interface (POST …/inference/cancel : statut FAILED en base).
@@ -367,6 +376,8 @@ async def _do_inference(
                     .where(
                         in_search(ArticlePrediction.search_id, search),
                         ArticlePrediction.article_id.in_(in_lot),
+                        # pas les prédictions d'un run antérieur (article en sortie invalide ici)
+                        ArticlePrediction.created_at >= (job.resume_after or job.created_at),
                     )
                     .order_by(ArticlePrediction.created_at.nulls_first(), ArticlePrediction.id)
                 )

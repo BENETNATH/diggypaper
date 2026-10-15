@@ -9,6 +9,7 @@
 # Planifier (cron, tous les jours à 2 h) :
 #   0 2 * * * cd /chemin/diggypaper && scripts/backup.sh >> backups/backup.log 2>&1
 set -eu
+umask 077  # le dump contient des hash de mots de passe et des secrets chiffrés : lisible par vous seul
 cd "$(dirname "$0")/.."
 
 DIR="${BACKUP_DIR:-./backups}"

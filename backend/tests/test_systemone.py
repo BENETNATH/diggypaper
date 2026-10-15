@@ -118,7 +118,7 @@ async def test_cascade_with_decision_models(engine, session, monkeypatch):
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     result = await _run_inference(str(job.id), session_factory=factory, inference=object())
     # étage 1 sur les 2 articles ; étage 2 (Kev) seulement sur « high »
-    assert [c[0] for c in calls] == ["http://l#ml", "http://l#ml", "http://k"]
+    assert sorted(c[0] for c in calls) == ["http://k", "http://l#ml", "http://l#ml"]  # ordre libre
     assert (
         result["prefiltered"] == 1 and result["auto_rejected"] == 1 and result["auto_accepted"] == 1
     )

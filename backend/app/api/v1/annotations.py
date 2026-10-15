@@ -320,7 +320,24 @@ async def get_annotation(
     statut), null si aucune."""
     article = await _require_article(db, project_id, article_id, user)
     scope = await _scope(db, project_id, search)
-    ann, reviewer = (await latest_reviews(db, [article.id], scope)).get(article.id, (None, None))
+    if scope.kind == "blind":  # aveugle : seulement SA relecture, jamais celle d'un autre relecteur
+        own = (
+            await db.execute(
+                select(HumanAnnotation)
+                .where(
+                    HumanAnnotation.article_id == article.id,
+                    HumanAnnotation.user_id == user.id,
+                    in_search(HumanAnnotation.search_id, scope),
+                )
+                .order_by(HumanAnnotation.created_at.desc().nulls_last(), HumanAnnotation.id.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        ann, reviewer = (own, user) if own else (None, None)
+    else:
+        ann, reviewer = (await latest_reviews(db, [article.id], scope)).get(
+            article.id, (None, None)
+        )
     if ann is None:
         return None
     return {

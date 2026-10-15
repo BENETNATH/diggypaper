@@ -202,6 +202,15 @@ def _words(text: str) -> list[str]:
     return re.findall(r"[a-z0-9]+", plain)
 
 
+def doi_in(text: str, doi: str | None) -> bool:
+    """Ce DOI figure-t-il EXACTEMENT dans le texte (pas comme préfixe d'un autre DOI) ? Tolère un
+    retour à la ligne entre deux caractères du DOI."""
+    if not doi:
+        return False
+    pattern = r"\s?".join(re.escape(c) for c in doi.strip().lower())
+    return re.search(pattern + r"(?![0-9a-z_\-]|\.[0-9a-z])", text.lower()) is not None
+
+
 def pdf_matches_article(title: str | None, doi: str | None, sections: list[dict]) -> bool | None:
     """Le texte extrait est-il bien celui de cet article ? True / False / None (invérifiable).
 
@@ -214,10 +223,7 @@ def pdf_matches_article(title: str | None, doi: str | None, sections: list[dict]
         return None  # titre absent ou trop court pour trancher
     if len(wanted & set(_words(head))) / len(wanted) >= TITLE_COVERAGE:
         return True
-    squashed = "".join(_words(head))
-    if doi and "".join(_words(doi)) in squashed:
-        return True
-    return False
+    return doi_in(head, doi)
 
 
 def match_scores(sections: list[dict], candidates: list[tuple]) -> list[tuple[float, object]]:
@@ -225,10 +231,10 @@ def match_scores(sections: list[dict], candidates: list[tuple]) -> list[tuple[fl
 
     2.0 = le DOI de l'article est en tête du document ; sinon, part des mots du titre retrouvés."""
     head = " ".join(s["text"] for s in sections)[:HEAD_CHARS]
-    words, squashed = set(_words(head)), "".join(_words(head))
+    words = set(_words(head))
     scored = []
     for art_id, title, doi in candidates:
-        if doi and "".join(_words(doi)) in squashed:
+        if doi_in(head, doi):
             scored.append((2.0, art_id))  # le DOI prime sur un simple titre
             continue
         wanted = {w for w in _words(title or "") if len(w) >= 3 and w not in _STOPWORDS}

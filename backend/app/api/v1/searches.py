@@ -10,7 +10,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db
@@ -23,6 +23,7 @@ from app.api.v1.projects import (
 from app.db.models import (
     Article,
     ArticlePrediction,
+    GoldArticle,
     HumanAnnotation,
     InferenceJob,
     Project,
@@ -94,6 +95,11 @@ async def select_articles(db: AsyncSession, project: Project, sel: Selection) ->
     import json
 
     src = await get_search(db, project, sel.from_search_id)
+    if src.kind == "blind" and any(
+        v is not None
+        for v in (sel.status, sel.answers, sel.reviewed, sel.confidence_min, sel.confidence_max)
+    ):  # sinon ces critères serviraient d'oracle sur les réponses masquées
+        raise HTTPException(status_code=422, detail="criteria unavailable on a blind search")
     answers = json.dumps(sel.answers) if sel.answers else None
     where, _ps, pconf, _pd, annotated = article_filter(src, sel.status, answers)
     on_results = any(
@@ -132,16 +138,16 @@ async def _stats(db: AsyncSession, s: Search) -> dict:
     ).scalar_one()
     predicted = (
         await db.execute(
-            select(func.count(func.distinct(ArticlePrediction.article_id))).where(
-                in_search(ArticlePrediction.search_id, s)
-            )
+            select(func.count(func.distinct(ArticlePrediction.article_id)))
+            .join(Article, Article.id == ArticlePrediction.article_id)
+            .where(Article.project_id == s.project_id, in_search(ArticlePrediction.search_id, s))
         )
     ).scalar_one()
     reviewed = (
         await db.execute(
-            select(func.count(func.distinct(HumanAnnotation.article_id))).where(
-                in_search(HumanAnnotation.search_id, s)
-            )
+            select(func.count(func.distinct(HumanAnnotation.article_id)))
+            .join(Article, Article.id == HumanAnnotation.article_id)
+            .where(Article.project_id == s.project_id, in_search(HumanAnnotation.search_id, s))
         )
     ).scalar_one()
     job = (
@@ -287,5 +293,23 @@ async def delete_search(
     s = await get_search(db, project, search_id)
     if s.is_default:
         raise HTTPException(status_code=409, detail="the initial search cannot be deleted")
+    # Le gold est partagé par les recherches de même question : on le rattache à l'une d'elles
+    # plutôt que de l'effacer avec cette recherche.
+    heir = (
+        await db.execute(
+            select(Search.id)
+            .where(
+                Search.project_id == project.id,
+                Search.definition_hash == s.definition_hash,
+                Search.id != s.id,
+            )
+            .order_by(Search.is_default.desc(), Search.created_at)
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if heir is not None:
+        await db.execute(
+            update(GoldArticle).where(GoldArticle.search_id == s.id).values(search_id=heir)
+        )
     await db.delete(s)
     await db.commit()

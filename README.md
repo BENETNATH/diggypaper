@@ -118,7 +118,7 @@ une seconde question aux seuls articles retenus par la première, sans rien réa
   react-swipeable. Composants UI sur **design tokens** (OKLCH, light/dark).
 - **Modèles** : modèles de décision (protocole `/v1/systemone` : Laya, Kev) et modèles
   génératifs (endpoint OpenAI-compatible `/v1/chat/completions` : Ollama, API externe).
-  Réglages gérés en base (chiffrés), pas en variables d'environnement.
+  Réglages SMTP / NCBI / LLM gérés en base (chiffrés) ou, à défaut, par variables d'environnement.
 
 ---
 
@@ -195,8 +195,9 @@ Voir [`.env.example`](.env.example) (racine) pour la liste complète.
 
 ## Production (Docker)
 
-Stack complète (8 services) : nginx est le **seul service exposé**, tout le reste reste
-sur le réseau interne de Docker.
+Stack de base (nginx, frontend, backend, worker, postgres, redis) + services de modèles
+**optionnels** (ollama, laya, kev : voir « Modèles »). nginx est le **seul service exposé**, tout
+le reste reste sur le réseau interne de Docker.
 
 ```
 reverse proxy TLS (établissement)            ← HTTPS, certificat, HSTS
@@ -266,6 +267,27 @@ server {
 }
 ```
 
+### Mettre à jour une installation existante
+
+Après `git pull`, avant `docker compose up -d --build` :
+
+1. **Services de modèles.** Ollama et Laya ne démarrent plus par défaut. Pour garder l'ancien
+   comportement, ajoutez à votre `.env` :
+   ```bash
+   COMPOSE_PROFILES=ollama,laya
+   LLM_API_BASE_URL=http://ollama:11434/v1
+   LAYA_URL=http://laya:8000
+   ```
+   Sans modèle local (API externe seulement), ne mettez rien : aucun service de modèle ne démarre.
+2. **Cookies.** `COOKIE_SECURE` vaut `true` par défaut : derrière HTTPS rien à faire ; pour un accès
+   HTTP simple, mettez `COOKIE_SECURE=false`.
+3. **Port.** nginx n'écoute plus que sur `127.0.0.1` ; si le reverse proxy est sur une autre machine,
+   `NGINX_BIND=0.0.0.0`.
+4. **Sauvegardez** (`scripts/backup.sh`) : les migrations ajoutent les recherches (chaque projet
+   reçoit une « Recherche initiale » qui reprend ses résultats, relectures et références).
+5. Les conteneurs backend et worker tournent désormais sans root ; leurs volumes sont réparés au
+   démarrage.
+
 ### Comptes
 
 - **Admin** : créé au premier démarrage (`ADMIN_EMAIL`/`ADMIN_PASSWORD`). Il invite des
@@ -286,8 +308,8 @@ server {
 | `PRIVACY_URL` | lien « politique de confidentialité » affiché à la première connexion |
 
 Les PDF d'articles sont stockés dans PostgreSQL : prévoir de la place (jusqu'à 25 Mo par
-fichier). Seuls les membres LEAD peuvent lancer un import, un export ou remplacer le
-texte intégral d'un article.
+fichier). Seuls les membres LEAD peuvent lancer un import, un export RO-Crate ou remplacer le
+texte intégral d'un article (les exports tableur, références et PRISMA sont ouverts à tout membre).
 
 ### Sauvegarde et restauration
 

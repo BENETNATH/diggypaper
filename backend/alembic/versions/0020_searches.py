@@ -123,6 +123,7 @@ def upgrade() -> None:
     op.create_index(
         "ix_benchmark_predictions_run_id", "benchmark_predictions", ["benchmark_run_id"]
     )
+
     op.add_column(
         "gold_articles",
         sa.Column(

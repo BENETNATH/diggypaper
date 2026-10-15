@@ -11,6 +11,12 @@ FILE="${1:?usage: scripts/restore.sh <sauvegarde.sql.gz>}"
 [ -f "$FILE" ] || { echo "Fichier introuvable : $FILE" >&2; exit 1; }
 gzip -t "$FILE"
 
+PROD_DB="$(docker compose exec -T postgres sh -c 'printf %s "$POSTGRES_DB"')"
+if [ -n "${TARGET_DB:-}" ] && [ "$TARGET_DB" = "$PROD_DB" ]; then
+    echo "TARGET_DB est la base en service ($PROD_DB) : lancez le script sans TARGET_DB (confirmation et arrêt des services)." >&2
+    exit 1
+fi
+
 if [ -z "${TARGET_DB:-}" ]; then
     printf "Remplacer TOUTE la base courante par %s ? (oui/non) " "$FILE"
     read -r ans

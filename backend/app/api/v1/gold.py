@@ -177,6 +177,13 @@ async def create_gold(
     article = await db.get(Article, payload.article_id)
     if article is None or article.project_id != project_id:
         raise HTTPException(status_code=422, detail="article not in this project")
+    dup = await db.execute(
+        select(GoldArticle.id)
+        .where(await gold_condition(db, project, scope), GoldArticle.article_id == article.id)
+        .limit(1)
+    )
+    if dup.first() is not None:
+        raise HTTPException(status_code=409, detail="already in the gold standard")
     g = GoldArticle(
         project_id=project_id,
         search_id=scope.id,
@@ -214,6 +221,10 @@ async def gold_from_reviews(
         ).scalars()
     }
     added = updated = skipped = 0
+    is_lead = user.role == UserRole.ADMIN or bool(
+        (m := await db.get(ProjectMember, (project_id, user.id)))
+        and m.role_in_project == ProjectMemberRole.LEAD
+    )
     for article_id in wanted:
         review = reviews.get(article_id)
         if review is None:
@@ -233,7 +244,8 @@ async def gold_from_reviews(
                 )
             )
             added += 1
-        elif payload.refresh:
+        elif payload.refresh and (is_lead or g.added_by == user.id):
+            # pas de réécriture de la référence d'un autre (sauf LEAD) : saisie manuelle, relecteur
             g.ground_truth_json, g.source_annotation_id = _snapshot(ann, fields), ann.id
             updated += 1
         else:
@@ -245,7 +257,8 @@ async def gold_from_reviews(
 async def _reviewed_ids(db: AsyncSession, scope) -> list:
     rows = await db.execute(
         select(HumanAnnotation.article_id)
-        .where(in_search(HumanAnnotation.search_id, scope))
+        .join(Article, Article.id == HumanAnnotation.article_id)
+        .where(Article.project_id == scope.project_id, in_search(HumanAnnotation.search_id, scope))
         .distinct()
     )
     return [r for r in rows.scalars() if r]

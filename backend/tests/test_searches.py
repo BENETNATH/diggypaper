@@ -309,3 +309,170 @@ async def test_blind_sample_hides_predictions_until_reviewed(client, session, co
     await client.post(f"{base}/gold/from-reviews", json={}, params={"search": s["id"]})
     item = (await client.get(f"{base}/gold", params={"search": s["id"]})).json()["items"][0]
     assert item["source"]["blind"] is True
+
+
+# --- correctifs de l'audit ---------------------------------------------------------------
+
+
+async def _member(session, project, email, role=ProjectMemberRole.ANNOTATOR):
+    from app.db.models import UserRole
+    from tests.conftest import _make_user
+
+    u = await _make_user(session, email, UserRole.RESEARCHER, "member-pass-123", True)
+    session.add(ProjectMember(project_id=project.id, user_id=u.id, role_in_project=role))
+    await session.commit()
+    return u
+
+
+async def _blind_search(client, project, n=4):
+    base = f"/api/v1/projects/{project.id}"
+    return (
+        await client.post(
+            f"{base}/searches",
+            json={"name": "aveugle", "kind": "blind", "selection": {"sample_n": n, "seed": 1}},
+        )
+    ).json()
+
+
+async def test_blind_search_hides_model_and_other_reviewers_everywhere(
+    client, session, corpus, do_login
+):
+    project, arts = corpus
+    base = f"/api/v1/projects/{project.id}"
+    s = await _blind_search(client, project)
+    sid = __import__("uuid").UUID(s["id"])
+    for a in arts:  # l'IA a répondu dans cette recherche
+        session.add(
+            ArticlePrediction(
+                article_id=a.id,
+                search_id=sid,
+                model_used="m",
+                decision_json={"ai": True},
+                confidence_score=0.9,
+                status=PredictionStatus.AUTO_ACCEPTED,
+            )
+        )
+    await session.commit()
+    # le LEAD relit A1 ; un annotateur n'en voit RIEN : ni IA, ni réponse du LEAD
+    await client.post(
+        f"{base}/articles/{arts[0].id}/annotation", params={"search": s["id"]}, json={"ai": False}
+    )
+    await _member(session, project, "ann@lab.fr")
+    await do_login("ann@lab.fr", "member-pass-123", consent=True)
+    items = (await client.get(f"{base}/articles", params={"search": s["id"]})).json()["items"]
+    assert items and all(i["answers"] == [] and i["prediction_status"] is None for i in items)
+    assert all(i["confidence"] is None and i["review"] is None for i in items)
+    # filtres et sélections ne servent pas d'oracle
+    assert (
+        await client.get(f"{base}/articles", params={"search": s["id"], "answers": '{"ai": true}'})
+    ).status_code == 422
+    r = await client.get(f"{base}/articles", params={"search": s["id"], "status": "AUTO_ACCEPTED"})
+    assert r.json()["items"] == []
+    r = await client.post(
+        f"{base}/searches/preview", json={"from_search_id": s["id"], "answers": {"ai": True}}
+    )
+    assert r.status_code == 422
+    # la relecture d'un autre n'est pas préremplie
+    got = await client.get(f"{base}/articles/{arts[0].id}/annotation", params={"search": s["id"]})
+    assert got.json() is None
+    # après SA relecture, l'IA devient visible pour cet article
+    await client.post(
+        f"{base}/articles/{arts[0].id}/annotation", params={"search": s["id"]}, json={"ai": True}
+    )
+    mine = (await client.get(f"{base}/articles", params={"search": s["id"]})).json()["items"]
+    shown = [i for i in mine if i["answers"]]
+    assert len(shown) == 1 and shown[0]["prediction_status"] == "AUTO_ACCEPTED"
+
+
+async def test_only_lead_or_author_can_refresh_a_gold_reference(client, session, corpus, do_login):
+    project, arts = corpus
+    base = f"/api/v1/projects/{project.id}"
+    await client.post(f"{base}/articles/{arts[0].id}/annotation", json={"ai": True})
+    await client.post(f"{base}/gold/from-reviews", json={})  # ajouté par le LEAD
+    await _member(session, project, "ann2@lab.fr")
+    await do_login("ann2@lab.fr", "member-pass-123", consent=True)
+    import asyncio
+
+    await asyncio.sleep(1.1)
+    await client.post(f"{base}/articles/{arts[0].id}/annotation", json={"ai": False})
+    r = await client.post(f"{base}/gold/from-reviews", json={"refresh": True})
+    assert r.json()["updated"] == 0  # pas la référence d'un autre
+    g = (await client.get(f"{base}/gold")).json()["items"][0]
+    assert g["ground_truth_json"]["ai"] is True
+
+
+async def test_deleting_a_search_keeps_the_gold_shared_with_the_initial_one(
+    client, session, corpus
+):
+    project, arts = corpus
+    base = f"/api/v1/projects/{project.id}"
+    child = (
+        await client.post(
+            f"{base}/searches", json={"name": "enfant", "selection": {"answers": {"ai": True}}}
+        )
+    ).json()  # même question que l'initiale
+    await client.post(
+        f"{base}/articles/{arts[0].id}/annotation",
+        params={"search": child["id"]},
+        json={"ai": True},
+    )
+    await client.post(f"{base}/gold/from-reviews", params={"search": child["id"]}, json={})
+    assert len((await client.get(f"{base}/gold")).json()["items"]) == 1  # visible aussi ici
+    assert (await client.delete(f"{base}/searches/{child['id']}")).status_code == 204
+    assert len((await client.get(f"{base}/gold")).json()["items"]) == 1  # n'a pas disparu
+
+
+def test_metrics_tolerate_untyped_model_outputs():
+    from app import metrics
+
+    assert metrics.as_bool("false") is False and metrics.as_bool("Oui") is True
+    assert metrics.relevant({"confidence_score": "high"}) is False  # pas d'exception
+    fields = [{"key": "ai", "label": "AI", "type": "boolean"}]
+    gold = {1: {"ai": False, "confidence_score": 0.1}, 2: {"ai": True, "confidence_score": 0.9}}
+    preds = {1: {}, 2: {"ai": "false", "confidence_score": "0.2"}}  # 1 : sortie invalide
+    s = metrics.score(fields, preds, gold)
+    assert s["invalid"] == 1
+    rel = s["relevance"]  # l'invalide sur un gold négatif est une ERREUR (faux positif)
+    assert (rel["fp"], rel["fn"], rel["tn"]) == (1, 1, 0)
+    assert s["items"]["ai"]["n"] == 1 and s["items"]["ai"]["fn"] == 1  # "false" ≠ vrai
+
+
+async def test_search_counts_ignore_legacy_rows_of_other_projects(client, session, corpus):
+    project, arts = corpus
+    other = Project(title="Autre", created_by=None)
+    session.add(other)
+    await session.commit()
+    foreign = Article(project_id=other.id, pmid="9", title="F")
+    session.add(foreign)
+    await session.commit()
+    session.add(
+        ArticlePrediction(  # ligne ancienne (search_id NULL) d'un AUTRE projet
+            article_id=foreign.id,
+            model_used="m",
+            decision_json={"ai": True},
+            confidence_score=0.9,
+            status=PredictionStatus.AUTO_ACCEPTED,
+        )
+    )
+    await session.commit()
+    items = (await client.get(f"/api/v1/projects/{project.id}/searches")).json()["items"]
+    assert items[0]["predicted"] == 4  # et non 5
+
+
+async def test_crate_export_of_another_search_is_refused_while_one_runs(client, session, corpus):
+    from app.db.models import ExportJob
+    from app.searches import default_search
+
+    project, _ = corpus
+    base = f"/api/v1/projects/{project.id}"
+    other = (
+        await client.post(f"{base}/searches", json={"name": "B", "selection": {"sample_n": 2}})
+    ).json()
+    initial = await default_search(session, project)
+    await session.commit()
+    session.add(
+        ExportJob(project_id=project.id, search_id=initial.id, status="RUNNING", user_id=None)
+    )
+    await session.commit()
+    r = await client.post(f"{base}/export/crate", params={"search": other["id"]})
+    assert r.status_code == 409

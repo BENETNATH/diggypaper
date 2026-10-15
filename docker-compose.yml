@@ -65,7 +65,7 @@ services:
   #   .env : COMPOSE_PROFILES=…,kev  et  KEV_URL=http://kev:8080
   kev:
     profiles: ["kev"]
-    image: ghcr.io/ggml-org/llama.cpp:server
+    image: ghcr.io/ggml-org/llama.cpp@sha256:3cd94856897235684192b0eec34071b5ef30c6dfd7b12e4504527073a7758b8c  # build 11641
     command: ["-hf", "ggml-org/Kev-4B-GGUF:Q4_K_M", "--host", "0.0.0.0", "--port", "8080"]
     volumes:
       - kev:/root/.cache

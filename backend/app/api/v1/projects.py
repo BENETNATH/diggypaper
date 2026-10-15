@@ -17,7 +17,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import String, cast, func, select
+from sqlalchemy import String, cast, false, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db
@@ -570,6 +570,16 @@ def article_filter(search: Search, status: str | None, answers: str | None):
         .exists()
     )
     where = [lot_condition(search)]
+    if search.kind == "blind":
+        # Échantillon à l'aveugle : aucun critère ne doit révéler les réponses de l'IA ni celles
+        # des autres relecteurs (sinon le filtre sert d'oracle article par article).
+        if answers:
+            raise HTTPException(status_code=422, detail="answers filter unavailable (blind)")
+        if status in ("AUTO_ACCEPTED", "AUTO_REJECTED", "NEEDS_HUMAN_REVIEW"):
+            where.append(false())
+        elif status == "TO_REVIEW":
+            where.append(~annotated)
+        return where, pstatus, pconf, pdec, annotated
     if status == "NONE":
         where.append(pstatus.is_(None))
     elif status == "TO_REVIEW":  # à relire : incertain ET pas encore annoté
@@ -635,6 +645,19 @@ async def list_articles(
     ).all()
     stats = {(k or "NONE"): n for k, n in stats_rows}
     reviews = await latest_reviews(db, [r[0].id for r in rows], scope)
+    mine: set | None = None
+    if scope.kind == "blind":  # ne montrer l'IA et les autres relecteurs qu'après SA relecture
+        mine = set(
+            (
+                await db.execute(
+                    select(HumanAnnotation.article_id).where(
+                        HumanAnnotation.user_id == user.id,
+                        HumanAnnotation.article_id.in_([r[0].id for r in rows]),
+                        in_search(HumanAnnotation.search_id, scope),
+                    )
+                )
+            ).scalars()
+        )
     stats["TO_REVIEW"] = (
         await db.execute(
             select(func.count())
@@ -642,6 +665,17 @@ async def list_articles(
             .where(lot_condition(scope), pstatus == "NEEDS_HUMAN_REVIEW", ~annotated)
         )
     ).scalar_one()
+    if mine is not None:  # aveugle : pas de répartition des résultats de l'IA
+        stats = {"NONE": sum(stats.values()) - stats.get("TO_REVIEW", 0)}
+        stats["TO_REVIEW"] = (
+            await db.execute(
+                select(func.count()).select_from(Article).where(lot_condition(scope), ~annotated)
+            )
+        ).scalar_one()
+
+    def visible(a) -> bool:  # donnée de l'IA / d'autrui montrable pour cet article ?
+        return mine is None or a.id in mine
+
     return {
         "items": [
             {
@@ -655,12 +689,16 @@ async def list_articles(
                 "has_fulltext": bool(a.sections),
                 "fulltext_source": a.fulltext_source,
                 **biblio_payload(a),
-                "prediction_status": st,
+                "prediction_status": st if visible(a) else None,
                 # la pertinence de la relecture (curseur) remplace celle du modèle
-                "confidence": (_human(reviews, a.id) or {}).get("confidence_score", conf),
-                "answers": _answers(scope, dec, _human(reviews, a.id)),
+                "confidence": (
+                    (_human(reviews, a.id) or {}).get("confidence_score", conf)
+                    if visible(a)
+                    else None
+                ),
+                "answers": _answers(scope, dec, _human(reviews, a.id)) if visible(a) else [],
                 "annotated": bool(ann),
-                "review": review_payload(*reviews.get(a.id, (None, None))),
+                "review": review_payload(*reviews.get(a.id, (None, None))) if visible(a) else None,
             }
             for a, st, conf, ann, dec in rows
         ],

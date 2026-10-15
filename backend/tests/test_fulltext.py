@@ -320,3 +320,18 @@ async def test_bulk_pdf_matches_the_right_article(client, session, researcher_us
         url, content=make_pdf(["Unrelated quantum chromodynamics study"] + body), headers=hdr
     )
     assert r.status_code == 404 and r.json()["detail"] == "no_match"
+
+
+def test_doi_must_match_exactly_not_as_a_prefix():
+    from app.fulltext import doi_in
+
+    head = "Cell. doi: 10.1016/j.cell.2020.12.003 Published online."
+    assert doi_in(head, "10.1016/j.cell.2020.12.003")
+    assert doi_in(head, "10.1016/J.CELL.2020.12.003")  # casse ignorée
+    assert not doi_in(head, "10.1016/j.cell.2020.1")  # préfixe d'un autre DOI
+    assert not doi_in(head, "10.1016/j.cell.2020.12")
+    assert doi_in("see 10.1016/j.cell.2020.12.003.", "10.1016/j.cell.2020.12.003")  # point final
+    assert doi_in(
+        "doi 10.1016/j.cell.2020.12.\n003", "10.1016/j.cell.2020.12.003"
+    )  # coupé en ligne
+    assert not doi_in(head, None)

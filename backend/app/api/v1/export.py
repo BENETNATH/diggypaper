@@ -218,6 +218,8 @@ async def _load(db: AsyncSession, project, where=None, search=None):
             )
         ).scalars():
             preds[p.article_id] = p  # le plus récent écrase
+        if search.kind == "blind":
+            preds = {}  # échantillon aveugle : les réponses de l'IA ne sortent pas
         for h in (
             await db.execute(
                 select(HumanAnnotation)
@@ -521,8 +523,14 @@ async def start_crate_export(
     project = await _require_project_member(db, project_id, user)
     await _require_lead_or_admin(db, project_id, user)
     job = await _latest_export(db, project.id)
+    scope = await get_search(db, project, search)
+    if (
+        job is not None
+        and job.status in ("PENDING", "RUNNING")
+        and (job.search_id or (await default_search(db, project)).id) != scope.id
+    ):  # un export à la fois par projet : ne pas renvoyer celui d'une autre recherche sans le dire
+        raise HTTPException(status_code=409, detail="another export is in progress")
     if job is None or job.status not in ("PENDING", "RUNNING"):
-        scope = await get_search(db, project, search)
         job = ExportJob(
             project_id=project.id, user_id=user.id, search_id=scope.id, status="PENDING"
         )
