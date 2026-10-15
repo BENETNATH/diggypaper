@@ -540,7 +540,10 @@
     "zoteroHelp": "Reserved for Zotero sync (coming).",
     "contact": "Contact (open sources)",
     "contactHelp": "E-mail sent to Unpaywall and OpenAlex (courtesy, required by these free services) to find full texts. If empty, the SMTP sender e-mail is used.",
-    "contactEmail": "Contact e-mail"
+    "contactEmail": "Contact e-mail",
+    "fromEnvSecret": "set in the server environment",
+    "fromEnvValue": "Environment: {value}",
+    "envNote": "Empty fields use the value from the server's .env file (shown greyed out). Enter a value here to override it: it is stored in the database and takes precedence; clear the field to fall back to the environment."
   },
   "annotate": {
     "title": "Annotation",

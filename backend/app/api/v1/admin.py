@@ -23,7 +23,7 @@ from app.core.config import get_settings
 from app.core.crypto import MASK
 from app.db.models import SettingScope, User
 from app.emails import Mailer
-from app.settings.keys import KNOWN_KEYS
+from app.settings.keys import DEFAULTS, KNOWN_KEYS, SECRET_KEYS
 from app.settings.service import delete_setting, get_all, get_setting, set_setting
 
 logger = logging.getLogger(__name__)
@@ -98,6 +98,27 @@ async def read_settings(
     if user_id is not None:
         result["USER"] = await get_all(db, scope=SettingScope.USER, user_id=user_id)
     return result
+
+
+@router.get("/settings/env")
+async def settings_from_environment(admin: AdminDep) -> dict[str, dict]:
+    """Valeurs qui viennent de l'ENVIRONNEMENT du serveur (.env) quand la base n'en définit pas :
+    ce sont elles qui s'appliquent tant que le réglage est vide dans l'interface. Les secrets ne
+    sont jamais renvoyés (``set`` seulement)."""
+    s = get_settings()
+    env = {
+        "llm_api_base_url": DEFAULTS.get("llm_api_base_url", ""),
+        "smtp_host": s.smtp_host,
+        "smtp_port": str(s.smtp_port) if s.smtp_host else "",
+        "smtp_user": s.smtp_user,
+        "smtp_password": s.smtp_password,
+        "smtp_from_email": s.smtp_from,
+        "use_tls": ("true" if s.smtp_use_tls else "false") if s.smtp_host else "",
+    }
+    return {
+        key: {"set": bool(value), "value": None if key in SECRET_KEYS else (value or None)}
+        for key, value in env.items()
+    }
 
 
 @router.put("/settings")

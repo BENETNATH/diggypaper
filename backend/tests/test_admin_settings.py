@@ -445,3 +445,31 @@ async def test_put_partial_failure_rolls_back(client, session, admin_user, do_lo
     # La 1re clé (smtp_host) n'est PAS appliquée : rollback de la transaction.
     assert await get_setting(session, "smtp_host") is None
     assert await get_setting(session, "smtp_port") is None
+
+
+# --- GET /admin/settings/env : ce qui vient du .env quand la base est vide ---
+
+
+async def test_env_values_shown_without_leaking_secrets(client, admin_user, do_login, monkeypatch):
+    from app.core.config import get_settings
+
+    s = get_settings()
+    monkeypatch.setattr(s, "smtp_host", "smtp.example.org")
+    monkeypatch.setattr(s, "smtp_port", 465)
+    monkeypatch.setattr(s, "smtp_password", "super-secret")
+    monkeypatch.setattr(s, "smtp_from", "no-reply@example.org")
+    await _login_admin(client, do_login)
+    r = await client.get("/api/v1/admin/settings/env")
+    assert r.status_code == 200
+    env = r.json()
+    assert env["smtp_host"] == {"set": True, "value": "smtp.example.org"}
+    assert env["smtp_port"] == {"set": True, "value": "465"}
+    assert env["smtp_password"] == {"set": True, "value": None}  # jamais en clair
+    assert "super-secret" not in r.text
+    assert env["smtp_from_email"]["value"] == "no-reply@example.org"
+    assert env["smtp_user"] == {"set": False, "value": None}
+
+
+async def test_env_values_admin_only(client, researcher_user, do_login):
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    assert (await client.get("/api/v1/admin/settings/env")).status_code == 403

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
-import { getSettings, updateSettings, testSmtp, listOllama, SettingsScope } from "@/lib/api";
+import { getSettings, getEnvSettings, updateSettings, testSmtp, listOllama, EnvSettings, SettingsScope } from "@/lib/api";
 import { Button } from "@/components/ui/Button";
 import { Field, Input, Select } from "@/components/ui/Field";
 import { Card } from "@/components/ui/Card";
@@ -77,6 +77,7 @@ export function SettingsPanel({ projectId }: { projectId?: string }) {
   const [smtpMsg, setSmtpMsg] = useState<string | null>(null);
   const [smtpTesting, setSmtpTesting] = useState(false);
   const [llmMsg, setLlmMsg] = useState<string | null>(null);
+  const [env, setEnv] = useState<EnvSettings>({});
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -104,6 +105,10 @@ export function SettingsPanel({ projectId }: { projectId?: string }) {
   useEffect(() => {
     void load();
   }, [load]);
+  // Valeurs de l'environnement (admin, scope global) : montrent ce qui s'applique quand un champ est vide.
+  useEffect(() => {
+    getEnvSettings().then(setEnv).catch(() => setEnv({}));
+  }, []);
 
   function setField(key: string, v: string) {
     setValues((prev) => ({ ...prev, [key]: v }));
@@ -174,6 +179,9 @@ export function SettingsPanel({ projectId }: { projectId?: string }) {
         {GROUPS.map((group) => (
           <Card key={group.titleKey} title={t(group.titleKey)}>
             {group.helpKey && <p className="mb-3 text-sm text-muted">{t(group.helpKey)}</p>}
+            {scope === "GLOBAL" && group.fields.some((f) => env[f.key]?.set && !values[f.key]) && (
+              <p className="mb-3 rounded-md bg-primary/5 px-3 py-2 text-xs text-foreground">{t("envNote")}</p>
+            )}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               {group.fields.map((f) => (
                 <Field key={f.key} label={t(f.labelKey)} hint={f.hintKey ? t(f.hintKey) : undefined}>
@@ -182,7 +190,11 @@ export function SettingsPanel({ projectId }: { projectId?: string }) {
                       value={values[f.key] || ""}
                       onChange={(e) => setField(f.key, e.target.value)}
                     >
-                      <option value="">{t("unset")}</option>
+                      <option value="">
+                        {scope === "GLOBAL" && env[f.key]?.set
+                          ? t("fromEnvValue", { value: env[f.key].value === "true" ? t("yes") : t("no") })
+                          : t("unset")}
+                      </option>
                       <option value="true">{t("yes")}</option>
                       <option value="false">{t("no")}</option>
                     </Select>
@@ -191,7 +203,15 @@ export function SettingsPanel({ projectId }: { projectId?: string }) {
                       type={f.secret ? "password" : f.type ?? "text"}
                       value={values[f.key] ?? ""}
                       onChange={(e) => setField(f.key, e.target.value)}
-                      placeholder={f.secret && values[f.key] === MASK ? MASK : undefined}
+                      placeholder={
+                        f.secret && values[f.key] === MASK
+                          ? MASK
+                          : scope === "GLOBAL" && !values[f.key] && env[f.key]?.set
+                            ? f.secret
+                              ? t("fromEnvSecret")
+                              : (env[f.key].value ?? undefined)
+                            : undefined
+                      }
                     />
                   )}
                 </Field>

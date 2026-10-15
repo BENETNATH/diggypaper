@@ -540,7 +540,10 @@
     "zoteroHelp": "Reservado a la sincronización con Zotero (próximamente).",
     "contact": "Contacto (fuentes abiertas)",
     "contactHelp": "Correo enviado a Unpaywall y OpenAlex (cortesía, exigido por estos servicios gratuitos) para hallar textos completos. Si está vacío, se usa el remitente SMTP.",
-    "contactEmail": "Correo de contacto"
+    "contactEmail": "Correo de contacto",
+    "fromEnvSecret": "definida en el entorno del servidor",
+    "fromEnvValue": "Entorno: {value}",
+    "envNote": "Los campos vacíos usan el valor del archivo .env del servidor (en gris). Introduzca un valor aquí para sustituirlo: se guarda en la base de datos y tiene prioridad; vacíe el campo para volver al entorno."
   },
   "annotate": {
     "title": "Anotación",

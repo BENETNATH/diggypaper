@@ -921,6 +921,10 @@ export async function getInference(projectId: string, searchId?: string): Promis
 
 export type SettingsScope = "GLOBAL" | "PROJECT" | "USER";
 
+/** Valeurs venant de l'environnement du serveur (.env) : elles s'appliquent tant que la base est vide. */
+export type EnvSettings = Record<string, { set: boolean; value: string | null }>;
+export const getEnvSettings = (): Promise<EnvSettings> => request("/admin/settings/env");
+
 export async function getSettings(params?: {
   scope?: SettingsScope;
   project_id?: string;
