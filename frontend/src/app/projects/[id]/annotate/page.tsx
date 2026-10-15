@@ -73,7 +73,7 @@ export default function AnnotatePage() {
     if (!projectId) return;
     const load = async () => {
       // Filtres de la liste d'articles (mémorisés par l'onglet).
-      let saved: { filter?: string; sort?: "added" | "date_desc" | "date_asc" | "score_desc"; answers?: Record<string, string | boolean> } = {};
+      let saved: { filter?: string; sort?: "added" | "date_desc" | "date_asc" | "score_desc"; answers?: Record<string, string | boolean>; q?: string } = {};
       try {
         saved = JSON.parse(sessionStorage.getItem(articlesStoreKey(projectId, searchId)) ?? "{}");
       } catch {
@@ -83,11 +83,11 @@ export default function AnnotatePage() {
         queueMode === "review" ? "TO_REVIEW" : queueMode === "list" && saved.filter && saved.filter !== "ALL" ? (saved.filter as PredictionFilter) : undefined;
       const sort = queueMode === "list" ? (saved.sort ?? "added") : "added";
       const answers = queueMode === "all" ? {} : (saved.answers ?? {});
-      let r = await listArticles(projectId, 1, 200, status, sort, answers, searchId);
+      let r = await listArticles(projectId, 1, 200, status, sort, answers, searchId, queueMode === "all" ? undefined : saved.q);
       // La liste est paginée par 200 : on poursuit jusqu'à trouver l'article ouvert.
       const ids = r.items.map((a) => a.id);
       for (let p = 2; articleId && !ids.includes(articleId) && ids.length < r.total && p <= 5; p++) {
-        ids.push(...(await listArticles(projectId, p, 200, status, sort, answers, searchId)).items.map((a) => a.id));
+        ids.push(...(await listArticles(projectId, p, 200, status, sort, answers, searchId, queueMode === "all" ? undefined : saved.q)).items.map((a) => a.id));
       }
       // Rien à relire (pas encore trié / tout validé) : on propose tous les articles.
       if (ids.length === 0 && queueMode === "review") r = await listArticles(projectId, 1, 200, undefined, "added", {}, searchId);

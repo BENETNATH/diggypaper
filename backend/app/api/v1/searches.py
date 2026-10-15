@@ -51,6 +51,9 @@ class Selection(BaseModel):
     answers: dict[str, str | bool] | None = None  # {item: valeur}
     reviewed: bool | None = None  # relu par un humain (dans from_search)
     has_fulltext: bool | None = None
+    q: str | None = Field(
+        default=None, max_length=200
+    )  # recherche rapide titre / auteurs / PMID / DOI
     confidence_min: float | None = Field(default=None, ge=0, le=1)
     confidence_max: float | None = Field(default=None, ge=0, le=1)
     ids: list[uuid.UUID] | None = Field(default=None, max_length=20000)
@@ -101,10 +104,17 @@ async def select_articles(db: AsyncSession, project: Project, sel: Selection) ->
     ):  # sinon ces critères serviraient d'oracle sur les réponses masquées
         raise HTTPException(status_code=422, detail="criteria unavailable on a blind search")
     answers = json.dumps(sel.answers) if sel.answers else None
-    where, _ps, pconf, _pd, annotated = article_filter(src, sel.status, answers)
+    where, _ps, pconf, _pd, annotated = article_filter(src, sel.status, answers, sel.q)
     on_results = any(
         v is not None
-        for v in (sel.status, sel.answers, sel.reviewed, sel.confidence_min, sel.confidence_max)
+        for v in (
+            sel.status,
+            sel.answers,
+            sel.reviewed,
+            sel.confidence_min,
+            sel.confidence_max,
+            sel.q,
+        )
     )
     if on_results:  # critères sur les résultats (et le lot) de la recherche d'origine
         cond = list(where)
@@ -150,6 +160,24 @@ async def _stats(db: AsyncSession, s: Search) -> dict:
             .where(Article.project_id == s.project_id, in_search(HumanAnnotation.search_id, s))
         )
     ).scalar_one()
+    breakdown: dict = {}
+    to_review = 0
+    if s.kind != "blind":  # aveugle : pas de répartition des réponses de l'IA
+        _where, pstatus, _c, _d, annotated = article_filter(s, None, None)
+        rows = await db.execute(
+            select(pstatus, func.count())
+            .select_from(Article)
+            .where(lot_condition(s))
+            .group_by(pstatus)
+        )
+        breakdown = {(k or "NONE"): n for k, n in rows}
+        to_review = (
+            await db.execute(
+                select(func.count())
+                .select_from(Article)
+                .where(lot_condition(s), pstatus == "NEEDS_HUMAN_REVIEW", ~annotated)
+            )
+        ).scalar_one()
     job = (
         (
             await db.execute(
@@ -168,6 +196,8 @@ async def _stats(db: AsyncSession, s: Search) -> dict:
         "lot_size": lot,
         "predicted": predicted,
         "reviewed": reviewed,
+        "breakdown": breakdown,  # {AUTO_ACCEPTED, AUTO_REJECTED, NEEDS_HUMAN_REVIEW, NONE}
+        "to_review": to_review,  # incertains pas encore relus
         "last_job": {"status": job.status, "model": job.model_used} if job else None,
     }
 
@@ -212,6 +242,60 @@ async def list_searches(project_id: uuid.UUID, db: DbDep, user: UserDep) -> dict
         .all()
     )
     return {"items": [await _full_payload(db, s) for s in rows]}
+
+
+@router.get("/{project_id}/overview")
+async def project_overview(project_id: uuid.UUID, db: DbDep, user: UserDep) -> dict:
+    """Vue d'ensemble : chiffres globaux du corpus (articles distincts, toutes recherches
+    confondues) et état de chaque recherche."""
+    project = await _require_project_member(db, project_id, user)
+    await default_search(db, project)
+    await db.commit()
+    in_project = Article.project_id == project.id
+
+    async def count(stmt) -> int:
+        return (await db.execute(stmt)).scalar_one()
+
+    articles = await count(select(func.count()).select_from(Article).where(in_project))
+    fulltext = await count(
+        select(func.count())
+        .select_from(Article)
+        .where(in_project, Article.fulltext_source.is_not(None))
+    )
+    analysed = await count(
+        select(func.count(func.distinct(ArticlePrediction.article_id)))
+        .join(Article, Article.id == ArticlePrediction.article_id)
+        .where(in_project)
+    )
+    reviewed = await count(
+        select(func.count(func.distinct(HumanAnnotation.article_id)))
+        .join(Article, Article.id == HumanAnnotation.article_id)
+        .where(in_project)
+    )
+    gold = await count(
+        select(func.count(func.distinct(GoldArticle.article_id))).where(
+            GoldArticle.project_id == project.id
+        )
+    )
+    rows = (
+        (
+            await db.execute(
+                select(Search)
+                .where(Search.project_id == project.id)
+                .order_by(Search.is_default.desc(), Search.created_at, Search.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return {
+        "articles": articles,
+        "fulltext": fulltext,
+        "analysed": analysed,
+        "reviewed": reviewed,
+        "gold": gold,
+        "searches": [await _full_payload(db, s) for s in rows],
+    }
 
 
 @router.post("/{project_id}/searches/preview")

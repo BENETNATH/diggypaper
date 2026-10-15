@@ -49,6 +49,7 @@ export function cleanSelection(sel: Selection): Selection {
   if (Object.keys(answers).length) out.answers = answers;
   if (sel.reviewed != null) out.reviewed = sel.reviewed;
   if (sel.has_fulltext != null) out.has_fulltext = sel.has_fulltext;
+  if (sel.q?.trim()) out.q = sel.q.trim();
   if (sel.confidence_min != null) out.confidence_min = sel.confidence_min;
   if (sel.confidence_max != null) out.confidence_max = sel.confidence_max;
   if (sel.ids?.length) out.ids = sel.ids;
@@ -63,11 +64,13 @@ export function cleanSelection(sel: Selection): Selection {
 export function selectionFromFilters(
   filter: PredictionFilter | "ALL" | undefined,
   answers: Record<string, string | boolean>,
-  fromSearchId?: string
+  fromSearchId?: string,
+  text?: string
 ): Selection {
   return cleanSelection({
     from_search_id: fromSearchId,
     status: filter && filter !== "ALL" ? filter : undefined,
     answers,
+    q: text,
   });
 }

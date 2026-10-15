@@ -17,7 +17,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import String, cast, false, func, select
+from sqlalchemy import String, cast, false, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db
@@ -527,10 +527,29 @@ def _answer_filters(search: Search, raw: str | None, pdec, hdec) -> list:
     return conds
 
 
+def text_conditions(q: str | None) -> list:
+    """Recherche rapide : chaque mot saisi doit figurer (casse ignorée) dans le titre, les auteurs,
+    le journal, le PMID ou le DOI ; les mots se cumulent (ET)."""
+    conds = []
+    for word in (q or "").split()[:8]:
+        esc = word.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        like = f"%{esc}%"
+        conds.append(
+            or_(
+                Article.title.ilike(like, escape="\\"),
+                cast(Article.authors, String).ilike(like, escape="\\"),
+                Article.journal.ilike(like, escape="\\"),
+                Article.pmid.ilike(like, escape="\\"),
+                Article.doi.ilike(like, escape="\\"),
+            )
+        )
+    return conds
+
+
 STATUS_PATTERN = "^(AUTO_ACCEPTED|AUTO_REJECTED|NEEDS_HUMAN_REVIEW|NONE|TO_REVIEW)$"
 
 
-def article_filter(search: Search, status: str | None, answers: str | None):
+def article_filter(search: Search, status: str | None, answers: str | None, q: str | None = None):
     """Conditions de la liste des articles d'une recherche (statut IA + réponses) et
     sous-requêtes associées : seuls comptent les résultats et relectures de CETTE recherche.
 
@@ -569,7 +588,7 @@ def article_filter(search: Search, status: str | None, answers: str | None):
         )
         .exists()
     )
-    where = [lot_condition(search)]
+    where = [lot_condition(search), *text_conditions(q)]
     if search.kind == "blind":
         # Échantillon à l'aveugle : aucun critère ne doit révéler les réponses de l'IA ni celles
         # des autres relecteurs (sinon le filtre sert d'oracle article par article).
@@ -601,6 +620,7 @@ async def list_articles(
     sort: Annotated[str, Query(pattern="^(added|date_desc|date_asc|score_desc)$")] = "added",
     answers: Annotated[str | None, Query(max_length=4000)] = None,
     search: uuid.UUID | None = None,
+    q: Annotated[str | None, Query(max_length=200)] = None,
 ) -> dict:
     """Articles du lot d'une recherche (par défaut la recherche initiale = tout le corpus) avec
     le statut de leur dernière prédiction dans cette recherche.
@@ -612,7 +632,7 @@ async def list_articles(
     project = await _require_project_member(db, project_id, user)
     scope = await get_search(db, project, search)
 
-    where, pstatus, pconf, pdec, annotated = article_filter(scope, status, answers)
+    where, pstatus, pconf, pdec, annotated = article_filter(scope, status, answers, q)
     total = (await db.execute(select(func.count()).select_from(Article).where(*where))).scalar_one()
     order = {
         "date_desc": [Article.pub_date.desc().nulls_last()],

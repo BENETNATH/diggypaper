@@ -24,7 +24,7 @@ const PER_PAGE = 100;
 
 type Sort = "added" | "date_desc" | "date_asc" | "score_desc";
 /** Filtres mémorisés par projet et par recherche : retrouvés au retour d'un article (ou d'un rechargement). */
-function loadSaved(projectId: string, searchId?: string): { filter?: Filter; sort?: Sort; page?: number; answers?: Answers } {
+function loadSaved(projectId: string, searchId?: string): { filter?: Filter; sort?: Sort; page?: number; answers?: Answers; q?: string } {
   try {
     return JSON.parse(sessionStorage.getItem(articlesStoreKey(projectId, searchId)) ?? "{}");
   } catch {
@@ -52,6 +52,8 @@ function ResultsContent() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [answers, setAnswers] = useState<Answers>({}); // appliqués à la requête
   const [draft, setDraft] = useState<Answers>({}); // saisie (texte retardé de 300 ms)
+  const [text, setText] = useState(""); // recherche rapide appliquée (titre, auteurs, PMID, DOI)
+  const [textDraft, setTextDraft] = useState("");
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout>>();
@@ -68,6 +70,8 @@ function ResultsContent() {
     setPage(saved.page ?? 1);
     setAnswers(saved.answers ?? {});
     setDraft(saved.answers ?? {});
+    setText(saved.q ?? "");
+    setTextDraft(saved.q ?? "");
     getProject(projectId, searchId)
       .then((p) => setFields(p.fields ?? []))
       .catch(() => setFields([]))
@@ -82,21 +86,31 @@ function ResultsContent() {
     try {
       sessionStorage.setItem(
         articlesStoreKey(projectId, searchId),
-        JSON.stringify({ filter, sort, page, answers })
+        JSON.stringify({ filter, sort, page, answers, q: text })
       );
     } catch {
       /* stockage indisponible : filtres non mémorisés */
     }
-  }, [ready, projectId, searchId, filter, sort, page, answers]);
+  }, [ready, projectId, searchId, filter, sort, page, answers, text]);
 
-  function setAnswer(key: string, value: string, text: boolean) {
+  // Recherche rapide : appliquée 300 ms après la dernière frappe, repart à la première page.
+  useEffect(() => {
+    if (textDraft === text) return;
+    const id = setTimeout(() => {
+      setText(textDraft);
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(id);
+  }, [textDraft, text]);
+
+  function setAnswer(key: string, value: string, isText: boolean) {
     setDraft((d) => ({ ...d, [key]: value }));
     clearTimeout(timer.current);
     const apply = () => {
       setAnswers((a) => ({ ...a, [key]: value }));
       setPage(1);
     };
-    if (text) timer.current = setTimeout(apply, 300);
+    if (isText) timer.current = setTimeout(apply, 300);
     else apply();
   }
 
@@ -111,14 +125,14 @@ function ResultsContent() {
   const load = useCallback(async () => {
     setError(null);
     try {
-      const res = await listArticles(projectId, page, PER_PAGE, filter === "ALL" ? undefined : filter, sort, answers, searchId);
+      const res = await listArticles(projectId, page, PER_PAGE, filter === "ALL" ? undefined : filter, sort, answers, searchId, text);
       setArticles(res.items);
       setTotal(res.total);
       setStats(res.stats);
     } catch (e) {
       setError(e instanceof Error ? e.message : "error");
     }
-  }, [projectId, page, filter, sort, answers, searchId]);
+  }, [projectId, page, filter, sort, answers, searchId, text]);
 
   useEffect(() => {
     if (ready && restoredFor.current === articlesStoreKey(projectId, searchId)) void load();
@@ -136,7 +150,7 @@ function ResultsContent() {
     try {
       sessionStorage.setItem(
         prefillStoreKey(projectId),
-        JSON.stringify(selectionFromFilters(filter, answers, searchId))
+        JSON.stringify(selectionFromFilters(filter, answers, searchId, text))
       );
     } catch {
       /* stockage indisponible : la page Recherches s'ouvre sans préremplissage */
@@ -161,7 +175,7 @@ function ResultsContent() {
               </Button>
             </Link>
           )}
-          <ExportMenu projectId={projectId} status={filter === "ALL" ? undefined : filter} answers={answers} />
+          <ExportMenu projectId={projectId} status={filter === "ALL" ? undefined : filter} answers={answers} text={text} />
           <Menu label={t("tools")}>
             <MenuItem onClick={() => setPdfOpen(true)}>{t("bulkTitle")}</MenuItem>
             <MenuItem onClick={() => setPrismaOpen(true)}>{t("prisma")}</MenuItem>
@@ -178,6 +192,34 @@ function ResultsContent() {
           </Link>
         </p>
       )}
+
+      <div className="relative">
+        <span aria-hidden className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted">
+          ⌕
+        </span>
+        <input
+          type="search"
+          value={textDraft}
+          onChange={(e) => setTextDraft(e.target.value)}
+          placeholder={t("searchPlaceholder")}
+          aria-label={t("searchLabel")}
+          className="w-full rounded-lg border border-border bg-surface py-2 pl-8 pr-9 text-sm text-foreground placeholder:text-muted focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-focus"
+        />
+        {textDraft && (
+          <button
+            type="button"
+            onClick={() => {
+              setTextDraft("");
+              setText("");
+              setPage(1);
+            }}
+            aria-label={t("searchClear")}
+            className="absolute right-2 top-1/2 -translate-y-1/2 rounded px-1.5 text-lg leading-none text-muted hover:text-foreground"
+          >
+            ×
+          </button>
+        )}
+      </div>
 
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex flex-wrap gap-2" role="tablist">

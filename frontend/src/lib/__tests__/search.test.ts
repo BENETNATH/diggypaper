@@ -55,4 +55,9 @@ describe("recherches", () => {
     expect(articlesStoreKey("p")).toBe("diggy:articles:p");
     expect(articlesStoreKey("p", "s")).toBe("diggy:articles:p:s");
   });
+
+  it("la recherche rapide entre dans la sélection (nettoyée) et dans les filtres", () => {
+    expect(selectionFromFilters("ALL", {}, "s1", "  deep gait ")).toEqual({ from_search_id: "s1", q: "deep gait" });
+    expect(selectionFromFilters("ALL", {}, "s1", "   ")).toEqual({ from_search_id: "s1" });
+  });
 });

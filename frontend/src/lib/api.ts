@@ -161,8 +161,24 @@ export interface SearchInfo {
   lot_size: number;
   predicted: number;
   reviewed: number;
+  /** Répartition des résultats de l'IA dans le lot ({} pour une recherche à l'aveugle). */
+  breakdown: Partial<Record<"AUTO_ACCEPTED" | "AUTO_REJECTED" | "NEEDS_HUMAN_REVIEW" | "NONE", number>>;
+  /** Incertains pas encore relus. */
+  to_review: number;
   last_job: { status: InferenceJob["status"]; model: string } | null;
 }
+
+/** Vue d'ensemble d'un projet : chiffres globaux (articles distincts) + état de chaque recherche. */
+export interface ProjectOverview {
+  articles: number;
+  fulltext: number;
+  analysed: number;
+  reviewed: number;
+  gold: number;
+  searches: SearchInfo[];
+}
+export const getOverview = (projectId: string): Promise<ProjectOverview> =>
+  request(`/projects/${projectId}/overview`);
 
 /** Quels articles : critères cumulés sur les résultats d'une recherche (aucun = tout le corpus). */
 export interface Selection {
@@ -171,6 +187,7 @@ export interface Selection {
   answers?: Record<string, string | boolean>;
   reviewed?: boolean;
   has_fulltext?: boolean;
+  q?: string;
   confidence_min?: number;
   confidence_max?: number;
   ids?: string[];
@@ -504,7 +521,8 @@ export async function listArticles(
   status?: PredictionFilter,
   sort: "added" | "date_desc" | "date_asc" | "score_desc" = "added",
   answers: Record<string, string | boolean> = {},
-  searchId?: string
+  searchId?: string,
+  text?: string
 ): Promise<{
   items: Article[];
   total: number;
@@ -516,6 +534,7 @@ export async function listArticles(
   const q =
     (status ? `&status=${status}` : "") +
     (searchId ? `&search=${searchId}` : "") +
+    (text?.trim() ? `&q=${encodeURIComponent(text.trim())}` : "") +
     `&sort=${sort}` +
     (Object.keys(active).length ? `&answers=${encodeURIComponent(JSON.stringify(active))}` : "");
   return request(`/projects/${projectId}/articles?page=${page}&per_page=${perPage}${q}`);
@@ -995,11 +1014,13 @@ export function referencesUrl(
   fmt: "ris" | "bib",
   status?: string,
   answers: Record<string, string> = {},
-  searchId?: string
+  searchId?: string,
+  text?: string
 ): string {
   const active = Object.fromEntries(Object.entries(answers).filter(([, v]) => v !== ""));
   const q = new URLSearchParams();
   if (searchId) q.set("search", searchId);
+  if (text?.trim()) q.set("q", text.trim());
   if (status) q.set("status", status);
   if (Object.keys(active).length) q.set("answers", JSON.stringify(active));
   const qs = q.toString();

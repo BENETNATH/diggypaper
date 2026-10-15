@@ -476,3 +476,55 @@ async def test_crate_export_of_another_search_is_refused_while_one_runs(client, 
     await session.commit()
     r = await client.post(f"{base}/export/crate", params={"search": other["id"]})
     assert r.status_code == 409
+
+
+async def test_overview_gives_global_figures_and_per_search_breakdown(client, session, corpus):
+    project, arts = corpus
+    base = f"/api/v1/projects/{project.id}"
+    await client.post(f"{base}/articles/{arts[0].id}/annotation", json={"ai": True})
+    await client.post(f"{base}/gold/from-reviews", json={})
+    child = (
+        await client.post(
+            f"{base}/searches", json={"name": "oui", "selection": {"answers": {"ai": True}}}
+        )
+    ).json()
+    o = (await client.get(f"{base}/overview")).json()
+    assert (o["articles"], o["analysed"], o["reviewed"], o["gold"]) == (4, 4, 1, 1)
+    init, kid = o["searches"][0], next(s for s in o["searches"] if s["id"] == child["id"])
+    assert init["is_default"] and init["breakdown"] == {"AUTO_ACCEPTED": 2, "AUTO_REJECTED": 2}
+    assert init["to_review"] == 0
+    assert kid["lot_size"] == 2 and kid["breakdown"] == {"NONE": 2} and kid["predicted"] == 0
+
+
+async def test_quick_text_search_on_title_authors_pmid_and_doi(client, session, corpus):
+    project, arts = corpus
+    base = f"/api/v1/projects/{project.id}"
+    arts[0].title, arts[0].authors = "Deep learning of mouse gait", ["Smith J", "Dupont-Martin A"]
+    arts[1].title, arts[1].doi, arts[1].journal = "Rat 100% sure_thing", "10.1/xyz.42", "Nature"
+    arts[2].title, arts[2].pmid = "Zebrafish tracking", "5550123"
+    await session.commit()
+
+    async def found(q):
+        r = await client.get(f"{base}/articles", params={"q": q})
+        assert r.status_code == 200, r.text
+        return sorted(i["title"] for i in r.json()["items"]), r.json()["total"]
+
+    assert (await found("GAIT"))[0] == ["Deep learning of mouse gait"]  # titre, casse ignorée
+    assert (await found("dupont"))[0] == ["Deep learning of mouse gait"]  # auteur
+    assert (await found("smith mouse"))[0] == ["Deep learning of mouse gait"]  # mots cumulés (ET)
+    assert (await found("smith zebrafish"))[0] == []  # ET : pas de correspondance commune
+    assert (await found("10.1/xyz"))[0] == ["Rat 100% sure_thing"]  # DOI
+    assert (await found("nature"))[0] == ["Rat 100% sure_thing"]  # journal
+    assert (await found("555012"))[0] == ["Zebrafish tracking"]  # PMID
+    assert (await found("100%"))[0] == ["Rat 100% sure_thing"]  # % littéral, pas un joker
+    assert (await found("sure_t"))[0] == ["Rat 100% sure_thing"]  # _ littéral
+    assert (await found("a%"))[0] == []  # pas de joker
+    # total (pagination) et filtres combinés
+    assert (await found("   "))[1] == 4  # que des espaces : pas de filtre
+    r = await client.get(f"{base}/articles", params={"q": "mouse", "status": "AUTO_ACCEPTED"})
+    assert r.json()["total"] == 1
+    # utilisable pour dériver une recherche et pour les références
+    n = (await client.post(f"{base}/searches/preview", json={"q": "zebrafish"})).json()
+    assert n == {"count": 1}
+    ris = await client.get(f"{base}/export.ris", params={"q": "zebrafish"})
+    assert ris.text.count("TY  -") == 1

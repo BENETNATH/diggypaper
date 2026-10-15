@@ -21,17 +21,19 @@ export function ExportMenu({
   projectId,
   status,
   answers,
+  text,
 }: {
   projectId: string;
   status?: string;
   answers?: Record<string, string>;
+  text?: string;
 }) {
   const t = useTranslations("articles");
   const searchId = useSearchId(projectId);
   const [job, setJob] = useState<CrateExport | null>(null);
   const [error, setError] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout>>();
-  const filtered = Boolean(status) || Object.values(answers ?? {}).some((v) => v !== "");
+  const filtered = Boolean(status) || Boolean(text?.trim()) || Object.values(answers ?? {}).some((v) => v !== "");
 
   const poll = useCallback(async () => {
     try {
@@ -68,10 +70,10 @@ export function ExportMenu({
       <MenuItem href={exportUrl(projectId, searchId)} download>
         ⬇ {t("exportXlsx")}
       </MenuItem>
-      <MenuItem href={referencesUrl(projectId, "ris", status, answers, searchId)} download>
+      <MenuItem href={referencesUrl(projectId, "ris", status, answers, searchId, text)} download>
         ⬇ {t("exportRis")}
       </MenuItem>
-      <MenuItem href={referencesUrl(projectId, "bib", status, answers, searchId)} download>
+      <MenuItem href={referencesUrl(projectId, "bib", status, answers, searchId, text)} download>
         ⬇ BibTeX
       </MenuItem>
       {filtered && <MenuNote>{t("exportRefsFiltered")}</MenuNote>}

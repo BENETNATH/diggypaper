@@ -1,69 +1,175 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { ReactNode, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { getProject, deleteProject, listJobs, listModels, Project, ImportJob } from "@/lib/api";
+import {
+  getProject,
+  getOverview,
+  deleteProject,
+  listJobs,
+  listModels,
+  Project,
+  ProjectOverview,
+  SearchInfo,
+  ImportJob,
+} from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { withSearch } from "@/lib/search";
-import { useSearchId } from "@/lib/useSearch";
 import { RequireAuth } from "@/components/RequireAuth";
-import { Badge, statusColor } from "@/components/ui/Card";
+import { Badge } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
+import { Menu, MenuItem } from "@/components/ui/Menu";
 import { Spinner, ErrorBanner } from "@/components/ui/Feedback";
 
-interface Step {
-  key: string;
-  href: string;
-  leadOnly?: boolean;
-  optional?: boolean;
-  ctaKey: string;
-}
-
-/**
- * Parcours par défaut : import → analyse (question + modèles en cascade) → résultats / relecture.
- * Optionnel : gold + benchmark (mesurer / comparer des modèles) et prompts (réglage avancé).
- */
-const STEPS: Step[] = [
-  { key: "import", href: "import", ctaKey: "ctaImport" },
-  { key: "inference", href: "inference", leadOnly: true, ctaKey: "ctaInference" },
-  { key: "articles", href: "articles", ctaKey: "ctaArticles" },
-  { key: "gold", href: "gold", leadOnly: true, optional: true, ctaKey: "ctaGold" },
-  { key: "benchmarks", href: "benchmarks", leadOnly: true, optional: true, ctaKey: "ctaBenchmarks" },
-  { key: "prompts", href: "prompts", leadOnly: true, optional: true, ctaKey: "ctaPrompts" },
-];
+const pct = (n: number, d: number): number => (d > 0 ? Math.round((n / d) * 100) : 0);
 
 /** Étape suivante selon l'avancement du projet. */
-function nextStepKey(project: Project): string {
+function nextStep(project: Project): "import" | "inference" | "articles" {
   if (project.status === "DRAFT" || project.status === "PROCESSING") return "import";
   if (project.status === "FROZEN") return "inference";
-  return "articles"; // COMPLETED : tri terminé → résultats / relecture
+  return "articles"; // tri terminé : résultats et relecture
+}
+
+function Kpi({ label, value, sub }: { label: string; value: ReactNode; sub?: ReactNode }) {
+  return (
+    <div className="rounded-lg border border-border bg-surface px-3 py-2.5">
+      <div className="text-xs text-muted">{label}</div>
+      <div className="mt-0.5 text-xl font-semibold tabular-nums text-foreground">{value}</div>
+      {sub && <div className="text-xs text-muted">{sub}</div>}
+    </div>
+  );
+}
+
+/** Barre découpée : validés / à relire / écartés / pas encore analysés, sur le lot de la recherche. */
+function LotBar({ s }: { s: SearchInfo }) {
+  const t = useTranslations("project");
+  const b = s.breakdown;
+  const lot = s.lot_size || 1;
+  const parts = [
+    { key: "acc", n: b.AUTO_ACCEPTED ?? 0, cls: "bg-success", label: t("legendAccepted") },
+    { key: "rev", n: b.NEEDS_HUMAN_REVIEW ?? 0, cls: "bg-warning", label: t("legendReview") },
+    { key: "rej", n: b.AUTO_REJECTED ?? 0, cls: "bg-danger", label: t("legendRejected") },
+  ];
+  return (
+    <div className="flex flex-col gap-1">
+      <div
+        className="flex h-2 w-full overflow-hidden rounded-full bg-surface-muted"
+        role="img"
+        aria-label={parts.map((p) => `${p.label} ${p.n}`).join(", ")}
+      >
+        {parts.map((p) => (
+          <div key={p.key} className={`h-full ${p.cls}`} style={{ width: `${(p.n / lot) * 100}%` }} />
+        ))}
+      </div>
+      <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted">
+        {parts.map((p) => (
+          <span key={p.key}>
+            <span className={`mr-1 inline-block h-2 w-2 rounded-full align-middle ${p.cls}`} />
+            {p.n.toLocaleString()} {p.label}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SearchRow({ s, projectId, isLead, frozen }: { s: SearchInfo; projectId: string; isLead: boolean; frozen: boolean }) {
+  const t = useTranslations("project");
+  const open = (page: string) => withSearch(`/projects/${projectId}/${page}`, s.id);
+  const blind = s.kind === "blind";
+  const analysedPct = pct(s.predicted, s.lot_size);
+  const reviewedPct = pct(s.reviewed, s.lot_size);
+  const running = s.last_job?.status === "RUNNING" || s.last_job?.status === "PENDING";
+  return (
+    <li className="rounded-lg border border-border bg-surface p-4">
+      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="font-semibold text-foreground">{s.name}</h3>
+            {s.is_default && <Badge color="blue">{t("badgeInitial")}</Badge>}
+            {s.kind !== "standard" && <Badge color="gray">{t(`kind_${s.kind}`)}</Badge>}
+            {running && <Badge color="yellow">{t("running")}</Badge>}
+          </div>
+          <p className="mt-0.5 line-clamp-1 text-sm text-muted" title={s.question}>
+            {s.question}
+          </p>
+          <p className="mt-0.5 text-xs text-muted">
+            {t("lotSize", { n: s.lot_size })}
+            {s.parent && <> · {t("derivedFrom", { name: s.parent.name })}</>}
+            {s.last_job && <> · {s.last_job.model}</>}
+          </p>
+        </div>
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <Link href={open("articles")}>
+            <Button size="sm" variant="secondary">
+              {t("openResults")}
+            </Button>
+          </Link>
+          {s.to_review > 0 && (
+            <Link href={open("annotate?queue=review")}>
+              <Button size="sm">{t("reviewN", { n: s.to_review })}</Button>
+            </Link>
+          )}
+          {isLead && frozen && !running && (
+            <Link href={open("inference")}>
+              <Button size="sm" variant="ghost">
+                {s.predicted > 0 ? t("rerun") : t("analyse")}
+              </Button>
+            </Link>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
+        {blind ? (
+          <p className="text-xs text-muted">{t("blindHint", { done: s.reviewed, total: s.lot_size })}</p>
+        ) : s.predicted > 0 ? (
+          <LotBar s={s} />
+        ) : (
+          <p className="text-xs text-muted">{t("notAnalysedYet")}</p>
+        )}
+        <div className="flex gap-4 text-sm tabular-nums">
+          {!blind && (
+            <span title={t("analysedPctHelp")}>
+              <strong className="text-foreground">{analysedPct} %</strong>{" "}
+              <span className="text-xs text-muted">{t("analysedShort")}</span>
+            </span>
+          )}
+          <span title={t("reviewedPctHelp")}>
+            <strong className="text-foreground">{reviewedPct} %</strong>{" "}
+            <span className="text-xs text-muted">{t("reviewedShort")}</span>
+          </span>
+        </div>
+      </div>
+    </li>
+  );
 }
 
 function ProjectDashboard() {
   const t = useTranslations("project");
-  const params = useParams<{ id: string }>();
-  const projectId = params.id;
-  const searchId = useSearchId(projectId);
+  const projectId = useParams<{ id: string }>().id;
+  const { user } = useAuth();
 
   const [project, setProject] = useState<Project | null>(null);
+  const [overview, setOverview] = useState<ProjectOverview | null>(null);
   const [jobs, setJobs] = useState<ImportJob[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [modelCount, setModelCount] = useState<number | null>(null);
-  const { user } = useAuth();
 
   const load = useCallback(async () => {
     setError(null);
     try {
-      const [p, js] = await Promise.all([getProject(projectId, searchId), listJobs(projectId)]);
+      const [p, o, js] = await Promise.all([getProject(projectId), getOverview(projectId), listJobs(projectId)]);
       setProject(p);
+      setOverview(o);
       setJobs(js);
     } catch (e) {
       setError(e instanceof Error ? e.message : "error");
     }
-  }, [projectId, searchId]);
+  }, [projectId]);
 
   useEffect(() => {
     void load();
@@ -83,80 +189,50 @@ function ProjectDashboard() {
   }
 
   if (error) return <ErrorBanner message={error} onRetry={() => void load()} />;
-  if (!project) return <Spinner label={t("loading")} />;
+  if (!project || !overview) return <Spinner label={t("loading")} />;
 
   const isLead = project.role_in_project === "LEAD";
-  const visibleSteps = STEPS.filter((s) => !s.leadOnly || isLead);
-  const nextKey = nextStepKey(project);
-  const articleCount = project.article_count ?? 0;
+  const frozen = project.status === "FROZEN" || project.status === "COMPLETED";
+  const next = nextStep(project);
+  const toReviewTotal = overview.searches.reduce((a, s) => a + s.to_review, 0);
   const imports = (jobs ?? []).filter((j) => j.kind !== "fulltext");
   const lastJob = imports.length > 0 ? imports[imports.length - 1] : null;
+  const initial = overview.searches.find((s) => s.is_default);
+  const nextLabel = { import: t("ctaImport"), inference: t("ctaInference"), articles: t("ctaArticles") }[next];
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between gap-2">
-        <div>
+    <div className="flex flex-col gap-5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
           <h1 className="text-xl font-bold text-foreground">{project.title}</h1>
+          {project.description && <p className="mt-0.5 text-sm text-muted">{project.description}</p>}
         </div>
-        <div className="flex items-center gap-2">
-          <Badge color={statusColor(project.status)}>{project.status}</Badge>
-          <Button variant="danger" size="sm" loading={deleting} onClick={handleDelete}>
-            {t("deleteProject")}
-          </Button>
-        </div>
+        <Menu label={deleting ? "…" : "⋯"}>
+          <MenuItem onClick={() => void handleDelete()}>
+            <span className="text-danger">{t("deleteProject")}</span>
+          </MenuItem>
+        </Menu>
       </div>
 
-      {project.description && (
-        <p className="text-sm text-muted">{project.description}</p>
-      )}
-      {project.question && (
-        <p className="text-sm">
-          <span className="text-muted">{t("question")} : </span>
-          <span className="text-foreground">{project.question}</span>
-        </p>
+      {project.status === "PROCESSING" && (
+        <Link href={`/projects/${projectId}/import`} className="rounded-lg border border-primary bg-primary/10 p-3 text-sm font-medium text-primary hover:underline">
+          {t("importInProgress")} →
+        </Link>
       )}
 
-      {project.status === "PROCESSING" && (
-        <div className="rounded-lg border border-primary bg-primary/10 p-3 text-sm">
-          <Link
-            href={`/projects/${projectId}/import`}
-            className="font-medium text-primary hover:underline"
-          >
-            {t("importInProgress")} →
+      {/* Une seule action primaire : la suite logique du projet */}
+      {!(next === "inference" && !isLead) && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary/40 bg-primary/5 px-4 py-3">
+          <div>
+            <div className="text-xs text-muted">{t("nextStep")}</div>
+            <div className="font-semibold text-foreground">{nextLabel}</div>
+          </div>
+          <Link href={`/projects/${projectId}/${next}`}>
+            <Button>{nextLabel} →</Button>
           </Link>
         </div>
       )}
 
-      {/* État du corpus + dernière import + étape suivante */}
-      <div className="rounded-lg border border-border bg-surface-muted p-3 text-sm">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <span className="text-muted">
-            {t("corpus")} : <strong className="text-foreground">{articleCount}</strong>{" "}
-            {t("articles")}
-          </span>
-          <span className="font-medium text-primary">
-            {t("nextStep")} : {t(nextKey)}
-          </span>
-        </div>
-        {lastJob && (
-          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
-            <span>
-              {t("lastImport")} : <code className="text-foreground">{lastJob.query}</code>
-            </span>
-            {lastJob.result && (
-              <span>
-                {t("imported")} : {String(lastJob.result.imported ?? 0)} · {t("failed")} :{" "}
-                {String(lastJob.result.failed ?? 0)}
-              </span>
-            )}
-            {lastJob.created_at && (
-              <span>{new Date(lastJob.created_at).toLocaleString()}</span>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Modèles de tri : prérequis du benchmark et de l'inférence */}
       {modelCount === 0 && (
         <div className="rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm">
           {t("noModels")}{" "}
@@ -170,76 +246,73 @@ function ProjectDashboard() {
         </div>
       )}
 
+      {/* Chiffres globaux : articles distincts, toutes recherches confondues */}
+      <section className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+        <Kpi label={t("kpiArticles")} value={overview.articles.toLocaleString()} />
+        <Kpi
+          label={t("kpiFulltext")}
+          value={`${pct(overview.fulltext, overview.articles)} %`}
+          sub={t("outOf", { n: overview.fulltext.toLocaleString() })}
+        />
+        <Kpi
+          label={t("kpiAnalysed")}
+          value={`${pct(overview.analysed, overview.articles)} %`}
+          sub={t("outOf", { n: overview.analysed.toLocaleString() })}
+        />
+        <Kpi
+          label={t("kpiReviewed")}
+          value={`${pct(overview.reviewed, overview.articles)} %`}
+          sub={t("outOf", { n: overview.reviewed.toLocaleString() })}
+        />
+        <Kpi label={t("kpiToReview")} value={toReviewTotal.toLocaleString()} />
+        <Kpi label={t("kpiGold")} value={overview.gold.toLocaleString()} />
+      </section>
+
+      {/* Les recherches : ouvrir directement les résultats, la relecture ou l'analyse de chacune */}
+      <section className="flex flex-col gap-3">
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-base font-semibold text-foreground">
+            {t("searchesTitle")} <span className="text-sm font-normal text-muted">{overview.searches.length}</span>
+          </h2>
+          {isLead && frozen && (
+            <Link href={withSearch(`/projects/${projectId}/searches`, initial?.id)}>
+              <Button size="sm" variant="secondary">
+                + {t("newSearch")}
+              </Button>
+            </Link>
+          )}
+        </div>
+        {overview.articles === 0 ? (
+          <p className="rounded-lg border border-dashed border-border p-4 text-sm text-muted">{t("emptyCorpus")}</p>
+        ) : (
+          <ul className="flex flex-col gap-3">
+            {overview.searches.map((s) => (
+              <SearchRow key={s.id} s={s} projectId={projectId} isLead={isLead} frozen={frozen} />
+            ))}
+          </ul>
+        )}
+      </section>
+
+      {lastJob && (
+        <p className="text-xs text-muted">
+          {t("lastImport")} :{" "}
+          <code className="inline-block max-w-full truncate align-bottom text-foreground" title={lastJob.query ?? undefined}>
+            {lastJob.query}
+          </code>
+          {lastJob.result && (
+            <>
+              {" "}
+              · {t("imported")} : {String(lastJob.result.imported ?? 0)} · {t("failed")} : {String(lastJob.result.failed ?? 0)}
+            </>
+          )}
+          {lastJob.created_at && <> · {new Date(lastJob.created_at).toLocaleString()}</>}
+        </p>
+      )}
+
       <details className="rounded-lg border border-border bg-surface p-3 text-sm">
         <summary className="cursor-pointer font-medium text-foreground">{t("howTitle")}</summary>
         <p className="mt-2 text-muted">{t("howBody")}</p>
       </details>
-
-      {/* Parcours par défaut puis étapes optionnelles */}
-      {[false, true].map((optional) => {
-        const steps = visibleSteps.filter((s) => Boolean(s.optional) === optional);
-        if (steps.length === 0) return null;
-        return (
-          <section key={String(optional)} className="flex flex-col gap-3">
-            {optional && (
-              <div>
-                <h2 className="text-sm font-semibold text-foreground">{t("optionalTitle")}</h2>
-                <p className="text-xs text-muted">{t("optionalHint")}</p>
-              </div>
-            )}
-            <ol className="flex flex-col gap-3">
-              {steps.map((s, i) => {
-                const isNext = s.key === nextKey;
-                // Tout sauf l'import exige un corpus figé (import terminé).
-                const blocked =
-                  s.key !== "import" &&
-                  project.status !== "FROZEN" &&
-                  project.status !== "COMPLETED";
-                return (
-                  <li
-                    key={s.key}
-                    className={`rounded-lg border p-4 transition-shadow ${
-                      isNext
-                        ? "border-primary bg-primary/5 shadow-sm"
-                        : "border-border bg-surface hover:shadow-md"
-                    } ${optional ? "opacity-90" : ""}`}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-start gap-3">
-                        {!optional && (
-                          <span
-                            className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${
-                              isNext ? "bg-primary text-primary-foreground" : "bg-surface-muted text-muted"
-                            }`}
-                          >
-                            {i + 1}
-                          </span>
-                        )}
-                        <div>
-                          <h3 className="font-semibold text-foreground">{t(s.key)}</h3>
-                          <p className="mt-0.5 text-sm text-muted">{t(`${s.key}Hint`)}</p>
-                          {blocked && <p className="mt-1 text-xs text-warning">{t("needsCorpus")}</p>}
-                        </div>
-                      </div>
-                      {blocked ? (
-                        <Button variant="secondary" size="sm" disabled className="shrink-0">
-                          {t(s.ctaKey)}
-                        </Button>
-                      ) : (
-                        <Link href={withSearch(`/projects/${projectId}/${s.href}`, searchId)} className="shrink-0">
-                          <Button variant={isNext ? "primary" : "secondary"} size="sm">
-                            {t(s.ctaKey)}
-                          </Button>
-                        </Link>
-                      )}
-                    </div>
-                  </li>
-                );
-              })}
-            </ol>
-          </section>
-        );
-      })}
     </div>
   );
 }
