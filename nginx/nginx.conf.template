@@ -1,0 +1,48 @@
+# Rendu par l'image nginx (envsubst : seules les variables d'environnement définies sont
+# remplacées, les $variables nginx restent intactes).
+server_tokens off;
+
+# IP réelle du visiteur. Directement exposé : TRUSTED_PROXY_CIDR=127.0.0.1 (défaut), l'en-tête
+# X-Forwarded-For envoyé par un client est ignoré. Derrière un reverse proxy (TLS) : mettre
+# l'adresse/le réseau de CE proxy (ex. 172.16.0.0/12 s'il tourne sur la même machine).
+set_real_ip_from ${TRUSTED_PROXY_CIDR};
+real_ip_header X-Forwarded-For;
+real_ip_recursive on;
+
+# Schéma vu par le visiteur : https si le proxy de confiance l'annonce.
+map $http_x_forwarded_proto $fwd_proto {
+    default $scheme;
+    https   https;
+}
+
+server {
+    listen 80;
+    server_name _;
+
+    # En-têtes de sécurité (HSTS : à poser sur le reverse proxy qui porte le TLS).
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "same-origin" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'" always;
+
+    # API backend FastAPI
+    location /api/v1/ {
+        client_max_body_size 30m;  # dépôt de PDF d'articles
+        proxy_pass http://backend:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;  # jamais l'en-tête fourni par le client
+        proxy_set_header X-Forwarded-Proto $fwd_proto;
+        proxy_read_timeout 300s;
+    }
+
+    # Frontend Next.js
+    location / {
+        proxy_pass http://frontend:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $fwd_proto;
+    }
+}

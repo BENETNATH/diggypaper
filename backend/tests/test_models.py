@@ -93,6 +93,8 @@ def test_users_columns():
         "data_consent_given",
         "anonymized_hash",
         "is_active",
+        "can_create_projects",
+        "token_version",
         "created_at",
     }
     assert c["id"].primary_key

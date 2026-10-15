@@ -49,10 +49,10 @@ from app.db.models import (
     Project,
     ProjectStatus,
 )
-from app.fulltext import store_pdf
+from app.fulltext import long_enough, store_pdf
 from app.pubmed import (
-    _ESEARCH_MAX,
     NCBIError,
+    _esearch_max,
     fetch_fulltext,
     fetch_metadata,
     fetch_pmids,
@@ -252,13 +252,13 @@ async def _do_import(
             {"imported": 0, "failed": 0, "fulltext": 0, "total_count": 0, "truncated": False},
         )
     pmids = await fetch_pmids(query, api_key, client)
-    truncated = count > _ESEARCH_MAX
+    truncated = count > _esearch_max()
     if truncated:
         logger.warning(
             "import truncated: count=%d > %d (project %s) — seuls les %d premiers articles "
             "sont importés",
             count,
-            _ESEARCH_MAX,
+            _esearch_max(),
             project.id,
             len(pmids),
         )
@@ -342,8 +342,11 @@ async def _insert_article(
     }
     if meta.get("pmcid"):
         try:
-            values["methods_text"], values["sections"] = await fetch_fulltext(meta["pmcid"], client)
-            if values["sections"]:
+            methods, sections = await fetch_fulltext(meta["pmcid"], client)
+            # Préprint non archivable dans PMC : le « corps » n'est qu'un avis de 2 lignes.
+            # Trop court pour être un article : on le laisse à la complétion (autres sources).
+            if long_enough(sections):
+                values["methods_text"], values["sections"] = methods, sections
                 values["fulltext_source"] = "pmc"
                 values["fulltext_url"] = f"https://pmc.ncbi.nlm.nih.gov/articles/{meta['pmcid']}/"
         except Exception:
@@ -490,7 +493,7 @@ async def _complete_fulltext(
                 )
                 .scalars()
                 .all()
-                if not a.sections
+                if not long_enough(a.sections or [])
             ]
             found, sources = 0, {}
 

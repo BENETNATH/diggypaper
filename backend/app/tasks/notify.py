@@ -82,6 +82,6 @@ async def notify_job_complete(
             logger.info("notify: no mailer, skipping send (project %s)", project_id)
             return
         await mailer.send(lead.email, subject, body)
-        logger.info("notify: job %s completion email sent to %s", job_type, lead.email)
+        logger.info("notify: job %s completion email sent (project %s)", job_type, project_id)
     except Exception:
         logger.exception("notify: failed to send job completion email (project %s)", project_id)

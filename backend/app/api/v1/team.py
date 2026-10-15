@@ -14,8 +14,9 @@ from pydantic import BaseModel, EmailStr
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_db
+from app.api.deps import get_current_user, get_db, rate_limit_user
 from app.api.v1.projects import _require_project_member
+from app.cleanup import purge_orphans
 from app.core.config import get_settings
 from app.db.models import Project, ProjectMember, ProjectMemberRole, User, UserRole
 from app.emails import mailer_from_db
@@ -69,7 +70,11 @@ async def list_members(project_id: uuid.UUID, db: DbDep, user: UserDep) -> dict:
     }
 
 
-@router.post("/{project_id}/members/invite", status_code=201)
+@router.post(
+    "/{project_id}/members/invite",
+    status_code=201,
+    dependencies=[Depends(rate_limit_user("team_invite", 20))],
+)
 async def invite_member(
     project_id: uuid.UUID, payload: MemberInvite, db: DbDep, user: UserDep
 ) -> dict:
@@ -90,15 +95,18 @@ async def invite_member(
             )
         )
         await db.commit()
-        status, lang = "added", existing.language_preference.value
+        # Réponse identique pour un compte existant ou non (pas d'énumération des comptes).
+        status, lang = "invited", existing.language_preference.value
         link = f"{settings.app_base_url}/projects/{project_id}"
         kind = "project_added"
+        is_new = False
     else:
         lang = payload.language or default_lang()
         inv = await upsert_invitation(
             db, payload.email, lang, user.id, project_id=project_id, role=payload.role
         )
         status, kind = "invited", "project_invite"
+        is_new = True
         invite_subject, invite_body, link = await render_invitation(db, inv)
         await db.commit()
     mailer = await mailer_from_db(db)
@@ -107,14 +115,14 @@ async def invite_member(
         fields = dict(project=project.title, inviter=inviter, role=payload.role, link=link)
         subject = t(lang, f"{kind}_subject", project=project.title)
         body = t(lang, f"{kind}_body", **fields)
-        if status == "invited":
+        if is_new:
             subject, body = invite_subject, invite_body
         try:
             await mailer.send(to=payload.email, subject=subject, body=body)
             sent = True
         except Exception:  # noqa: BLE001 - SMTP en panne : on renvoie le lien à la place
             logger.exception("project invitation e-mail failed")
-    return {"status": status, "email_sent": sent, "link": None if sent else link}
+    return {"status": status, "email_sent": sent, "link": link if is_new and not sent else None}
 
 
 @router.delete("/{project_id}/members/{user_id}", status_code=204)
@@ -139,4 +147,6 @@ async def remove_member(
         if leads <= 1:
             raise HTTPException(status_code=409, detail="cannot remove the last lead")
     await db.delete(member)
+    await db.flush()
+    await purge_orphans(db, [user_id])  # plus aucun projet : le compte disparaît
     await db.commit()

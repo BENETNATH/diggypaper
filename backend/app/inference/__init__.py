@@ -10,6 +10,7 @@ Les erreurs sont assainies (pas d'URL ni de secret dans le message), comme
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 
@@ -34,7 +35,9 @@ class OpenAICompatibleService:
         api_key: str | None = None,
         timeout: float = 120.0,
         http: httpx.AsyncClient | None = None,
+        public_only: bool = False,
     ) -> None:
+        self._public_only = public_only  # modèle d'un utilisateur : jamais d'adresse interne
         self._base_url = base_url.rstrip("/")
         self.base_url = self._base_url
         self._api_key = api_key
@@ -60,6 +63,16 @@ class OpenAICompatibleService:
             "response_format": {"type": "json_object"},
         }
         url = f"{self._base_url}/chat/completions"
+        if self._public_only:
+            # Revérifié à CHAQUE appel (pas seulement à l'enregistrement) : une réécriture DNS
+            # après coup ne mène plus au réseau interne.
+            # ponytail: fenêtre résolution→connexion non fermée ; épingler l'IP si besoin.
+            from app.model_access import check_public_url
+
+            try:
+                await asyncio.to_thread(check_public_url, self._base_url)
+            except ValueError as exc:
+                raise InferenceError("url_not_allowed") from exc
         owned = self._http is None
         client = self._http or httpx.AsyncClient(timeout=self._timeout)
         try:
@@ -125,7 +138,9 @@ async def infer_with(
     if model is not None and model.backend_type == "OPENAI_API":
         url, _, name = model.model_identifier.partition("#")
         key = decrypt_secret(model.api_key_enc) if model.api_key_enc else None
-        svc = OpenAICompatibleService(url, key, timeout=default._timeout)
+        svc = OpenAICompatibleService(
+            url, key, timeout=default._timeout, public_only=model.owner_id is not None
+        )
         return await svc.infer(name, system_prompt, user_prompt)
     ident = model.model_identifier if model is not None else (name or "")
     return await default.infer(ident, system_prompt, user_prompt)

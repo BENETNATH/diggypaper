@@ -20,6 +20,15 @@ CRATE_CONTEXT = "https://w3id.org/ro/crate/1.1/context"
 CONFORMS = "https://w3id.org/ro/crate/1.1"
 
 
+_FORMULA_START = ("=", "+", "-", "@", "\t", "\r")
+
+
+def neutralize(v):
+    """Texte libre exporté vers un tableur : une apostrophe devant tout ce qui serait lu comme
+    une formule (injection CSV/XLSX : =DDE(...), =HYPERLINK(...), @SUM…)."""
+    return "'" + v if isinstance(v, str) and v.startswith(_FORMULA_START) else v
+
+
 def article_key(a) -> str:
     """Nom de dossier stable : pmid-123, sinon doi, sinon début de l'UUID."""
     if a.pmid:
@@ -113,7 +122,8 @@ def extraction_csv(articles, keys: dict, preds: dict, annos: dict, fields: list[
         r = article_record(a, keys[a.id], preds.get(a.id), annos.get(a.id, []), fields)
         ai, human = r["ai"] or {}, (r["human"] or [{}])[-1]
         w.writerow(
-            [r["key"], r["pmid"], r["doi"], r["title"], r["pub_date"], r["journal"]]
+            neutralize(c)
+            for c in [r["key"], r["pmid"], r["doi"], r["title"], r["pub_date"], r["journal"]]
             + [r["first_author"], r["last_author"], r["final_status"], ai.get("relevance")]
             + [r["fulltext_source"]]
             + [(ai.get("answers") or {}).get(f["key"]) for f in fields]

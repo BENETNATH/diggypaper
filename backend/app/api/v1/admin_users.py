@@ -4,19 +4,18 @@ projets et restes), invitations en attente (renvoi / révocation), tous les proj
 Réservé aux ADMIN globaux.
 """
 
-import hashlib
 import logging
 import uuid
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_admin, get_db
-from app.cleanup import delete_projects
-from app.core.config import get_settings
+from app.cleanup import delete_projects, purge_orphans
+from app.cleanup import delete_user as _delete_user
 from app.db.models import (
     Article,
     HumanAnnotation,
@@ -45,6 +44,7 @@ class UserPatch(BaseModel):
     role: Literal["ADMIN", "RESEARCHER"] | None = None
     language_preference: Literal["fr", "en", "de", "es"] | None = None
     is_active: bool | None = None
+    can_create_projects: bool | None = None
 
 
 async def _other_active_admins(db: AsyncSession, user_id: uuid.UUID) -> int:
@@ -85,6 +85,7 @@ async def list_users(db: DbDep, admin: AdminDep) -> dict:
                 if u.language_preference
                 else None,
                 "is_active": u.is_active is not False,
+                "can_create_projects": u.may_create_projects,
                 "anonymized": u.anonymized_hash is not None,
                 "created_at": u.created_at.isoformat() if u.created_at else None,
                 "projects": member_of.get(u.id, 0),
@@ -117,6 +118,8 @@ async def patch_user(user_id: uuid.UUID, payload: UserPatch, db: DbDep, admin: A
         user.language_preference = LanguageCode(payload.language_preference)
     if payload.is_active is not None:
         user.is_active = payload.is_active
+    if payload.can_create_projects is not None:
+        user.can_create_projects = payload.can_create_projects
     await db.commit()
     return {"id": str(user.id), "is_active": user.is_active, "role": user.role.value}
 
@@ -165,20 +168,21 @@ async def delete_user(
     ).all()
     removed = 0
     if delete_their_projects:
-        removed = await delete_projects(db, [p.id for p in theirs])
-    anon = hashlib.sha256((get_settings().anon_salt + user.email).encode("utf-8")).hexdigest()
-    await db.execute(
-        update(HumanAnnotation)
-        .where(HumanAnnotation.user_id == user.id)
-        .values(user_id=None, annotator_hash=anon)
-    )
-    await db.execute(delete(Invitation).where(func.lower(Invitation.email) == user.email.lower()))
-    await db.delete(user)
+        removed = await delete_projects(db, [p.id for p in theirs], keep=(user.id,))
+    await _delete_user(db, user)
     await db.commit()
     return {
         "deleted_projects": removed,
         "orphaned_projects": [] if delete_their_projects else [p.title for p in theirs],
     }
+
+
+@router.post("/users/purge-orphans")
+async def purge_orphan_users(db: DbDep, admin: AdminDep) -> dict:
+    """Supprime tous les comptes invités (non créateurs) qui n'appartiennent à aucun projet."""
+    n = await purge_orphans(db)
+    await db.commit()
+    return {"deleted": n}
 
 
 # --- Invitations en attente --------------------------------------------------------------

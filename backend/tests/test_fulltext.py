@@ -1,6 +1,7 @@
 """Texte intégral hors PMC : PDF → sections, chaîne Europe PMC / Unpaywall / OpenAlex (offline)."""
 
 import httpx
+import pytest
 
 from app.fulltext import find_open_fulltext, pdf_to_sections
 
@@ -136,3 +137,30 @@ def test_pdf_to_sections_strips_nul_chars(monkeypatch):
     monkeypatch.setattr(pypdf, "PdfReader", Reader)
     secs = pdf_to_sections(b"%PDF")
     assert "\x00" not in secs[0]["text"] and "mice were housed" in secs[0]["text"]
+
+
+@pytest.fixture(autouse=True)
+def _public_hosts(monkeypatch):
+    """Pas de DNS en test : les hôtes fictifs sont « publics »."""
+    monkeypatch.setattr("app.fulltext.check_public_url", lambda url: None)
+
+
+async def test_download_pdf_refuses_redirect_to_internal_host(monkeypatch):
+    from app.fulltext import _download_pdf
+
+    def check(url):
+        if "internal" in url:
+            raise ValueError("not public")
+
+    monkeypatch.setattr("app.fulltext.check_public_url", check)
+    hits = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        hits.append(request.url.host)
+        if request.url.host == "open.example":
+            return httpx.Response(302, headers={"location": "http://internal.local/secret"})
+        return httpx.Response(200, content=b"%PDF-1.4 secret")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        assert await _download_pdf("https://open.example/a.pdf", http) is None
+    assert hits == ["open.example"]  # le saut interne n'a jamais été requêté

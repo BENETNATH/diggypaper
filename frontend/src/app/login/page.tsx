@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useAuth } from "@/lib/auth";
-import { ApiError } from "@/lib/api";
+import { ApiError, getPublicConfig } from "@/lib/api";
 import { readLocaleCookie, writeLocaleCookie } from "@/components/LanguageSwitcher";
 import { Button } from "@/components/ui/Button";
 import { Field, Input, Checkbox } from "@/components/ui/Field";
@@ -21,6 +21,13 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [consent, setConsent] = useState(false);
   const [consentRequired, setConsentRequired] = useState(false);
+  const [privacyUrl, setPrivacyUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    getPublicConfig()
+      .then((c) => setPrivacyUrl(c.privacy_url))
+      .catch(() => undefined);
+  }, []);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -86,6 +93,11 @@ export default function LoginPage() {
                 onChange={(e) => setConsent(e.target.checked)}
               />
               <p className="-mt-2 text-xs text-muted">{t("consentFirstLogin")}</p>
+              {privacyUrl && (
+                <a href={privacyUrl} target="_blank" rel="noopener noreferrer" className="-mt-2 text-xs text-primary hover:underline">
+                  {t("privacyPolicy")}
+                </a>
+              )}
             </>
           )}
           <Button type="submit" loading={loading}>

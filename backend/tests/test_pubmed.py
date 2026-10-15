@@ -51,24 +51,27 @@ async def test_search_volume_sends_api_key():
 # --- fetch_pmids ---
 
 
-async def test_fetch_pmids_default_retmax_10000():
-    """M1 : retmax par défaut = 10000 (max réel NCBI, pas 1000)."""
+async def test_fetch_pmids_default_retmax_is_configured_cap():
+    """M1 : retmax par défaut = plafond d'import de l'instance."""
 
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/entrez/eutils/esearch.fcgi"
-        assert request.url.params["retmax"] == "10000"
+        assert request.url.params["retmax"] == "5000"  # IMPORT_MAX_ARTICLES (défaut)
         return httpx.Response(200, json={"esearchresult": {"idlist": ["1", "2"]}})
 
     async with _client(handler) as http:
         assert await fetch_pmids("cancer", None, http) == ["1", "2"]
 
 
-async def test_fetch_pmids_cap_10000():
-    """M1 : retmax > 10000 est plafonné à 10000."""
+async def test_fetch_pmids_cap_follows_setting(monkeypatch):
+    """M1 : retmax est plafonné à IMPORT_MAX_ARTICLES (5000 par défaut, 10000 au plus)."""
+    from app.core.config import get_settings
 
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.params["retmax"] == "10000"
         return httpx.Response(200, json={"esearchresult": {"idlist": ["1"]}})
+
+    monkeypatch.setattr(get_settings(), "import_max_articles", 99999)  # borné par NCBI
 
     async with _client(handler) as http:
         assert await fetch_pmids("cancer", None, http, retmax=50000) == ["1"]

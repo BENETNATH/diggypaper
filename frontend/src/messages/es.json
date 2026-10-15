@@ -45,7 +45,8 @@
     "consentLabel": "Acepto que mis datos sean tratados de conformidad con la política de privacidad (RGPD).",
     "consentRequired": "Debe aceptar la política de privacidad para continuar.",
     "unknownError": "Algo salió mal. Inténtelo de nuevo.",
-    "consentFirstLogin": "Primer acceso: marque para aceptar el tratamiento de sus datos (RGPD)."
+    "consentFirstLogin": "Primer acceso: marque para aceptar el tratamiento de sus datos (RGPD).",
+    "privacyPolicy": "Leer la política de privacidad"
   },
   "projects": {
     "title": "Mis proyectos",
@@ -612,6 +613,10 @@
     "deleteWarn": "¿Eliminar definitivamente la cuenta {email}? Sus modelos externos, accesos y ajustes se borran; sus anotaciones se conservan anonimizadas.",
     "deleteProjects": "Eliminar también los {n} proyecto(s) que creó o dirige en solitario (artículos, PDF, análisis, exportaciones)",
     "deleteConfirm": "Eliminar la cuenta",
+    "purgeOrphans": "Eliminar invitados sin proyecto",
+    "purgeConfirm": "¿Eliminar todas las cuentas de invitado (no creadores) sin proyecto?",
+    "purgeHint": "Una cuenta de invitado se elimina automáticamente al perder su último proyecto.",
+    "purged": "{n} cuenta(s) eliminada(s).",
     "orphaned": "Proyectos conservados, sin responsable: {list}",
     "noInvites": "Ninguna invitación pendiente.",
     "platformInvite": "Invitación a la plataforma",
@@ -622,6 +627,16 @@
     "resentNoMail": "Correo no enviado (SMTP sin configurar o caído): transmita este enlace a {email}.",
     "noOwner": "sin creador",
     "projectCounts": "{members} miembro(s) · {articles} artículo(s)",
-    "projectDeleteConfirm": "¿Eliminar definitivamente el proyecto «{title}» y todos sus datos?"
+    "projectDeleteConfirm": "¿Eliminar definitivamente el proyecto «{title}» y todos sus datos?",
+    "creator": "Creador",
+    "guest": "Invitado",
+    "makeCreator": "Hacer creador",
+    "makeGuest": "Hacer invitado",
+    "inviteTitle": "Invitar a un creador de proyectos",
+    "inviteEmail": "Correo electrónico",
+    "inviteCreator": "Invitar",
+    "inviteSent": "Invitación enviada a {email}.",
+    "inviteNoMail": "Correo no enviado a {email}: transmita este enlace.",
+    "inviteHint": "Un creador puede crear proyectos e invitar a personas. Esos invitados no pueden crear proyectos y su cuenta se elimina cuando no les queda ninguno."
   }
 }

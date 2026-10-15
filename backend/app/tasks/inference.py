@@ -152,8 +152,14 @@ async def _run_inference(
             job = await session.get(InferenceJob, job_uuid)
             if job is None:
                 raise LookupError(f"inference job not found: {inference_job_id}")
-            if job.status in (InferenceJobStatus.FAILED, InferenceJobStatus.COMPLETED):
-                return {}  # tâche redélivrée après un redémarrage : job déjà clos
+            if job.status in (
+                InferenceJobStatus.FAILED,
+                InferenceJobStatus.COMPLETED,
+                InferenceJobStatus.RUNNING,
+            ):
+                # Redélivrance : job déjà clos, ou déjà en cours dans un autre processus
+                # (un redémarrage du worker passe d'abord RUNNING → FAILED).
+                return {}
             job.status = InferenceJobStatus.RUNNING
             await session.commit()
 

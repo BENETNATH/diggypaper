@@ -45,7 +45,8 @@
     "consentLabel": "J'accepte que mes données soient traitées conformément à la politique de confidentialité (RGPD).",
     "consentRequired": "Vous devez accepter la politique de confidentialité pour continuer.",
     "unknownError": "Une erreur est survenue. Réessayez.",
-    "consentFirstLogin": "Première connexion : cochez pour accepter le traitement de vos données (RGPD)."
+    "consentFirstLogin": "Première connexion : cochez pour accepter le traitement de vos données (RGPD).",
+    "privacyPolicy": "Lire la politique de confidentialité"
   },
   "projects": {
     "title": "Mes projets",
@@ -612,6 +613,10 @@
     "deleteWarn": "Supprimer définitivement le compte {email} ? Ses modèles externes, partages et réglages sont supprimés ; ses annotations restent, anonymisées.",
     "deleteProjects": "Supprimer aussi les {n} projet(s) qu'il a créés ou dont il est l'unique responsable (articles, PDF, analyses, exports)",
     "deleteConfirm": "Supprimer le compte",
+    "purgeOrphans": "Supprimer les invités sans projet",
+    "purgeConfirm": "Supprimer tous les comptes invités (non créateurs) qui n'appartiennent à aucun projet ?",
+    "purgeHint": "Un compte invité est supprimé automatiquement quand il perd son dernier projet.",
+    "purged": "{n} compte(s) supprimé(s).",
     "orphaned": "Projets conservés, sans responsable : {list}",
     "noInvites": "Aucune invitation en attente.",
     "platformInvite": "Invitation à la plateforme",
@@ -622,6 +627,16 @@
     "resentNoMail": "E-mail non envoyé (SMTP non configuré ou en panne) : transmettez ce lien à {email}.",
     "noOwner": "sans créateur",
     "projectCounts": "{members} membre(s) · {articles} article(s)",
-    "projectDeleteConfirm": "Supprimer définitivement le projet « {title} » et toutes ses données ?"
+    "projectDeleteConfirm": "Supprimer définitivement le projet « {title} » et toutes ses données ?",
+    "creator": "Créateur",
+    "guest": "Invité",
+    "makeCreator": "Rendre créateur",
+    "makeGuest": "Rendre invité",
+    "inviteTitle": "Inviter un créateur de projets",
+    "inviteEmail": "Adresse e-mail",
+    "inviteCreator": "Inviter",
+    "inviteSent": "Invitation envoyée à {email}.",
+    "inviteNoMail": "E-mail non envoyé à {email} : transmettez ce lien.",
+    "inviteHint": "Un créateur peut créer des projets et y inviter des personnes. Ces invités n'ont pas de droit de création et leur compte est supprimé quand ils n'ont plus aucun projet."
   }
 }

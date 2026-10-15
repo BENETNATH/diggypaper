@@ -56,6 +56,7 @@ def _efetch_xml(pmids: list[str], with_pmcid: bool = True) -> str:
     return f"<PubmedArticleSet>{''.join(articles)}</PubmedArticleSet>"
 
 
+_LONG = "Outcome measured at twelve weeks. " * 60
 _PMC_XML = """<?xml version="1.0"?>
 <pmc-articleset>
   <article>
@@ -64,9 +65,13 @@ _PMC_XML = """<?xml version="1.0"?>
         <title>Methods</title>
         <p>Randomised design.</p>
       </sec>
+      <sec>
+        <title>Results</title>
+        <p>{LONG}</p>
+      </sec>
     </body>
   </article>
-</pmc-articleset>"""
+</pmc-articleset>""".replace("{LONG}", _LONG)
 
 
 def _ncbi_handler(pmids: list[str], efetch_pmids: list[str] | None = None, with_pmcid: bool = True):
@@ -585,3 +590,25 @@ def test_import_pubmed_task_wrapper_calls_core():
         "fulltext": 1,
         "truncated": False,
     }
+
+
+async def test_pmc_stub_body_is_not_kept_as_fulltext(engine, monkeypatch):
+    """Préprint non archivable : PMC ne renvoie qu'un avis de 2 lignes, pas un texte intégral."""
+    from app import tasks
+
+    notice = [{"title": "Full Text Availability", "kind": "other", "text": "Not archived. " * 12}]
+
+    async def stub(pmcid, client):
+        return None, notice
+
+    monkeypatch.setattr(tasks, "fetch_fulltext", stub)
+    project = await _make_project(engine)
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as session:
+        inserted, has_text = await tasks._insert_article(
+            session, project.id, {"pmid": "9", "pmcid": "PMC9", "title": "t"}, None
+        )
+        await session.commit()
+    assert inserted and not has_text
+    (art,) = await _articles_for(engine, project.id)
+    assert not art.sections and art.fulltext_source is None

@@ -45,7 +45,8 @@
     "consentLabel": "I agree that my data will be processed in accordance with the privacy policy (GDPR).",
     "consentRequired": "You must accept the privacy policy to continue.",
     "unknownError": "Something went wrong. Please try again.",
-    "consentFirstLogin": "First login: tick to accept the processing of your data (GDPR)."
+    "consentFirstLogin": "First login: tick to accept the processing of your data (GDPR).",
+    "privacyPolicy": "Read the privacy policy"
   },
   "projects": {
     "title": "My projects",
@@ -612,6 +613,10 @@
     "deleteWarn": "Permanently delete account {email}? Their external models, shares and settings are removed; their annotations are kept, anonymized.",
     "deleteProjects": "Also delete the {n} project(s) they created or solely lead (articles, PDFs, analyses, exports)",
     "deleteConfirm": "Delete account",
+    "purgeOrphans": "Delete guests without a project",
+    "purgeConfirm": "Delete every guest (non-creator) account that belongs to no project?",
+    "purgeHint": "A guest account is deleted automatically when it loses its last project.",
+    "purged": "{n} account(s) deleted.",
     "orphaned": "Projects kept, without a lead: {list}",
     "noInvites": "No pending invitations.",
     "platformInvite": "Platform invitation",
@@ -622,6 +627,16 @@
     "resentNoMail": "E-mail not sent (SMTP not configured or down): pass this link on to {email}.",
     "noOwner": "no creator",
     "projectCounts": "{members} member(s) · {articles} article(s)",
-    "projectDeleteConfirm": "Permanently delete project “{title}” and all its data?"
+    "projectDeleteConfirm": "Permanently delete project “{title}” and all its data?",
+    "creator": "Creator",
+    "guest": "Guest",
+    "makeCreator": "Make creator",
+    "makeGuest": "Make guest",
+    "inviteTitle": "Invite a project creator",
+    "inviteEmail": "E-mail address",
+    "inviteCreator": "Invite",
+    "inviteSent": "Invitation sent to {email}.",
+    "inviteNoMail": "E-mail not sent to {email}: pass this link on.",
+    "inviteHint": "A creator can create projects and invite people to them. Those guests cannot create projects and their account is deleted when they have no project left."
   }
 }

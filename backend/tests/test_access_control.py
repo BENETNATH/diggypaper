@@ -342,3 +342,174 @@ async def test_register_marks_invitation_accepted(
     assert inv.accepted_at is not None
     await _login(client, "admin@lab.fr", "admin-pass-123")
     assert (await client.get(f"{API}/admin/invitations")).json()["items"] == []
+
+
+# --- créateurs et invités ---------------------------------------------------------------
+
+
+async def _exists(session, email):
+    session.expire_all()
+    return (await session.execute(select(User).where(User.email == email))).scalar_one_or_none()
+
+
+@pytest.fixture
+async def guest(session):
+    return await _make_user(
+        session, "guest@lab.fr", UserRole.RESEARCHER, "guest-pass-123", True, creator=False
+    )
+
+
+async def test_guest_cannot_create_projects_creator_can(client, session, alice, guest):
+    await _login(client, "guest@lab.fr", "guest-pass-123")
+    assert (await client.post(f"{API}/projects", json={"title": "X"})).status_code == 403
+    assert (await client.get(f"{API}/auth/me")).json()["can_create_projects"] is False
+    await _login(client, "alice@lab.fr", "alice-pass-123")
+    assert (await client.post(f"{API}/projects", json={"title": "X"})).status_code == 201
+    assert (await client.get(f"{API}/auth/me")).json()["can_create_projects"] is True
+
+
+async def test_guest_removed_from_last_project_is_deleted_creator_is_not(
+    client, session, admin_user, alice, bob, guest
+):
+    p = await _project(session, alice)
+    for u in (bob, guest):  # bob = créateur, guest = invité
+        session.add(
+            ProjectMember(
+                project_id=p.id, user_id=u.id, role_in_project=ProjectMemberRole.ANNOTATOR
+            )
+        )
+    await session.commit()
+    pid, bid, gid = p.id, bob.id, guest.id
+    await _login(client, "alice@lab.fr", "alice-pass-123")
+    assert (await client.delete(f"{API}/projects/{pid}/members/{gid}")).status_code == 204
+    assert await _exists(session, "guest@lab.fr") is None
+    assert (await client.delete(f"{API}/projects/{pid}/members/{bid}")).status_code == 204
+    assert await _exists(session, "bob@lab.fr") is not None  # créateur : conservé
+    # le créateur qui supprime son projet garde son compte (régression B1)
+    assert (await client.delete(f"{API}/projects/{pid}")).status_code == 204
+    assert await _exists(session, "alice@lab.fr") is not None
+
+
+async def test_deleting_project_deletes_guest_members_without_other_project(
+    client, session, admin_user, alice, guest
+):
+    p = await _project(session, alice)
+    session.add(
+        ProjectMember(
+            project_id=p.id, user_id=guest.id, role_in_project=ProjectMemberRole.ANNOTATOR
+        )
+    )
+    await session.commit()
+    pid = p.id
+    await _login(client, "alice@lab.fr", "alice-pass-123")
+    await client.delete(f"{API}/projects/{pid}")
+    assert await _exists(session, "guest@lab.fr") is None
+    assert await _exists(session, "alice@lab.fr") is not None
+
+
+async def test_admin_purge_orphans_only_guests(client, session, admin_user, alice, bob, guest):
+    await _project(session, alice)
+    await _login(client, "alice@lab.fr", "alice-pass-123")
+    assert (await client.post(f"{API}/admin/users/purge-orphans")).status_code == 403
+    await _login(client, "admin@lab.fr", "admin-pass-123")
+    assert (await client.post(f"{API}/admin/users/purge-orphans")).json() == {"deleted": 1}
+    assert await _exists(session, "guest@lab.fr") is None
+    assert await _exists(session, "bob@lab.fr") is not None  # créateur sans projet : conservé
+
+
+async def test_admin_invites_creator_and_toggles_flag(client, session, admin_user, guest):
+    await _login(client, "admin@lab.fr", "admin-pass-123")
+    r = await client.post(f"{API}/auth/invite", json={"email": "new@lab.fr"})
+    assert r.status_code == 202
+    inv = (
+        await session.execute(select(Invitation).where(Invitation.email == "new@lab.fr"))
+    ).scalar_one()
+    assert inv.can_create_projects is True
+    gid = guest.id
+    r = await client.patch(f"{API}/admin/users/{gid}", json={"can_create_projects": True})
+    assert r.status_code == 200
+    users = (await client.get(f"{API}/admin/users")).json()["items"]
+    assert next(u for u in users if u["id"] == str(gid))["can_create_projects"] is True
+
+
+# --- durcissement ------------------------------------------------------------------------
+
+
+def test_spreadsheet_formulas_are_neutralized():
+    from app.api.v1.export import _cell
+    from app.crate import neutralize
+
+    for evil in ('=HYPERLINK("http://x")', "+1+1", "-2+3", "@SUM(A1)", "\t=1", "\r=1"):
+        assert neutralize(evil) == "'" + evil
+        assert _cell(evil).startswith("'")
+    assert _cell(["=cmd|'/C calc'!A1", "b"]).startswith("'=")  # liste aplatie
+    assert neutralize("normal") == "normal" and neutralize(3.5) == 3.5 and neutralize(None) is None
+
+
+async def test_user_model_url_rechecked_at_call_time(monkeypatch):
+    from app.inference import InferenceError, OpenAICompatibleService
+
+    def rebound(url):
+        raise ValueError("now internal")
+
+    monkeypatch.setattr("app.model_access.check_public_url", rebound)
+    with pytest.raises(InferenceError, match="url_not_allowed"):
+        await OpenAICompatibleService("http://x.example/v1", public_only=True).infer("m", "s", "u")
+
+
+async def test_team_invite_and_external_test_are_rate_limited(
+    client, session, alice, public_urls, monkeypatch
+):
+    from app.inference import InferenceError, OpenAICompatibleService
+
+    async def boom(self, *a):
+        raise InferenceError("x")
+
+    monkeypatch.setattr(OpenAICompatibleService, "infer", boom)
+    p = await _project(session, alice)
+    await _login(client, "alice@lab.fr", "alice-pass-123")
+    codes = [
+        (
+            await client.post(
+                f"{API}/projects/{p.id}/members/invite", json={"email": f"n{i}@lab.fr"}
+            )
+        ).status_code
+        for i in range(21)
+    ]
+    assert codes[:20] == [201] * 20 and codes[20] == 429
+    codes = [
+        (await client.post(f"{API}/models/external/test", json=EXT)).status_code for _ in range(11)
+    ]
+    assert codes[:10] == [200] * 10 and codes[10] == 429
+
+
+async def test_jwt_revoked_on_password_change_and_logout(client, session, alice):
+    await _login(client, "alice@lab.fr", "alice-pass-123")
+    old = client.cookies.get("access_token")
+    assert (await client.get(f"{API}/auth/me")).status_code == 200
+    r = await client.post(
+        f"{API}/auth/change-password",
+        json={"current_password": "alice-pass-123", "new_password": "alice-new-pass-1"},
+    )
+    assert r.status_code == 204
+    client.cookies.set("access_token", old)
+    assert (await client.get(f"{API}/auth/me")).status_code == 401  # ancien JWT révoqué
+    await _login(client, "ALICE@lab.fr", "alice-new-pass-1")  # login insensible à la casse
+    assert (await client.get(f"{API}/auth/me")).status_code == 200
+    fresh = client.cookies.get("access_token")
+    assert (await client.post(f"{API}/auth/logout")).status_code == 204
+    client.cookies.set("access_token", fresh)
+    assert (await client.get(f"{API}/auth/me")).status_code == 401  # logout révoque aussi
+
+
+async def test_import_and_pdf_upload_need_lead(client, session, alice, bob):
+    p = await _project(session, alice)
+    session.add(
+        ProjectMember(project_id=p.id, user_id=bob.id, role_in_project=ProjectMemberRole.ANNOTATOR)
+    )
+    await session.commit()
+    await _login(client, "bob@lab.fr", "bob-pass-12345")
+    assert (
+        await client.post(f"{API}/projects/{p.id}/import", json={"query": "x"})
+    ).status_code == 403
+    assert (await client.post(f"{API}/projects/{p.id}/export/crate")).status_code == 403

@@ -17,6 +17,7 @@ export interface User {
   role: "ADMIN" | "RESEARCHER";
   language_preference: string;
   data_consent_given: boolean;
+  can_create_projects: boolean;
   created_at: string;
 }
 
@@ -211,6 +212,9 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 // --- Auth -------------------------------------------------------------------
+
+export const getPublicConfig = (): Promise<{ privacy_url: string | null }> =>
+  request("/auth/config");
 
 export async function login(
   email: string,
@@ -804,6 +808,7 @@ export interface AdminUser {
   role: "ADMIN" | "RESEARCHER";
   language_preference: string | null;
   is_active: boolean;
+  can_create_projects: boolean;
   anonymized: boolean;
   created_at: string | null;
   projects: number;
@@ -836,7 +841,7 @@ export const listAdminUsers = async (): Promise<AdminUser[]> =>
 
 export const patchAdminUser = (
   id: string,
-  patch: Partial<Pick<AdminUser, "full_name" | "role" | "language_preference" | "is_active">>
+  patch: Partial<Pick<AdminUser, "full_name" | "role" | "language_preference" | "is_active" | "can_create_projects">>
 ): Promise<void> => request(`/admin/users/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
 
 export const deleteAdminUser = (
@@ -844,6 +849,18 @@ export const deleteAdminUser = (
   deleteTheirProjects: boolean
 ): Promise<{ deleted_projects: number; orphaned_projects: string[] }> =>
   request(`/admin/users/${id}?delete_their_projects=${deleteTheirProjects}`, { method: "DELETE" });
+
+export const inviteCreator = (
+  email: string,
+  language: string
+): Promise<{ email_sent: boolean; link: string | null }> =>
+  request("/auth/invite", {
+    method: "POST",
+    body: JSON.stringify({ email, language, can_create_projects: true }),
+  });
+
+export const purgeOrphanUsers = (): Promise<{ deleted: number }> =>
+  request("/admin/users/purge-orphans", { method: "POST" });
 
 export const listAdminInvitations = async (): Promise<AdminInvitation[]> =>
   (await request<{ items: AdminInvitation[] }>("/admin/invitations")).items;

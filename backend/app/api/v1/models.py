@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_db
+from app.api.deps import get_current_user, get_db, rate_limit_user
 from app.core.crypto import encrypt_secret
 from app.db.base import SessionLocal
 from app.db.models import ModelRegistry, ModelShare, Project, ProjectMember, User, UserRole
@@ -253,11 +253,13 @@ async def create_model(payload: ModelCreate, db: DbDep, user: UserDep) -> dict:
     return _payload(m)
 
 
-@router.post("/external/test")
+@router.post("/external/test", dependencies=[Depends(rate_limit_user("model_test", 10))])
 async def test_external(payload: ExternalModel, user: UserDep) -> dict:
     """Un appel minimal pour vérifier URL + clé + nom du modèle (erreur assainie)."""
     _check_url(payload.base_url, user)
-    svc = OpenAICompatibleService(payload.base_url, payload.api_key, timeout=30)
+    svc = OpenAICompatibleService(
+        payload.base_url, payload.api_key, timeout=30, public_only=user.role != UserRole.ADMIN
+    )
     try:
         await svc.infer(payload.model, 'Reply with the JSON {"ok": true}.', "ping")
     except InferenceError as exc:

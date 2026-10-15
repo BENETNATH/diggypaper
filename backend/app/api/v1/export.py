@@ -22,7 +22,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import crate, prisma, references
 from app.api.deps import get_current_user, get_db
-from app.api.v1.projects import STATUS_PATTERN, _require_project_member, article_filter
+from app.api.v1.projects import (
+    STATUS_PATTERN,
+    _require_lead_or_admin,
+    _require_project_member,
+    article_filter,
+)
 from app.db.models import (
     Article,
     ArticleFile,
@@ -61,7 +66,7 @@ def _cell(v):
         v = "\n".join(str(x) for x in v)
     elif isinstance(v, dict):
         v = "; ".join(f"{k}: {x}" for k, x in v.items())
-    return ILLEGAL_CHARACTERS_RE.sub("", str(v))[:_MAX_CELL]
+    return crate.neutralize(ILLEGAL_CHARACTERS_RE.sub("", str(v))[:_MAX_CELL])
 
 
 def _sheet(ws, header: list[str], rows: list[list], widths: dict[int, int] | None = None) -> None:
@@ -126,7 +131,8 @@ def build_workbook(project, articles, preds, annos, import_jobs, inf_job, user_e
     for r in ws.iter_rows(min_row=2):
         for c in r:
             c.alignment = Alignment(vertical="top", wrap_text=c.column in (4, 9))
-            if c.column in (12, 13) and c.value:  # liens cliquables (DOI, texte intégral)
+            # liens cliquables (DOI, texte intégral) ; jamais javascript:/file: etc.
+            if c.column in (12, 13) and str(c.value or "").startswith(("http://", "https://")):
                 c.hyperlink = c.value
                 c.style = "Hyperlink"
 
@@ -459,6 +465,7 @@ async def start_crate_export(project_id: uuid.UUID, db: DbDep, user: UserDep) ->
     from app.tasks.export import export_task
 
     project = await _require_project_member(db, project_id, user)
+    await _require_lead_or_admin(db, project_id, user)
     job = await _latest_export(db, project.id)
     if job is None or job.status not in ("PENDING", "RUNNING"):
         job = ExportJob(project_id=project.id, user_id=user.id, status="PENDING")

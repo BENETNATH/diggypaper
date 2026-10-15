@@ -1,5 +1,6 @@
 """Invitation d'équipe par e-mail + export XLSX du projet."""
 
+import asyncio
 import io
 
 import pytest
@@ -77,7 +78,7 @@ async def test_invite_existing_user_added_directly(client, session, lead_project
     resp = await client.post(
         f"/api/v1/projects/{lead_project.id}/members/invite", json={"email": "OLD@lab.fr"}
     )
-    assert resp.json()["status"] == "added"
+    assert resp.json()["status"] == "invited"  # réponse uniforme (pas d'énumération)
     again = await client.post(
         f"/api/v1/projects/{lead_project.id}/members/invite", json={"email": "old@lab.fr"}
     )
@@ -523,6 +524,7 @@ async def test_review_status_reviewer_and_prefill(client, session, lead_project)
     assert item["review"]["by"]  # nom ou e-mail du relecteur
 
     # correction : la dernière relecture l'emporte, préremplie au rechargement
+    await asyncio.sleep(1.1)  # SQLite : created_at à la seconde, sinon égalité départagée au hasard
     r = await client.post(f"{base}/{a.id}/annotation", json={"ai": False})
     assert r.json()["status"] == "CORRECTED"
     got = (await client.get(f"{base}/{a.id}/annotation")).json()

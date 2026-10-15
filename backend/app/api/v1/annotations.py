@@ -119,6 +119,9 @@ async def upload_fulltext(
     from app.fulltext import MAX_PDF_BYTES, MIN_CHARS, pdf_to_sections, store_pdf
 
     article = await _require_article(db, project_id, article_id, user)
+    from app.api.v1.projects import _require_lead_or_admin
+
+    await _require_lead_or_admin(db, project_id, user)
     data = await request.body()
     if not data.startswith(b"%PDF") or len(data) > MAX_PDF_BYTES:
         raise HTTPException(status_code=422, detail="a PDF file (max 25 MB) is required")

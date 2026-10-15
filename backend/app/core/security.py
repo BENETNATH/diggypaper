@@ -48,6 +48,7 @@ def create_access_token(user: User) -> str:
         "sub": str(user.id),
         "email": user.email,
         "role": user.role.value if user.role is not None else None,
+        "tv": user.token_version or 0,
         "iat": now,
         "exp": now + timedelta(minutes=settings.access_token_expire_minutes),
     }

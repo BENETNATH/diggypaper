@@ -42,8 +42,14 @@ PMC_OA_URL = "https://www.ncbi.nlm.nih.gov/pmc/utils/oa/oa.fcgi"
 _INTERVAL_NO_KEY = 1 / 3
 _INTERVAL_WITH_KEY = 0.1
 
-#: M1 : plafond esearch — 10000 est le max réel NCBI (guide NLM E-utilities).
-_ESEARCH_MAX = 10000
+
+#: M1 : plafond esearch — 10000 est le max réel NCBI (guide NLM E-utilities) ; l'instance le
+#: réduit (IMPORT_MAX_ARTICLES, défaut 5000) pour borner un import.
+def _esearch_max() -> int:
+    from app.core.config import get_settings
+
+    return max(1, min(10000, get_settings().import_max_articles))
+
 
 #: m5 : retry sur erreur transitoire (503 / timeout), backoff simple (s).
 _RETRIES = 2
@@ -127,11 +133,11 @@ async def search_volume(query: str, api_key: str | None, http: httpx.AsyncClient
 
 
 async def fetch_pmids(
-    query: str, api_key: str | None, http: httpx.AsyncClient, retmax: int = _ESEARCH_MAX
+    query: str, api_key: str | None, http: httpx.AsyncClient, retmax: int | None = None
 ) -> list[str]:
     """Liste des PMIDs (esearch, ``retmax`` borné à 10000 — max réel NCBI, M1)."""
     await _throttle(api_key)
-    params = _esearch_params(query, min(retmax, _ESEARCH_MAX), api_key)
+    params = _esearch_params(query, min(retmax or _esearch_max(), _esearch_max()), api_key)
     resp = await _get_with_retry(http, f"{EUTILS_BASE}/esearch.fcgi", params)
     return list(resp.json()["esearchresult"]["idlist"])
 

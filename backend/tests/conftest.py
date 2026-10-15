@@ -10,6 +10,7 @@ os.environ["ANON_SALT"] = "test-anon-salt"
 os.environ["ENCRYPTION_KEY"] = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 # Celery en mode eager (exécution inline, sans broker Redis) — lot 4A.
 os.environ["CELERY_EAGER"] = "true"
+os.environ["COOKIE_SECURE"] = "false"  # client de test en HTTP ; défaut applicatif : true
 
 import pytest
 from sqlalchemy import event
@@ -96,7 +97,12 @@ async def client(engine, session, mock_mailer):
 
 
 async def _make_user(
-    session: AsyncSession, email: str, role: UserRole, password: str, consent: bool = False
+    session: AsyncSession,
+    email: str,
+    role: UserRole,
+    password: str,
+    consent: bool = False,
+    creator: bool = True,
 ) -> User:
     from app.core.security import hash_password
 
@@ -105,6 +111,7 @@ async def _make_user(
         hashed_password=hash_password(password),
         role=role,
         data_consent_given=consent,
+        can_create_projects=creator,
     )
     session.add(user)
     await session.commit()

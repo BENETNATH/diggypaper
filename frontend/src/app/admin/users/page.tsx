@@ -1,13 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import {
   AdminInvitation,
   AdminProject,
   AdminUser,
   deleteAdminUser,
   deleteProject,
+  purgeOrphanUsers,
+  inviteCreator,
   listAdminInvitations,
   listAdminProjects,
   listAdminUsers,
@@ -56,7 +58,11 @@ function UserRow({ u, me, onChange, onError }: { u: AdminUser; me: boolean; onCh
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {u.role === "ADMIN" && <Badge color="blue">{t("admin")}</Badge>}
+          {u.role === "ADMIN" ? (
+            <Badge color="blue">{t("admin")}</Badge>
+          ) : (
+            <Badge color={u.can_create_projects ? "green" : "gray"}>{u.can_create_projects ? t("creator") : t("guest")}</Badge>
+          )}
           {u.anonymized && <Badge color="gray">{t("anonymized")}</Badge>}
           <Badge color={u.is_active ? "green" : "red"}>{u.is_active ? t("active") : t("disabled")}</Badge>
           <Button size="sm" variant="secondary" onClick={() => setEdit(!edit)}>
@@ -71,6 +77,15 @@ function UserRow({ u, me, onChange, onError }: { u: AdminUser; me: boolean; onCh
               >
                 {u.is_active ? t("disable") : t("enable")}
               </Button>
+              {u.role !== "ADMIN" && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => void run(() => patchAdminUser(u.id, { can_create_projects: !u.can_create_projects }))}
+                >
+                  {u.can_create_projects ? t("makeGuest") : t("makeCreator")}
+                </Button>
+              )}
               <Button size="sm" variant="danger" onClick={() => setDel(!del)}>
                 {t("delete")}
               </Button>
@@ -143,6 +158,8 @@ function UserRow({ u, me, onChange, onError }: { u: AdminUser; me: boolean; onCh
 function AdminContent() {
   const t = useTranslations("adminUsers");
   const { user } = useAuth();
+  const locale = useLocale();
+  const [inviteEmail, setInviteEmail] = useState("");
   const [users, setUsers] = useState<AdminUser[] | null>(null);
   const [invites, setInvites] = useState<AdminInvitation[]>([]);
   const [projects, setProjects] = useState<AdminProject[]>([]);
@@ -191,6 +208,44 @@ function AdminContent() {
         <p className="mt-1 text-sm text-muted">{t("intro")}</p>
       </div>
       {error && <ErrorBanner message={error} onRetry={() => void load()} />}
+
+      <Card title={t("inviteTitle")}>
+        <form
+          className="flex flex-wrap items-end gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            setNotice(null);
+            void act(async () => {
+              const r = await inviteCreator(inviteEmail.trim(), locale);
+              setNotice({ text: r.email_sent ? t("inviteSent", { email: inviteEmail }) : t("inviteNoMail", { email: inviteEmail }), link: r.link });
+              setInviteEmail("");
+            });
+          }}
+        >
+          <Input type="email" required value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder={t("inviteEmail")} className="w-72" />
+          <Button type="submit" size="sm">
+            {t("inviteCreator")}
+          </Button>
+        </form>
+        <p className="mt-2 text-xs text-muted">{t("inviteHint")}</p>
+      </Card>
+
+      <div className="flex items-center gap-3">
+        <Button
+          size="sm"
+          variant="danger"
+          onClick={() => {
+            if (window.confirm(t("purgeConfirm")))
+              void act(async () => {
+                const r = await purgeOrphanUsers();
+                setNotice({ text: t("purged", { n: r.deleted }) });
+              });
+          }}
+        >
+          {t("purgeOrphans")}
+        </Button>
+        <span className="text-xs text-muted">{t("purgeHint")}</span>
+      </div>
 
       <Card title={t("usersTitle", { n: users?.length ?? 0 })}>
         {users === null ? (

@@ -154,9 +154,20 @@ class User(Base):
     anonymized_hash: Mapped[str | None] = mapped_column(String)
     # Compte désactivé par un admin : plus de connexion, données conservées.
     is_active: Mapped[bool] = mapped_column(Boolean, server_default=text("true"), default=True)
+    # Créateur : peut créer des projets. Sinon « invité » : n'existe que par les projets où on
+    # l'a invité et est supprimé quand il perd le dernier (cf. cleanup.purge_orphans).
+    can_create_projects: Mapped[bool] = mapped_column(
+        Boolean, server_default=text("false"), default=False
+    )
+    # Incrémenté au changement de mot de passe / à la déconnexion : révoque les JWT émis avant.
+    token_version: Mapped[int] = mapped_column(Integer, server_default=text("0"), default=0)
     created_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+
+    @property
+    def may_create_projects(self) -> bool:
+        return self.role == UserRole.ADMIN or bool(self.can_create_projects)
 
     created_projects: Mapped[list["Project"]] = relationship(
         back_populates="creator", passive_deletes=True
@@ -391,6 +402,10 @@ class Invitation(Base):
         Uuid, ForeignKey("projects.id", ondelete="CASCADE")
     )
     role: Mapped[str | None] = mapped_column(String)
+    # Compte créé par cette invitation : créateur de projets (invitation admin) ou invité.
+    can_create_projects: Mapped[bool] = mapped_column(
+        Boolean, server_default=text("false"), default=False
+    )
     invited_by: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("users.id", ondelete="SET NULL")
     )

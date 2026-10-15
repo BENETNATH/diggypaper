@@ -20,6 +20,7 @@ async def upsert_invitation(
     invited_by: uuid.UUID | None,
     project_id: uuid.UUID | None = None,
     role: str | None = None,
+    can_create_projects: bool = False,
 ) -> Invitation:
     """Invitation en attente pour (e-mail, projet) : réutilisée si elle existe, sinon créée."""
     inv = (
@@ -41,6 +42,7 @@ async def upsert_invitation(
         inv = Invitation(email=email, project_id=project_id, role=role)
         db.add(inv)
     inv.language, inv.role, inv.invited_by = language, role, invited_by
+    inv.can_create_projects = can_create_projects
     await db.flush()
     return inv
 

@@ -22,6 +22,11 @@ celery_app.conf.update(
     task_acks_late=True,
     worker_prefetch_multiplier=1,
     task_always_eager=CELERY_EAGER,
+    # acks_late + visibility_timeout Redis (défaut 1 h) : une analyse CPU plus longue serait
+    # redélivrée et tournerait en double. 24 h couvre les plus gros corpus.
+    broker_transport_options={"visibility_timeout": 24 * 3600},
+    # 0 / absent = pas de limite ; sinon la tâche échoue proprement au bout de N secondes.
+    task_soft_time_limit=int(os.environ.get("TASK_SOFT_TIME_LIMIT", "0")) or None,
     # Enregistre les tasks : le worker charge app.celery_app.celery_app, il faut
     # lui importer explicitement les modules de tâches (sinon "unregistered task").
     include=[

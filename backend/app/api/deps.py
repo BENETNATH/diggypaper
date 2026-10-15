@@ -8,7 +8,6 @@ import jwt as pyjwt
 from fastapi import Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import get_settings
 from app.core.security import decode_token
 from app.db.base import SessionLocal
 from app.db.models import User, UserRole
@@ -22,8 +21,11 @@ async def get_db() -> AsyncIterator[AsyncSession]:
         yield session
 
 
-def get_mailer() -> Mailer:
-    return Mailer(get_settings())
+async def get_mailer(db: Annotated[AsyncSession, Depends(get_db)]) -> Mailer | None:
+    """Mailer (SMTP des paramètres, sinon env) ; None si l'envoi n'est pas configuré."""
+    from app.emails import mailer_from_db
+
+    return await mailer_from_db(db)
 
 
 async def _load_user(request: Request, db: AsyncSession) -> User:
@@ -45,6 +47,8 @@ async def _load_user(request: Request, db: AsyncSession) -> User:
         raise HTTPException(status_code=401, detail="Invalid token") from None
     user = await db.get(User, user_id)
     if user is None:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    if claims.get("tv", 0) != (user.token_version or 0):  # mot de passe changé / déconnecté
         raise HTTPException(status_code=401, detail="Invalid token")
     if user.is_active is False:  # compte désactivé par un admin : session coupée immédiatement
         raise HTTPException(status_code=401, detail="Account disabled")
@@ -89,3 +93,16 @@ async def get_current_admin(user: Annotated[User, Depends(get_current_user)]) ->
     if user.role != UserRole.ADMIN:
         raise HTTPException(status_code=403, detail="Admin required")
     return user
+
+
+def rate_limit_user(scope: str, limit: int):
+    """Dépendance : 429 au-delà de ``limit`` appels / 15 min par utilisateur (pas par IP)."""
+    from app.api.ratelimit import is_rate_limited, record
+
+    async def dependency(user: Annotated[User, Depends(get_current_user)]) -> None:
+        key = f"{scope}:user:{user.id}"
+        if is_rate_limited(key, limit):
+            raise HTTPException(status_code=429, detail="rate_limited")
+        record(key)
+
+    return dependency

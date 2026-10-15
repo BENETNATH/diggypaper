@@ -16,8 +16,8 @@ class Settings(BaseSettings):
     app_base_url: str = "http://localhost:8000"
     # Cookie JWT : secure=True uniquement en HTTPS (sinon le cookie n'est pas
     # envoyé par le navigateur sur HTTP → tous les appels auth sont 401).
-    # false en dev (HTTP), true en prod (HTTPS).
-    cookie_secure: bool = False
+    # true par défaut (prod, HTTPS ou reverse proxy TLS) ; false pour un essai en HTTP local.
+    cookie_secure: bool = True
     # Sel d'anonymisation RGPD : sha256(anon_salt + email_original).
     anon_salt: str = "diggypaper-anon"
     # Clé maîtresse AES-256 (Module 7) : 64 hex chars ou 44 base64 chars.
@@ -41,6 +41,10 @@ class Settings(BaseSettings):
     kev_url: str = ""  # ex. http://kev:8080 (llama.cpp : llama serve -hf ggml-org/Kev-4B-GGUF)
     admin_email: str = ""
     admin_password: str = ""
+    # Plafond d'articles ramenés par un import (NCBI esearch : 10 000 max par requête).
+    import_max_articles: int = 5000
+    # Lien « politique de confidentialité » (page de l'établissement) ; vide = non affiché.
+    privacy_url: str = ""
 
 
 # Valeurs de dev par défaut : refusées en production (fail-fast, F5).
@@ -62,6 +66,11 @@ def validate_settings(settings: Settings) -> None:
         problems.append("ANON_SALT")
     if settings.encryption_key == _DEV_ENCRYPTION_KEY:
         problems.append("ENCRYPTION_KEY")
+    if len(settings.jwt_secret) < 32:
+        raise RuntimeError("JWT_SECRET trop court : 32 caractères minimum.")
+    from app.core.crypto import load_key
+
+    load_key()  # ENCRYPTION_KEY malformée : échec au démarrage, pas au premier chiffrement
     if problems:
         raise RuntimeError(
             "Secrets par défaut (dev) détectés : définir "

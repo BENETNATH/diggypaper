@@ -217,6 +217,8 @@ def _project_payload(
 @router.post("", status_code=201)
 async def create_project(payload: ProjectCreate, db: DbDep, user: UserDep) -> dict:
     """Crée un projet ; le créateur devient LEAD dans project_members."""
+    if not user.may_create_projects:
+        raise HTTPException(status_code=403, detail="project creation not allowed")
     project = Project(
         title=payload.title,
         description=payload.description,
@@ -350,6 +352,14 @@ async def delete_project(project_id: uuid.UUID, db: DbDep, user: UserDep) -> Non
     await db.commit()
 
 
+async def _require_lead_or_admin(db: AsyncSession, project_id: uuid.UUID, user: User) -> None:
+    if user.role == UserRole.ADMIN:
+        return
+    member = await db.get(ProjectMember, (project_id, user.id))
+    if member is None or member.role_in_project != ProjectMemberRole.LEAD:
+        raise HTTPException(status_code=403, detail="project LEAD required")
+
+
 @router.post(
     "/{project_id}/import",
     status_code=202,
@@ -368,6 +378,7 @@ async def trigger_import(
     projet à la fois, même en non-eager).
     """
     project = await _require_project_member(db, project_id, user)
+    await _require_lead_or_admin(db, project_id, user)  # un import ramène jusqu'à 5 000 articles
     if not payload.query.strip():
         raise HTTPException(status_code=422, detail="query must not be empty")
     if project.status == ProjectStatus.PROCESSING:

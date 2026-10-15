@@ -8,6 +8,7 @@ sans texte intégral (abstract seul) ; aucune source pirate.
 
 from __future__ import annotations
 
+import asyncio
 import io
 import logging
 import re
@@ -19,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.article_text import classify_title
 from app.db.models import ArticleFile
+from app.model_access import check_public_url
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +32,7 @@ MIN_CHARS = 1500  # en dessous : page d'accueil / paywall, pas un article
 MAX_PDF_BYTES = 25 * 1024 * 1024
 MAX_PDF_PAGES = 80
 MAX_PDF_TRIES = 4
+MAX_REDIRECTS = 5
 _VERSIONS = {
     "submittedVersion": "preprint",
     "acceptedVersion": "accepted",
@@ -139,16 +142,29 @@ async def _pdf_candidates(
 
 
 async def _download_pdf(url: str, http: httpx.AsyncClient) -> bytes | None:
+    """PDF ouvert ; les redirections sont suivies à la main, chaque saut doit rester public
+    (une URL fournie par Unpaywall/OpenAlex ne doit pas mener au réseau interne)."""
     try:
-        async with http.stream("GET", url, headers=_UA, follow_redirects=True) as resp:
-            if resp.status_code != 200:
+        for _ in range(MAX_REDIRECTS + 1):
+            try:
+                await asyncio.to_thread(check_public_url, url)
+            except ValueError:
                 return None
-            data = b""
-            async for chunk in resp.aiter_bytes():
-                data += chunk
-                if len(data) > MAX_PDF_BYTES:
+            async with http.stream("GET", url, headers=_UA) as resp:
+                if resp.is_redirect and resp.headers.get("location"):
+                    url = str(resp.url.join(resp.headers["location"]))
+                    continue
+                if resp.status_code != 200:
                     return None
-        return data if data.startswith(b"%PDF") else None
+                chunks, size = [], 0
+                async for chunk in resp.aiter_bytes():
+                    size += len(chunk)
+                    if size > MAX_PDF_BYTES:
+                        return None
+                    chunks.append(chunk)
+            data = b"".join(chunks)
+            return data if data.startswith(b"%PDF") else None
+        return None
     except httpx.HTTPError:
         return None
 
@@ -159,7 +175,7 @@ async def store_pdf(session: AsyncSession, article_id, data: bytes) -> None:
     session.add(ArticleFile(article_id=article_id, data=data))
 
 
-def _long_enough(sections: list[dict]) -> bool:
+def long_enough(sections: list[dict]) -> bool:
     return sum(len(s["text"]) for s in sections) >= MIN_CHARS
 
 
@@ -175,7 +191,7 @@ async def find_open_fulltext(
     pmcid, doi = pmcid or epmc_pmcid, doi or epmc_doi
     if pmcid:
         sections = await _epmc_xml(pmcid, http)
-        if _long_enough(sections):
+        if long_enough(sections):
             return sections, "europepmc", f"https://europepmc.org/article/PMC/{pmcid}", None
     for url, version in (await _pdf_candidates(pmid, doi, email, http))[:MAX_PDF_TRIES]:
         data = await _download_pdf(url, http)
@@ -186,6 +202,6 @@ async def find_open_fulltext(
         except Exception:  # noqa: BLE001 - PDF illisible/chiffré : candidat suivant
             logger.info("pdf unreadable for pmid %s", pmid)
             continue
-        if _long_enough(sections):
+        if long_enough(sections):
             return sections, (f"pdf:{version}" if version else "pdf"), url, data
     return [], None, None, None

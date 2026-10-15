@@ -45,7 +45,8 @@
     "unknownError": "Etwas ist schiefgelaufen. Bitte versuchen Sie es erneut.",
     "consentFirstLogin": "Erste Anmeldung: Häkchen setzen, um der Datenverarbeitung zuzustimmen (DSGVO).",
     "registerWithCode": "Ich habe einen Einladungscode",
-    "tokenPlaceholder": "Einladungscode aus der E-Mail einfügen"
+    "tokenPlaceholder": "Einladungscode aus der E-Mail einfügen",
+    "privacyPolicy": "Datenschutzerklärung lesen"
   },
   "projects": {
     "title": "Meine Projekte",
@@ -612,6 +613,10 @@
     "deleteWarn": "Konto {email} endgültig löschen? Externe Modelle, Freigaben und Einstellungen werden entfernt; Annotationen bleiben anonymisiert erhalten.",
     "deleteProjects": "Auch die {n} von ihm erstellten oder allein geleiteten Projekte löschen (Artikel, PDFs, Analysen, Exporte)",
     "deleteConfirm": "Konto löschen",
+    "purgeOrphans": "Gäste ohne Projekt löschen",
+    "purgeConfirm": "Alle Gastkonten (keine Ersteller) ohne Projekt löschen?",
+    "purgeHint": "Ein Gastkonto wird automatisch gelöscht, wenn es sein letztes Projekt verliert.",
+    "purged": "{n} Konto/Konten gelöscht.",
     "orphaned": "Projekte behalten, ohne Leiter: {list}",
     "noInvites": "Keine offenen Einladungen.",
     "platformInvite": "Einladung zur Plattform",
@@ -622,6 +627,16 @@
     "resentNoMail": "E-Mail nicht gesendet (SMTP nicht konfiguriert oder gestört): Geben Sie diesen Link an {email} weiter.",
     "noOwner": "ohne Ersteller",
     "projectCounts": "{members} Mitglied(er) · {articles} Artikel",
-    "projectDeleteConfirm": "Projekt „{title}“ und alle Daten endgültig löschen?"
+    "projectDeleteConfirm": "Projekt „{title}“ und alle Daten endgültig löschen?",
+    "creator": "Ersteller",
+    "guest": "Gast",
+    "makeCreator": "Zum Ersteller machen",
+    "makeGuest": "Zum Gast machen",
+    "inviteTitle": "Projektersteller einladen",
+    "inviteEmail": "E-Mail-Adresse",
+    "inviteCreator": "Einladen",
+    "inviteSent": "Einladung an {email} gesendet.",
+    "inviteNoMail": "E-Mail an {email} nicht gesendet: Link weitergeben.",
+    "inviteHint": "Ein Ersteller kann Projekte anlegen und Personen einladen. Diese Gäste dürfen keine Projekte anlegen; ihr Konto wird gelöscht, sobald sie kein Projekt mehr haben."
   }
 }

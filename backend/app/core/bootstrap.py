@@ -33,7 +33,7 @@ async def bootstrap_admin(settings: Settings) -> None:
         ).scalar_one_or_none()
         if existing_user is not None:
             existing_user.role = UserRole.ADMIN
-            logger.info("Bootstrap : %s promu admin", settings.admin_email)
+            logger.info("Bootstrap : compte ADMIN_EMAIL promu admin")
         else:
             session.add(
                 User(
@@ -42,7 +42,7 @@ async def bootstrap_admin(settings: Settings) -> None:
                     role=UserRole.ADMIN,
                 )
             )
-            logger.info("Bootstrap : création du premier admin %s", settings.admin_email)
+            logger.info("Bootstrap : création du premier admin (ADMIN_EMAIL)")
         await session.commit()
 
 

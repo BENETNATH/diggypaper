@@ -28,3 +28,4 @@ exports/
 *.egg-info/
 specs_opencode_qwen38_final.md
 frontend_ux_flow.md
+backups/

@@ -1,5 +1,7 @@
 """Routes d'authentification : invite, register, login, me."""
 
+import asyncio
+import logging
 import uuid
 from datetime import UTC, datetime
 from typing import Annotated, Literal
@@ -8,12 +10,13 @@ import jwt as pyjwt
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import (
     ACCESS_TOKEN_COOKIE,
+    _load_user,
     get_client_ip,
     get_current_admin,
     get_current_user,
@@ -42,6 +45,8 @@ from app.emails import Mailer
 from app.i18n import default_lang, t
 from app.invitations import render_invitation, upsert_invitation
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 # F7 : limites anti brute-force par IP (15 min) — voir app/api/ratelimit.py.
@@ -67,6 +72,8 @@ class InviteRequest(BaseModel):
     email: EmailStr
     # m4 : language restreint aux langues supportées (422 si invalide).
     language: Literal["fr", "en", "de", "es"] | None = None
+    # Admin : le compte créé pourra créer des projets (« créateur »).
+    can_create_projects: bool = True
 
 
 class RegisterRequest(BaseModel):
@@ -91,7 +98,14 @@ class UserOut(BaseModel):
     role: str
     language_preference: str
     data_consent_given: bool
+    can_create_projects: bool = Field(validation_alias="may_create_projects")
     created_at: datetime
+
+
+@router.get("/config")
+async def public_config() -> dict:
+    """Réglages publics (page de connexion) : lien vers la politique de confidentialité."""
+    return {"privacy_url": get_settings().privacy_url or None}
 
 
 @router.post(
@@ -102,16 +116,24 @@ class UserOut(BaseModel):
 async def invite(
     payload: InviteRequest,
     admin: Annotated[User, Depends(get_current_admin)],
-    mailer: Annotated[Mailer, Depends(get_mailer)],
+    mailer: Annotated[Mailer | None, Depends(get_mailer)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> Response:
     """Admin : génère un JWT d'invitation (7 j) et envoie l'email avec le lien d'inscription."""
     language = payload.language or default_lang()
-    inv = await upsert_invitation(db, payload.email, language, admin.id)
-    subject, body, _ = await render_invitation(db, inv)
+    inv = await upsert_invitation(
+        db, payload.email, language, admin.id, can_create_projects=payload.can_create_projects
+    )
+    subject, body, link = await render_invitation(db, inv)
     await db.commit()
-    await mailer.send(to=payload.email, subject=subject, body=body)
-    return Response(status_code=202)
+    try:
+        if mailer is None:
+            raise RuntimeError("SMTP not configured")
+        await mailer.send(to=payload.email, subject=subject, body=body)
+    except Exception:  # noqa: BLE001 - SMTP absent/en panne : l'admin transmet le lien lui-même
+        logger.warning("invitation e-mail not sent", exc_info=True)
+        return JSONResponse({"email_sent": False, "link": link}, status_code=202)
+    return JSONResponse({"email_sent": True, "link": None}, status_code=202)
 
 
 async def _commit_user(db: AsyncSession) -> None:
@@ -160,10 +182,11 @@ async def register(
         language = LanguageCode(default_lang())
     user = User(
         email=email,
-        hashed_password=hash_password(payload.password),
+        hashed_password=await asyncio.to_thread(hash_password, payload.password),
         full_name=payload.full_name,
         role=UserRole.RESEARCHER,
         language_preference=language,
+        can_create_projects=bool(invitation and invitation.can_create_projects),
     )
     db.add(user)
     await db.flush()
@@ -193,13 +216,15 @@ async def login(
 ) -> Response:
     """Login : cookie JWT httpOnly/Secure + 200 {user} ; 403 consent_required si non accepté."""
     settings = get_settings()
-    user = (await db.execute(select(User).where(User.email == payload.email))).scalar_one_or_none()
+    user = (
+        await db.execute(select(User).where(func.lower(User.email) == payload.email.lower()))
+    ).scalar_one_or_none()
     if user is None:
         # m3 : oracle de timing — on vérifie un hash factice pour égaliser le temps
         # de réponse (user existe / n'existe pas).
-        verify_password(payload.password, DUMMY_HASH)
+        await asyncio.to_thread(verify_password, payload.password, DUMMY_HASH)
         raise HTTPException(status_code=401, detail=t(request.state.lang, "invalid_credentials"))
-    if not verify_password(payload.password, user.hashed_password):
+    if not await asyncio.to_thread(verify_password, payload.password, user.hashed_password):
         raise HTTPException(status_code=401, detail=t(request.state.lang, "invalid_credentials"))
     if user.is_active is False:
         raise HTTPException(status_code=403, detail=t(request.state.lang, "account_disabled"))
@@ -264,15 +289,22 @@ async def change_password(
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> None:
-    if not verify_password(payload.current_password, user.hashed_password):
+    if not await asyncio.to_thread(verify_password, payload.current_password, user.hashed_password):
         raise HTTPException(status_code=403, detail=t(request.state.lang, "invalid_credentials"))
-    user.hashed_password = hash_password(payload.new_password)
+    user.hashed_password = await asyncio.to_thread(hash_password, payload.new_password)
+    user.token_version = (user.token_version or 0) + 1  # coupe les autres sessions
     await db.commit()
 
 
 @router.post("/logout", status_code=204)
-async def logout() -> Response:
-    """Déconnexion : efface le cookie httpOnly (le client ne peut pas le faire lui-même)."""
+async def logout(request: Request, db: Annotated[AsyncSession, Depends(get_db)]) -> Response:
+    """Déconnexion : révoque le JWT (token_version) et efface le cookie httpOnly."""
+    try:
+        user = await _load_user(request, db)
+        user.token_version = (user.token_version or 0) + 1
+        await db.commit()
+    except HTTPException:
+        pass  # déjà déconnecté / token invalide : on efface juste le cookie
     response = Response(status_code=204)
     response.delete_cookie(ACCESS_TOKEN_COOKIE, path="/")
     return response

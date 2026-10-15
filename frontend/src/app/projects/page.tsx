@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
+import { useAuth } from "@/lib/auth";
 import { listProjects, createProject, Project } from "@/lib/api";
 import { RequireAuth } from "@/components/RequireAuth";
 import { Button } from "@/components/ui/Button";
@@ -12,6 +13,8 @@ import { Skeleton, ErrorBanner, EmptyState } from "@/components/ui/Feedback";
 
 function ProjectsContent() {
   const t = useTranslations("projects");
+  const { user } = useAuth();
+  const canCreate = user?.can_create_projects ?? false;
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -61,10 +64,10 @@ function ProjectsContent() {
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold text-foreground">{t("title")}</h1>
-        <Button onClick={() => setShowForm((v) => !v)}>{t("newProject")}</Button>
+        {canCreate && <Button onClick={() => setShowForm((v) => !v)}>{t("newProject")}</Button>}
       </div>
 
-      {showForm && (
+      {canCreate && showForm && (
         <Card title={t("newProject")}>
           <form onSubmit={handleCreate} className="flex flex-col gap-4">
             <Field label={t("titleLabel")}>
