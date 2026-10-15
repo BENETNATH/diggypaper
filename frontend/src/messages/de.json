@@ -222,7 +222,14 @@
     "review_VALIDATED": "Bestätigt",
     "review_CORRECTED": "Korrigiert",
     "review_MANUAL": "Annotiert",
-    "humanAnswer": "Wert aus der menschlichen Prüfung"
+    "humanAnswer": "Wert aus der menschlichen Prüfung",
+    "prismaDownloadPdf": "Als PDF herunterladen",
+    "bulkTitle": "PDFs hinzufügen (mehrere gleichzeitig)",
+    "bulkAdd": "PDFs auswählen…",
+    "bulkBusy": "Wird hochgeladen…",
+    "bulkHint": "Jedes PDF wird dem Artikel zugeordnet, dessen Titel (oder DOI) es trägt. Nur für Projektleitung.",
+    "bulkNoMatch": "kein Artikel dieses Projekts passt",
+    "bulkAmbiguous": "mehrere Artikel möglich: von der Artikelseite aus hochladen"
   },
   "gold": {
     "title": "Goldstandard",
@@ -423,7 +430,8 @@
     "searching": "Suche läuft…",
     "searchFound": "Volltext gefunden ({source}).",
     "searchNone": "Kein frei zugänglicher Volltext gefunden.",
-    "replacePdf": "Durch PDF ersetzen"
+    "replacePdf": "Durch PDF ersetzen",
+    "preprintNote": "Preprint: Die von den Autoren gewählte Lizenz erlaubt keine Archivierung in PMC. Der Volltext liegt auf dem Preprint-Server (Link „Volltext / PDF öffnen“ oben): Suche erneut starten oder PDF selbst hinzufügen."
   },
   "sex": {
     "MALE_ONLY": "Nur Männchen",

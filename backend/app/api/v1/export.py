@@ -340,6 +340,25 @@ async def get_prisma_svg(
     )
 
 
+@router.get("/{project_id}/prisma.pdf")
+async def get_prisma_pdf(
+    project_id: uuid.UUID,
+    db: DbDep,
+    user: UserDep,
+    lang: Annotated[str | None, Query(pattern=PRISMA_LANGS)] = None,
+) -> Response:
+    """Diagramme PRISMA 2020 en PDF vectoriel (même contenu que le SVG)."""
+    project = await _require_project_member(db, project_id, user)
+    articles, preds, annos, import_jobs, _ = await _load(db, project)
+    counts = prisma.prisma_counts(articles, preds, annos, import_jobs)
+    pdf = prisma.svg_to_pdf(prisma.render_svg(counts, lang or project.default_language or "fr"))
+    return Response(
+        pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{_slug(project)}-prisma.pdf"'},
+    )
+
+
 @router.get("/{project_id}/export.ris")
 async def export_ris(
     project_id: uuid.UUID,

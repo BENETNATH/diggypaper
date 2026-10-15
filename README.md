@@ -20,6 +20,8 @@ s'exportent en tableur, en RO-Crate et en diagramme PRISMA.
   articles sans copie ouverte restent en résumé seul. Aucune source pirate.
 - **PDF déposé à la main** (accès institutionnel) : le texte est extrait et sectionné ; on
   vérifie que le PDF correspond bien à l'article (titre, à défaut DOI) avant de l'adopter.
+- **Dépôt de PDF en lot** : plusieurs PDF d'un coup, chacun rattaché à l'article dont il porte
+  le titre (ou le DOI) ; les cas ambigus ou sans correspondance sont signalés.
 - **Recherche relancée par article** : relit la notice PubMed (un préprint publié change de
   PMCID ou de DOI) puis cherche à nouveau le texte intégral.
 
@@ -42,13 +44,14 @@ s'exportent en tableur, en RO-Crate et en diagramme PRISMA.
   statut (validé, corrigé, saisi à la main) et de la personne qui a relu.
 - File de relecture dédiée aux articles incertains, parcours **au doigt** (swipe) sur mobile.
 - Liste des résultats avec **filtres sur les réponses** (par item), statut de l'IA, statut de
-  relecture ; les réponses affichées sont celles de la relecture quand elle existe.
+  relecture ; les réponses affichées sont celles de la relecture quand elle existe. La file de
+  relecture suit les filtres et le tri de la liste.
 
 ### Exporter et documenter
 - **Tableur XLSX** (réponses IA, relectures, certitudes, liens), **références RIS et BibTeX**.
 - **Archive RO-Crate** (articles, PDF, prédictions, annotations, paramètres de l'analyse :
-  tout ce qu'il faut pour reproduire), générée en tâche de fond.
-- **Diagramme de flux PRISMA 2020** (SVG) calculé depuis les données du projet.
+  tout ce qu'il faut pour reproduire), générée en tâche de fond, avec sa licence (`CRATE_LICENSE_*`).
+- **Diagramme de flux PRISMA 2020** (SVG et PDF) calculé depuis les données du projet.
 
 ### Travailler à plusieurs
 - **Comptes** : l'administrateur invite des **créateurs** de projets ; ceux-ci invitent des
@@ -369,6 +372,9 @@ SameSite=Strict, révoqué au changement de mot de passe et à la déconnexion).
 cd backend && source .venv/bin/activate
 pytest -q
 ruff check . && ruff format .
+
+# Intégration continue : .github/workflows/ci.yml (ruff, pytest, tsc, lint, jest, build)
+# Dépendances Python figées dans backend/constraints.txt (utilisées par l'image et la CI).
 
 # Frontend
 cd frontend

@@ -227,6 +227,7 @@ def test_articles_columns():
         "methods_text",
         "sections",
         "fulltext_source",
+        "fulltext_note",
         "journal",
         "fulltext_url",
         "pub_date",

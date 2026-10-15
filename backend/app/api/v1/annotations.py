@@ -81,6 +81,7 @@ def _article_payload(a: Article, kinds: list[str] | None = None) -> dict:
         "text": compose_text(a, kinds),
         "has_fulltext": bool(a.sections),
         "fulltext_source": a.fulltext_source,
+        "fulltext_note": a.fulltext_note,
         **biblio_payload(a),
         "original_language": a.original_language,
         "created_at": a.created_at.isoformat() if a.created_at else None,
@@ -147,6 +148,54 @@ async def search_fulltext(
     }
 
 
+@router.post("/{project_id}/fulltext/match")
+async def match_fulltext_pdf(
+    project_id: uuid.UUID, request: Request, db: DbDep, user: UserDep
+) -> dict:
+    """Dépôt en lot : un PDF dont l'article n'est pas désigné. On retrouve l'article du projet
+    qu'il représente (DOI ou titre en tête de document) et on lui attache ce texte. Un seul
+    candidat net est requis : 404 ``no_match`` sinon, 409 ``ambiguous`` si plusieurs."""
+    from app.api.v1.projects import _require_lead_or_admin
+    from app.fulltext import (
+        MAX_PDF_BYTES,
+        MIN_CHARS,
+        TITLE_COVERAGE,
+        apply_uploaded_pdf,
+        match_scores,
+        pdf_to_sections,
+    )
+
+    await _require_project_member(db, project_id, user)
+    await _require_lead_or_admin(db, project_id, user)
+    data = await request.body()
+    if not data.startswith(b"%PDF") or len(data) > MAX_PDF_BYTES:
+        raise HTTPException(status_code=422, detail="a PDF file (max 25 MB) is required")
+    try:
+        sections = await asyncio.to_thread(pdf_to_sections, data)
+    except Exception:  # noqa: BLE001 - PDF corrompu / chiffré
+        raise HTTPException(status_code=422, detail="unreadable PDF") from None
+    if sum(len(s["text"]) for s in sections) < MIN_CHARS:
+        raise HTTPException(status_code=422, detail="no text found in the PDF (scanned?)")
+    rows = (
+        await db.execute(
+            select(Article.id, Article.title, Article.doi).where(Article.project_id == project_id)
+        )
+    ).all()
+    scores = [s for s in match_scores(sections, [tuple(r) for r in rows]) if s[0] >= TITLE_COVERAGE]
+    if not scores:
+        raise HTTPException(status_code=404, detail="no_match")
+    if len(scores) > 1 and scores[1][0] >= scores[0][0] - 0.05:
+        raise HTTPException(status_code=409, detail="ambiguous")
+    article = await db.get(Article, scores[0][1])
+    await apply_uploaded_pdf(db, article, sections, data)
+    await db.commit()
+    return {
+        "article_id": str(article.id),
+        "title": article.title,
+        "score": round(min(scores[0][0], 1.0), 2),
+    }
+
+
 @router.post("/{project_id}/articles/{article_id}/fulltext")
 async def upload_fulltext(
     project_id: uuid.UUID,
@@ -165,9 +214,9 @@ async def upload_fulltext(
     from app.fulltext import (
         MAX_PDF_BYTES,
         MIN_CHARS,
+        apply_uploaded_pdf,
         pdf_matches_article,
         pdf_to_sections,
-        store_pdf,
     )
 
     article = await _require_article(db, project_id, article_id, user)
@@ -186,11 +235,7 @@ async def upload_fulltext(
     verdict = pdf_matches_article(article.title, article.doi, sections)
     if verdict is False and not force:
         raise HTTPException(status_code=422, detail="pdf_mismatch")
-    article.sections = sections
-    article.fulltext_source = "pdf:upload"
-    article.fulltext_url = None
-    await store_pdf(db, article.id, data)
-    article.methods_text = " ".join(s["text"] for s in sections if s["kind"] == "methods") or None
+    await apply_uploaded_pdf(db, article, sections, data)
     await db.commit()
     project = await db.get(Project, project_id)
     payload = _article_payload(article, project.text_sections if project else None)

@@ -279,6 +279,9 @@ class Article(Base):
     methods_text: Mapped[str | None] = mapped_column(Text)
     # Full text PMC découpé par section : [{"title", "kind", "text"}] (kind : cf. app.article_text).
     sections: Mapped[list[dict] | None] = mapped_column(JSONB)
+    # Pourquoi il n'y a pas de texte intégral (ex. « preprint_not_archived » : licence de
+    # l'auteur interdisant l'archivage dans PMC) ; effacé dès qu'un texte est trouvé.
+    fulltext_note: Mapped[str | None] = mapped_column(String)
     fulltext_source: Mapped[str | None] = mapped_column(String)  # pmc | europepmc | pdf[:version]
     fulltext_url: Mapped[str | None] = mapped_column(String)  # lien public vers le texte / PDF
     journal: Mapped[str | None] = mapped_column(String)

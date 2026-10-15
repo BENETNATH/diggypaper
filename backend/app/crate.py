@@ -16,6 +16,8 @@ import json
 import re
 from datetime import UTC, datetime
 
+from app.core.config import get_settings
+
 CRATE_CONTEXT = "https://w3id.org/ro/crate/1.1/context"
 CONFORMS = "https://w3id.org/ro/crate/1.1"
 
@@ -227,10 +229,18 @@ def build_graph(project, articles, keys: dict, files: dict, info: dict, now: str
         "name": project.title,
         "description": project.question or project.description or project.title,
         "datePublished": now,
+        "license": {"@id": get_settings().crate_license_url},
         "hasPart": [{"@id": p} for p in top],
         "mentions": [],
     }
     graph.append(root)
+    graph.append(
+        {
+            "@id": get_settings().crate_license_url,
+            "@type": "CreativeWork",
+            "name": get_settings().crate_license_name,
+        }
+    )
     labels = {
         "README.md": "Description du contenu",
         "project.json": "Projet, requêtes, modèles et prompt",
@@ -350,6 +360,8 @@ Export RO-Crate (Diggypaper) — {datetime.now(UTC):%Y-%m-%d}.
 - `prisma.svg` : diagramme de flux PRISMA 2020 (effectifs aussi dans `project.json`)
 - `references.ris` / `references.bib` : références à importer dans Zotero, EndNote, JabRef…
 - `extraction.csv` / `results.xlsx` : tableau d'extraction (réponses IA, certitudes, relecture)
+- Licence : {get_settings().crate_license_name} pour les métadonnées, réponses et relectures ;
+  les textes intégraux et PDF conservent la licence de leurs ayants droit.
 - `articles/<clé>/` : un dossier par article ({n_articles}) — `metadata.json`, `fulltext.md`
   ({n_text} avec texte intégral, sinon `abstract.md`) et `fulltext.pdf` ({n_pdf} conservés)
 """

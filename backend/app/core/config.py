@@ -43,7 +43,11 @@ class Settings(BaseSettings):
     admin_password: str = ""
     # Plafond d'articles ramenés par un import (NCBI esearch : 10 000 max par requête).
     import_max_articles: int = 5000
-    # Lien « politique de confidentialité » (page de l'établissement) ; vide = non affiché.
+    # Licence des métadonnées et résultats de l'export RO-Crate (les PDF/textes intégraux
+    # gardent la licence de leurs éditeurs). URL + nom affiché ; adaptez-la à votre politique.
+    crate_license_url: str = "https://creativecommons.org/licenses/by/4.0/"
+    crate_license_name: str = "CC BY 4.0"
+    # Lien « politique de confidentialité' (page de l'établissement) ; vide = non affiché.
     privacy_url: str = ""
 
 

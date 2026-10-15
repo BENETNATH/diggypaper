@@ -246,3 +246,92 @@ def render_svg(c: dict, lang: str = "fr") -> str:
     )
     parts.append("</svg>")
     return "".join(parts)
+
+
+def svg_to_pdf(svg: str) -> bytes:
+    """PDF (1 page vectorielle) du diagramme produit par ``render_svg``.
+
+    Ne lit que les éléments que ``render_svg`` écrit : rect, text (éventuellement pivoté de -90°),
+    line (avec pointe de flèche si ``marker-end``). Police Helvetica (WinAnsi : accents FR/DE/ES).
+    """
+    import xml.etree.ElementTree as ET
+
+    root = ET.fromstring(svg)
+    vb = [float(v) for v in root.get("viewBox", "0 0 740 800").split()]
+    width, height = vb[2], vb[3]
+    ns = "{http://www.w3.org/2000/svg}"
+
+    def rgb(color: str | None) -> str:
+        if not color or color == "none" or not color.startswith("#"):
+            return "0 0 0"
+        return " ".join(f"{int(color[i : i + 2], 16) / 255:.3f}" for i in (1, 3, 5))
+
+    def y(v: float) -> float:  # origine SVG en haut, PDF en bas
+        return height - v
+
+    ops: list[str] = []
+    for el in root.iter():
+        tag = el.tag.removeprefix(ns)
+        a = el.attrib
+        if tag == "rect":
+            x0, y0, w, h = (float(a.get(k, 0)) for k in ("x", "y", "width", "height"))
+            fill = a.get("fill")
+            stroke = a.get("stroke")
+            ops.append(f"{rgb(fill)} rg {rgb(stroke)} RG {a.get('stroke-width', 0)} w")
+            paint = "B" if stroke else "f"
+            ops.append(f"{x0:.2f} {y(y0 + h):.2f} {w:.2f} {h:.2f} re {paint}")
+        elif tag == "line":
+            x1, y1, x2, y2 = (float(a[k]) for k in ("x1", "y1", "x2", "y2"))
+            ops.append(f"0.2 0.25 0.33 RG 1.4 w {x1:.2f} {y(y1):.2f} m {x2:.2f} {y(y2):.2f} l S")
+            if a.get("marker-end"):  # pointe pleine à l'extrémité
+                dx, dy = x2 - x1, y2 - y1
+                n = (dx * dx + dy * dy) ** 0.5 or 1
+                ux, uy = dx / n, dy / n
+                bx, by = x2 - 7 * ux, y2 - 7 * uy
+                p1 = (bx - 3.5 * uy, by + 3.5 * ux)
+                p2 = (bx + 3.5 * uy, by - 3.5 * ux)
+                ops.append(
+                    f"0.2 0.25 0.33 rg {x2:.2f} {y(y2):.2f} m {p1[0]:.2f} {y(p1[1]):.2f} l "
+                    f"{p2[0]:.2f} {y(p2[1]):.2f} l f"
+                )
+        elif tag == "text":
+            text = "".join(el.itertext())
+            size = float(a.get("font-size", 12))
+            font = "/F2" if a.get("font-weight") == "700" else "/F1"
+            data = text.encode("cp1252", "replace")
+            data = data.replace(b"\\", b"\\\\").replace(b"(", b"\\(").replace(b")", b"\\)")
+            wd = 0.5 * size * len(text)  # largeur approchée (Helvetica) pour centrer
+            x0, y0 = float(a.get("x", 0)), float(a.get("y", 0))
+            fill = rgb(a.get("fill", "#0f172a"))
+            if "rotate" in a.get("transform", ""):  # libellés de phase verticaux
+                tx, ty = a["transform"].split("translate(")[1].split(")")[0].split()
+                m = f"0 1 -1 0 {float(tx):.2f} {y(float(ty)):.2f}"
+                ops.append(
+                    f"BT {fill} rg {font} {size} Tf {m} Tm {-wd / 2:.2f} {-size * 0.35:.2f} Td "
+                    f"({data.decode('latin-1')}) Tj ET"
+                )
+            else:
+                dx = -wd / 2 if a.get("text-anchor") == "middle" else 0
+                ops.append(
+                    f"BT {fill} rg {font} {size} Tf {x0 + dx:.2f} {y(y0):.2f} Td "
+                    f"({data.decode('latin-1')}) Tj ET"
+                )
+    content = "\n".join(ops).encode("latin-1")
+    objs = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {width:.0f} {height:.0f}] /Contents 4 0 R "
+        "/Resources << /Font << /F1 5 0 R /F2 6 0 R >> >> >>".encode(),
+        b"<< /Length %d >>\nstream\n" % len(content) + content + b"\nendstream",
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>",
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>",
+    ]
+    out, offsets = b"%PDF-1.4\n", []
+    for i, o in enumerate(objs, 1):
+        offsets.append(len(out))
+        out += f"{i} 0 obj\n".encode() + o + b"\nendobj\n"
+    xref = len(out)
+    out += f"xref\n0 {len(objs) + 1}\n0000000000 65535 f \n".encode()
+    out += b"".join(f"{o:010d} 00000 n \n".encode() for o in offsets)
+    out += f"trailer\n<< /Size {len(objs) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF".encode()
+    return out

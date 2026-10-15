@@ -176,6 +176,13 @@ async def store_pdf(session: AsyncSession, article_id, data: bytes) -> None:
     session.add(ArticleFile(article_id=article_id, data=data))
 
 
+def pmc_not_archived(sections: list[dict]) -> bool:
+    """Le « corps » renvoyé par PMC n'est que l'avis d'un préprint non archivable."""
+    return not long_enough(sections) and any(
+        "do not permit archiving in pmc" in (s.get("text") or "").lower() for s in sections
+    )
+
+
 def long_enough(sections: list[dict]) -> bool:
     return sum(len(s["text"]) for s in sections) >= MIN_CHARS
 
@@ -211,6 +218,31 @@ def pdf_matches_article(title: str | None, doi: str | None, sections: list[dict]
     if doi and "".join(_words(doi)) in squashed:
         return True
     return False
+
+
+def match_scores(sections: list[dict], candidates: list[tuple]) -> list[tuple[float, object]]:
+    """Articles candidats (id, titre, doi) classés par ressemblance avec ce PDF, meilleurs d'abord.
+
+    2.0 = le DOI de l'article est en tête du document ; sinon, part des mots du titre retrouvés."""
+    head = " ".join(s["text"] for s in sections)[:HEAD_CHARS]
+    words, squashed = set(_words(head)), "".join(_words(head))
+    scored = []
+    for art_id, title, doi in candidates:
+        if doi and "".join(_words(doi)) in squashed:
+            scored.append((2.0, art_id))  # le DOI prime sur un simple titre
+            continue
+        wanted = {w for w in _words(title or "") if len(w) >= 3 and w not in _STOPWORDS}
+        if len(wanted) >= 3:
+            scored.append((len(wanted & words) / len(wanted), art_id))
+    return sorted(scored, key=lambda t: -t[0])
+
+
+async def apply_uploaded_pdf(session, art, sections: list[dict], data: bytes) -> None:
+    """Adopte ce PDF comme texte intégral de l'article (dépôt manuel). Pas de commit."""
+    art.sections, art.fulltext_source = sections, "pdf:upload"
+    art.fulltext_note, art.fulltext_url = None, None
+    await store_pdf(session, art.id, data)
+    art.methods_text = " ".join(s["text"] for s in sections if s["kind"] == "methods") or None
 
 
 async def find_open_fulltext(
@@ -281,6 +313,7 @@ async def complete_article(
     if not sections:
         return None
     art.sections, art.fulltext_source, art.fulltext_url = sections, source, url
+    art.fulltext_note = None
     if pdf:
         await store_pdf(session, art.id, pdf)
     art.methods_text = (

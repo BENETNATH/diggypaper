@@ -27,7 +27,8 @@ def upgrade() -> None:
             ),
         )
     op.add_column(
-        "users", sa.Column("token_version", sa.Integer(), server_default=sa.text("0"), nullable=False)
+        "users",
+        sa.Column("token_version", sa.Integer(), server_default=sa.text("0"), nullable=False),
     )
     # Comptes existants : tous créateurs (rien ne change pour eux) ; l'admin peut les rétrograder.
     op.execute("UPDATE users SET can_create_projects = true")

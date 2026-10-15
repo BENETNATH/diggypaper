@@ -33,9 +33,7 @@ def upgrade() -> None:
         sa.select(articles.c.id, articles.c.sections).where(articles.c.fulltext_source == "pmc")
     ).all()
     short = [
-        r.id
-        for r in rows
-        if sum(len(s.get("text", "")) for s in (r.sections or [])) < MIN_CHARS
+        r.id for r in rows if sum(len(s.get("text", "")) for s in (r.sections or [])) < MIN_CHARS
     ]
     for i in range(0, len(short), 500):
         bind.execute(

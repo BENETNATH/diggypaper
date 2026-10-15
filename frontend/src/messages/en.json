@@ -222,7 +222,14 @@
     "review_VALIDATED": "Validated",
     "review_CORRECTED": "Corrected",
     "review_MANUAL": "Annotated",
-    "humanAnswer": "Value from the human review"
+    "humanAnswer": "Value from the human review",
+    "prismaDownloadPdf": "Download as PDF",
+    "bulkTitle": "Add PDFs (several at once)",
+    "bulkAdd": "Choose PDFs…",
+    "bulkBusy": "Uploading…",
+    "bulkHint": "Each PDF is attached to the article whose title (or DOI) it carries. Project leads only.",
+    "bulkNoMatch": "no article in this project matches",
+    "bulkAmbiguous": "several possible articles: upload it from the article page"
   },
   "gold": {
     "title": "Gold standard",
@@ -423,7 +430,8 @@
     "searching": "Searching…",
     "searchFound": "Full text found ({source}).",
     "searchNone": "No open-access full text found.",
-    "replacePdf": "Replace with a PDF"
+    "replacePdf": "Replace with a PDF",
+    "preprintNote": "Preprint: the license chosen by the authors does not permit archiving in PMC. The full text is on the preprint server (see the “Open full text / PDF” link above): search again, or add the PDF yourself."
   },
   "sex": {
     "MALE_ONLY": "Males only",

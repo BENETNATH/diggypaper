@@ -282,3 +282,41 @@ async def test_search_fulltext_relaunch_for_one_article(
     await session.commit()
     r = await client.post(url)
     assert r.json()["found"] is False and len(calls) == 3  # refresh seulement
+
+
+async def test_bulk_pdf_matches_the_right_article(client, session, researcher_user, do_login):
+    from app.db.models import Article
+
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project, a1 = await _lead_article(session, researcher_user, title=TITLE, doi="10.1/aa")
+    a2 = Article(
+        project_id=project.id, pmid="2", title="Cancer genomics of rare tumours", doi="10.1/bb"
+    )
+    a3 = Article(project_id=project.id, pmid="3", title="Cancer genomics of rare tumours in adults")
+    session.add_all([a2, a3])
+    await session.commit()
+    url = f"/api/v1/projects/{project.id}/fulltext/match"
+    hdr = {"content-type": "application/pdf"}
+    body = [BODY[i : i + 80] for i in range(0, 2400, 80)]
+
+    r = await client.post(url, content=make_pdf([TITLE] + body), headers=hdr)
+    assert r.status_code == 200 and r.json()["article_id"] == str(a1.id)
+    await session.refresh(a1)
+    assert a1.fulltext_source == "pdf:upload" and a1.sections
+    # DOI en tête : départage deux titres presque identiques
+    r = await client.post(
+        url,
+        content=make_pdf(["Cancer genomics of rare tumours in adults", "doi 10.1/aa"] + body),
+        headers=hdr,
+    )
+    assert r.json()["article_id"] == str(a1.id)  # le DOI prime sur le titre
+    # deux articles également plausibles : on ne choisit pas pour l'utilisateur
+    r = await client.post(
+        url, content=make_pdf(["Cancer genomics of rare tumours in adults"] + body), headers=hdr
+    )
+    assert r.status_code == 409 and r.json()["detail"] == "ambiguous"
+    # aucun article ne ressemble
+    r = await client.post(
+        url, content=make_pdf(["Unrelated quantum chromodynamics study"] + body), headers=hdr
+    )
+    assert r.status_code == 404 and r.json()["detail"] == "no_match"

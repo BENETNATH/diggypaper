@@ -4,8 +4,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
-import { getProject, prismaUrl, listArticles, Article, PredictionFilter, SchemaField } from "@/lib/api";
+import { getProject, prismaUrl, prismaPdfUrl, listArticles, Article, PredictionFilter, SchemaField } from "@/lib/api";
 import { ArticleLinks, Certainty, biblioLine } from "@/components/Certainty";
+import { BulkPdfUpload } from "@/components/BulkPdfUpload";
 import { ExportMenu } from "@/components/ExportMenu";
 import { RequireAuth } from "@/components/RequireAuth";
 import { Card, Badge, statusColor } from "@/components/ui/Card";
@@ -158,7 +159,7 @@ function ResultsContent() {
   const count = (f: Filter) =>
     f === "ALL" ? Object.values(stats).reduce((a, b) => a + b, 0) : stats[f] ?? 0;
   const triaged = count("ALL") - count("NONE") > 0;
-  const queue = filter === "ALL" ? "all" : filter === "TO_REVIEW" ? "review" : "all";
+  const queue = "list"; // la file de relecture reprend la liste affichée (filtres, tri)
 
   if (error) return <ErrorBanner message={error} onRetry={() => void load()} />;
   if (!articles) return <Skeleton rows={5} />;
@@ -178,12 +179,22 @@ function ResultsContent() {
       </div>
 
       <details className="rounded-lg border border-border bg-surface p-3">
+        <summary className="cursor-pointer text-sm font-medium text-foreground">{t("bulkTitle")}</summary>
+        <div className="mt-3">
+          <BulkPdfUpload projectId={projectId} onDone={() => void load()} />
+        </div>
+      </details>
+
+      <details className="rounded-lg border border-border bg-surface p-3">
         <summary className="cursor-pointer text-sm font-medium text-foreground">{t("prisma")}</summary>
         <div className="mt-3 flex flex-col items-start gap-2">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={prismaUrl(projectId, locale)} alt={t("prisma")} className="w-full max-w-3xl rounded border border-border" />
           <a href={prismaUrl(projectId, locale)} download="prisma.svg" className="text-xs text-primary hover:underline">
             ⬇ {t("prismaDownload")}
+          </a>
+          <a href={prismaPdfUrl(projectId, locale)} download className="text-xs text-primary hover:underline">
+            ⬇ {t("prismaDownloadPdf")}
           </a>
         </div>
       </details>

@@ -65,7 +65,7 @@ function ProjectDashboard() {
   useEffect(() => {
     void load();
     listModels(projectId).then((m) => setModelCount(m.length)).catch(() => setModelCount(null));
-  }, [load]);
+  }, [load, projectId]);
 
   async function handleDelete() {
     if (!window.confirm(t("deleteConfirm"))) return;

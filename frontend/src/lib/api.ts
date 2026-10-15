@@ -58,6 +58,7 @@ export interface Article {
   text?: string;
   has_fulltext?: boolean;
   fulltext_source?: string | null;
+  fulltext_note?: string | null;
   doi_url?: string | null;
   fulltext_url?: string | null;
   journal?: string | null;
@@ -417,6 +418,18 @@ export async function uploadArticlePdf(
   force = false
 ): Promise<Article & { pdf_check?: "match" | "unverified" | "forced" }> {
   return request(`/projects/${projectId}/articles/${articleId}/fulltext${force ? "?force=true" : ""}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/pdf" },
+    body: file,
+  });
+}
+
+/** Dépôt en lot : rattache ce PDF à l'article du projet dont il porte le titre / le DOI. */
+export async function matchArticlePdf(
+  projectId: string,
+  file: File
+): Promise<{ article_id: string; title: string | null; score: number }> {
+  return request(`/projects/${projectId}/fulltext/match`, {
     method: "POST",
     headers: { "Content-Type": "application/pdf" },
     body: file,
@@ -808,6 +821,9 @@ export interface CrateExport {
   created_at: string | null;
   download: boolean;
 }
+
+export const prismaPdfUrl = (projectId: string, lang: string): string =>
+  `${API_BASE}/projects/${projectId}/prisma.pdf?lang=${lang}`;
 
 /** Diagramme PRISMA 2020 (SVG) ; ``lang`` = langue des libellés. */
 export const prismaUrl = (projectId: string, lang: string): string =>

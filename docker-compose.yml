@@ -144,6 +144,8 @@ services:
       SMTP_FROM: ${SMTP_FROM:-}
       IMPORT_MAX_ARTICLES: ${IMPORT_MAX_ARTICLES:-5000}
       TASK_SOFT_TIME_LIMIT: ${TASK_SOFT_TIME_LIMIT:-0}  # secondes ; 0 = pas de limite
+      CRATE_LICENSE_URL: ${CRATE_LICENSE_URL:-https://creativecommons.org/licenses/by/4.0/}
+      CRATE_LICENSE_NAME: ${CRATE_LICENSE_NAME:-CC BY 4.0}
     depends_on:
       postgres:
         condition: service_healthy

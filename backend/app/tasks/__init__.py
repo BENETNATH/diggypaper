@@ -49,7 +49,7 @@ from app.db.models import (
     Project,
     ProjectStatus,
 )
-from app.fulltext import complete_article, long_enough
+from app.fulltext import complete_article, long_enough, pmc_not_archived
 from app.pubmed import (
     NCBIError,
     _esearch_max,
@@ -347,6 +347,8 @@ async def _insert_article(
             # Trop court pour être un article : on le laisse à la complétion (autres sources).
             if long_enough(sections):
                 values["methods_text"], values["sections"] = methods, sections
+            elif pmc_not_archived(sections):
+                values["fulltext_note"] = "preprint_not_archived"
                 values["fulltext_source"] = "pmc"
                 values["fulltext_url"] = f"https://pmc.ncbi.nlm.nih.gov/articles/{meta['pmcid']}/"
         except Exception:

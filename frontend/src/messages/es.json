@@ -222,7 +222,14 @@
     "review_VALIDATED": "Validado",
     "review_CORRECTED": "Corregido",
     "review_MANUAL": "Anotado",
-    "humanAnswer": "Valor de la revisión humana"
+    "humanAnswer": "Valor de la revisión humana",
+    "prismaDownloadPdf": "Descargar en PDF",
+    "bulkTitle": "Añadir PDF (varios a la vez)",
+    "bulkAdd": "Elegir PDF…",
+    "bulkBusy": "Subiendo…",
+    "bulkHint": "Cada PDF se asocia al artículo cuyo título (o DOI) contiene. Solo responsables del proyecto.",
+    "bulkNoMatch": "ningún artículo del proyecto coincide",
+    "bulkAmbiguous": "varios artículos posibles: súbalo desde la ficha del artículo"
   },
   "gold": {
     "title": "Gold standard",
@@ -423,7 +430,8 @@
     "searching": "Buscando…",
     "searchFound": "Texto completo encontrado ({source}).",
     "searchNone": "No se encontró texto completo de acceso abierto.",
-    "replacePdf": "Reemplazar con un PDF"
+    "replacePdf": "Reemplazar con un PDF",
+    "preprintNote": "Preprint: la licencia elegida por los autores no permite su archivo en PMC. El texto completo está en el servidor de preprints (enlace «Abrir texto / PDF» arriba): repita la búsqueda o añada el PDF usted mismo."
   },
   "sex": {
     "MALE_ONLY": "Solo machos",

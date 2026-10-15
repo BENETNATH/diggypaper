@@ -284,6 +284,8 @@ async def test_export_ro_crate_async(
     assert {"./", "https://doi.org/10.1/x", "articles/pmid-42/fulltext.pdf", "#analysis"} <= ids
     root = next(e for e in graph if e["@id"] == "./")
     assert all(p["@id"] in ids for p in root["hasPart"])  # pas de référence orpheline
+    assert root["license"]["@id"] == "https://creativecommons.org/licenses/by/4.0/"
+    assert "https://creativecommons.org/licenses/by/4.0/" in ids  # licence décrite dans le graphe
     info = json.loads(z.read("project.json"))
     assert info["analysis"]["stage_2_model"]["config_sha256"]
     assert z.read("extraction.csv").decode("utf-8-sig").splitlines()[0].startswith("key,pmid")
@@ -394,6 +396,12 @@ async def test_prisma_counts_and_svg(client, session, lead_project):
     svg = await client.get(f"{base}/prisma.svg", params={"lang": "en"})
     assert svg.headers["content-type"].startswith("image/svg+xml")
     assert "Records identified from PubMed" in svg.text and "n = 7" in svg.text
+    pdf = await client.get(f"{base}/prisma.pdf", params={"lang": "fr"})
+    assert pdf.headers["content-type"] == "application/pdf" and pdf.content.startswith(b"%PDF")
+    from pypdf import PdfReader
+
+    text = PdfReader(io.BytesIO(pdf.content)).pages[0].extract_text()
+    assert "Références identifiées dans PubMed" in text and "n = 7" in text  # accents conservés
 
 
 async def test_resume_inference_skips_done_articles(engine, session):

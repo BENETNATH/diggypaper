@@ -612,3 +612,31 @@ async def test_pmc_stub_body_is_not_kept_as_fulltext(engine, monkeypatch):
     assert inserted and not has_text
     (art,) = await _articles_for(engine, project.id)
     assert not art.sections and art.fulltext_source is None
+    assert art.fulltext_note is None  # simple texte court, pas l'avis de licence PMC
+
+
+async def test_pmc_license_notice_sets_fulltext_note(engine, monkeypatch):
+    from app import tasks
+
+    notice = [
+        {
+            "title": "Full Text Availability",
+            "kind": "other",
+            "text": "The license terms selected by the author(s) for this preprint version do "
+            "not permit archiving in PMC. The full text is available from the preprint server.",
+        }
+    ]
+
+    async def stub(pmcid, client):
+        return None, notice
+
+    monkeypatch.setattr(tasks, "fetch_fulltext", stub)
+    project = await _make_project(engine)
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as session:
+        await tasks._insert_article(
+            session, project.id, {"pmid": "7", "pmcid": "PMC7", "title": "t"}, None
+        )
+        await session.commit()
+    (art,) = await _articles_for(engine, project.id)
+    assert not art.sections and art.fulltext_note == "preprint_not_archived"

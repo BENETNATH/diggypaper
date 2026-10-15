@@ -15,6 +15,7 @@ import {
   getArticleWithPrediction,
   getProject,
   listArticles,
+  PredictionFilter,
   SchemaField,
   submitAnnotation,
   uploadArticlePdf,
@@ -38,7 +39,8 @@ export default function AnnotatePage() {
   const searchParams = useSearchParams();
   const projectId = params.id;
   const articleId = searchParams.get("article") ?? "";
-  // queue=review : seulement les cas à relire (défaut après un tri) ; all : tous les articles.
+  // queue=review : les cas à relire (défaut après un tri), restreints aux filtres de réponses de
+  // la liste ; list : exactement la liste filtrée/triée qu'on vient de quitter ; all : tous.
   const queueMode = searchParams.get("queue") ?? "review";
 
   const [article, setArticle] = useState<Article | null>(null);
@@ -59,15 +61,26 @@ export default function AnnotatePage() {
   useEffect(() => {
     if (!projectId) return;
     const load = async () => {
-      let r = await listArticles(
-        projectId,
-        1,
-        200,
-        queueMode === "review" ? "TO_REVIEW" : undefined
-      );
+      // Filtres de la liste d'articles (mémorisés par l'onglet).
+      let saved: { filter?: string; sort?: "added" | "date_desc" | "date_asc" | "score_desc"; answers?: Record<string, string | boolean> } = {};
+      try {
+        saved = JSON.parse(sessionStorage.getItem(`diggy:articles:${projectId}`) ?? "{}");
+      } catch {
+        /* pas de filtres mémorisés */
+      }
+      const status =
+        queueMode === "review" ? "TO_REVIEW" : queueMode === "list" && saved.filter && saved.filter !== "ALL" ? (saved.filter as PredictionFilter) : undefined;
+      const sort = queueMode === "list" ? (saved.sort ?? "added") : "added";
+      const answers = queueMode === "all" ? {} : (saved.answers ?? {});
+      let r = await listArticles(projectId, 1, 200, status, sort, answers);
+      // La liste est paginée par 200 : on poursuit jusqu'à trouver l'article ouvert.
+      const ids = r.items.map((a) => a.id);
+      for (let p = 2; articleId && !ids.includes(articleId) && ids.length < r.total && p <= 5; p++) {
+        ids.push(...(await listArticles(projectId, p, 200, status, sort, answers)).items.map((a) => a.id));
+      }
       // Rien à relire (pas encore trié / tout validé) : on propose tous les articles.
-      if (r.items.length === 0 && queueMode === "review") r = await listArticles(projectId, 1, 200);
-      return r;
+      if (ids.length === 0 && queueMode === "review") r = await listArticles(projectId, 1, 200);
+      return { ...r, items: ids.length ? ids.map((id) => ({ id })) : r.items };
     };
     load()
       .then((r) => {
@@ -267,7 +280,11 @@ export default function AnnotatePage() {
                 article.has_fulltext ? "border-border" : "border-warning/40 bg-warning/10"
               }`}
             >
-              {!article.has_fulltext && <p className="text-foreground">{t("abstractOnlyNote")}</p>}
+              {!article.has_fulltext && (
+                <p className="text-foreground">
+                  {article.fulltext_note === "preprint_not_archived" ? t("preprintNote") : t("abstractOnlyNote")}
+                </p>
+              )}
               <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1">
                 <button
                   type="button"
