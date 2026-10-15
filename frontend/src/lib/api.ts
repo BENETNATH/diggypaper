@@ -583,6 +583,7 @@ export interface HfModel {
   id: string;
   downloads: number;
   likes: number;
+  decision?: boolean; // modèle de décision (Kev…) : ne s'installe pas via Ollama
 }
 export interface HfFile {
   file: string;
@@ -744,6 +745,13 @@ export async function exportData(): Promise<Record<string, unknown>> {
 
 
 /** Famille d'un modèle du registre : scoreur (décision / encodeur) ou génératif. */
+export interface Capability {
+  configured: boolean;
+  reachable: boolean;
+}
+export type ModelCapabilities = Record<"ollama" | "laya" | "kev", Capability>;
+export const getModelCapabilities = (): Promise<ModelCapabilities> => request("/models/capabilities");
+
 export function isScorer(m: Pick<ModelInfo, "backend_type">): boolean {
   return m.backend_type === "SYSTEMONE" || m.backend_type === "ONNX_LOCAL";
 }

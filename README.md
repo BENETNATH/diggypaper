@@ -291,31 +291,33 @@ réécriture DNS entre la vérification et la connexion n'est pas fermée : pour
 instance exposée à des utilisateurs non fiables, filtrez aussi la sortie des conteneurs
 `backend`/`worker` vers votre réseau interne (pare-feu / proxy de sortie).
 
-### Inférence locale (Laya / Kev / Ollama)
+### Modèles : ce qui fonctionne, et ce qu'on déploie
 
-Deux familles de modèles, qui ne s'utilisent pas de la même façon :
+Aucun service de modèle n'est lancé par défaut. Activez uniquement ce dont vous avez besoin
+dans `.env` (profils du compose), puis `docker compose up -d --build` :
 
-**Modèles de décision** (protocole `POST /v1/systemone`) — ils lisent un texte et répondent
-à des questions typées (oui/non, choix) avec des probabilités calibrées, en un seul
-passage. Ils ne génèrent ni texte libre ni citations, et n'ont **pas** d'interface de chat.
+```bash
+COMPOSE_PROFILES=ollama,laya        # au choix : ollama, laya, kev (ou aucun)
+LLM_API_BASE_URL=http://ollama:11434/v1
+LAYA_URL=http://laya:8000
+KEV_URL=http://kev:8080             # avec le profil kev
+```
 
-- **Laya** (encodeur type BERT ~400 M) : service Docker `laya` (build `./laya`, poids dans le
-  volume `hf`, `LAYA_URL` défaut `http://laya:8000`). **CPU par design.** Enregistré au
-  démarrage.
-- **Kev** (4B, GGUF) : servi par **llama.cpp**, pas par Ollama (Ollama ne propose que
-  `/v1/chat/completions`, d'où l'erreur 400 si on l'y installe comme modèle de chat).
-  Service optionnel du compose :
-  ```bash
-  # .env : KEV_URL=http://kev:8080
-  docker compose --profile kev up -d      # télécharge ggml-org/Kev-4B-GGUF au premier démarrage
-  ```
-  Il est alors enregistré automatiquement sous le nom `Kev-4B`.
+| Modèle | Famille | Usage | Déploiement |
+|--------|---------|-------|-------------|
+| **Laya** (encodeur ~400 M) | décision | tri et items oui/non ou à choix ; très rapide, CPU | profil `laya` |
+| **Kev** (4B, GGUF) | décision | idem, plus fin ; **pas de chat** | profil `kev` (llama.cpp) |
+| **Qwen, Gemma, Llama…** (GGUF) | génératif | texte libre, citations de preuve ; plus lent | profil `ollama` |
+| **API externe** (OpenAI, Mistral, serveur interne…) | génératif | idem, sans rien déployer | aucun : URL + clé dans *Modèles* |
 
-**Modèles génératifs** (`/v1/chat/completions`) — réponses en texte libre et citations de
-preuve, plus lents. Service `ollama` de la stack (modèles GGUF de chat installés depuis la
-page *Modèles*, poids dans le volume `ollama`, `LLM_API_BASE_URL` défaut
-`http://ollama:11434/v1`) ou n'importe quelle API compatible OpenAI (URL + clé + nom du
-modèle, depuis la page *Modèles*).
+- Les **modèles de décision** (protocole `POST /v1/systemone`) lisent un texte et répondent à
+  des questions typées avec des probabilités calibrées, en un seul passage. Ils ne génèrent
+  ni texte libre ni citations, et n'ont **pas** d'interface de chat : Kev ne s'installe donc
+  **pas** via Ollama (qui ne propose que `/v1/chat/completions`, d'où une erreur 400).
+- Les **modèles génératifs** (`/v1/chat/completions`) sont installés depuis la page *Modèles*
+  (recherche Hugging Face → Ollama) ou saisis comme **modèle externe**.
+- La page *Modèles* affiche l'état de chaque service (actif, injoignable, non déployé).
+- Seuls les modèles qu'un compte possède ou qu'on lui a partagés sont utilisables.
 
 **GPU sur Windows (Docker Desktop)** : pas de passthrough d'iGPU Intel dans
 Docker Desktop (NVIDIA uniquement) — un Ollama en conteneur reste sur CPU,

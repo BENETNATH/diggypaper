@@ -1,5 +1,12 @@
 # Réglages (tous optionnels, voir .env.example) : NGINX_BIND / NGINX_PORT, TRUSTED_PROXY_CIDR,
 # WORKER_CONCURRENCY, IMPORT_MAX_ARTICLES, *_MEM_LIMIT, COOKIE_SECURE, APP_BASE_URL…
+#
+# Services de modèles OPTIONNELS (profils) : par défaut seuls l'application, la base et la file
+# de tâches démarrent (suffisant avec un modèle externe : API compatible OpenAI). Activez ceux
+# dont vous avez besoin dans .env, ex. COMPOSE_PROFILES=ollama,laya :
+#   ollama : modèles génératifs locaux (LLM_API_BASE_URL=http://ollama:11434/v1)
+#   laya   : modèle de décision Laya, CPU (LAYA_URL=http://laya:8000)
+#   kev    : modèle de décision Kev, llama.cpp (KEV_URL=http://kev:8080)
 x-logging: &logging
   driver: json-file
   options:
@@ -36,6 +43,7 @@ services:
   # Serveur d'inférence local (CPU) : les modèles de chat (Kev, Qwen…) y sont téléchargés
   # depuis l'interface (page Modèles). Les poids persistent dans le volume « ollama ».
   ollama:
+    profiles: ["ollama"]
     image: ollama/ollama@sha256:adca95a12c2b386a8f9a995e7fa0600e187e3323b5e5522f5a6c3b1ec73eff99  # 0.40.3
     volumes:
       - ollama:/root/.ollama
@@ -44,8 +52,8 @@ services:
     mem_limit: ${OLLAMA_MEM_LIMIT:-24g}
 
   # Modèles de décision Laya (encodeur type BERT, scores calibrés, CPU) : protocole /v1/systemone.
-  # Pour Kev (GGUF) : ajouter un service `llama serve -hf ggml-org/Kev-4B-GGUF` et renseigner KEV_URL.
   laya:
+    profiles: ["laya"]
     build: ./laya
     volumes:
       - hf:/hf
@@ -54,7 +62,7 @@ services:
     mem_limit: ${LAYA_MEM_LIMIT:-8g}
 
   # Kev : modèle de décision GGUF servi par llama.cpp (/v1/systemone). Optionnel :
-  #   .env : KEV_URL=http://kev:8080   puis   docker compose --profile kev up -d
+  #   .env : COMPOSE_PROFILES=…,kev  et  KEV_URL=http://kev:8080
   kev:
     profiles: ["kev"]
     image: ghcr.io/ggml-org/llama.cpp:server
@@ -80,10 +88,10 @@ services:
       - models:/app/models
       - exports:/app/exports  # zips RO-Crate générés par le worker, servis par le backend
     environment:
-      LLM_API_BASE_URL: ${LLM_API_BASE_URL:-http://ollama:11434/v1}
+      LLM_API_BASE_URL: ${LLM_API_BASE_URL:-}
       DEFAULT_LANGUAGE: ${DEFAULT_LANGUAGE:-fr}
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:8080}  # base des liens des e-mails (invitations, exports)
-      LAYA_URL: ${LAYA_URL:-http://laya:8000}
+      LAYA_URL: ${LAYA_URL:-}
       KEV_URL: ${KEV_URL:-}
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-diggypaper}:${POSTGRES_PASSWORD:-diggypaper}@postgres:5432/${POSTGRES_DB:-diggypaper}
       REDIS_URL: redis://redis:6379/0
@@ -119,8 +127,8 @@ services:
       - models:/app/models  # encodeurs ONNX (Laya) téléchargés par le backend, lus par le worker
       - exports:/app/exports
     environment:
-      LLM_API_BASE_URL: ${LLM_API_BASE_URL:-http://ollama:11434/v1}
-      LAYA_URL: ${LAYA_URL:-http://laya:8000}
+      LLM_API_BASE_URL: ${LLM_API_BASE_URL:-}
+      LAYA_URL: ${LAYA_URL:-}
       KEV_URL: ${KEV_URL:-}
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-diggypaper}:${POSTGRES_PASSWORD:-diggypaper}@postgres:5432/${POSTGRES_DB:-diggypaper}
       REDIS_URL: redis://redis:6379/0

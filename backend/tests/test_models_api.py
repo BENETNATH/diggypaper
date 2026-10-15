@@ -156,6 +156,33 @@ async def test_hf_search_files_and_install_validation(client, admin_user, do_log
     assert (await client.post("/api/v1/models/hf/install", json=bad)).status_code == 422
 
 
+async def test_hf_decision_models_flagged_and_not_installable(
+    client, admin_user, do_login, monkeypatch
+):
+    from app.api.v1 import models as m
+
+    async def fake_hf(path, params=None):
+        if path == "/api/models":
+            return [
+                {"id": "ggml-org/Kev-4B-GGUF", "tags": ["gguf", "decision-model"]},
+                {"id": "unsloth/Qwen3-4B-GGUF", "tags": ["gguf"]},
+            ]
+        return {"tags": ["decision-model"] if "Kev" in path else ["gguf"]}
+
+    monkeypatch.setattr(m, "_hf_get", fake_hf)
+    await do_login("admin@lab.fr", "admin-pass-123")
+    items = (await client.get("/api/v1/models/search", params={"q": "kev"})).json()["items"]
+    assert {i["id"]: i["decision"] for i in items} == {
+        "ggml-org/Kev-4B-GGUF": True,
+        "unsloth/Qwen3-4B-GGUF": False,
+    }
+    r = await client.post(
+        "/api/v1/models/hf/install", json={"repo": "ggml-org/Kev-4B-GGUF", "kind": "chat"}
+    )
+    assert r.status_code == 422 and r.json()["detail"] == "decision_model"
+    assert m._PULLS == {}  # rien de lancé
+
+
 async def test_hf_files_sorted_for_cpu(client, admin_user, do_login, monkeypatch):
     from app.api.v1 import models as m
 
@@ -231,3 +258,22 @@ async def test_infer_with_uses_model_url_and_key():
     finally:
         httpx.AsyncClient = real
     assert seen == {"url": "https://api.x/v1/chat/completions", "auth": "Bearer sk-1"}
+
+
+async def test_capabilities_reports_configured_and_reachable(
+    client, session, admin_user, do_login, monkeypatch
+):
+    from app.api.v1 import models as m
+    from app.core.config import get_settings
+
+    async def fake_reachable(url, path=""):
+        return "laya" in url
+
+    monkeypatch.setattr(m, "_reachable", fake_reachable)
+    monkeypatch.setattr(get_settings(), "laya_url", "http://laya:8000")
+    monkeypatch.setattr(get_settings(), "kev_url", "")
+    await do_login("admin@lab.fr", "admin-pass-123")
+    caps = (await client.get("/api/v1/models/capabilities")).json()
+    assert caps["laya"] == {"configured": True, "reachable": True}
+    assert caps["kev"] == {"configured": False, "reachable": False}
+    assert caps["ollama"]["configured"] is True  # défaut de test : localhost:11434

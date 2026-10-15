@@ -519,7 +519,18 @@
     "shareUser": "Allow",
     "shareProject": "Choose a project…",
     "shareProjectBtn": "Allow project",
-    "shareRemove": "Remove access"
+    "shareRemove": "Remove access",
+    "decisionBadge": "decision model",
+    "decisionNotChat": "This is a decision model (/v1/systemone protocol): it does not answer like a chat model and cannot be installed through Ollama. Serve it with llama.cpp (in the compose file: `COMPOSE_PROFILES=…,kev then docker compose up -d` for Kev, with KEV_URL=http://kev:8080) then register the server under “A. Add a decision server”.",
+    "servicesTitle": "Model services on this instance",
+    "svcOllama": "Ollama — local generative models",
+    "svcLaya": "Laya — decision model (CPU)",
+    "svcKev": "Kev — decision model (llama.cpp)",
+    "svcUp": "running",
+    "svcDown": "unreachable",
+    "svcOff": "not deployed",
+    "svcHow": "To enable it: COMPOSE_PROFILES={profile} (+ URL) in .env, then docker compose up -d.",
+    "svcExternal": "External model — any OpenAI-compatible API (no local service required)"
   },
   "question": {
     "title": "Question and answer fields",

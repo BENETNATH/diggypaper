@@ -19,6 +19,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db, rate_limit_user
+from app.core.config import get_settings
 from app.core.crypto import encrypt_secret
 from app.db.base import SessionLocal
 from app.db.models import ModelRegistry, ModelShare, Project, ProjectMember, User, UserRole
@@ -142,6 +143,36 @@ async def _register(
         exists.model_identifier = identifier
         exists.is_active = True
     await db.commit()
+
+
+async def _reachable(url: str, path: str = "") -> bool:
+    """Le service répond-il en HTTP (n'importe quel code) ? Test rapide, jamais bloquant."""
+    if not url:
+        return False
+    try:
+        async with httpx.AsyncClient(timeout=2) as http:
+            await http.get(f"{url.rstrip('/')}{path}")
+        return True
+    except httpx.HTTPError:
+        return False
+
+
+@router.get("/capabilities")
+async def capabilities(db: DbDep, user: UserDep) -> dict:
+    """Services de modèles déployés sur cette instance (profils du compose) : configurés ?
+    joignables ? Les modèles externes (API compatible OpenAI) fonctionnent toujours."""
+    ollama = await _ollama_base(db) if await get_setting(db, "llm_api_base_url") else ""
+    settings = get_settings()
+    ok = await asyncio.gather(
+        _reachable(ollama, "/api/tags"),
+        _reachable(settings.laya_url),
+        _reachable(settings.kev_url, "/health"),
+    )
+    cfg = (ollama, settings.laya_url, settings.kev_url)
+    return {
+        name: {"configured": bool(url), "reachable": up}
+        for name, url, up in zip(("ollama", "laya", "kev"), cfg, ok, strict=True)
+    }
 
 
 @router.get("/ollama")
@@ -523,7 +554,13 @@ async def search_hf(
     )
     return {
         "items": [
-            {"id": m["id"], "downloads": m.get("downloads", 0), "likes": m.get("likes", 0)}
+            {
+                "id": m["id"],
+                "downloads": m.get("downloads", 0),
+                "likes": m.get("likes", 0),
+                # Kev & co : modèle de décision (/v1/systemone), inutilisable comme modèle de chat
+                "decision": "decision-model" in (m.get("tags") or []),
+            }
             for m in data
             if re.match(_REPO_RE, m.get("id", ""))
         ]
@@ -589,6 +626,10 @@ async def install_hf(payload: HFInstall, db: DbDep, user: UserDep) -> dict:
         raise HTTPException(status_code=422, detail="invalid file")
     if payload.kind == "encoder" and not payload.file:
         raise HTTPException(status_code=422, detail="file required for encoder")
+    if payload.kind == "chat":  # un modèle de décision ne se sert pas par Ollama (pas de chat)
+        info = await _hf_get(f"/api/models/{payload.repo}")
+        if isinstance(info, dict) and "decision-model" in (info.get("tags") or []):
+            raise HTTPException(status_code=422, detail="decision_model")
     short = payload.repo.split("/")[1]
     name = (payload.name or short).strip() or short
     key = f"hf:{payload.repo}:{payload.quant or payload.file or ''}"

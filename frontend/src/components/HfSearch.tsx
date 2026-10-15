@@ -48,6 +48,7 @@ export function HfSearch({
     setRepo(id);
     setFiles(null);
     setChoice("");
+    if (results?.find((r) => r.id === id)?.decision) return;
     try {
       const r = await hfFiles(id, kind);
       setFiles(r.items);
@@ -99,7 +100,7 @@ export function HfSearch({
       <p className="mb-3 text-sm text-muted">{t("searchHint")}</p>
       <form onSubmit={search} className="flex flex-wrap gap-2">
         <div className="min-w-[12rem] flex-1">
-          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="kev, laya, qwen…" minLength={2} required />
+          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="qwen, gemma, llama…" minLength={2} required />
         </div>
         <Button type="submit" loading={searching} disabled={q.trim().length < 2}>
           {t("search")}
@@ -144,10 +145,20 @@ export function HfSearch({
                 onClick={() => void open(m.id)}
                 className={`flex w-full items-center justify-between gap-3 py-2 text-left hover:bg-surface-muted ${repo === m.id ? "bg-surface-muted" : ""}`}
               >
-                <span className="min-w-0 truncate font-mono text-sm">{m.id}</span>
+                <span className="min-w-0 truncate font-mono text-sm">
+                  {m.id}
+                  {m.decision && (
+                    <span className="ml-2 rounded-full bg-primary/10 px-2 py-0.5 font-sans text-xs text-primary">
+                      {t("decisionBadge")}
+                    </span>
+                  )}
+                </span>
                 <span className="shrink-0 text-xs text-muted">↓ {m.downloads.toLocaleString()}</span>
               </button>
-              {repo === m.id && (
+              {repo === m.id && m.decision && (
+                <p className="mb-3 rounded-lg bg-warning/10 p-3 text-sm text-foreground">{t("decisionNotChat")}</p>
+              )}
+              {repo === m.id && !m.decision && (
                 <div className="mb-3 flex flex-col gap-2 rounded-lg bg-surface-muted p-3">
                   {!files ? (
                     <p className="text-sm text-muted">…</p>

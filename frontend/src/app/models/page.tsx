@@ -8,6 +8,8 @@ import {
   listOllama,
   createModel,
   isScorer,
+  getModelCapabilities,
+  ModelCapabilities,
   registerOllama,
   testExternalModel,
   addExternalModel,
@@ -34,6 +36,7 @@ function ModelsContent() {
   const [detected, setDetected] = useState<OllamaModel[]>([]);
   const [pulls, setPulls] = useState<Record<string, Pull>>({});
   const [error, setError] = useState<string | null>(null);
+  const [caps, setCaps] = useState<ModelCapabilities | null>(null);
   const [srvName, setSrvName] = useState("");
   const [srvUrl, setSrvUrl] = useState("");
   const [srvModel, setSrvModel] = useState("");
@@ -46,6 +49,7 @@ function ModelsContent() {
     } catch (e) {
       setError(e instanceof Error ? e.message : "error");
     }
+    getModelCapabilities().then(setCaps).catch(() => undefined);
     if (!isAdmin) return;
     try {
       const o = await listOllama();
@@ -138,6 +142,32 @@ function ModelsContent() {
               </p>
             ))}
           </div>
+        </Card>
+      )}
+
+      {caps && (
+        <Card title={t("servicesTitle")}>
+          <ul className="flex flex-col gap-2 text-sm">
+            {(
+              [
+                ["ollama", t("svcOllama")],
+                ["laya", t("svcLaya")],
+                ["kev", t("svcKev")],
+              ] as const
+            ).map(([k, label]) => (
+              <li key={k} className="flex flex-wrap items-center gap-2">
+                <Badge color={caps[k].reachable ? "green" : caps[k].configured ? "red" : "gray"}>
+                  {caps[k].reachable ? t("svcUp") : caps[k].configured ? t("svcDown") : t("svcOff")}
+                </Badge>
+                <span className="font-medium text-foreground">{label}</span>
+                {!caps[k].configured && <span className="text-xs text-muted">{t("svcHow", { profile: k })}</span>}
+              </li>
+            ))}
+            <li className="flex flex-wrap items-center gap-2">
+              <Badge color="green">{t("svcUp")}</Badge>
+              <span className="font-medium text-foreground">{t("svcExternal")}</span>
+            </li>
+          </ul>
         </Card>
       )}
 
@@ -267,7 +297,7 @@ function ModelsContent() {
           </form>
         </div>
 
-        {isAdmin && (
+        {isAdmin && caps?.ollama.configured && (
         <div className="mt-6 border-t border-border pt-4">
           <HfSearch onStarted={() => void load()} onError={setError} />
         </div>
