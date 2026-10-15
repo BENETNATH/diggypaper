@@ -21,7 +21,7 @@ export function BottomNav() {
   ];
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-40 flex border-t border-border bg-surface md:hidden">
+    <nav className="fixed bottom-0 left-0 right-0 z-40 flex overflow-x-auto border-t border-border bg-surface md:hidden">
       {items
         .filter((i) => i.show)
         .map((item) => {
@@ -30,7 +30,7 @@ export function BottomNav() {
             <Link
               key={item.href}
               href={item.href}
-              className={`flex-1 py-3 text-center text-sm ${
+              className={`flex-1 whitespace-nowrap px-3 py-3 text-center text-sm ${
                 active ? "font-semibold text-primary" : "text-muted"
               }`}
             >
@@ -38,15 +38,15 @@ export function BottomNav() {
             </Link>
           );
         })}
-      <div className="flex flex-1 items-center justify-center">
+      <div className="flex flex-1 shrink-0 items-center justify-center px-2">
         <LanguageSwitcher />
       </div>
       {user ? (
-        <button onClick={logout} className="flex-1 py-3 text-center text-sm text-muted">
+        <button onClick={logout} className="flex-1 whitespace-nowrap px-3 py-3 text-center text-sm text-muted">
           {t("logout")}
         </button>
       ) : (
-        <Link href="/login" className="flex-1 py-3 text-center text-sm text-muted">
+        <Link href="/login" className="flex-1 whitespace-nowrap px-3 py-3 text-center text-sm text-muted">
           {t("login")}
         </Link>
       )}

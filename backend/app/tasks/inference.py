@@ -170,6 +170,8 @@ async def _run_inference(
             except Exception as exc:
                 await _record_failure(session, job, exc)
                 raise
+            if stats.get("cancelled"):
+                return stats  # arrêtée par l'utilisateur : pas d'e-mail « terminée »
 
             # Notification e-mail (best-effort, ne casse pas le job).
             mailer = await _make_mailer(session)
@@ -252,7 +254,16 @@ async def _do_inference(
             model, inference, prompt.system_prompt or "", user_prompt, name=job.model_used
         )
 
+    async def cancelled() -> bool:
+        # Arrêt demandé depuis l'interface (POST …/inference/cancel : statut FAILED en base).
+        status = (
+            await session.execute(select(InferenceJob.status).where(InferenceJob.id == job.id))
+        ).scalar_one_or_none()
+        return status == InferenceJobStatus.FAILED
+
     for article in articles:
+        if await cancelled():
+            return {"cancelled": True, "processed": processed, **counts()}
         if article.id in done_status:  # déjà fait avant l'interruption : on le compte, on saute
             st = done_status[article.id]
             auto_accepted += st == PredictionStatus.AUTO_ACCEPTED

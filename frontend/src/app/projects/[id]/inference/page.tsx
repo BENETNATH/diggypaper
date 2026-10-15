@@ -7,6 +7,7 @@ import { useTranslations } from "next-intl";
 import {
   updateProject,
   triggerInference,
+  cancelInference,
   getInference,
   getProject,
   listModels,
@@ -100,6 +101,20 @@ function InferenceContent() {
   }, [models, stage2]);
 
   /** Reprend une analyse interrompue : les articles déjà analysés sont sautés. */
+  async function handleStop() {
+    if (!window.confirm(t("stopConfirm"))) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      await cancelInference(projectId);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "error");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   async function handleResume() {
     if (!job) return;
     setSubmitting(true);
@@ -237,6 +252,14 @@ function InferenceContent() {
             />
           )}
           {active && num(r.done) === 0 && <p className="mt-2 text-xs text-muted">{t("firstRunNote")}</p>}
+          {active && (
+            <div className="mt-3 flex flex-col items-start gap-1">
+              <Button variant="danger" loading={submitting} onClick={handleStop}>
+                ■ {t("stop")}
+              </Button>
+              <span className="text-xs text-muted">{t("stopHint")}</span>
+            </div>
+          )}
           {(active ? total > 0 : job.status === "COMPLETED") && (
             <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
               <Stat label={t("processed")} value={num(r.processed ?? r.done)} />
@@ -251,7 +274,10 @@ function InferenceContent() {
           {num(r.invalid_json) > 0 && (
             <p className="mt-2 text-xs text-warning">{t("invalidJson", { n: num(r.invalid_json) })}</p>
           )}
-          {job.status === "FAILED" && job.error && (
+          {job.status === "FAILED" && job.error === "cancelled" && (
+            <p className="mt-3 rounded-lg bg-warning/10 p-3 text-sm text-foreground">{t("stopped", { n: num(r.done) })}</p>
+          )}
+          {job.status === "FAILED" && job.error && job.error !== "cancelled" && (
             <p className="mt-3 rounded-lg bg-danger/10 p-3 text-sm text-danger">{job.error}</p>
           )}
           {job.status === "FAILED" && (

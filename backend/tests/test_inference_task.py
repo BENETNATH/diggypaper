@@ -218,3 +218,62 @@ async def test_run_inference_failure_marks_failed(engine, session):
         await _run_inference(str(job.id), session_factory=factory, inference=FailInference())
     await session.refresh(job)
     assert job.status == InferenceJobStatus.FAILED
+
+
+async def test_run_inference_stops_when_cancelled(engine, session):
+    """Arrêt demandé en cours de route : on s'arrête avant l'article suivant, sans e-mail."""
+    project = Project(title="P", created_by=None, status=ProjectStatus.FROZEN)
+    session.add(project)
+    await session.commit()
+    prompt = PromptTemplate(project_id=project.id, version_number="v1.0", system_prompt="SYS")
+    session.add(prompt)
+    await session.commit()
+    session.add(ModelRegistry(name="Kev-4B", model_identifier="x"))
+    await session.commit()
+    await _seed(session, project, prompt, None, n_articles=4)
+    job = InferenceJob(
+        project_id=project.id,
+        prompt_template_id=prompt.id,
+        model_used="Kev-4B",
+        status=InferenceJobStatus.PENDING,
+    )
+    session.add(job)
+    await session.commit()
+
+    class StopAfterFirst(FakeInference):
+        async def infer(self, model, system_prompt, user_prompt) -> dict:
+            out = await super().infer(model, system_prompt, user_prompt)
+            row = await session.get(InferenceJob, job.id)
+            row.status, row.error = InferenceJobStatus.FAILED, "cancelled"  # clic sur « Arrêter »
+            await session.commit()
+            return out
+
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    fake = StopAfterFirst()
+    result = await _run_inference(str(job.id), session_factory=factory, inference=fake)
+    assert result["cancelled"] is True and result["processed"] == 1 and fake.calls == 1
+    await session.refresh(job)
+    assert job.status == InferenceJobStatus.FAILED and job.error == "cancelled"
+    assert len((await session.execute(select(ArticlePrediction))).scalars().all()) == 1
+
+
+async def test_run_inference_skips_job_cancelled_before_start(engine, session):
+    project = Project(title="P", created_by=None, status=ProjectStatus.FROZEN)
+    session.add(project)
+    await session.commit()
+    prompt = PromptTemplate(project_id=project.id, version_number="v1.0", system_prompt="SYS")
+    session.add(prompt)
+    await session.commit()
+    job = InferenceJob(
+        project_id=project.id,
+        prompt_template_id=prompt.id,
+        model_used="Kev-4B",
+        status=InferenceJobStatus.FAILED,
+        error="cancelled",
+    )
+    session.add(job)
+    await session.commit()
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    fake = FakeInference()
+    assert await _run_inference(str(job.id), session_factory=factory, inference=fake) == {}
+    assert fake.calls == 0

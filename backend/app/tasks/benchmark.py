@@ -140,6 +140,8 @@ async def _run_benchmark(
             run = await session.get(BenchmarkRun, run_uuid)
             if run is None:
                 raise LookupError(f"benchmark run not found: {benchmark_run_id}")
+            if run.status in (BenchmarkStatus.FAILED, BenchmarkStatus.COMPLETED):
+                return {}  # arrêté avant de démarrer, ou redélivré
             run.status = BenchmarkStatus.RUNNING
             await session.commit()
 
@@ -204,6 +206,8 @@ async def _do_benchmark(
             0  # encodeur : pertinent prédit vs gold (clé « relevant », déf. True)
         )
         for gold, article in gold_rows:
+            if await _cancelled(session, run):
+                return {"cancelled": True, "models": len(results_payload)}
             start = time.monotonic()
             if is_onnx:
                 score = (await score_prediction(model, project, article, light=False))[
@@ -289,6 +293,14 @@ async def _do_benchmark(
         "articles": len(gold_rows),
         "results": results_payload,
     }
+
+
+async def _cancelled(session: AsyncSession, run: BenchmarkRun) -> bool:
+    """Arrêt demandé depuis l'interface (POST …/benchmarks/{id}/cancel : statut FAILED en base)."""
+    status = (
+        await session.execute(select(BenchmarkRun.status).where(BenchmarkRun.id == run.id))
+    ).scalar_one_or_none()
+    return status == BenchmarkStatus.FAILED
 
 
 async def _record_failure(session: AsyncSession, run: BenchmarkRun, exc: Exception) -> None:

@@ -66,7 +66,7 @@ export interface Article {
   first_author?: string | null;
   last_author?: string | null;
   pub_types?: string[];
-  answers?: { key: string; label: string; value: unknown; confidence: number | null }[];
+  answers?: { key: string; label: string; value: unknown; confidence: number | null; source?: "human" | "model" }[];
   prediction_status?: "AUTO_ACCEPTED" | "AUTO_REJECTED" | "NEEDS_HUMAN_REVIEW" | null;
   confidence?: number | null;
   annotated?: boolean;
@@ -682,6 +682,12 @@ export async function triggerInference(
     { method: "POST", body: JSON.stringify(payload) }
   );
 }
+
+export const cancelInference = (projectId: string): Promise<unknown> =>
+  request(`/projects/${projectId}/inference/cancel`, { method: "POST" });
+
+export const cancelBenchmark = (projectId: string, runId: string): Promise<unknown> =>
+  request(`/projects/${projectId}/benchmarks/${runId}/cancel`, { method: "POST" });
 
 export async function getInference(projectId: string): Promise<InferenceJob | null> {
   const r = await request<{ job: InferenceJob | null }>(`/projects/${projectId}/inference`);

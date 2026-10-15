@@ -324,3 +324,27 @@ async def test_get_inference_status_not_found_404(client, researcher_user, do_lo
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     resp = await client.get(f"/api/v1/projects/{uuid.uuid4()}/inference")
     assert resp.status_code == 404
+
+
+# --- POST /projects/{id}/inference/cancel ---
+
+
+async def test_cancel_inference_stops_active_job_and_allows_resume(
+    client, session, researcher_user, do_login, monkeypatch
+):
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project_id, prompt_id = await _create_frozen_project(client, session, researcher_user)
+    _mock_inference_task(monkeypatch)
+    url = f"/api/v1/projects/{project_id}/inference"
+    assert (await client.post(url + "/cancel")).status_code == 409  # rien en cours
+    body = {"prompt_template_id": prompt_id, "model": "Kev-4B"}
+    job_id = (await client.post(url, json=body)).json()["job_id"]
+    r = await client.post(url + "/cancel")
+    assert (
+        r.status_code == 200 and r.json()["status"] == "FAILED" and r.json()["error"] == "cancelled"
+    )
+    job = await session.get(InferenceJob, uuid.UUID(job_id))
+    await session.refresh(job)
+    assert job.status == InferenceJobStatus.FAILED and job.completed_at is not None
+    # une analyse arrêtée se reprend, et une nouvelle peut être lancée
+    assert (await client.post(url, json={**body, "resume": True})).status_code == 202

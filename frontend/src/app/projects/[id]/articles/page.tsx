@@ -282,7 +282,13 @@ function ResultsContent() {
                             <strong className="text-foreground">
                               {typeof r.value === "boolean" ? (r.value ? t("yes") : t("no")) : String(r.value)}
                             </strong>
-                            <Certainty value={r.confidence} />
+                            {r.source === "human" ? (
+                              <span title={t("humanAnswer")} className="text-primary">
+                                ✎
+                              </span>
+                            ) : (
+                              <Certainty value={r.confidence} />
+                            )}
                           </span>
                         ))}
                       </p>

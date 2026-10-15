@@ -221,7 +221,8 @@
     "reviewedBy": "Geprüft von {name}",
     "review_VALIDATED": "Bestätigt",
     "review_CORRECTED": "Korrigiert",
-    "review_MANUAL": "Annotiert"
+    "review_MANUAL": "Annotiert",
+    "humanAnswer": "Wert aus der menschlichen Prüfung"
   },
   "gold": {
     "title": "Goldstandard",
@@ -275,7 +276,9 @@
     "progress": "Benchmark: {done} / {total} ({model})",
     "starting": "Start…",
     "time": "Zeit",
-    "autoPrompt": "Aus der Frage erzeugter Prompt (empfohlen)"
+    "autoPrompt": "Aus der Frage erzeugter Prompt (empfohlen)",
+    "stop": "Stoppen",
+    "stopConfirm": "Diesen Benchmark stoppen?"
   },
   "inference": {
     "title": "Korpus analysieren",
@@ -327,7 +330,11 @@
     "firstRunNote": "Beim allerersten Start werden die Modelle heruntergeladen: Es kann mehrere Minuten dauern, bis der Zähler läuft.",
     "exportXlsx": "Nach Excel exportieren (.xlsx)",
     "resume": "Analyse fortsetzen",
-    "resumeHint": "{n} bereits analysierte Artikel bleiben erhalten; nur die übrigen werden verarbeitet."
+    "resumeHint": "{n} bereits analysierte Artikel bleiben erhalten; nur die übrigen werden verarbeitet.",
+    "stop": "Analyse stoppen",
+    "stopHint": "Der aktuelle Artikel wird noch beendet, dann stoppt die Analyse. Bereits analysierte Artikel bleiben erhalten.",
+    "stopConfirm": "Laufende Analyse stoppen?",
+    "stopped": "Analyse manuell gestoppt: {n} Artikel analysiert und behalten. Sie können sie fortsetzen."
   },
   "settings": {
     "title": "Systemeinstellungen",
@@ -644,5 +651,10 @@
     "inviteSent": "Einladung an {email} gesendet.",
     "inviteNoMail": "E-Mail an {email} nicht gesendet: Link weitergeben.",
     "inviteHint": "Ein Ersteller kann Projekte anlegen und Personen einladen. Diese Gäste dürfen keine Projekte anlegen; ihr Konto wird gelöscht, sobald sie kein Projekt mehr haben."
+  },
+  "footer": {
+    "source": "Quellcode (GitHub)",
+    "license": "MIT-Lizenz",
+    "credit": "© Benoit Petit-Demoulière (PHEN-ICS)"
   }
 }

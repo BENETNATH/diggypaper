@@ -130,6 +130,11 @@ async def _require_project_member(
     return project
 
 
+def _human(reviews: dict, article_id) -> dict | None:
+    ann = reviews.get(article_id, (None, None))[0]
+    return ann.decision_json if ann else None
+
+
 def review_payload(ann: HumanAnnotation | None, user: User | None) -> dict | None:
     """Dernière relecture humaine : qui, quand, statut (VALIDATED / CORRECTED / MANUAL)."""
     if ann is None:
@@ -172,21 +177,28 @@ def biblio_payload(a: Article) -> dict:
     }
 
 
-def _answers(project: Project, decision: dict | None) -> list[dict]:
-    """Réponses du modèle aux champs du projet, chacune avec sa propre certitude."""
-    if not decision:
+def _answers(project: Project, decision: dict | None, human: dict | None = None) -> list[dict]:
+    """Réponses aux champs du projet : celles de la dernière relecture humaine quand elle existe
+    (``source`` = human, certitude absente), sinon celles du modèle avec leur certitude."""
+    human = human or {}
+    if not decision and not human:
         return []
+    decision = decision or {}
     conf = decision.get("field_confidence") or {}
-    return [
-        {
-            "key": f["key"],
-            "label": f["label"],
-            "value": decision[f["key"]],
-            "confidence": conf.get(f["key"]),
-        }
-        for f in project_fields(project)
-        if f["key"] in decision
-    ]
+    out = []
+    for f in project_fields(project):
+        k = f["key"]
+        if k in human:
+            out.append(
+                {"key": k, "label": f["label"], "value": human[k], "confidence": None,
+                 "source": "human"}
+            )  # fmt: skip
+        elif k in decision:
+            out.append(
+                {"key": k, "label": f["label"], "value": decision[k], "confidence": conf.get(k),
+                 "source": "model"}
+            )  # fmt: skip
+    return out
 
 
 def _project_payload(
@@ -455,8 +467,9 @@ async def query_volume(
     return {"count": count}
 
 
-def _answer_filters(project: Project, raw: str | None, pdec) -> list:
-    """Conditions SQL « réponse du modèle au champ X = valeur » (JSON ``{clé: valeur}``)."""
+def _answer_filters(project: Project, raw: str | None, pdec, hdec) -> list:
+    """Conditions SQL « réponse au champ X = valeur » (JSON ``{clé: valeur}``) : la réponse
+    de la dernière relecture humaine l'emporte sur celle du modèle."""
     if not raw:
         return []
     try:
@@ -471,7 +484,8 @@ def _answer_filters(project: Project, raw: str | None, pdec) -> list:
             raise HTTPException(status_code=422, detail=f"unknown field: {key}")
         if value is None or value == "":
             continue
-        col = cast(pdec.op("->>")(key), String)  # SQLite renvoie 1/0 pour les booléens
+        # SQLite renvoie 1/0 pour les booléens
+        col = func.coalesce(cast(hdec.op("->>")(key), String), cast(pdec.op("->>")(key), String))
         if types[key] == "text":
             esc = str(value).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
             conds.append(col.ilike(f"%{esc}%", escape="\\"))
@@ -504,6 +518,13 @@ def article_filter(project: Project, status: str | None, answers: str | None):
     pstatus = latest(ArticlePrediction.status)
     pconf = latest(ArticlePrediction.confidence_score)
     pdec = latest(ArticlePrediction.decision_json)
+    hdec = (  # dernière relecture humaine : ses réponses priment sur celles du modèle
+        select(HumanAnnotation.decision_json)
+        .where(HumanAnnotation.article_id == Article.id)
+        .order_by(HumanAnnotation.created_at.desc().nulls_last(), HumanAnnotation.id.desc())
+        .limit(1)
+        .scalar_subquery()
+    )
     annotated = select(HumanAnnotation.id).where(HumanAnnotation.article_id == Article.id).exists()
     where = [Article.project_id == project.id]
     if status == "NONE":
@@ -512,7 +533,7 @@ def article_filter(project: Project, status: str | None, answers: str | None):
         where += [pstatus == "NEEDS_HUMAN_REVIEW", ~annotated]
     elif status:
         where.append(pstatus == status)
-    where += _answer_filters(project, answers, pdec)
+    where += _answer_filters(project, answers, pdec, hdec)
     return where, pstatus, pconf, pdec, annotated
 
 
@@ -589,8 +610,9 @@ async def list_articles(
                 "fulltext_source": a.fulltext_source,
                 **biblio_payload(a),
                 "prediction_status": st,
-                "confidence": conf,
-                "answers": _answers(project, dec),
+                # la pertinence de la relecture (curseur) remplace celle du modèle
+                "confidence": (_human(reviews, a.id) or {}).get("confidence_score", conf),
+                "answers": _answers(project, dec, _human(reviews, a.id)),
                 "annotated": bool(ann),
                 "review": review_payload(*reviews.get(a.id, (None, None))),
             }

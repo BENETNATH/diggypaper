@@ -122,6 +122,23 @@ async def trigger_benchmark(
     return {"run_id": str(run.id), "status": status}
 
 
+@router.post("/{project_id}/benchmarks/{run_id}/cancel")
+async def cancel_benchmark(
+    project_id: uuid.UUID, run_id: uuid.UUID, db: DbDep, user: UserDep
+) -> dict:
+    """Arrête un benchmark en cours ou en attente (les résultats déjà calculés sont conservés)."""
+    await _require_project_member(db, project_id, user)
+    await _require_lead(db, project_id, user)
+    run = await db.get(BenchmarkRun, run_id)
+    if run is None or run.project_id != project_id:
+        raise HTTPException(status_code=404, detail="benchmark run not found")
+    if run.status not in (BenchmarkStatus.PENDING, BenchmarkStatus.RUNNING):
+        raise HTTPException(status_code=409, detail="benchmark not in progress")
+    run.status = BenchmarkStatus.FAILED
+    await db.commit()
+    return _run_payload(run)
+
+
 @router.get("/{project_id}/benchmarks")
 async def list_benchmarks(project_id: uuid.UUID, db: DbDep, user: UserDep) -> dict:
     await _require_project_member(db, project_id, user)

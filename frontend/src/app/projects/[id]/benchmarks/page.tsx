@@ -7,6 +7,7 @@ import { useTranslations } from "next-intl";
 import {
   listBenchmarks,
   triggerBenchmark,
+  cancelBenchmark,
   listPrompts,
   listModels,
   BenchmarkRun,
@@ -63,6 +64,17 @@ function BenchmarksContent() {
     }, 5000);
     return () => clearInterval(id);
   }, [hasActive, load]);
+
+  async function handleStop(runId: string) {
+    if (!window.confirm(t("stopConfirm"))) return;
+    setError(null);
+    try {
+      await cancelBenchmark(projectId, runId);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "error");
+    }
+  }
 
   function toggleModel(name: string) {
     setSelectedModels((prev) =>
@@ -166,7 +178,14 @@ function BenchmarksContent() {
                     </span>
                   )}
                 </div>
-                <Badge color={statusColor(run.status)}>{run.status}</Badge>
+                <div className="flex items-center gap-2">
+                  {(run.status === "PENDING" || run.status === "RUNNING") && (
+                    <Button size="sm" variant="danger" onClick={() => void handleStop(run.id)}>
+                      ■ {t("stop")}
+                    </Button>
+                  )}
+                  <Badge color={statusColor(run.status)}>{run.status}</Badge>
+                </div>
               </div>
               {(run.status === "PENDING" || run.status === "RUNNING") && (
                 <div className="mt-3">

@@ -221,7 +221,8 @@
     "reviewedBy": "Relu par {name}",
     "review_VALIDATED": "Validé",
     "review_CORRECTED": "Corrigé",
-    "review_MANUAL": "Annoté"
+    "review_MANUAL": "Annoté",
+    "humanAnswer": "Valeur de la relecture humaine"
   },
   "gold": {
     "title": "Gold standard",
@@ -275,7 +276,9 @@
     "progress": "Benchmark : {done} / {total} ({model})",
     "starting": "Démarrage…",
     "time": "Temps",
-    "autoPrompt": "Prompt généré depuis la question (recommandé)"
+    "autoPrompt": "Prompt généré depuis la question (recommandé)",
+    "stop": "Arrêter",
+    "stopConfirm": "Arrêter ce benchmark ?"
   },
   "inference": {
     "title": "Analyser le corpus",
@@ -327,7 +330,11 @@
     "firstRunNote": "Le tout premier lancement télécharge les modèles : cela peut prendre plusieurs minutes avant que le compteur avance.",
     "exportXlsx": "Exporter en Excel (.xlsx)",
     "resume": "Reprendre l'analyse",
-    "resumeHint": "{n} articles déjà analysés sont conservés ; seuls les autres seront traités."
+    "resumeHint": "{n} articles déjà analysés sont conservés ; seuls les autres seront traités.",
+    "stop": "Arrêter l'analyse",
+    "stopHint": "L'article en cours se termine, puis l'analyse s'arrête. Les articles déjà analysés sont conservés.",
+    "stopConfirm": "Arrêter l'analyse en cours ?",
+    "stopped": "Analyse arrêtée à la main : {n} article(s) analysé(s) et conservés. Vous pouvez la reprendre."
   },
   "settings": {
     "title": "Paramètres système",
@@ -644,5 +651,10 @@
     "inviteSent": "Invitation envoyée à {email}.",
     "inviteNoMail": "E-mail non envoyé à {email} : transmettez ce lien.",
     "inviteHint": "Un créateur peut créer des projets et y inviter des personnes. Ces invités n'ont pas de droit de création et leur compte est supprimé quand ils n'ont plus aucun projet."
+  },
+  "footer": {
+    "source": "Code source (GitHub)",
+    "license": "Licence MIT",
+    "credit": "© Benoit Petit-Demoulière (PHEN-ICS)"
   }
 }

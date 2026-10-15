@@ -396,3 +396,18 @@ async def test_get_benchmark_other_project_404(client, session, researcher_user,
     await session.commit()
     resp = await client.get(f"/api/v1/projects/{project_id}/benchmarks/{run.id}")
     assert resp.status_code == 404
+
+
+async def test_cancel_benchmark(client, session, researcher_user, do_login, monkeypatch):
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project_id = await _create_project(client)
+    prompt_id, model_name = await _seed_benchmark_prereqs(session, project_id)
+    _mock_benchmark_task(monkeypatch)
+    base = f"/api/v1/projects/{project_id}/benchmarks"
+    run_id = (
+        await client.post(base, json={"prompt_template_id": prompt_id, "models": [model_name]})
+    ).json()["run_id"]
+    r = await client.post(f"{base}/{run_id}/cancel")
+    assert r.status_code == 200 and r.json()["status"] == "FAILED"
+    assert (await client.post(f"{base}/{run_id}/cancel")).status_code == 409  # déjà arrêté
+    assert (await client.post(f"{base}/{uuid.uuid4()}/cancel")).status_code == 404

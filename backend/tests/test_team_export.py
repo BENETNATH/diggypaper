@@ -530,6 +530,13 @@ async def test_review_status_reviewer_and_prefill(client, session, lead_project)
     got = (await client.get(f"{base}/{a.id}/annotation")).json()
     assert got["status"] == "CORRECTED" and got["decision_json"]["ai"] is False
     assert (await client.get(base)).json()["items"][0]["review"]["status"] == "CORRECTED"
+    # la liste affiche les réponses de la relecture (pas celles du modèle) et filtre dessus
+    item = (await client.get(base)).json()["items"][0]
+    assert item["answers"] == [
+        {"key": "ai", "label": "AI", "value": False, "confidence": None, "source": "human"}
+    ]
+    assert len((await client.get(base, params={"answers": '{"ai": false}'})).json()["items"]) == 1
+    assert (await client.get(base, params={"answers": '{"ai": true}'})).json()["items"] == []
 
     x = await client.get(f"/api/v1/projects/{lead_project.id}/export.xlsx")
     ws = load_workbook(io.BytesIO(x.content))["Résultats"]

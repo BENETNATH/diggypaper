@@ -8,6 +8,7 @@ Le statut du dernier job + les statistiques clés sont exposés via
 """
 
 import uuid
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -144,6 +145,41 @@ async def trigger_inference(
     result = inference_task.delay(str(job.id))
     status = result.state if celery_app.conf.task_always_eager else "PENDING"
     return {"job_id": str(job.id), "status": status}
+
+
+CANCELLED = "cancelled"  # job.error d'une analyse arrêtée à la main (statut FAILED → reprenable)
+
+
+@router.post("/{project_id}/inference/cancel")
+async def cancel_inference(project_id: uuid.UUID, db: DbDep, user: UserDep) -> dict:
+    """Arrête l'analyse en cours (ou en attente). Les articles déjà analysés sont conservés ;
+    « Reprendre » continue plus tard. L'article en cours de traitement se termine d'abord."""
+    await _require_project_member(db, project_id, user)
+    await _require_lead(db, project_id, user)
+    job = (
+        (
+            await db.execute(
+                select(InferenceJob)
+                .where(
+                    InferenceJob.project_id == project_id,
+                    InferenceJob.status.in_(
+                        [InferenceJobStatus.PENDING, InferenceJobStatus.RUNNING]
+                    ),
+                )
+                .order_by(InferenceJob.created_at.desc())
+                .limit(1)
+            )
+        )
+        .scalars()
+        .first()
+    )
+    if job is None:
+        raise HTTPException(status_code=409, detail="no analysis in progress")
+    job.status = InferenceJobStatus.FAILED
+    job.error = CANCELLED
+    job.completed_at = datetime.now(UTC)
+    await db.commit()
+    return _job_payload(job)
 
 
 @router.get("/{project_id}/inference")

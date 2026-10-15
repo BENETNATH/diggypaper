@@ -1,25 +1,72 @@
 # Diggypaper
 
-SaaS **souverain** de revue systématique de littérature (PubMed/PMC), **100 % CPU**.
-L'utilisateur importe une requête PubMed, définit un *gold standard*, versionne des
-prompts, les évalue (benchmark), lance l'inférence sur les articles, puis les
-annoter — le tout sans dépendre d'un LLM cloud.
+Plateforme **souveraine et collaborative de revue systématique de littérature**.
+On importe un corpus depuis PubMed/PMC, on récupère les textes intégraux ouverts, on pose
+une ou plusieurs questions au corpus, des modèles (qui tournent sur CPU, sans cloud) trient
+et extraient les réponses, puis des relecteurs humains valident ou corrigent. Les résultats
+s'exportent en tableur, en RO-Crate et en diagramme PRISMA.
 
-> FR-first, i18n `fr / en / de / es`. RGPD *privacy by design*.
+> Interface en français, anglais, allemand et espagnol. RGPD *privacy by design*.
 
 ---
 
-## Modules
+## Fonctionnalités
 
-| # | Module | Statut |
-|---|--------|--------|
-| 1 | Auth (JWT cookie httpOnly), invitation, consentement RGPD, anonymisation | ✅ livré |
-| 2 | Import PubMed (esearch/esummary), freeze du projet, dédoublonnage | ✅ livré |
-| 3 | Gold standard, prompts versionnés, benchmark (précision/rappel/F1) | ✅ livré |
-| 4 | Inférence (LLM OpenAI-compatible), triage auto (accept/reject/review) | ✅ livré |
-| 5 | Viewer d'annotation (surlignage de preuve, swipe, formulaire) | ✅ livré |
-| 6 | Export RO-Crate + diagramme PRISMA 2020 (SVG/PDF) | ⏳ à faire |
-| 7 | System Settings & API keys (secrets chiffrés AES-256-GCM) | ✅ livré |
+### Constituer le corpus
+- **Import PubMed/PMC** par requête, avec le volume attendu avant import, un plafond réglable
+  (`IMPORT_MAX_ARTICLES`), le dédoublonnage et les métadonnées (journal, date, auteurs, DOI).
+- **Textes intégraux libres d'accès** : PMC, puis Europe PMC, Unpaywall et OpenAlex
+  (manuscrits acceptés, dépôts institutionnels, préprints bioRxiv / medRxiv / arXiv). Les
+  articles sans copie ouverte restent en résumé seul. Aucune source pirate.
+- **PDF déposé à la main** (accès institutionnel) : le texte est extrait et sectionné ; on
+  vérifie que le PDF correspond bien à l'article (titre, à défaut DOI) avant de l'adopter.
+- **Recherche relancée par article** : relit la notice PubMed (un préprint publié change de
+  PMCID ou de DOI) puis cherche à nouveau le texte intégral.
+
+### Poser une question au corpus
+- Une **question** et ses **items** de réponse : oui/non, choix dans une liste, texte libre.
+- Choix des **parties du texte** lues par les modèles (résumé, méthodes, résultats…).
+- **Modèles de décision** (Laya, Kev) : un seul passage, probabilités calibrées, très
+  rapides sur CPU — adaptés au tri et aux items oui/non ou à choix.
+- **Modèles génératifs** (Ollama en local, ou toute API compatible OpenAI) : réponses en texte
+  libre et citations de preuve.
+- **Pré-filtre** rapide avant le modèle principal, **triage automatique** (accepté, rejeté,
+  à relire) selon des seuils de confiance, estimation du temps, **reprise** d'une analyse
+  interrompue et **arrêt** d'une analyse en cours (les articles déjà traités sont conservés).
+- **Gold standard**, **prompts versionnés** et **benchmark** (précision, rappel, F1, temps)
+  pour comparer des modèles et des formulations.
+
+### Relire
+- Fiche de relecture : texte avec **surlignage des preuves**, réponses du modèle et certitude
+  par item, **validation, correction ou complément** par le relecteur, avec enregistrement du
+  statut (validé, corrigé, saisi à la main) et de la personne qui a relu.
+- File de relecture dédiée aux articles incertains, parcours **au doigt** (swipe) sur mobile.
+- Liste des résultats avec **filtres sur les réponses** (par item), statut de l'IA, statut de
+  relecture ; les réponses affichées sont celles de la relecture quand elle existe.
+
+### Exporter et documenter
+- **Tableur XLSX** (réponses IA, relectures, certitudes, liens), **références RIS et BibTeX**.
+- **Archive RO-Crate** (articles, PDF, prédictions, annotations, paramètres de l'analyse :
+  tout ce qu'il faut pour reproduire), générée en tâche de fond.
+- **Diagramme de flux PRISMA 2020** (SVG) calculé depuis les données du projet.
+
+### Travailler à plusieurs
+- **Comptes** : l'administrateur invite des **créateurs** de projets ; ceux-ci invitent des
+  collègues, simples **invités** dont le compte disparaît quand ils n'ont plus de projet.
+- **Rôles par projet** : responsable (LEAD) et annotateur. Invitations par e-mail dans la
+  langue de la personne invitée.
+- **Modèles** : registre des modèles, **partage** d'un modèle ou d'une clé avec des personnes
+  ou un projet, modèles externes **personnels** ; les clés sont chiffrées (AES-256-GCM). Un
+  compte ne peut utiliser que les modèles qu'il possède ou qu'on lui a partagés.
+- **Administration** : liste des comptes (modifier, désactiver, supprimer avec ou sans leurs
+  projets), invitations en attente, tous les projets, réglages SMTP / NCBI / LLM.
+
+### Souveraineté et sécurité
+- **100 % CPU, hébergé chez soi** : aucune donnée n'est envoyée à un service cloud (hors
+  interrogation des API publiques PubMed, Europe PMC, Unpaywall, OpenAlex).
+- **RGPD** : consentement, anonymisation des annotations à la suppression d'un compte.
+- Session par cookie httpOnly révocable, limitation de débit, contrôle des URL sortantes,
+  neutralisation des formules dans les exports, sauvegarde et restauration scriptées.
 
 ---
 
@@ -46,8 +93,9 @@ annoter — le tout sans dépendre d'un LLM cloud.
   Celery + Redis (ingestion PubMed, inférence batch), FastAPI-Mail.
 - **Frontend** : Next.js 14 (App Router) + TypeScript + Tailwind + next-intl +
   react-swipeable. Composants UI sur **design tokens** (OKLCH, light/dark).
-- **LLM** : endpoint OpenAI-compatible (`/v1/chat/completions`) — Ollama ou
-  llama.cpp, GGUF Q4_K_M CPU. Config gérée en base (Module 7), pas en env.
+- **Modèles** : modèles de décision (protocole `/v1/systemone` : Laya, Kev) et modèles
+  génératifs (endpoint OpenAI-compatible `/v1/chat/completions` : Ollama, API externe).
+  Réglages gérés en base (chiffrés), pas en variables d'environnement.
 
 ---
 
@@ -114,7 +162,7 @@ Voir [`.env.example`](.env.example) (racine) pour la liste complète.
 
 **Frontend** (env de build) : `NEXT_PUBLIC_API_ORIGIN`, `NEXT_PUBLIC_API_BASE`.
 
-**Géré en base (Module 7, chiffré)** : `llm_api_base_url`, `llm_api_key`,
+**Géré en base (chiffré)** : `llm_api_base_url`, `llm_api_key`,
 `ncbi_api_key`, `zotero_*`, `smtp_*` — via l'API settings ou l'UI Paramètres.
 
 > **Fail-fast** : le backend refuse de démarrer si `JWT_SECRET`, `ANON_SALT` ou
@@ -245,20 +293,29 @@ instance exposée à des utilisateurs non fiables, filtrez aussi la sortie des c
 
 ### Inférence locale (Laya / Kev / Ollama)
 
-Deux familles de modèles, deux services :
+Deux familles de modèles, qui ne s'utilisent pas de la même façon :
 
-- **Laya** (modèle de décision, encodeur type BERT ~400 M, scores calibrés,
-  protocole `POST /v1/systemone`) : servi par le service Docker `laya`
-  (`laya-serve`, :8000, build `./laya`, poids dans le volume `hf`, `LAYA_URL`
-  défaut `http://laya:8000`). **CPU par design** — un encodeur de cette taille
-  n'a rien à gagner d'un GPU.
-- **Kev** (modèles génératifs GGUF, 0.8B / 4B) : soit via le service `ollama`
-  de la stack (téléchargés depuis l'UI, poids dans le volume `ollama`,
-  `LLM_API_BASE_URL` défaut `http://ollama:11434/v1`), soit via un serveur
-  `llama serve` séparé (`KEV_URL`, défaut vide).
+**Modèles de décision** (protocole `POST /v1/systemone`) — ils lisent un texte et répondent
+à des questions typées (oui/non, choix) avec des probabilités calibrées, en un seul
+passage. Ils ne génèrent ni texte libre ni citations, et n'ont **pas** d'interface de chat.
 
-Le tri CPU est suffisant : Kev-0.8B ≈ 3–6 s/article, Kev-4B ≈ 10–20 s/article
-sur un Core Ultra 5 225H.
+- **Laya** (encodeur type BERT ~400 M) : service Docker `laya` (build `./laya`, poids dans le
+  volume `hf`, `LAYA_URL` défaut `http://laya:8000`). **CPU par design.** Enregistré au
+  démarrage.
+- **Kev** (4B, GGUF) : servi par **llama.cpp**, pas par Ollama (Ollama ne propose que
+  `/v1/chat/completions`, d'où l'erreur 400 si on l'y installe comme modèle de chat).
+  Service optionnel du compose :
+  ```bash
+  # .env : KEV_URL=http://kev:8080
+  docker compose --profile kev up -d      # télécharge ggml-org/Kev-4B-GGUF au premier démarrage
+  ```
+  Il est alors enregistré automatiquement sous le nom `Kev-4B`.
+
+**Modèles génératifs** (`/v1/chat/completions`) — réponses en texte libre et citations de
+preuve, plus lents. Service `ollama` de la stack (modèles GGUF de chat installés depuis la
+page *Modèles*, poids dans le volume `ollama`, `LLM_API_BASE_URL` défaut
+`http://ollama:11434/v1`) ou n'importe quelle API compatible OpenAI (URL + clé + nom du
+modèle, depuis la page *Modèles*).
 
 **GPU sur Windows (Docker Desktop)** : pas de passthrough d'iGPU Intel dans
 Docker Desktop (NVIDIA uniquement) — un Ollama en conteneur reste sur CPU,
@@ -332,7 +389,7 @@ diggypaper/
 │   │   ├── db/               # modèles SQLAlchemy + session
 │   │   ├── pubmed/           # client NCBI E-utilities (throttle, erreurs propres)
 │   │   ├── inference/        # service LLM OpenAI-compatible
-│   │   ├── settings/         # Module 7 (clés, service chiffré)
+│   │   ├── settings/         # réglages et secrets chiffrés
 │   │   ├── tasks/            # tâches Celery (import, benchmark, inférence)
 │   │   ├── emails/           # FastAPI-Mail (DB > env)
 │   │   └── main.py           # app factory (middleware + routers)

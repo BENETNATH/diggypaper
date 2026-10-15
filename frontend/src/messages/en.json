@@ -221,7 +221,8 @@
     "reviewedBy": "Reviewed by {name}",
     "review_VALIDATED": "Validated",
     "review_CORRECTED": "Corrected",
-    "review_MANUAL": "Annotated"
+    "review_MANUAL": "Annotated",
+    "humanAnswer": "Value from the human review"
   },
   "gold": {
     "title": "Gold standard",
@@ -275,7 +276,9 @@
     "progress": "Benchmark: {done} / {total} ({model})",
     "starting": "Starting…",
     "time": "Time",
-    "autoPrompt": "Prompt generated from the question (recommended)"
+    "autoPrompt": "Prompt generated from the question (recommended)",
+    "stop": "Stop",
+    "stopConfirm": "Stop this benchmark?"
   },
   "inference": {
     "title": "Analyse the corpus",
@@ -327,7 +330,11 @@
     "firstRunNote": "The very first run downloads the models: it may take several minutes before the counter moves.",
     "exportXlsx": "Export to Excel (.xlsx)",
     "resume": "Resume the analysis",
-    "resumeHint": "{n} articles already analysed are kept; only the others will be processed."
+    "resumeHint": "{n} articles already analysed are kept; only the others will be processed.",
+    "stop": "Stop the analysis",
+    "stopHint": "The article being processed finishes, then the analysis stops. Articles already analysed are kept.",
+    "stopConfirm": "Stop the running analysis?",
+    "stopped": "Analysis stopped manually: {n} article(s) analysed and kept. You can resume it."
   },
   "settings": {
     "title": "System settings",
@@ -644,5 +651,10 @@
     "inviteSent": "Invitation sent to {email}.",
     "inviteNoMail": "E-mail not sent to {email}: pass this link on.",
     "inviteHint": "A creator can create projects and invite people to them. Those guests cannot create projects and their account is deleted when they have no project left."
+  },
+  "footer": {
+    "source": "Source code (GitHub)",
+    "license": "MIT License",
+    "credit": "© Benoit Petit-Demoulière (PHEN-ICS)"
   }
 }
