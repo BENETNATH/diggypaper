@@ -9,6 +9,8 @@ import { AnswerFilters, Answers } from "@/components/AnswerFilters";
 import { ArticleLinks, Certainty, biblioLine } from "@/components/Certainty";
 import { BulkPdfUpload } from "@/components/BulkPdfUpload";
 import { ExportMenu } from "@/components/ExportMenu";
+import { Menu, MenuItem } from "@/components/ui/Menu";
+import { Modal } from "@/components/ui/Modal";
 import { RequireAuth } from "@/components/RequireAuth";
 import { Card, Badge, statusColor } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -45,6 +47,9 @@ function ResultsContent() {
   const [filter, setFilter] = useState<Filter>("ALL");
   const [sort, setSort] = useState<Sort>("added");
   const [fields, setFields] = useState<SchemaField[]>([]);
+  const [pdfOpen, setPdfOpen] = useState(false);
+  const [prismaOpen, setPrismaOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [answers, setAnswers] = useState<Answers>({}); // appliqués à la requête
   const [draft, setDraft] = useState<Answers>({}); // saisie (texte retardé de 300 ms)
   const [ready, setReady] = useState(false);
@@ -120,7 +125,9 @@ function ResultsContent() {
   }, [ready, load, projectId, searchId]);
 
   const count = (f: Filter) =>
-    f === "ALL" ? Object.values(stats).reduce((a, b) => a + b, 0) : stats[f] ?? 0;
+    f === "ALL"
+      ? Object.entries(stats).reduce((a, [k, n]) => (k === "TO_REVIEW" ? a : a + n), 0) // TO_REVIEW recoupe NEEDS_HUMAN_REVIEW
+      : stats[f] ?? 0;
   const triaged = count("ALL") - count("NONE") > 0;
   const queue = "list"; // la file de relecture reprend la liste affichée (filtres, tri)
 
@@ -141,90 +148,91 @@ function ResultsContent() {
   if (!articles) return <Skeleton rows={5} />;
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-xl font-bold text-foreground">{t("title")}</h1>
-        <ExportMenu projectId={projectId} status={filter === "ALL" ? undefined : filter} answers={answers} />
-        {count("TO_REVIEW") > 0 && (
-          <Link href={withSearch(`/projects/${projectId}/annotate?queue=review`, searchId)}>
-            <Button>
-              {t("startReview")} ({count("TO_REVIEW")})
-            </Button>
-          </Link>
-        )}
+        <h1 className="text-xl font-bold text-foreground">
+          {t("title")} <span className="text-sm font-normal text-muted">{total.toLocaleString()}</span>
+        </h1>
+        <div className="flex flex-wrap items-center gap-2">
+          {count("TO_REVIEW") > 0 && (
+            <Link href={withSearch(`/projects/${projectId}/annotate?queue=review`, searchId)}>
+              <Button size="sm">
+                {t("startReview")} ({count("TO_REVIEW")})
+              </Button>
+            </Link>
+          )}
+          <ExportMenu projectId={projectId} status={filter === "ALL" ? undefined : filter} answers={answers} />
+          <Menu label={t("tools")}>
+            <MenuItem onClick={() => setPdfOpen(true)}>{t("bulkTitle")}</MenuItem>
+            <MenuItem onClick={() => setPrismaOpen(true)}>{t("prisma")}</MenuItem>
+            {total > 0 && <MenuItem onClick={newSearchFromFilters}>{t("newSearchOnThese", { n: total })}</MenuItem>}
+          </Menu>
+        </div>
       </div>
 
-      <details className="rounded-lg border border-border bg-surface p-3">
-        <summary className="cursor-pointer text-sm font-medium text-foreground">{t("bulkTitle")}</summary>
-        <div className="mt-3">
-          <BulkPdfUpload projectId={projectId} onDone={() => void load()} />
-        </div>
-      </details>
-
-      <details className="rounded-lg border border-border bg-surface p-3">
-        <summary className="cursor-pointer text-sm font-medium text-foreground">{t("prisma")}</summary>
-        <div className="mt-3 flex flex-col items-start gap-2">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={prismaUrl(projectId, locale, searchId)} alt={t("prisma")} className="w-full max-w-3xl rounded border border-border" />
-          <a href={prismaUrl(projectId, locale, searchId)} download="prisma.svg" className="text-xs text-primary hover:underline">
-            ⬇ {t("prismaDownload")}
-          </a>
-          <a href={prismaPdfUrl(projectId, locale, searchId)} download className="text-xs text-primary hover:underline">
-            ⬇ {t("prismaDownloadPdf")}
-          </a>
-        </div>
-      </details>
-
       {!triaged && count("ALL") > 0 && (
-        <div className="rounded-lg border border-primary/40 bg-primary/5 p-3 text-sm">
+        <p className="rounded-lg border border-primary/40 bg-primary/5 px-3 py-2 text-sm">
           {t("notTriaged")}{" "}
           <Link href={withSearch(`/projects/${projectId}/inference`, searchId)} className="font-medium text-primary hover:underline">
             {t("goTriage")} →
           </Link>
-        </div>
+        </p>
       )}
 
-      <div className="flex items-center justify-end gap-2 text-xs text-muted">
-        {t("sortBy")}
-        <select
-          value={sort}
-          onChange={(e) => {
-            setSort(e.target.value as Sort);
-            setPage(1);
-          }}
-          className="rounded border border-border bg-surface p-1 text-xs text-foreground"
-        >
-          <option value="added">{t("sortAdded")}</option>
-          <option value="date_desc">{t("sortDateDesc")}</option>
-          <option value="date_asc">{t("sortDateAsc")}</option>
-          <option value="score_desc">{t("sortScore")}</option>
-        </select>
-      </div>
-
-      <div className="flex flex-wrap gap-2" role="tablist">
-        {FILTERS.filter((f) => f === "ALL" || count(f) > 0 || f === filter).map((f) => (
-          <button
-            key={f}
-            role="tab"
-            aria-selected={filter === f}
-            onClick={() => {
-              setFilter(f);
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap gap-2" role="tablist">
+          {FILTERS.filter((f) => f === "ALL" || count(f) > 0 || f === filter).map((f) => (
+            <button
+              key={f}
+              role="tab"
+              aria-selected={filter === f}
+              onClick={() => {
+                setFilter(f);
+                setPage(1);
+              }}
+              className={`rounded-full border px-3 py-1 text-sm ${
+                filter === f
+                  ? "border-primary bg-primary/10 font-medium text-primary"
+                  : "border-border text-muted hover:bg-surface-muted"
+              }`}
+            >
+              {t(`filter_${f}`)} <span className="text-xs">({count(f)})</span>
+            </button>
+          ))}
+        </div>
+        <div className="ml-auto flex items-center gap-2">
+          {fields.length > 0 && (
+            <button
+              type="button"
+              aria-expanded={filtersOpen || hasAnswerFilter}
+              onClick={() => setFiltersOpen((o) => !o)}
+              className={`rounded-lg border px-3 py-1 text-sm ${
+                hasAnswerFilter ? "border-primary bg-primary/10 text-primary" : "border-border text-foreground hover:bg-surface-muted"
+              }`}
+            >
+              {t("filterByAnswer")}
+              {hasAnswerFilter && <span className="ml-1 text-xs">•</span>}
+            </button>
+          )}
+          <select
+            value={sort}
+            aria-label={t("sortBy")}
+            onChange={(e) => {
+              setSort(e.target.value as Sort);
               setPage(1);
             }}
-            className={`rounded-full border px-3 py-1 text-sm ${
-              filter === f
-                ? "border-primary bg-primary/10 font-medium text-primary"
-                : "border-border text-muted hover:bg-surface-muted"
-            }`}
+            className="rounded-lg border border-border bg-surface px-2 py-1 text-sm text-foreground"
           >
-            {t(`filter_${f}`)} <span className="text-xs">({count(f)})</span>
-          </button>
-        ))}
+            <option value="added">{t("sortAdded")}</option>
+            <option value="date_desc">{t("sortDateDesc")}</option>
+            <option value="date_asc">{t("sortDateAsc")}</option>
+            <option value="score_desc">{t("sortScore")}</option>
+          </select>
+        </div>
       </div>
 
-      {fields.length > 0 && (
+      {fields.length > 0 && (filtersOpen || hasAnswerFilter) && (
         <div className="flex flex-wrap items-end gap-3 rounded-lg border border-border bg-surface p-3">
-          <span className="text-xs font-medium text-foreground">{t("filterByAnswer")}</span>
           <AnswerFilters
             fields={fields}
             values={draft}
@@ -241,12 +249,26 @@ function ResultsContent() {
         </div>
       )}
 
-      {total > 0 && (
-        <div className="flex justify-end">
-          <Button variant="secondary" size="sm" onClick={newSearchFromFilters}>
-            {t("newSearchOnThese", { n: total })}
-          </Button>
-        </div>
+      {pdfOpen && (
+        <Modal title={t("bulkTitle")} onClose={() => setPdfOpen(false)}>
+          <BulkPdfUpload projectId={projectId} onDone={() => void load()} />
+        </Modal>
+      )}
+      {prismaOpen && (
+        <Modal title={t("prisma")} onClose={() => setPrismaOpen(false)} wide>
+          <div className="flex flex-col items-start gap-3">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={prismaUrl(projectId, locale, searchId)} alt={t("prisma")} className="w-full rounded border border-border" />
+            <div className="flex gap-4 text-sm">
+              <a href={prismaUrl(projectId, locale, searchId)} download="prisma.svg" className="text-primary hover:underline">
+                ⬇ {t("prismaDownload")}
+              </a>
+              <a href={prismaPdfUrl(projectId, locale, searchId)} download className="text-primary hover:underline">
+                ⬇ {t("prismaDownloadPdf")}
+              </a>
+            </div>
+          </div>
+        </Modal>
       )}
 
       {articles.length === 0 ? (
@@ -258,7 +280,7 @@ function ResultsContent() {
               <li key={a.id} className="py-1">
                 <Link
                   href={withSearch(`/projects/${projectId}/annotate?article=${a.id}&queue=${queue}`, searchId)}
-                  className="flex items-center justify-between gap-3 py-2 hover:bg-surface-muted"
+                  className="flex flex-col gap-1 py-2 hover:bg-surface-muted sm:flex-row sm:items-center sm:justify-between sm:gap-3"
                 >
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium text-foreground">{a.title ?? t("untitled")}</p>
@@ -289,7 +311,7 @@ function ResultsContent() {
                       </p>
                     )}
                   </div>
-                  <div className="flex shrink-0 items-center gap-2">
+                  <div className="flex shrink-0 flex-wrap items-center gap-2">
                     {a.confidence != null && (
                       <span className="text-xs text-muted" title={t("relevanceHelp")}>
                         {t("relevance")} {Math.round(a.confidence * 100)} %

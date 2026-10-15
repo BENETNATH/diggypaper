@@ -113,9 +113,9 @@ export function ProgressBar({ value, label }: { value: number | null; label?: st
   const pct = value === null ? null : Math.max(0, Math.min(100, Math.round(value)));
   return (
     <div>
-      {label && <p className="mb-1 text-sm text-foreground">{label}</p>}
+      {label && <p className="mb-1 text-xs text-foreground">{label}</p>}
       <div
-        className="h-2.5 w-full overflow-hidden rounded-full bg-surface-muted"
+        className="h-1.5 w-full overflow-hidden rounded-full bg-surface-muted"
         role="progressbar"
         aria-valuemin={0}
         aria-valuemax={100}

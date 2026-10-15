@@ -119,7 +119,8 @@
     "allSearches": "All searches",
     "kind_standard": "standard",
     "kind_tuning": "tuning",
-    "kind_blind": "blind"
+    "kind_blind": "blind",
+    "analysisBannerTitle": "Analysis"
   },
   "import": {
     "title": "PubMed import",
@@ -235,7 +236,9 @@
     "bulkHint": "Each PDF is attached to the article whose title (or DOI) it carries. Project leads only.",
     "bulkNoMatch": "no article in this project matches",
     "bulkAmbiguous": "several possible articles: upload it from the article page",
-    "newSearchOnThese": "New search on these {n} articles"
+    "newSearchOnThese": "New search on these {n} articles",
+    "tools": "Tools",
+    "exportMenu": "Export"
   },
   "gold": {
     "title": "Gold standard",
@@ -880,5 +883,13 @@
     "predNotRelevant": "not relevant",
     "goldRelevant": "relevant",
     "goldNotRelevant": "not relevant"
+  },
+  "progress": {
+    "starting": "Starting…",
+    "eta": "≈ {time} left",
+    "rate": "{n} art./min",
+    "accepted": "{n} accepted",
+    "review": "{n} to review",
+    "rejected": "{n} rejected"
   }
 }

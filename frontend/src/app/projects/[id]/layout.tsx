@@ -7,6 +7,7 @@ import { useTranslations } from "next-intl";
 import { getProject, getInference, listJobs, ImportJob, InferenceJob, Project } from "@/lib/api";
 import { Badge, statusColor } from "@/components/ui/Card";
 import { ProgressBar } from "@/components/ui/Feedback";
+import { JobProgress } from "@/components/JobProgress";
 import { withSearch } from "@/lib/search";
 import { useSearchId, useSearches, useSelectSearch } from "@/lib/useSearch";
 
@@ -189,20 +190,19 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
         </div>
       )}
 
-      {analysing && (
-        <div className="rounded-lg border border-primary/40 bg-primary/5 p-3">
-          <ProgressBar
-            value={itotal > 0 ? (idone / itotal) * 100 : null}
-            label={itotal > 0 ? t("analysisBanner", { done: idone, total: itotal }) : t("analysisBannerStart")}
-          />
-          <p className="mt-2 text-xs text-muted">
-            {t("importBannerHint")}{" "}
-            {!pathname.endsWith("/inference") && (
-              <Link href={withSearch(`${base}/inference`, searchId)} className="text-primary hover:underline">
+      {analysing && !pathname.endsWith("/inference") && (  // la page d'analyse a déjà sa propre jauge
+        <div className="rounded-lg border border-primary/30 bg-primary/5 px-3 py-2">
+          <JobProgress
+            compact
+            title={t("analysisBannerTitle")}
+            done={idone}
+            total={itotal}
+            action={
+              <Link href={withSearch(`${base}/inference`, searchId)} className="shrink-0 text-xs text-primary hover:underline">
                 {t("importBannerLink")} →
               </Link>
-            )}
-          </p>
+            }
+          />
         </div>
       )}
 

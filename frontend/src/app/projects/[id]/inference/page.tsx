@@ -32,7 +32,8 @@ import { cleanSelection, withSearch } from "@/lib/search";
 import { notifySearchesChanged, storeSearchId, useSearchId, useSearches, useSelectSearch } from "@/lib/useSearch";
 import { ArticleSelector } from "@/components/ArticleSelector";
 import { Card, Badge, statusColor } from "@/components/ui/Card";
-import { ErrorBanner, ProgressBar } from "@/components/ui/Feedback";
+import { ErrorBanner } from "@/components/ui/Feedback";
+import { JobProgress } from "@/components/JobProgress";
 
 const num = (v: unknown): number => (typeof v === "number" ? v : 0);
 
@@ -416,26 +417,30 @@ function InferenceContent() {
       {job && (
         <div ref={progressRef}>
         <Card title={`3. ${t("progressTitle")}`}>
-          <div className="mb-3 flex items-center justify-between gap-3 text-sm text-muted">
-            <span className="font-mono">{job.model_used}</span>
-            <Badge color={statusColor(job.status)}>{job.status}</Badge>
-          </div>
-          {active && (
-            <ProgressBar
-              value={total > 0 ? (num(r.done) / total) * 100 : null}
-              label={total > 0 ? t("progress", { done: num(r.done), total }) : t("starting")}
+          {active ? (
+            <JobProgress
+              title={<span className="font-mono text-xs text-muted">{job.model_used}</span>}
+              done={num(r.done)}
+              total={total}
+              segments={{
+                accepted: num(r.auto_accepted),
+                rejected: num(r.auto_rejected),
+                review: num(r.needs_review),
+              }}
+              action={
+                <Button size="sm" variant="danger" loading={submitting} onClick={handleStop} title={t("stopHint")}>
+                  ■ {t("stop")}
+                </Button>
+              }
+              hint={num(r.done) === 0 ? t("firstRunNote") : t("stopHint")}
             />
-          )}
-          {active && num(r.done) === 0 && <p className="mt-2 text-xs text-muted">{t("firstRunNote")}</p>}
-          {active && (
-            <div className="mt-3 flex flex-col items-start gap-1">
-              <Button variant="danger" loading={submitting} onClick={handleStop}>
-                ■ {t("stop")}
-              </Button>
-              <span className="text-xs text-muted">{t("stopHint")}</span>
+          ) : (
+            <div className="mb-3 flex items-center justify-between gap-3 text-sm text-muted">
+              <span className="font-mono">{job.model_used}</span>
+              <Badge color={statusColor(job.status)}>{job.status}</Badge>
             </div>
           )}
-          {(active ? total > 0 : job.status === "COMPLETED") && (
+          {!active && job.status === "COMPLETED" && (
             <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
               <Stat label={t("processed")} value={num(r.processed ?? r.done)} />
               <Stat label={t("autoAccepted")} value={num(r.auto_accepted)} tone="bg-success/10" />

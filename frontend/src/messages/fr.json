@@ -119,7 +119,8 @@
     "allSearches": "Toutes les recherches",
     "kind_standard": "standard",
     "kind_tuning": "mise au point",
-    "kind_blind": "à l'aveugle"
+    "kind_blind": "à l'aveugle",
+    "analysisBannerTitle": "Analyse"
   },
   "import": {
     "title": "Import PubMed",
@@ -235,7 +236,9 @@
     "bulkHint": "Chaque PDF est rattaché à l'article dont il porte le titre (ou le DOI). Réservé aux responsables du projet.",
     "bulkNoMatch": "aucun article du projet ne correspond",
     "bulkAmbiguous": "plusieurs articles possibles : déposez-le depuis la fiche de l'article",
-    "newSearchOnThese": "Nouvelle recherche sur ces {n} articles"
+    "newSearchOnThese": "Nouvelle recherche sur ces {n} articles",
+    "tools": "Outils",
+    "exportMenu": "Exporter"
   },
   "gold": {
     "title": "Gold standard",
@@ -880,5 +883,13 @@
     "predNotRelevant": "non pertinent",
     "goldRelevant": "pertinent",
     "goldNotRelevant": "non pertinent"
+  },
+  "progress": {
+    "starting": "Démarrage…",
+    "eta": "≈ {time} restantes",
+    "rate": "{n} art./min",
+    "accepted": "{n} validés",
+    "review": "{n} à relire",
+    "rejected": "{n} écartés"
   }
 }
