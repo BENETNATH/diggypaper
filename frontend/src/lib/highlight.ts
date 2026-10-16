@@ -81,3 +81,14 @@ export function highlightSegments(text: string, quotes: string[] | null | undefi
   }
   return segments;
 }
+
+/** Texte sélectionné → extrait à ajouter (rogné) ; null s'il est trop court pour être une preuve. */
+export function cleanQuote(selected: string, max = 1000): string | null {
+  const q = selected.trim().slice(0, max).trim();
+  return q.length >= 3 ? q : null;
+}
+
+/** Ajoute ``quote`` à la liste sans doublon (ordre conservé). */
+export function addQuote(quotes: string[], quote: string): string[] {
+  return quotes.includes(quote) ? quotes : [...quotes, quote];
+}

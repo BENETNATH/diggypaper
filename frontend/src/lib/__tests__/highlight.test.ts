@@ -1,4 +1,4 @@
-import { highlightSegments } from "@/lib/highlight";
+import { addQuote, cleanQuote, highlightSegments } from "@/lib/highlight";
 
 describe("highlightSegments", () => {
   it("renvoie un seul segment non surligné si aucune citation", () => {
@@ -62,5 +62,20 @@ describe("highlightSegments", () => {
   it("ne surligne pas une citation absente", () => {
     const segments = highlightSegments("hello world", ["absent"]);
     expect(segments).toEqual([{ text: "hello world", highlighted: false }]);
+  });
+});
+
+
+describe("sélection → extrait de preuve", () => {
+  it("rogne et refuse un texte trop court", () => {
+    expect(cleanQuote("  hello world \n")).toBe("hello world");
+    expect(cleanQuote(" a ")).toBeNull();
+    expect(cleanQuote("x".repeat(2000))?.length).toBe(1000);
+  });
+  it("ajoute sans doublon, et l'extrait ajouté est surligné dans le texte", () => {
+    const quotes = addQuote(addQuote(["a b c"], "mice were"), "mice were");
+    expect(quotes).toEqual(["a b c", "mice were"]);
+    const segs = highlightSegments("Adult mice were housed", quotes);
+    expect(segs.filter((s) => s.highlighted).map((s) => s.text)).toEqual(["mice were"]);
   });
 });

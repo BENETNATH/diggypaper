@@ -9,6 +9,7 @@ import { AnnotationForm, Annotation } from "@/components/AnnotationForm";
 import { EvidenceHighlighter } from "@/components/EvidenceHighlighter";
 import { SwipeableCard } from "@/components/SwipeableCard";
 import { Button } from "@/components/ui/Button";
+import { addQuote } from "@/lib/highlight";
 import { articlesStoreKey, withSearch } from "@/lib/search";
 import { useSearchId, useSearches } from "@/lib/useSearch";
 import {
@@ -65,6 +66,8 @@ export default function AnnotatePage() {
   const [status, setStatus] = useState<
     "idle" | "accepted" | "rejected" | "submitted"
   >("idle");
+  // Extraits de preuve de l'annotation en cours (réponse du modèle, relecture existante, ajouts à la main)
+  const [quotes, setQuotes] = useState<string[]>([]);
   const [goldBusy, setGoldBusy] = useState(false);
   const [goldNote, setGoldNote] = useState<string | null>(null);
 
@@ -149,6 +152,19 @@ export default function AnnotatePage() {
       setError((e as Error).message);
     }
   }, [projectId, articleId, prediction, searchId, isBlind]);
+
+  // Repart des extraits de la relecture, sinon de ceux du modèle (rien à l'aveugle avant relecture).
+  useEffect(() => {
+    const locked = isBlind && !review;
+    const own = review?.decision_json?.evidence_quotes;
+    setQuotes(
+      Array.isArray(own)
+        ? (own as string[])
+        : review || locked
+          ? []
+          : prediction?.evidence_quotes ?? []
+    );
+  }, [articleId, review, prediction, isBlind]);
 
   const [pdfBusy, setPdfBusy] = useState(false);
   const [pdfError, setPdfError] = useState<string | null>(null);
@@ -352,7 +368,8 @@ export default function AnnotatePage() {
             )}
             <EvidenceHighlighter
               text={article.text ?? article.methods_text ?? ""}
-              quotes={shownPrediction?.evidence_quotes}
+              quotes={quotes}
+              onAdd={(q) => setQuotes((prev) => addQuote(prev, q))}
             />
             {status !== "idle" && (
               <div className="mt-4">
@@ -424,6 +441,8 @@ export default function AnnotatePage() {
             fields={fields}
             onSubmit={handleSubmit}
             initial={initialAnnotation}
+            quotes={quotes}
+            onQuotesChange={setQuotes}
           />
         </section>
       </main>

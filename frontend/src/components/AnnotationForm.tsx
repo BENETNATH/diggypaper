@@ -20,6 +20,9 @@ interface AnnotationFormProps {
   onError?: (message: string) => void;
   /** Valeurs initiales (pré-remplissage depuis une prédiction). */
   initial?: Record<string, unknown>;
+  /** Extraits de preuve pilotés par la page (surlignage et « + » sur le texte) ; sinon état local. */
+  quotes?: string[];
+  onQuotesChange?: (quotes: string[]) => void;
 }
 
 /**
@@ -28,11 +31,16 @@ interface AnnotationFormProps {
  * Champs : use_ai_behavior, animal_sex, confidence_score, evidence_quotes,
  * reasoning_summary. Validation minimale (confidence ∈ [0,1]).
  */
-export function AnnotationForm({ fields, onSubmit, onError, initial }: AnnotationFormProps) {
+export function AnnotationForm({ fields, onSubmit, onError, initial, quotes: given, onQuotesChange }: AnnotationFormProps) {
   const t = useTranslations("annotate");
   const [values, setValues] = useState<Values>(() => defaultValues(fields, initial));
   const [confidence, setConfidence] = useState((initial?.confidence_score as number) ?? 0.5);
-  const [quotes, setQuotes] = useState<string[]>((initial?.evidence_quotes as string[]) ?? []);
+  const [localQuotes, setLocalQuotes] = useState<string[]>((initial?.evidence_quotes as string[]) ?? []);
+  const quotes = given ?? localQuotes;
+  const setQuotes = (next: string[] | ((prev: string[]) => string[])) => {
+    const value = typeof next === "function" ? next(quotes) : next;
+    (onQuotesChange ?? setLocalQuotes)(value);
+  };
   const [quoteInput, setQuoteInput] = useState("");
   const [reasoning, setReasoning] = useState((initial?.reasoning_summary as string) ?? "");
   const [error, setError] = useState<string | null>(null);
