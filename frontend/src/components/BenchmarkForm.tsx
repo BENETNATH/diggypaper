@@ -139,7 +139,7 @@ export function BenchmarkForm({
     setCreating(true);
     setError(null);
     try {
-      const s = await createSearch(projectId, { name: tuningName.trim(), kind: "tuning", selection: sel });
+      const s = await createSearch(projectId, { name: tuningName.trim() || undefined, kind: "tuning", selection: sel });
       notifySearchesChanged();
       setSearchId(s.id);
       setTuning(false);
@@ -237,7 +237,7 @@ export function BenchmarkForm({
                 <Button
                   type="button"
                   loading={creating}
-                  disabled={!tuningName.trim() || !selCount}
+                  disabled={!selCount}
                   onClick={() => void createTuning()}
                 >
                   {t("tuningSubmit")}

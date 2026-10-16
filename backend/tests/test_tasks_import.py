@@ -151,6 +151,7 @@ async def test_import_pubmed_inserts_articles_and_freezes(engine):
     by_pmid = {a.pmid: a for a in articles}
     assert by_pmid["111"].pmcid == "PMC111"
     assert by_pmid["111"].methods_text == "Randomised design."
+    assert by_pmid["111"].fulltext_source == "pmc"  # compté « avec texte intégral »
     assert by_pmid["111"].title == "Title 111"
     assert by_pmid["111"].abstract == "Abstract 111."
     assert by_pmid["111"].original_language == "en"

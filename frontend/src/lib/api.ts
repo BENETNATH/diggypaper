@@ -112,7 +112,7 @@ export type AnnotationPayload = Record<string, unknown>;
 export interface ImportJob {
   id: string;
   task: string;
-  kind?: "import" | "fulltext";
+  kind?: "import" | "fulltext" | "references";
   status: "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
   query: string | null;
   result: Record<string, unknown> | null;
@@ -477,6 +477,27 @@ export async function triggerImport(
     `/projects/${projectId}/import`,
     { method: "POST", body: JSON.stringify({ query }) }
   );
+}
+
+export interface ReferencesPreview {
+  format: "list" | "bibtex" | "ris" | "csl" | "csv";
+  count: number;
+  with_doi: number;
+  with_pmid: number;
+  title_only: number;
+  max: number;
+}
+
+/** Liste de références (DOI/PMID, BibTeX, RIS, CSL JSON, CSV) : aperçu (dryRun) ou import. */
+export async function importReferences(
+  projectId: string,
+  content: string,
+  dryRun: boolean
+): Promise<ReferencesPreview> {
+  return request<ReferencesPreview>(`/projects/${projectId}/import-references`, {
+    method: "POST",
+    body: JSON.stringify({ content, dry_run: dryRun }),
+  });
 }
 
 export async function completeFulltext(projectId: string): Promise<void> {
@@ -1145,7 +1166,7 @@ export const previewSelection = async (projectId: string, selection: Selection):
   ).count;
 
 export interface SearchCreate {
-  name: string;
+  name?: string; // vide : AAMMJJ-n
   question?: string;
   fields?: SchemaField[];
   text_sections?: string[];

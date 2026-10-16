@@ -16,6 +16,7 @@ import {
 import { withSearch } from "@/lib/search";
 import { useSearchId } from "@/lib/useSearch";
 import { RequireAuth } from "@/components/RequireAuth";
+import { ReferencesImport } from "@/components/ReferencesImport";
 import { Button } from "@/components/ui/Button";
 import { Field, Input } from "@/components/ui/Field";
 import { Card, Badge, statusColor } from "@/components/ui/Card";
@@ -51,7 +52,7 @@ function JobProgress({ job, onRetry }: { job: ImportJob; onRetry?: (job: ImportJ
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-2">
         <code className="min-w-0 truncate text-xs text-muted">
-          {job.kind === "fulltext" ? t("fulltextJob") : job.query}
+          {job.kind === "fulltext" ? t("fulltextJob") : job.kind === "references" ? t("refsJob") : job.query}
         </code>
         <Badge color={statusColor(job.status)}>{job.status}</Badge>
       </div>
@@ -82,16 +83,42 @@ function JobProgress({ job, onRetry }: { job: ImportJob; onRetry?: (job: ImportJ
           ))}
         </dl>
       )}
+      {job.kind === "references" && job.status === "COMPLETED" && (
+        <div className="flex flex-col gap-1 text-xs text-muted">
+          {typeof r.sources === "object" && r.sources !== null && (
+            <span>
+              {t("refsSources", {
+                pubmed: num((r.sources as Record<string, unknown>).pubmed),
+                crossref: num((r.sources as Record<string, unknown>).crossref),
+                file: num((r.sources as Record<string, unknown>).file),
+              })}
+              {num(r.duplicates) > 0 && ` · ${t("refsDuplicates", { n: num(r.duplicates) })}`}
+            </span>
+          )}
+          {Array.isArray(r.failed_items) && r.failed_items.length > 0 && (
+            <details>
+              <summary className="cursor-pointer text-danger">
+                {t("refsFailed", { n: r.failed_items.length })}
+              </summary>
+              <ul className="mt-1 max-h-40 overflow-y-auto font-mono">
+                {(r.failed_items as string[]).map((x, i) => (
+                  <li key={i}>{x}</li>
+                ))}
+              </ul>
+            </details>
+          )}
+        </div>
+      )}
       {job.status === "COMPLETED" && r.truncated === true && (
         <p className="text-sm text-warning">{t("truncated")}</p>
       )}
-      {job.kind !== "fulltext" && job.status === "COMPLETED" && num(r.imported) > num(r.fulltext) && (
+      {job.kind === "import" && job.status === "COMPLETED" && num(r.imported) > num(r.fulltext) && (
         <p className="text-xs text-muted">{t("fulltextHint")}</p>
       )}
       {job.status === "FAILED" && job.error && (
         <p className="rounded-lg bg-danger/10 p-3 text-sm text-danger">{job.error}</p>
       )}
-      {job.status === "FAILED" && onRetry && (
+      {job.status === "FAILED" && onRetry && job.kind !== "references" && (
         <div className="flex flex-col items-start gap-1">
           <Button size="sm" onClick={() => onRetry(job)}>
             ↻ {t("retry")}
@@ -111,6 +138,7 @@ function ImportContent() {
 
   const [project, setProject] = useState<Project | null>(null);
   const [jobs, setJobs] = useState<ImportJob[] | null>(null);
+  const [mode, setMode] = useState<"pubmed" | "refs">("pubmed");
   const [query, setQuery] = useState("");
   const [volume, setVolume] = useState<number | null>(null);
   const [checking, setChecking] = useState(false);
@@ -201,6 +229,7 @@ function ImportContent() {
   /** Relance un job échoué (requête identique : les articles déjà importés sont ignorés). */
   async function handleRetry(failed: ImportJob) {
     if (failed.kind === "fulltext") return handleFulltext();
+    if (failed.kind === "references") return;
     setError(null);
     try {
       jobsBefore.current = jobs?.length ?? 0;
@@ -278,6 +307,32 @@ function ImportContent() {
         {locked ? (
           <p className="text-sm text-muted">{t("lockedProcessing")}</p>
         ) : (
+          <>
+            <div role="tablist" className="mb-4 inline-flex rounded-lg border border-border p-0.5 text-sm">
+              {(["pubmed", "refs"] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  role="tab"
+                  aria-selected={mode === m}
+                  onClick={() => setMode(m)}
+                  className={`rounded-md px-3 py-1 ${
+                    mode === m ? "bg-primary text-white" : "text-muted hover:text-foreground"
+                  }`}
+                >
+                  {t(m === "pubmed" ? "modePubmed" : "modeRefs")}
+                </button>
+              ))}
+            </div>
+            {mode === "refs" ? (
+              <ReferencesImport
+                projectId={projectId}
+                onStarted={() => {
+                  jobsBefore.current = jobs?.length ?? 0;
+                  setWatching(true);
+                }}
+              />
+            ) : (
           <form onSubmit={handleCheckVolume} className="flex flex-col gap-4">
             {hasCorpus && <p className="text-sm text-muted">{t("addHint", { n: project?.article_count ?? 0 })}</p>}
             <Field label={t("queryLabel")} hint={t("queryHint")}>
@@ -314,6 +369,8 @@ function ImportContent() {
               <p className="text-xs text-muted">{t("checkFirst")}</p>
             )}
           </form>
+            )}
+          </>
         )}
       </Card>
 

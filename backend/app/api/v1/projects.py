@@ -41,7 +41,8 @@ from app.db.models import (
     UserRole,
 )
 from app.inference.scoring import DEFAULT_WINDOWS
-from app.pubmed import NCBIError, search_volume
+from app.pubmed import NCBIError, _esearch_max, search_volume
+from app.refimport import dedupe, parse_references
 from app.schema import DEFAULT_QUESTION, check_fields, project_fields
 from app.searches import default_search, definition_hash, get_search, in_search, lot_condition
 from app.settings.service import get_setting
@@ -402,6 +403,22 @@ async def _require_lead_or_admin(db: AsyncSession, project_id: uuid.UUID, user: 
         raise HTTPException(status_code=403, detail="project LEAD required")
 
 
+async def _require_no_active_job(db: AsyncSession, project_id: uuid.UUID) -> None:
+    """M-2 : un import / une recherche de textes à la fois par projet (409 sinon)."""
+    active = (
+        await db.execute(
+            select(ImportJob.id)
+            .where(
+                ImportJob.project_id == project_id,
+                ImportJob.status.in_([ImportJobStatus.PENDING, ImportJobStatus.RUNNING]),
+            )
+            .limit(1)
+        )
+    ).first()
+    if active is not None:
+        raise HTTPException(status_code=409, detail="a job is already in progress")
+
+
 @router.post(
     "/{project_id}/import",
     status_code=202,
@@ -425,26 +442,59 @@ async def trigger_import(
         raise HTTPException(status_code=422, detail="query must not be empty")
     if project.status == ProjectStatus.PROCESSING:
         raise HTTPException(status_code=409, detail="import already in progress")
-    # M-2 : garde « un import par projet à la fois » (non-eager : le job reste
-    # PENDING/RUNNING en base).
-    active = (
-        await db.execute(
-            select(ImportJob.id)
-            .where(
-                ImportJob.project_id == project.id,
-                ImportJob.status.in_([ImportJobStatus.PENDING, ImportJobStatus.RUNNING]),
-            )
-            .limit(1)
-        )
-    ).first()
-    if active is not None:
-        raise HTTPException(status_code=409, detail="import already in progress")
+    await _require_no_active_job(db, project.id)
     job = import_pubmed_task.delay(str(project.id), payload.query)
     if celery_app.conf.task_always_eager:
         status = job.state  # SUCCESS / FAILURE (le job est déjà terminé)
     else:
         status = "PENDING"
     return {"job_id": job.id, "status": status}
+
+
+class ReferencesRequest(BaseModel):
+    content: str = Field(min_length=1, max_length=5_000_000)  # fichier ou saisie collée
+    dry_run: bool = False  # analyse seulement : combien d'entrées, quels identifiants
+
+
+@router.post(
+    "/{project_id}/import-references",
+    status_code=202,
+    dependencies=[Depends(_rate_limit_dependency("import", IMPORT_RATE_LIMIT))],
+)
+async def import_references(
+    project_id: uuid.UUID, payload: ReferencesRequest, db: DbDep, user: UserDep
+) -> dict:
+    """Importe une liste de références (DOI/PMID, BibTeX, RIS, CSL JSON, CSV Zotero) comme corpus.
+
+    ``dry_run`` : renvoie le format reconnu et les comptes, sans rien importer. Sinon tâche de
+    fond (progression via GET /jobs) ; le texte intégral est cherché ensuite automatiquement.
+    """
+    project = await _require_project_member(db, project_id, user)
+    await _require_lead_or_admin(db, project_id, user)
+    try:
+        fmt, entries = parse_references(payload.content)
+    except ValueError as exc:  # JSON mal formé
+        raise HTTPException(status_code=422, detail="unreadable references file") from exc
+    entries = dedupe(entries)
+    if not entries:
+        raise HTTPException(status_code=422, detail="no reference found")
+    if payload.dry_run:
+        return {
+            "format": fmt,
+            "count": len(entries),
+            "with_doi": sum(1 for e in entries if e["doi"]),
+            "with_pmid": sum(1 for e in entries if e["pmid"]),
+            "title_only": sum(1 for e in entries if not (e["doi"] or e["pmid"])),
+            "max": _esearch_max(),
+        }
+    if project.status == ProjectStatus.PROCESSING:
+        raise HTTPException(status_code=409, detail="import already in progress")
+    await _require_no_active_job(db, project.id)
+    job = import_pubmed_task.delay(str(project.id), f"references ({fmt}, {len(entries)})", entries)
+    return {
+        "job_id": job.id,
+        "status": job.state if celery_app.conf.task_always_eager else "PENDING",
+    }
 
 
 @router.post("/{project_id}/fulltext", status_code=202)
@@ -454,18 +504,7 @@ async def complete_fulltext(project_id: uuid.UUID, db: DbDep, user: UserDep) -> 
     project = await _require_project_member(db, project_id, user)
     if project.status not in (ProjectStatus.FROZEN, ProjectStatus.COMPLETED):
         raise HTTPException(status_code=409, detail="import not finished")
-    active = (
-        await db.execute(
-            select(ImportJob.id)
-            .where(
-                ImportJob.project_id == project.id,
-                ImportJob.status.in_([ImportJobStatus.PENDING, ImportJobStatus.RUNNING]),
-            )
-            .limit(1)
-        )
-    ).first()
-    if active is not None:
-        raise HTTPException(status_code=409, detail="a job is already in progress")
+    await _require_no_active_job(db, project.id)
     job = complete_fulltext_task.delay(str(project.id))
     return {"job_id": job.id, "status": "PENDING"}
 

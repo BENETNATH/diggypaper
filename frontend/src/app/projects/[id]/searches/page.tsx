@@ -151,7 +151,6 @@ function SearchCard({
 
 function SearchesContent() {
   const t = useTranslations("searches");
-  const locale = useLocale();
   const projectId = useParams<{ id: string }>().id;
   const router = useRouter();
   const searchId = useSearchId(projectId);
@@ -211,7 +210,7 @@ function SearchesContent() {
     router.push(withSearch(`/projects/${projectId}/articles`, s.id));
   }
 
-  async function create(kind: SearchKind, body: { name: string; selection: Selection; def?: Definition | null }) {
+  async function create(kind: SearchKind, body: { name?: string; selection: Selection; def?: Definition | null }) {
     const s = await createSearch(projectId, {
       name: body.name,
       kind,
@@ -235,7 +234,7 @@ function SearchesContent() {
     setCreating(true);
     setError(null);
     try {
-      const s = await create("standard", { name, selection, def: edit });
+      const s = await create("standard", { name: name.trim() || undefined, selection, def: edit });
       router.push(withSearch(`/projects/${projectId}/inference`, s.id));
     } catch (err) {
       setError(err instanceof Error ? err.message : "error");
@@ -249,7 +248,6 @@ function SearchesContent() {
     try {
       const from = current && !current.is_default ? current.id : undefined;
       const s = await create("blind", {
-        name: t("blindName", { n: blindN, date: new Date().toLocaleDateString(locale) }),
         selection: { from_search_id: from, sample_n: blindN, seed: Math.floor(Math.random() * 1e9) },
       });
       router.push(withSearch(`/projects/${projectId}/annotate?queue=all`, s.id));
@@ -327,7 +325,7 @@ function SearchesContent() {
             <Card title={t("newTitle")}>
               <form onSubmit={handleCreate} className="flex flex-col gap-4">
                 <Field label={t("nameLabel")}>
-                  <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={t("namePlaceholder")} required />
+                  <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={t("namePlaceholder")} />
                 </Field>
                 <ArticleSelector
                   projectId={projectId}
@@ -349,7 +347,7 @@ function SearchesContent() {
                   <Button
                     type="submit"
                     loading={creating}
-                    disabled={!name.trim() || !count || (edit?.sections.length === 0)}
+                    disabled={!count || (edit?.sections.length === 0)}
                   >
                     {t("create")}
                   </Button>

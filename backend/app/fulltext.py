@@ -105,17 +105,22 @@ async def _epmc_xml(pmcid: str, http: httpx.AsyncClient) -> list[dict]:
         return []
 
 
-async def _epmc_ids(pmid: str | None, http: httpx.AsyncClient) -> tuple[str | None, str | None]:
-    """(pmcid, doi) connus d'Europe PMC pour ce PMID."""
-    if not pmid:
+async def _epmc_ids(
+    pmid: str | None, http: httpx.AsyncClient, doi: str | None = None
+) -> tuple[str | None, str | None]:
+    """(pmcid, doi) connus d'Europe PMC pour ce PMID (ou, sans PMID, ce DOI)."""
+    if pmid:
+        query = f"EXT_ID:{pmid} AND SRC:MED"
+    elif doi and '"' not in doi:
+        query = f'DOI:"{doi}"'
+    else:
         return None, None
     data = await _get_json(
-        http,
-        f"{EPMC}/search",
-        {"query": f"EXT_ID:{pmid} AND SRC:MED", "format": "json", "resultType": "lite"},
+        http, f"{EPMC}/search", {"query": query, "format": "json", "resultType": "lite"}
     )
     rows = ((data or {}).get("resultList") or {}).get("result") or []
-    return (rows[0].get("pmcid"), rows[0].get("doi")) if rows else (None, None)
+    row = next((r for r in rows if r.get("pmcid")), rows[0] if rows else {})
+    return row.get("pmcid"), row.get("doi")
 
 
 async def _pdf_candidates(
@@ -260,7 +265,7 @@ async def find_open_fulltext(
     title: str | None = None,
 ) -> tuple[list[dict], str | None, str | None, bytes | None]:
     """Texte intégral en sources ouvertes → (sections, source, url, pdf) ou 4 × vide."""
-    epmc_pmcid, epmc_doi = await _epmc_ids(pmid, http) if not (pmcid and doi) else (None, None)
+    epmc_pmcid, epmc_doi = await _epmc_ids(pmid, http, doi) if not (pmcid and doi) else (None, None)
     pmcid, doi = pmcid or epmc_pmcid, doi or epmc_doi
     if pmcid:
         sections = await _epmc_xml(pmcid, http)

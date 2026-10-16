@@ -328,7 +328,7 @@ function ResultsContent() {
                     <p className="truncate text-sm font-medium text-foreground">{a.title ?? t("untitled")}</p>
                     {biblioLine(a) && <p className="truncate text-xs text-foreground/80">{biblioLine(a)}</p>}
                     <p className="text-xs text-muted">
-                      {a.pmid ? `PMID ${a.pmid}` : a.id}
+                      {a.pmid ? `PMID ${a.pmid}` : (a.doi ?? a.id)}
                       {a.has_fulltext
                         ? ` · ${t("fulltext")}${a.fulltext_source && a.fulltext_source !== "pmc" ? ` (${a.fulltext_source})` : ""}`
                         : ` · ${t("abstractOnly")}`}

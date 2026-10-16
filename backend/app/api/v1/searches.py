@@ -32,7 +32,14 @@ from app.db.models import (
     User,
 )
 from app.schema import DEFAULT_QUESTION, check_fields, project_fields
-from app.searches import default_search, definition_hash, get_search, in_search, lot_condition
+from app.searches import (
+    default_search,
+    definition_hash,
+    get_search,
+    in_search,
+    lot_condition,
+    next_search_name,
+)
 
 router = APIRouter(prefix="/projects", tags=["searches"])
 
@@ -62,7 +69,7 @@ class Selection(BaseModel):
 
 
 class SearchCreate(BaseModel):
-    name: str = Field(min_length=1, max_length=200)
+    name: str | None = Field(default=None, max_length=200)  # vide : AAMMJJ-n
     question: str | None = Field(default=None, max_length=2000)
     fields: list[dict] | None = None
     text_sections: list[str] | None = None
@@ -78,11 +85,8 @@ class SearchCreate(BaseModel):
 
     @field_validator("name")
     @classmethod
-    def _strip(cls, v: str) -> str:
-        v = v.strip()
-        if not v:
-            raise ValueError("name must not be blank")
-        return v
+    def _strip(cls, v: str | None) -> str | None:
+        return (v or "").strip() or None
 
 
 class SearchUpdate(BaseModel):
@@ -325,7 +329,7 @@ async def create_search(
     sections = payload.text_sections if payload.text_sections is not None else origin.text_sections
     s = Search(
         project_id=project.id,
-        name=payload.name,
+        name=payload.name or await next_search_name(db, project.id),
         question=(question or "").strip() or None,
         fields=fields,
         text_sections=sections,

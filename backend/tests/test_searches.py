@@ -1,6 +1,7 @@
 """Recherches : plusieurs questions par projet, lots dérivés des résultats d'une autre recherche,
 résultats / relectures / analyses rattachés à chacune."""
 
+import re
 import uuid
 
 import pytest
@@ -70,6 +71,7 @@ async def test_default_search_covers_the_whole_corpus(client, corpus):
     items = (await client.get(f"/api/v1/projects/{project.id}/searches")).json()["items"]
     assert len(items) == 1 and items[0]["is_default"] and items[0]["lot_size"] == 4
     assert items[0]["predicted"] == 4
+    assert re.fullmatch(r"\d{6}-1", items[0]["name"])  # AAMMJJ-n, pas de libellé français
 
 
 async def test_derive_search_from_answers_and_scope_results(client, session, corpus):
@@ -83,9 +85,11 @@ async def test_derive_search_from_answers_and_scope_results(client, session, cor
     )
     assert r.status_code == 201, r.text
     s = r.json()
-    assert (
-        s["lot_size"] == 2 and s["predicted"] == 0 and s["parent"]["name"] == "Recherche initiale"
-    )
+    parent = (await client.get(f"{base}/searches")).json()["items"][0]["name"]
+    assert s["lot_size"] == 2 and s["predicted"] == 0 and s["parent"]["name"] == parent
+    # sans nom : AAMMJJ-n, n suivant dans le projet
+    auto = await client.post(f"{base}/searches", json={"selection": sel})
+    assert auto.status_code == 201 and auto.json()["name"] == parent[:7] + "2"
     assert s["question"] == "Quel outil ?" and s["parent_spec"] == {"answers": {"ai": True}}
     # la liste d'une recherche = son lot ; les résultats de l'autre ne s'y mélangent pas
     assert await titles(client, project, search=s["id"]) == ["A1", "A2"]

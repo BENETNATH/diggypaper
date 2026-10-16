@@ -218,7 +218,7 @@ function InferenceContent() {
       if (scopeMode === "new") {
         // Nouvelle sélection : on crée la recherche (avec la question affichée) puis on l'analyse.
         const created = await createSearch(projectId, {
-          name: newName.trim() || t("scopeDefaultName", { date: new Date().toLocaleDateString() }),
+          name: newName.trim() || undefined,
           question: q.question,
           fields: cleanFields,
           text_sections: q.sections,
@@ -299,7 +299,7 @@ function InferenceContent() {
             <div className="flex flex-col gap-3">
               <p className="text-xs text-muted">{t("scopeNewHint")}</p>
               <Field label={t("scopeNewName")}>
-                <Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder={t("scopeDefaultName", { date: new Date().toLocaleDateString() })} />
+                <Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder={t("scopeDefaultName")} />
               </Field>
               <ArticleSelector projectId={projectId} searches={searches} value={{ from_search_id: searchId, ...newSel }} onChange={(s) => setNewSel(s)} onCount={setNewCount} />
               <p className="text-sm font-medium text-foreground">
