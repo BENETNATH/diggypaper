@@ -574,7 +574,7 @@ async def query_volume(
         # m-1 : le message NCBIError est propre (sans l'URL ni la clé) → loggé tel quel.
         logger.error("query-volume NCBI error: %s", exc)
         return JSONResponse(status_code=502, content={"error": "ncbi_unavailable"})
-    return {"count": count}
+    return {"count": count, "max": _esearch_max()}
 
 
 def _answer_filters(search: Search, raw: str | None, pdec, hdec) -> list:

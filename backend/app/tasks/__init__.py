@@ -56,9 +56,9 @@ from app.fulltext import complete_article, long_enough, pmc_not_archived
 from app.pubmed import (
     NCBIError,
     _esearch_max,
+    fetch_all_pmids,
     fetch_fulltext,
     fetch_metadata,
-    fetch_pmids,
     search_volume,
 )
 from app.refimport import (
@@ -282,7 +282,7 @@ async def _do_import(
             job,
             {"imported": 0, "failed": 0, "fulltext": 0, "total_count": 0, "truncated": False},
         )
-    pmids = await fetch_pmids(query, api_key, client)
+    pmids = await fetch_all_pmids(query, api_key, client, count)
     truncated = count > _esearch_max()
     if truncated:
         logger.warning(

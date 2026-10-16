@@ -411,7 +411,7 @@ async def test_query_volume(client, researcher_user, do_login, monkeypatch):
         f"/api/v1/projects/{project_id}/query-volume", json={"query": "cancer AND mice"}
     )
     assert resp.status_code == 200
-    assert resp.json() == {"count": 42}
+    assert resp.json() == {"count": 42, "max": 5000}
 
 
 async def test_query_volume_non_member_403(client, session, researcher_user, do_login):

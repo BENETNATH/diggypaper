@@ -323,7 +323,7 @@ Après `git pull`, avant `docker compose up -d --build` :
 | Variable | Rôle |
 |----------|------|
 | `WORKER_CONCURRENCY` | tâches de fond en parallèle (imports, analyses, exports) — défaut `3` |
-| `IMPORT_MAX_ARTICLES` | plafond d'articles par import — défaut `5000` (max NCBI : 10 000) |
+| `IMPORT_MAX_ARTICLES` | plafond d'articles par import — défaut `5000` ; `0` = illimité (au-delà de 10 000 résultats, la requête est découpée par date de publication, les plus récents d'abord) |
 | `TASK_SOFT_TIME_LIMIT` | durée max d'une tâche en secondes — `0` = aucune |
 | `*_MEM_LIMIT` | `OLLAMA_`, `WORKER_`, `BACKEND_`, `FRONTEND_` : plafonds mémoire (défauts 24g, 8g, 2g, 1g) |
 | `DISK_ALERT_PERCENT` / `DISK_ALERT_FREE_GB` | alerte disque (e-mail aux admins, bandeau) — défauts `85` % / `5` Go |

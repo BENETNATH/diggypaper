@@ -30,10 +30,14 @@ limite de taille suffit, pas de defusedxml).
 """
 
 import asyncio
+import logging
 import re
 import xml.etree.ElementTree as ET
+from datetime import date, timedelta
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 EUTILS_BASE = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
 PMC_OA_URL = "https://www.ncbi.nlm.nih.gov/pmc/utils/oa/oa.fcgi"
@@ -43,12 +47,20 @@ _INTERVAL_NO_KEY = 1 / 3
 _INTERVAL_WITH_KEY = 0.1
 
 
-#: M1 : plafond esearch — 10000 est le max réel NCBI (guide NLM E-utilities) ; l'instance le
-#: réduit (IMPORT_MAX_ARTICLES, défaut 5000) pour borner un import.
+#: Plafond d'articles par import (IMPORT_MAX_ARTICLES, défaut 5000 ; 0 = illimité).
+UNLIMITED = 10**9
+
+
 def _esearch_max() -> int:
     from app.core.config import get_settings
 
-    return max(1, min(10000, get_settings().import_max_articles))
+    n = get_settings().import_max_articles
+    return n if n > 0 else UNLIMITED
+
+
+#: Une requête esearch ne renvoie jamais plus de 10 000 identifiants PubMed (limite NCBI, même
+#: avec ``retstart``) : au-delà, on découpe par date de publication (cf. ``fetch_all_pmids``).
+PUBMED_WINDOW = 9999
 
 
 #: m5 : retry sur erreur transitoire (503 / timeout), backoff simple (s).
@@ -162,11 +174,56 @@ async def explain_query(query: str, api_key: str | None, http: httpx.AsyncClient
 async def fetch_pmids(
     query: str, api_key: str | None, http: httpx.AsyncClient, retmax: int | None = None
 ) -> list[str]:
-    """Liste des PMIDs (esearch, ``retmax`` borné à 10000 — max réel NCBI, M1)."""
+    """PMIDs d'une requête (esearch) : au plus ``retmax`` (défaut : le plafond d'import) et jamais
+    plus que la limite de NCBI (``PUBMED_WINDOW`` identifiants par requête)."""
     await _throttle(api_key)
-    params = _esearch_params(query, min(retmax or _esearch_max(), _esearch_max()), api_key)
+    params = _esearch_params(query, min(retmax or _esearch_max(), PUBMED_WINDOW), api_key)
     resp = await _get_with_retry(http, f"{EUTILS_BASE}/esearch.fcgi", params)
     return list(resp.json()["esearchresult"]["idlist"])
+
+
+async def fetch_all_pmids(
+    query: str,
+    api_key: str | None,
+    http: httpx.AsyncClient,
+    count: int,
+    limit: int | None = None,
+) -> list[str]:
+    """Tous les PMIDs d'une requête, même au-delà de 10 000 résultats.
+
+    NCBI ne livre que 9 999 identifiants par requête : une requête plus grosse est découpée en
+    tranches de dates de publication (bissection tant qu'une tranche dépasse la limite), les plus
+    récentes d'abord ; les doublons (dates imprimée / électronique) sont retirés. ``limit`` borne
+    le total (les plus récents sont gardés).
+    """
+    limit = limit or _esearch_max()
+    if count <= PUBMED_WINDOW:
+        return await fetch_pmids(query, api_key, http, min(count, limit))
+    found: dict[str, None] = {}
+
+    async def walk(lo: date, hi: date) -> None:
+        if len(found) >= limit:
+            return
+        term = f'({query}) AND ("{lo:%Y/%m/%d}"[dp] : "{hi:%Y/%m/%d}"[dp])'
+        n = await search_volume(term, api_key, http)
+        if n == 0:
+            return
+        if n <= PUBMED_WINDOW or lo == hi:
+            if n > PUBMED_WINDOW:  # plus de 9 999 articles un même jour : improbable
+                logger.warning("PubMed: %d résultats le %s, tronqués", n, lo)
+            for pmid in await fetch_pmids(term, api_key, http, PUBMED_WINDOW):
+                found.setdefault(pmid)
+            return
+        mid = lo + (hi - lo) // 2
+        await walk(mid + timedelta(days=1), hi)  # les plus récents d'abord
+        await walk(lo, mid)
+
+    await walk(date(1800, 1, 1), date.today() + timedelta(days=366))
+    if len(found) < count:
+        logger.warning(
+            "PubMed: %d identifiants sur %d (articles sans date de publication)", len(found), count
+        )
+    return list(found)[:limit]
 
 
 async def fetch_metadata(

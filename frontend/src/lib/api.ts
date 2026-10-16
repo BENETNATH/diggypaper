@@ -468,8 +468,8 @@ export async function deleteProject(projectId: string): Promise<void> {
 export async function queryVolume(
   projectId: string,
   query: string
-): Promise<{ count: number }> {
-  return request<{ count: number }>(`/projects/${projectId}/query-volume`, {
+): Promise<{ count: number; max: number }> {
+  return request<{ count: number; max: number }>(`/projects/${projectId}/query-volume`, {
     method: "POST",
     body: JSON.stringify({ query }),
   });

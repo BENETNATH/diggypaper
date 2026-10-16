@@ -129,7 +129,7 @@ function JobProgress({ job, onRetry }: { job: ImportJob; onRetry?: (job: ImportJ
         </div>
       )}
       {job.status === "COMPLETED" && r.truncated === true && (
-        <p className="text-sm text-warning">{t("truncated")}</p>
+        <p className="text-sm text-warning">{t("truncated", { n: num(r.imported).toLocaleString() })}</p>
       )}
       {job.kind === "import" && job.status === "COMPLETED" && num(r.imported) > num(r.fulltext) && (
         <p className="text-xs text-muted">{t("fulltextHint")}</p>
@@ -160,6 +160,7 @@ function ImportContent() {
   const [mode, setMode] = useState<"pubmed" | "refs" | "cites">("pubmed");
   const [query, setQuery] = useState("");
   const [volume, setVolume] = useState<number | null>(null);
+  const [cap, setCap] = useState(Infinity); // plafond d'import de l'instance (illimité : au-delà de 1e9)
   const [checking, setChecking] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [watching, setWatching] = useState(false); // suivi actif (import lancé ou en cours)
@@ -226,7 +227,9 @@ function ImportContent() {
     setChecking(true);
     setError(null);
     try {
-      setVolume((await queryVolume(projectId, query)).count);
+      const r = await queryVolume(projectId, query);
+      setVolume(r.count);
+      setCap(r.max >= 1e9 ? Infinity : r.max);
     } catch (err) {
       setError(err instanceof Error ? err.message : "error");
     } finally {
@@ -389,7 +392,7 @@ function ImportContent() {
             {volume !== null && (
               <p className="rounded-lg bg-surface-muted p-3 text-sm text-foreground">
                 {t("volumeResult")} : <strong>{volume.toLocaleString()}</strong>
-                {volume > 10000 && <span className="text-warning"> — {t("capNote")}</span>}
+                {volume > cap && <span className="text-warning"> — {t("capNote", { max: cap.toLocaleString() })}</span>}
               </p>
             )}
             <div className="flex flex-wrap gap-2">

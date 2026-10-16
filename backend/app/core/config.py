@@ -36,7 +36,8 @@ class Settings(BaseSettings):
     default_language: str = "en"
     admin_email: str = ""
     admin_password: str = ""
-    # Plafond d'articles ramenés par un import (NCBI esearch : 10 000 max par requête).
+    # Plafond d'articles ramenés par un import ; 0 = illimité (les requêtes de plus de 10 000
+    # résultats sont découpées par date).
     import_max_articles: int = 5000
     # Licence des métadonnées et résultats de l'export RO-Crate (les PDF/textes intégraux
     # gardent la licence de leurs éditeurs). URL + nom affiché ; adaptez-la à votre politique.
