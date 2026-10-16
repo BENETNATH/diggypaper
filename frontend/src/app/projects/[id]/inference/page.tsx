@@ -62,13 +62,15 @@ function InferenceContent() {
   const wantedPrompt = sp.get("prompt");
 
   const [job, setJob] = useState<InferenceJob | null>(null);
+  const [busy, setBusy] = useState<InferenceJob | null>(null); // l'analyse en cours du projet (toutes recherches)
+  const [notice, setNotice] = useState<string | null>(null);
+  const [saved0, setSaved0] = useState("");
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [q, setQ] = useState<{
     question: string;
     fields: SchemaField[];
     sections: string[];
-    readWindows: number;
   } | null>(null);
   const [stage1, setStage1] = useState("");
   const [stage2, setStage2] = useState("");
@@ -90,7 +92,12 @@ function InferenceContent() {
 
   const load = useCallback(async () => {
     try {
-      setJob(await getInference(projectId, searchId));
+      const [j, b] = await Promise.all([
+        getInference(projectId, searchId),
+        getInference(projectId, undefined, true),
+      ]);
+      setJob(j);
+      setBusy(b);
       setError(null);
     } catch (e) {
       if (e instanceof Error && /404/.test(e.message)) setJob(null);
@@ -102,6 +109,7 @@ function InferenceContent() {
   useEffect(() => {
     setJob(null);
     setQ(null);
+    setNotice(null);
     setLaunched(false);
     void load();
     getProject(projectId, searchId)
@@ -110,8 +118,8 @@ function InferenceContent() {
           question: p.question ?? "",
           fields: p.fields ?? [],
           sections: p.text_sections ?? ["methods"],
-          readWindows: p.read_windows ?? 4,
         });
+        setSaved0(JSON.stringify([p.question ?? "", p.fields ?? []]));
       })
       .catch(() => {});
   }, [load, projectId, searchId]);
@@ -154,10 +162,10 @@ function InferenceContent() {
   }, [noGold]);
 
   useEffect(() => {
-    if (!active) return;
+    if (!active && !busy) return;
     const id = setInterval(() => void load(), 3000);
     return () => clearInterval(id);
-  }, [active, load]);
+  }, [active, busy, load]);
 
   // Sélection par défaut : pas d'étage 1 ; étage 2 = modèle le plus léger dont la RAM est connue.
   useEffect(() => {
@@ -230,7 +238,6 @@ function InferenceContent() {
           question: q.question,
           fields: cleanFields,
           text_sections: q.sections,
-          read_windows: q.readWindows,
           kind: "standard",
           selection: { from_search_id: searchId, ...cleanSelection(newSel) },
         });
@@ -241,13 +248,29 @@ function InferenceContent() {
         setNewSel({});
         setNewName("");
         selectSearch(created.id);
+      } else if (
+        (current?.predicted ?? 0) + (current?.reviewed ?? 0) > 0 &&
+        JSON.stringify([q.question, cleanFields]) !== saved0
+      ) {
+        // La question d'une recherche déjà analysée ou relue ne change plus : nouvelle recherche, même lot.
+        const created = await createSearch(projectId, {
+          question: q.question,
+          fields: cleanFields,
+          text_sections: q.sections,
+          kind: "standard",
+          selection: { from_search_id: searchId },
+        });
+        runSearchId = created.id;
+        storeSearchId(projectId, created.id);
+        notifySearchesChanged();
+        selectSearch(created.id);
+        setNotice(t("questionLocked", { name: created.name }));
       } else {
         // La question est enregistrée au lancement (une seule étape pour l'utilisateur).
         await updateProject(projectId, {
           question: q.question,
           fields: cleanFields,
           text_sections: q.sections,
-          read_windows: q.readWindows,
         }, searchId);
       }
       // Étage 2 vide : l'étage 1 décide seul.
@@ -272,6 +295,7 @@ function InferenceContent() {
 
   const r = job?.result ?? {};
   const total = num(r.total);
+  const busyElsewhere = !!busy && busy.id !== job?.id;
 
   return (
     <div className="flex flex-col gap-4">
@@ -281,6 +305,12 @@ function InferenceContent() {
       </div>
 
       {error && <ErrorBanner message={error} />}
+      {notice && <p className="rounded-lg border border-primary/40 bg-primary/5 p-3 text-sm text-foreground">{notice}</p>}
+      {busyElsewhere && (
+        <p className="rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm text-foreground">
+          {t("busyElsewhere", { name: searches?.find((s) => s.id === busy?.search_id)?.name ?? "…" })}
+        </p>
+      )}
 
       {searches && searches.length > 0 && (
         <Card title={t("scopeTitle")}>
@@ -429,7 +459,7 @@ function InferenceContent() {
               {goldCount !== null && !noGold && <p className="text-xs text-muted">{t("goldCount", { n: goldCount })}</p>}
             </div>
             <div className="flex flex-wrap items-center gap-3">
-              <Button type="submit" loading={submitting} disabled={active || (!stage2 && !stage1) || !q || q.sections.length === 0 || (scopeMode === "new" && !newCount)}>
+              <Button type="submit" loading={submitting} disabled={active || busyElsewhere || (!stage2 && !stage1) || !q || q.sections.length === 0 || (scopeMode === "new" && !newCount)}>
                 {job ? t("rerun") : t("run")}
               </Button>
               {launched && active && <span className="text-sm text-success">✓ {t("launched")}</span>}

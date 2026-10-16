@@ -351,6 +351,17 @@ async def get_project(
     )
 
 
+async def _has_results(db: AsyncSession, scope: Search) -> bool:
+    """La recherche a-t-elle des prédictions ou des relectures ?"""
+    for model in (ArticlePrediction, HumanAnnotation):
+        found = (
+            await db.execute(select(model.id).where(in_search(model.search_id, scope)).limit(1))
+        ).first()
+        if found is not None:
+            return True
+    return False
+
+
 @router.patch("/{project_id}")
 async def update_project(
     project_id: uuid.UUID,
@@ -367,6 +378,13 @@ async def update_project(
         member = await db.get(ProjectMember, (project_id, user.id))
         if member is None or member.role_in_project != ProjectMemberRole.LEAD:
             raise HTTPException(status_code=403, detail="lead required")
+    new_hash = definition_hash(
+        payload.question.strip() or None if payload.question is not None else scope.question,
+        payload.fields if payload.fields is not None else scope.fields,
+    )
+    if new_hash != scope.definition_hash and await _has_results(db, scope):
+        # la question d'une recherche déjà analysée ou relue ne change plus : on en crée une autre
+        raise HTTPException(status_code=409, detail="question_locked")
     targets = (
         [scope, project] if scope.is_default else [scope]
     )  # le projet suit sa recherche initiale
@@ -524,6 +542,7 @@ async def complete_fulltext(project_id: uuid.UUID, db: DbDep, user: UserDep) -> 
     """Cherche le texte intégral manquant dans les sources ouvertes (Europe PMC, Unpaywall,
     OpenAlex, préprints). Tâche de fond ; progression via GET /jobs (kind=fulltext)."""
     project = await _require_project_member(db, project_id, user)
+    await _require_lead_or_admin(db, project_id, user)
     if project.status not in (ProjectStatus.FROZEN, ProjectStatus.COMPLETED):
         raise HTTPException(status_code=409, detail="import not finished")
     await _require_no_active_job(db, project.id)

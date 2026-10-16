@@ -33,25 +33,22 @@ export function QuestionEditor({
   question,
   fields,
   sections,
-  readWindows,
   onChange,
 }: {
   question: string;
   fields: SchemaField[];
   sections: string[];
-  readWindows: number;
   onChange: (next: {
     question: string;
     fields: SchemaField[];
     sections: string[];
-    readWindows: number;
   }) => void;
 }) {
   const t = useTranslations("question");
   const ti = useTranslations("import");
   const set = (
-    patch: Partial<{ question: string; fields: SchemaField[]; sections: string[]; readWindows: number }>
-  ) => onChange({ question, fields, sections, readWindows, ...patch });
+    patch: Partial<{ question: string; fields: SchemaField[]; sections: string[] }>
+  ) => onChange({ question, fields, sections, ...patch });
 
   function patchField(i: number, patch: Partial<SchemaField> & { optionsText?: string }) {
     set({

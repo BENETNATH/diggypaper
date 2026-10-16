@@ -331,7 +331,10 @@ function ResultsContent() {
       )}
 
       {articles.length === 0 ? (
-        <EmptyState title={t("empty")} hint={t("emptyHint")} />
+        <EmptyState
+          title={t("empty")}
+          hint={filter !== "ALL" || text || hasAnswerFilter || fulltext !== undefined ? t("emptyFiltered") : t("emptyHint")}
+        />
       ) : (
         <Card>
           <ul className="divide-y divide-border">

@@ -7,10 +7,13 @@ import {
   CrateExport,
   exportUrl,
   getCrateExport,
+  getProject,
   referencesUrl,
   startCrateExport,
 } from "@/lib/api";
 import { Menu, MenuItem, MenuNote, MenuSeparator } from "@/components/ui/Menu";
+import { useAuth } from "@/lib/auth";
+import { isProjectLead } from "@/lib/role";
 import { useSearchId } from "@/lib/useSearch";
 
 /**
@@ -32,6 +35,11 @@ export function ExportMenu({
 }) {
   const t = useTranslations("articles");
   const searchId = useSearchId(projectId);
+  const { user } = useAuth();
+  const [lead, setLead] = useState(false);
+  useEffect(() => {
+    getProject(projectId).then((p) => setLead(isProjectLead(p, user))).catch(() => setLead(false));
+  }, [projectId, user]);
   const [job, setJob] = useState<CrateExport | null>(null);
   const [error, setError] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout>>();
@@ -79,24 +87,28 @@ export function ExportMenu({
         ⬇ BibTeX
       </MenuItem>
       {filtered && <MenuNote>{t("exportRefsFiltered")}</MenuNote>}
-      <MenuSeparator />
-      <MenuItem onClick={() => void start()} disabled={busy}>
-        📦 {t("exportZip")}
-      </MenuItem>
-      <MenuNote>{t("exportZipHelp")}</MenuNote>
-      {busy && (
-        <MenuNote>
-          <span role="status">
-            {t("exportZipRunning", { done: r.done ?? 0, total: r.total ?? 0 })} {t("exportZipMail")}
-          </span>
-        </MenuNote>
-      )}
-      {job?.status === "COMPLETED" && job.download && (
-        <MenuItem href={crateDownloadUrl(projectId, job.id)} download>
-          <span className="text-primary">⬇ {t("exportZipReady", { mb, articles: r.articles ?? 0, pdf: r.pdf ?? 0 })}</span>
+      {lead && (
+        <>
+        <MenuSeparator />
+        <MenuItem onClick={() => void start()} disabled={busy}>
+          📦 {t("exportZip")}
         </MenuItem>
+        <MenuNote>{t("exportZipHelp")}</MenuNote>
+        {busy && (
+          <MenuNote>
+            <span role="status">
+              {t("exportZipRunning", { done: r.done ?? 0, total: r.total ?? 0 })} {t("exportZipMail")}
+            </span>
+          </MenuNote>
+        )}
+        {job?.status === "COMPLETED" && job.download && (
+          <MenuItem href={crateDownloadUrl(projectId, job.id)} download>
+            <span className="text-primary">⬇ {t("exportZipReady", { mb, articles: r.articles ?? 0, pdf: r.pdf ?? 0 })}</span>
+          </MenuItem>
+        )}
+        {job?.status === "FAILED" && <MenuNote><span className="text-danger">{t("exportZipFailed")}</span></MenuNote>}
+        </>
       )}
-      {job?.status === "FAILED" && <MenuNote><span className="text-danger">{t("exportZipFailed")}</span></MenuNote>}
       {error && <MenuNote><span className="text-danger">{error}</span></MenuNote>}
     </Menu>
   );

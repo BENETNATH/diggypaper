@@ -42,6 +42,11 @@ relectures, analyses et références. Le lot est tout le corpus, ou un sous-ense
 critères — par exemple « les articles où la recherche 1 a répondu oui », avec relecture humaine
 ou texte intégral, dans une plage de pertinence, un tirage au hasard ou une liste. On pose ainsi
 une seconde question aux seuls articles retenus par la première, sans rien réanalyser.
+- **Recherches successives** : on programme la recherche 2 pendant que la 1 tourne : elle démarre
+  seule dès que la 1 a fini, sur ses résultats (avec des critères : acceptés par l'IA, réponse à un
+  item…) ou sur le même lot. Une seule analyse tourne à la fois dans un projet, les suivantes
+  attendent leur tour. La question d'une recherche déjà analysée ou relue ne se modifie plus :
+  une nouvelle recherche est créée sur le même lot.
 - Choix des **parties du texte** lues par les modèles (résumé, méthodes, résultats…).
 - **Modèles génératifs** (Ollama en local, ou toute API compatible OpenAI) : réponses
   structurées, texte libre et citations de preuve. La page *Modèles* lit les ressources du

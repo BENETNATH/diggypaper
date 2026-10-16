@@ -31,6 +31,8 @@ from app.db.models import (
     SearchArticle,
     User,
 )
+from app.model_access import usable_models
+from app.scheduler import selection_dict, start_ready
 from app.schema import DEFAULT_QUESTION, check_fields, project_fields
 from app.searches import (
     default_search,
@@ -68,6 +70,15 @@ class Selection(BaseModel):
     seed: int | None = None  # tirage reproductible
 
 
+class ScheduleIn(BaseModel):
+    """Analyse programmée : démarre quand la recherche d'origine (``selection.from_search_id``) a
+    fini ; le lot = ses résultats filtrés par ``selection``, ou son lot si aucun critère."""
+
+    model: str = Field(min_length=1)
+    prefilter_model: str | None = None
+    instructions: str | None = Field(default=None, max_length=2000)
+
+
 class SearchCreate(BaseModel):
     name: str | None = Field(default=None, max_length=200)  # vide : AAMMJJ-n
     question: str | None = Field(default=None, max_length=2000)
@@ -77,6 +88,7 @@ class SearchCreate(BaseModel):
     # standard ; tuning (mise au point : compare variantes) ; blind (échantillon relu à l'aveugle)
     kind: Literal["standard", "tuning", "blind"] = "standard"
     selection: Selection = Selection()
+    schedule: ScheduleIn | None = None  # programmer l'analyse après la recherche d'origine
 
     @field_validator("fields")
     @classmethod
@@ -217,6 +229,12 @@ def _payload(s: Search, stats: dict, parent: Search | None, author: User | None)
         "text_sections": s.text_sections,
         "parent": {"id": str(parent.id), "name": parent.name} if parent else None,
         "parent_spec": s.parent_spec,
+        "schedule_state": s.schedule_state,
+        "schedule": (
+            {k: v for k, v in (s.schedule or {}).items() if k != "selection"}
+            if s.schedule
+            else None
+        ),
         "created_at": s.created_at.isoformat() if s.created_at else None,
         "created_by": (author.full_name or author.email) if author else None,
         **stats,
@@ -321,9 +339,18 @@ async def create_search(
     await _require_lead_or_admin(db, project_id, user)
     sel = payload.selection
     origin = await get_search(db, project, sel.from_search_id)
-    ids = await select_articles(db, project, sel)
-    if not ids:
-        raise HTTPException(status_code=422, detail="selection is empty")
+    sched = payload.schedule
+    if sched is not None:
+        if origin.kind == "blind" or payload.kind == "blind":
+            raise HTTPException(status_code=422, detail="cannot schedule on a blind search")
+        names = [n for n in (sched.model, sched.prefilter_model) if n]
+        if len(await usable_models(db, user, names, project_id)) != len(set(names)):
+            raise HTTPException(status_code=422, detail="unknown model")
+        ids: list = []  # le lot sera calculé quand l'origine aura fini
+    else:
+        ids = await select_articles(db, project, sel)
+        if not ids:
+            raise HTTPException(status_code=422, detail="selection is empty")
     question = payload.question if payload.question is not None else origin.question
     fields = payload.fields if payload.fields is not None else origin.fields
     sections = payload.text_sections if payload.text_sections is not None else origin.text_sections
@@ -336,8 +363,12 @@ async def create_search(
         read_windows=payload.read_windows or origin.read_windows,
         kind=payload.kind,
         lot_all=False,
-        parent_id=origin.id if not _is_all(sel) else None,
+        parent_id=origin.id if (sched or not _is_all(sel)) else None,
         parent_spec=None if _is_all(sel) else sel.model_dump(mode="json", exclude_none=True),
+        schedule=(
+            {**sched.model_dump(), "selection": selection_dict(sel, origin.id)} if sched else None
+        ),
+        schedule_state="waiting" if sched else None,
         created_by=user.id,
     )
     s.definition_hash = definition_hash(s.question, s.fields)
@@ -345,6 +376,8 @@ async def create_search(
     await db.flush()
     db.add_all(SearchArticle(search_id=s.id, article_id=i) for i in ids)
     await db.commit()
+    if sched:
+        await start_ready(db, project)  # l'origine a peut-être déjà fini
     await db.refresh(s)
     return await _full_payload(db, s)
 

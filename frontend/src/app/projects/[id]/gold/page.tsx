@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { deleteGold, getProject, goldFromReviews, listGold, GoldArticle, SchemaField } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
+import { isProjectLead } from "@/lib/role";
 import { withSearch } from "@/lib/search";
 import { useSearchId, useSearches } from "@/lib/useSearch";
 import { RequireAuth } from "@/components/RequireAuth";
@@ -35,6 +37,9 @@ function GoldContent() {
   const { searches } = useSearches(projectId, searchId);
 
   const [gold, setGold] = useState<GoldArticle[] | null>(null);
+  const { user } = useAuth();
+  const role = user?.role;
+  const [lead, setLead] = useState(false);
   const [fields, setFields] = useState<SchemaField[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -45,11 +50,12 @@ function GoldContent() {
     try {
       const [g, p] = await Promise.all([listGold(projectId, searchId), getProject(projectId, searchId)]);
       setFields(p.fields ?? []);
+      setLead(isProjectLead(p, { role }));
       setGold(g);
     } catch (e) {
       setError(e instanceof Error ? e.message : "error");
     }
-  }, [projectId, searchId]);
+  }, [projectId, searchId, role]);
 
   useEffect(() => {
     setGold(null);
@@ -177,9 +183,11 @@ function GoldContent() {
                       {t("seeSource")}
                     </Link>
                   )}
-                  <Button size="sm" variant="danger" disabled={busy === g.id} onClick={() => remove(g)}>
-                    {t("remove")}
-                  </Button>
+                  {(lead || g.added_by === user?.id) && (
+                    <Button size="sm" variant="danger" disabled={busy === g.id} onClick={() => remove(g)}>
+                      {t("remove")}
+                    </Button>
+                  )}
                 </div>
               </li>
             ))}

@@ -7,16 +7,21 @@ import {
   createSearch,
   deleteSearch,
   getProject,
+  listModels,
+  ModelInfo,
   renameSearch,
   SchemaField,
   SearchInfo,
   SearchKind,
   Selection,
 } from "@/lib/api";
+import { SearchCreate } from "@/lib/api";
 import { cleanSelection, prefillStoreKey, withSearch } from "@/lib/search";
 import { notifySearchesChanged, storeSearchId, useSearchId, useSearches, useSelectSearch } from "@/lib/useSearch";
 import { ArticleSelector } from "@/components/ArticleSelector";
 import { QuestionEditor } from "@/components/QuestionEditor";
+import { useAuth } from "@/lib/auth";
+import { isProjectLead } from "@/lib/role";
 import { RequireAuth } from "@/components/RequireAuth";
 import { Button } from "@/components/ui/Button";
 import { Field, Input } from "@/components/ui/Field";
@@ -25,7 +30,7 @@ import { EmptyState, ErrorBanner, Skeleton } from "@/components/ui/Feedback";
 
 const DEFAULT_BLIND_N = 40;
 
-type Definition = { question: string; fields: SchemaField[]; sections: string[]; readWindows: number };
+type Definition = { question: string; fields: SchemaField[]; sections: string[] };
 
 /** Items nettoyés pour l'API (options de choix sans entrées vides). */
 const cleanFields = (fields: SchemaField[]): SchemaField[] =>
@@ -76,6 +81,8 @@ function SearchCard({
               {s.is_default && <Badge color="blue">{t("initial")}</Badge>}
               {s.kind !== "standard" && <Badge color={s.kind === "blind" ? "yellow" : "gray"}>{t(`kind_${s.kind}`)}</Badge>}
               {current && <Badge color="green">{t("current")}</Badge>}
+              {s.schedule_state === "waiting" && <Badge color="gray">{t("scheduledBadge")}</Badge>}
+              {s.schedule_state === "failed" && <Badge color="red">{t("scheduleFailedBadge")}</Badge>}
             </h3>
           ) : (
             <form
@@ -156,6 +163,8 @@ function SearchesContent() {
   const searchId = useSearchId(projectId);
   const { searches, current, reload } = useSearches(projectId, searchId);
   const selectSearch = useSelectSearch(projectId);
+  const { user } = useAuth();
+  const role = user?.role;
   const [isLead, setIsLead] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -168,13 +177,23 @@ function SearchesContent() {
   const [originDef, setOriginDef] = useState<Definition | null>(null);
   const [creating, setCreating] = useState(false);
 
+  // Analyse programmée : elle démarre quand la recherche d'origine a fini.
+  const [models, setModels] = useState<ModelInfo[]>([]);
+  const [sched, setSched] = useState(false);
+  const [m1, setM1] = useState("");
+  const [m2, setM2] = useState("");
+  const [instr, setInstr] = useState("");
+  useEffect(() => {
+    listModels(projectId).then(setModels).catch(() => setModels([]));
+  }, [projectId]);
+
   // Échantillon à l'aveugle
   const [blindN, setBlindN] = useState(DEFAULT_BLIND_N);
   const [blindBusy, setBlindBusy] = useState(false);
 
   useEffect(() => {
     getProject(projectId)
-      .then((p) => setIsLead(p.role_in_project === "LEAD" || p.role_in_project == null))
+      .then((p) => setIsLead(isProjectLead(p, { role })))
       .catch(() => {});
     try {
       const raw = sessionStorage.getItem(prefillStoreKey(projectId));
@@ -186,7 +205,7 @@ function SearchesContent() {
     } catch {
       /* pas de préremplissage */
     }
-  }, [projectId]);
+  }, [projectId, role]);
 
   // Question et items de la recherche d'origine : copiés par défaut, modifiables.
   const originId = selection.from_search_id ?? searches?.find((s) => s.is_default)?.id;
@@ -199,7 +218,6 @@ function SearchesContent() {
           question: p.question ?? "",
           fields: p.fields ?? [],
           sections: p.text_sections ?? ["methods"],
-          readWindows: p.read_windows ?? 4,
         })
       )
       .catch(() => setOriginDef(null));
@@ -210,17 +228,20 @@ function SearchesContent() {
     router.push(withSearch(`/projects/${projectId}/articles`, s.id));
   }
 
-  async function create(kind: SearchKind, body: { name?: string; selection: Selection; def?: Definition | null }) {
+  async function create(
+    kind: SearchKind,
+    body: { name?: string; selection: Selection; def?: Definition | null; schedule?: SearchCreate["schedule"] }
+  ) {
     const s = await createSearch(projectId, {
       name: body.name,
       kind,
+      ...(body.schedule ? { schedule: body.schedule } : {}),
       selection: cleanSelection(body.selection),
       ...(body.def
         ? {
             question: body.def.question,
             fields: cleanFields(body.def.fields),
             text_sections: body.def.sections,
-            read_windows: body.def.readWindows,
           }
         : {}),
     });
@@ -234,8 +255,22 @@ function SearchesContent() {
     setCreating(true);
     setError(null);
     try {
-      const s = await create("standard", { name: name.trim() || undefined, selection, def: edit });
-      router.push(withSearch(`/projects/${projectId}/inference`, s.id));
+      const model = m2 || m1;
+      const s = await create("standard", {
+        name: name.trim() || undefined,
+        selection,
+        def: edit,
+        ...(sched && model
+          ? {
+              schedule: {
+                model,
+                ...(m2 && m1 && m1 !== m2 ? { prefilter_model: m1 } : {}),
+                ...(instr.trim() ? { instructions: instr.trim() } : {}),
+              },
+            }
+          : {}),
+      });
+      router.push(sched ? `/projects/${projectId}` : withSearch(`/projects/${projectId}/inference`, s.id));
     } catch (err) {
       setError(err instanceof Error ? err.message : "error");
       setCreating(false);
@@ -343,18 +378,56 @@ function SearchesContent() {
                     <p className="text-sm text-muted">…</p>
                   )}
                 </details>
+                {models.length > 0 && (
+                  <div className="rounded-lg border border-border p-3">
+                    <label className="flex items-center gap-2 text-sm font-medium text-foreground">
+                      <input type="checkbox" checked={sched} onChange={(e) => setSched(e.target.checked)} />
+                      {t("scheduleLabel", { origin: (searches?.find((s) => s.id === (selection.from_search_id ?? searches.find((x) => x.is_default)?.id)) ?? current)?.name ?? "…" })}
+                    </label>
+                    <p className="mt-1 text-xs text-muted">{t("scheduleHint")}</p>
+                    {sched && (
+                      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                        <Field label={t("scheduleStage2")}>
+                          <select value={m2} onChange={(e) => setM2(e.target.value)} className="w-full rounded border border-border bg-surface p-2 text-sm text-foreground">
+                            <option value="">—</option>
+                            {models.map((m) => (
+                              <option key={m.id} value={m.name}>
+                                {m.name}
+                              </option>
+                            ))}
+                          </select>
+                        </Field>
+                        <Field label={t("scheduleStage1")}>
+                          <select value={m1} onChange={(e) => setM1(e.target.value)} className="w-full rounded border border-border bg-surface p-2 text-sm text-foreground">
+                            <option value="">—</option>
+                            {models.map((m) => (
+                              <option key={m.id} value={m.name}>
+                                {m.name}
+                              </option>
+                            ))}
+                          </select>
+                        </Field>
+                        <div className="sm:col-span-2">
+                          <Field label={t("scheduleInstructions")}>
+                            <Input value={instr} onChange={(e) => setInstr(e.target.value)} maxLength={2000} />
+                          </Field>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div className="flex flex-wrap items-center gap-2">
                   <Button
                     type="submit"
                     loading={creating}
-                    disabled={!count || (edit?.sections.length === 0)}
+                    disabled={(sched ? !(m2 || m1) : !count) || (edit?.sections.length === 0)}
                   >
-                    {t("create")}
+                    {sched ? t("createScheduled") : t("create")}
                   </Button>
                   <Button type="button" variant="secondary" onClick={() => setShowForm(false)}>
                     {t("cancel")}
                   </Button>
-                  {count === 0 && <span className="text-sm text-warning">{t("emptySelection")}</span>}
+                  {!sched && count === 0 && <span className="text-sm text-warning">{t("emptySelection")}</span>}
                 </div>
               </form>
             </Card>

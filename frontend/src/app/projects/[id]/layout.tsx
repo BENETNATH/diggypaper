@@ -5,16 +5,18 @@ import Link from "next/link";
 import { useParams, usePathname } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { cancelInference, deleteProject, getProject, getInference, listJobs, ImportJob, InferenceJob, Project } from "@/lib/api";
-import { Badge, statusColor } from "@/components/ui/Card";
 import { Menu, MenuItem } from "@/components/ui/Menu";
 import { ProgressBar } from "@/components/ui/Feedback";
 import { JobProgress } from "@/components/JobProgress";
+import { isProjectLead } from "@/lib/role";
 import { withSearch } from "@/lib/search";
+import { useAuth } from "@/lib/auth";
 import { useSearchId, useSearches, useSelectSearch } from "@/lib/useSearch";
 
 const STEPS = [
   { key: "overview", href: "", needsCorpus: false, leadOnly: false, optional: false },
-  { key: "import", href: "/import", needsCorpus: false, leadOnly: false, optional: false },
+  { key: "import", href: "/import", needsCorpus: false, leadOnly: true, optional: false },
+  { key: "searches", href: "/searches", needsCorpus: true, leadOnly: false, optional: false },
   { key: "inference", href: "/inference", needsCorpus: true, leadOnly: true, optional: false },
   { key: "articles", href: "/articles", needsCorpus: true, leadOnly: false, optional: false },
   { key: "team", href: "/team", needsCorpus: false, leadOnly: false, optional: false },
@@ -25,6 +27,7 @@ const STEPS = [
 /** Navigation persistante du projet : fil d'Ariane + onglets des étapes. */
 export default function ProjectLayout({ children }: { children: ReactNode }) {
   const t = useTranslations("project");
+  const { user } = useAuth();
   const id = useParams<{ id: string }>().id;
   const pathname = usePathname();
   const [project, setProject] = useState<Project | null>(null);
@@ -114,7 +117,7 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
     let stopped = false;
     const check = async () => {
       try {
-        const j = await getInference(id, searchId);
+        const j = await getInference(id, undefined, true); // l'analyse en cours du projet
         if (!stopped) setInf(j);
       } catch {
         /* ignoré */
@@ -127,12 +130,12 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
       stopped = true;
       clearInterval(timer);
     };
-  }, [id, pathname, analysing, searchId]);
+  }, [id, pathname, analysing]);
   async function stopAnalysis() {
     if (!window.confirm(t("stopConfirm"))) return;
     try {
       await cancelInference(id);
-      setInf(await getInference(id, searchId));
+      setInf(await getInference(id, undefined, true));
     } catch {
       /* l'état réel est relu au prochain tick */
     }
@@ -155,8 +158,8 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
   const done = typeof r.done === "number" ? r.done : 0;
 
   const base = `/projects/${id}`;
-  const frozen = project?.status === "FROZEN" || project?.status === "COMPLETED";
-  const isLead = project?.role_in_project === "LEAD" || project?.role_in_project == null;
+  const hasCorpus = (project?.article_count ?? 0) > 0;
+  const isLead = isProjectLead(project, user);
   const isAnnotate = pathname.startsWith(`${base}/annotate`);
 
   return (
@@ -204,7 +207,6 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
               }
             />
           )}
-          {project && <Badge color={statusColor(project.status)}>{project.status}</Badge>}
           {project && isLead && (
             <Menu label="⋯">
               <MenuItem onClick={() => void handleDelete()}>
@@ -284,7 +286,7 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
               ? pathname === base
               : pathname.startsWith(href) || (s.key === "articles" && isAnnotate);
           const label = (s.key as string) === "overview" ? t("overview") : t(s.key);
-          const blocked = s.needsCorpus && project !== null && !frozen;
+          const blocked = s.needsCorpus && project !== null && !hasCorpus;
           const cls = `whitespace-nowrap border-b-2 px-3 py-2 text-sm ${
             s.optional ? "italic " : ""
           }${

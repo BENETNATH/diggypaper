@@ -36,7 +36,8 @@ function TeamContent() {
     void load();
   }, [load]);
 
-  const isLead = user?.role === "ADMIN" || members?.some((m) => m.user_id === user?.id && m.role === "LEAD");
+  const isLead =
+    user?.role === "ADMIN" || !!members?.some((m) => m.user_id === user?.id && m.role === "LEAD");
 
   async function handleInvite(e: React.FormEvent) {
     e.preventDefault();

@@ -186,10 +186,23 @@ async def _run_inference(
                 session_factory=factory,
                 mailer=mailer,
             )
+            await _start_scheduled(session, job.project_id)
             return stats
     finally:
         if engine is not None:
             await engine.dispose()
+
+
+async def _start_scheduled(session: AsyncSession, project_id) -> None:
+    """Lance l'analyse programmée suivante, s'il y en a une prête (best-effort)."""
+    from app.scheduler import start_ready
+
+    try:
+        project = await session.get(Project, project_id)
+        if project is not None:
+            await start_ready(session, project)
+    except Exception:  # noqa: BLE001 - ne doit pas faire échouer l'analyse qui vient de finir
+        logger.exception("scheduler: démarrage de l'analyse programmée en échec")
 
 
 async def _do_inference(

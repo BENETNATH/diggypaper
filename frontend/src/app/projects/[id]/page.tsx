@@ -16,6 +16,7 @@ import {
   ImportJob,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { isProjectLead } from "@/lib/role";
 import { withSearch } from "@/lib/search";
 import { RequireAuth } from "@/components/RequireAuth";
 import { Badge } from "@/components/ui/Card";
@@ -67,7 +68,7 @@ function LotBar({ s }: { s: SearchInfo }) {
   );
 }
 
-function SearchRow({ s, projectId, isLead, frozen }: { s: SearchInfo; projectId: string; isLead: boolean; frozen: boolean }) {
+function SearchRow({ s, projectId, isLead, hasCorpus }: { s: SearchInfo; projectId: string; isLead: boolean; hasCorpus: boolean }) {
   const t = useTranslations("project");
   const open = (page: string) => withSearch(`/projects/${projectId}/${page}`, s.id);
   const blind = s.kind === "blind";
@@ -83,10 +84,18 @@ function SearchRow({ s, projectId, isLead, frozen }: { s: SearchInfo; projectId:
             {s.is_default && <Badge color="blue">{t("badgeInitial")}</Badge>}
             {s.kind !== "standard" && <Badge color="gray">{t(`kind_${s.kind}`)}</Badge>}
             {running && <Badge color="yellow">{t("running")}</Badge>}
+            {s.schedule_state === "waiting" && <Badge color="gray">{t("scheduled")}</Badge>}
+            {s.schedule_state === "failed" && <Badge color="red">{t("scheduleFailed")}</Badge>}
           </div>
           <p className="mt-0.5 line-clamp-1 text-sm text-muted" title={s.question}>
             {s.question}
           </p>
+          {s.schedule_state === "waiting" && s.parent && (
+            <p className="mt-0.5 text-xs text-muted">{t("scheduledAfter", { name: s.parent.name })}</p>
+          )}
+          {s.schedule_state === "failed" && (
+            <p className="mt-0.5 text-xs text-danger">{t(`scheduleError_${s.schedule?.error ?? "unknown"}`)}</p>
+          )}
           <p className="mt-0.5 text-xs text-muted">
             {t("lotSize", { n: s.lot_size })}
             {s.parent && <> · {t("derivedFrom", { name: s.parent.name })}</>}
@@ -104,7 +113,7 @@ function SearchRow({ s, projectId, isLead, frozen }: { s: SearchInfo; projectId:
               <Button size="sm">{t("reviewN", { n: s.to_review })}</Button>
             </Link>
           )}
-          {isLead && frozen && !running && (
+          {isLead && hasCorpus && !running && s.schedule_state !== "waiting" && (
             <Link href={open("inference")}>
               <Button size="sm" variant="ghost">
                 {s.predicted > 0 ? t("rerun") : t("analyse")}
@@ -171,8 +180,8 @@ function ProjectDashboard() {
   if (error) return <ErrorBanner message={error} onRetry={() => void load()} />;
   if (!project || !overview) return <Spinner label={t("loading")} />;
 
-  const isLead = project.role_in_project === "LEAD";
-  const frozen = project.status === "FROZEN" || project.status === "COMPLETED";
+  const isLead = isProjectLead(project, user);
+  const hasCorpus = overview.articles > 0;
   const toReviewTotal = overview.searches.reduce((a, s) => a + s.to_review, 0);
   const imports = (jobs ?? []).filter((j) => j.kind !== "fulltext");
   const lastJob = imports.length > 0 ? imports[imports.length - 1] : null;
@@ -195,12 +204,6 @@ function ProjectDashboard() {
             </Button>
           )}
         </div>
-      )}
-
-      {project.status === "PROCESSING" && (
-        <Link href={`/projects/${projectId}/import`} className="rounded-lg border border-primary bg-primary/10 p-3 text-sm font-medium text-primary hover:underline">
-          {t("importInProgress")} →
-        </Link>
       )}
 
       {modelCount === 0 && (
@@ -244,7 +247,7 @@ function ProjectDashboard() {
           <h2 className="text-base font-semibold text-foreground">
             {t("searchesTitle")} <span className="text-sm font-normal text-muted">{overview.searches.length}</span>
           </h2>
-          {isLead && frozen && (
+          {isLead && hasCorpus && (
             <Link href={withSearch(`/projects/${projectId}/searches`, initial?.id)}>
               <Button size="sm" variant="secondary">
                 + {t("newSearch")}
@@ -264,7 +267,7 @@ function ProjectDashboard() {
         ) : (
           <ul className="flex flex-col gap-3">
             {overview.searches.map((s) => (
-              <SearchRow key={s.id} s={s} projectId={projectId} isLead={isLead} frozen={frozen} />
+              <SearchRow key={s.id} s={s} projectId={projectId} isLead={isLead} hasCorpus={hasCorpus} />
             ))}
           </ul>
         )}

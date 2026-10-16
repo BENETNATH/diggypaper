@@ -44,7 +44,6 @@ export interface Project {
   default_language: string;
   text_sections?: string[];
   question?: string;
-  read_windows?: number;
   fields?: SchemaField[];
   custom_schema?: boolean;
   question_set?: boolean;
@@ -150,6 +149,9 @@ export type SearchKind = "standard" | "tuning" | "blind";
 
 /** Une recherche : une question (ses items) posée à un lot d'articles. */
 export interface SearchInfo {
+  /** Analyse programmée : en attente de la fin de la recherche d'origine, démarrée, ou échouée. */
+  schedule_state?: "waiting" | "started" | "failed" | null;
+  schedule?: { model: string; prefilter_model?: string | null; instructions?: string | null; error?: string } | null;
   id: string;
   name: string;
   kind: SearchKind;
@@ -319,6 +321,7 @@ export interface InferenceJob {
   project_id: string | null;
   prompt_template_id: string | null;
   model_used: string;
+  search_id?: string | null;
   prefilter_model?: string | null;
   status: "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
   result: Record<string, unknown> | null;
@@ -544,7 +547,6 @@ export async function updateProject(
     text_sections?: string[];
     question?: string;
     fields?: SchemaField[];
-    read_windows?: number;
   },
   searchId?: string
 ): Promise<Project> {
@@ -953,8 +955,15 @@ export const cancelInference = (projectId: string): Promise<unknown> =>
 export const cancelBenchmark = (projectId: string, runId: string): Promise<unknown> =>
   request(`/projects/${projectId}/benchmarks/${runId}/cancel`, { method: "POST" });
 
-export async function getInference(projectId: string, searchId?: string): Promise<InferenceJob | null> {
-  const r = await request<{ job: InferenceJob | null }>(`/projects/${projectId}/inference${qs({ search: searchId })}`);
+/** Dernier job de la recherche ; avec ``active``, le job en cours du projet (toutes recherches). */
+export async function getInference(
+  projectId: string,
+  searchId?: string,
+  active = false
+): Promise<InferenceJob | null> {
+  const r = await request<{ job: InferenceJob | null }>(
+    `/projects/${projectId}/inference${qs({ search: searchId, active: active ? "true" : undefined })}`
+  );
   return r.job;
 }
 
@@ -1230,9 +1239,10 @@ export interface SearchCreate {
   question?: string;
   fields?: SchemaField[];
   text_sections?: string[];
-  read_windows?: number;
   kind?: SearchKind;
   selection: Selection;
+  /** Analyse programmée : démarre quand la recherche d'origine (selection.from_search_id) a fini. */
+  schedule?: { model: string; prefilter_model?: string; instructions?: string };
 }
 
 export const createSearch = (projectId: string, payload: SearchCreate): Promise<SearchInfo> =>

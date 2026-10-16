@@ -558,6 +558,10 @@ class Search(Base):
         Uuid, ForeignKey("searches.id", ondelete="SET NULL")
     )
     parent_spec: Mapped[dict | None] = mapped_column(JSONB)
+    # Analyse programmée : {model, prefilter_model, instructions, selection, error?}. Le lot
+    # n'existe pas encore : calculé quand la recherche d'origine a fini (cf. app.scheduler).
+    schedule: Mapped[dict | None] = mapped_column(JSONB)
+    schedule_state: Mapped[str | None] = mapped_column(String)  # waiting | started | failed
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("users.id", ondelete="SET NULL")
     )
