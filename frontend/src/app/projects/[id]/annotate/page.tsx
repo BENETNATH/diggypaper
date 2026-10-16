@@ -257,7 +257,29 @@ export default function AnnotatePage() {
       </div>
     );
 
-  const nextId = queue[queue.indexOf(articleId) + 1] ?? null;
+  const position = queue.indexOf(articleId);
+  const nextId = queue[position + 1] ?? null;
+  const prevId = position > 0 ? queue[position - 1] : null;
+  const goTo = (id: string) =>
+    withSearch(`/projects/${projectId}/annotate?article=${id}&queue=${queueMode}`, searchId);
+  const stepCls = (on: boolean) =>
+    `rounded border px-3 py-1 text-sm ${
+      on ? "border-border text-primary hover:bg-surface-muted" : "pointer-events-none border-border/50 text-muted/50"
+    }`;
+  const stepper =
+    queue.length > 1 && position >= 0 ? (
+      <nav aria-label={t("navArticles")} className="flex shrink-0 items-center gap-2">
+        <Link href={prevId ? goTo(prevId) : "#"} aria-disabled={!prevId} className={stepCls(!!prevId)}>
+          ← {t("previousArticle")}
+        </Link>
+        <span className="text-xs tabular-nums text-muted">
+          {position + 1} / {queue.length}
+        </span>
+        <Link href={nextId ? goTo(nextId) : "#"} aria-disabled={!nextId} className={stepCls(!!nextId)}>
+          {t("nextShort")} →
+        </Link>
+      </nav>
+    ) : null;
 
   // À l'aveugle et pas encore relu : rien du modèle (ni réponses, ni preuves surlignées).
   const blindLocked = isBlind && !review;
@@ -278,12 +300,15 @@ export default function AnnotatePage() {
     <div className="flex flex-col">
       {/* Barre supérieure (desktop) */}
       <header className="hidden border-b p-4 md:block">
-        <Link
-          href={withSearch(`/projects/${projectId}/articles`, searchId)}
-          className="text-sm text-primary hover:underline"
-        >
-          ← {t("backToArticles")}
-        </Link>
+        <div className="flex items-center justify-between gap-3">
+          <Link
+            href={withSearch(`/projects/${projectId}/articles`, searchId)}
+            className="text-sm text-primary hover:underline"
+          >
+            ← {t("backToArticles")}
+          </Link>
+          {stepper}
+        </div>
         <h1 className="mt-1 text-lg font-semibold">
           {article.title ?? `Article ${article.pmid ?? article.id}`}
         </h1>
@@ -298,13 +323,14 @@ export default function AnnotatePage() {
       </header>
 
       {/* Barre supérieure (mobile) : retour aux articles */}
-      <header className="border-b p-3 md:hidden">
+      <header className="flex items-center justify-between gap-2 border-b p-3 md:hidden">
         <Link
           href={withSearch(`/projects/${projectId}/articles`, searchId)}
           className="text-sm text-primary hover:underline"
         >
           ← {t("backToArticles")}
         </Link>
+        {stepper}
       </header>
 
       {isBlind && (

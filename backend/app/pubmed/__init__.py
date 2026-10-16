@@ -306,6 +306,25 @@ def _extract_methods(xml_text: str) -> str | None:
     return None
 
 
+def _local(tag) -> str:
+    return tag.rsplit("}", 1)[-1] if isinstance(tag, str) else ""
+
+
+def _plain(el: ET.Element) -> str:
+    """Texte d'un élément JATS sans le bruit des formules : le LaTeX (``tex-math``, préambule
+    ``\\documentclass…`` compris) est ignoré ; une formule hors texte devient « [formula] » ; le
+    MathML en ligne (p < 0,05, x²…) est gardé."""
+    out = [el.text or ""]
+    for child in el:
+        name = _local(child.tag)
+        if name == "disp-formula":
+            out.append(" [formula] ")
+        elif name != "tex-math":
+            out.append(_plain(child))
+        out.append(child.tail or "")
+    return "".join(out)
+
+
 def _extract_sections(xml_text: str) -> list[dict]:
     """Sections de premier niveau du ``body`` JATS : [{title, kind, text}]."""
     from app.article_text import classify_title
@@ -317,8 +336,8 @@ def _extract_sections(xml_text: str) -> list[dict]:
     out: list[dict] = []
     for sec in body.findall("sec"):
         title_el = sec.find("title")
-        title = "".join(title_el.itertext()).strip() if title_el is not None else ""
-        paras = ["".join(p.itertext()).strip() for p in sec.iter("p")]
+        title = _plain(title_el).strip() if title_el is not None else ""
+        paras = [re.sub(r"\s+", " ", _plain(p)).strip() for p in sec.iter("p")]
         text = " ".join(p for p in paras if p)
         if text:
             out.append({"title": title, "kind": classify_title(title), "text": text})

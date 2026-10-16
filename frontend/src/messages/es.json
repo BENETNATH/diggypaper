@@ -645,7 +645,10 @@
     "goldAdded": "✓ Añadido al gold standard.",
     "goldUpdated": "✓ Gold standard actualizado con esta revisión.",
     "goldSkipped": "No se puede añadir este artículo (sin revisión).",
-    "addSelection": "Añadir la selección como cita de evidencia"
+    "addSelection": "Añadir la selección como cita de evidencia",
+    "previousArticle": "Anterior",
+    "navArticles": "Navegación entre artículos",
+    "nextShort": "Siguiente"
   },
   "sex": {
     "MALE_ONLY": "Solo machos",

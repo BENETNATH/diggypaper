@@ -391,3 +391,20 @@ def test_parse_biblio_metadata():  # noqa: E501
     assert (a["journal"], a["pub_date"], a["doi"]) == ("Nature", "2024-05", "10.1/x")
     assert a["authors"] == ["Doe J", "The Group", "Poe P"] and a["pub_types"] == ["Review"]
     assert (b["journal"], b["pub_date"]) == ("J Neu", "2022-12-31")  # date électronique d'abord
+
+
+def test_sections_drop_latex_and_mark_display_formulas():
+    from app.pubmed import _extract_sections
+
+    xml = """<article xmlns:mml="http://www.w3.org/1998/Math/MathML"><body><sec><title>Methods</title>
+    <p>Reward is <inline-formula><alternatives><mml:math><mml:mi>p</mml:mi><mml:mo>&lt;</mml:mo>
+    <mml:mn>0.05</mml:mn></mml:math><tex-math>\\documentclass[12pt]{minimal}\\begin{document}$p&lt;0.05$
+    \\end{document}</tex-math></alternatives></inline-formula> here.
+    <disp-formula><alternatives><tex-math>\\documentclass{minimal}\\usepackage{amsmath}\\begin{document}
+    $$R=0$$\\end{document}</tex-math><mml:math><mml:mi>R</mml:mi></mml:math></alternatives></disp-formula>
+    where Po is the probability.</p></sec></body></article>"""
+    (sec,) = _extract_sections(xml)
+    assert "documentclass" not in sec["text"] and "usepackage" not in sec["text"]
+    assert "Reward is p" in sec["text"] and "0.05 here." in sec["text"]
+    assert "[formula]" in sec["text"]
+    assert sec["text"].endswith("where Po is the probability.")

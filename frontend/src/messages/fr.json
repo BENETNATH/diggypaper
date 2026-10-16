@@ -645,7 +645,10 @@
     "goldAdded": "✓ Ajouté au gold standard.",
     "goldUpdated": "✓ Gold standard mis à jour avec cette relecture.",
     "goldSkipped": "Impossible d'ajouter cet article (aucune relecture).",
-    "addSelection": "Ajouter la sélection comme extrait de preuve"
+    "addSelection": "Ajouter la sélection comme extrait de preuve",
+    "previousArticle": "Précédent",
+    "navArticles": "Navigation entre articles",
+    "nextShort": "Suivant"
   },
   "sex": {
     "MALE_ONLY": "Mâles uniquement",

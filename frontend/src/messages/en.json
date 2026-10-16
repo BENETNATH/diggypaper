@@ -645,7 +645,10 @@
     "goldAdded": "✓ Added to the gold standard.",
     "goldUpdated": "✓ Gold standard updated with this review.",
     "goldSkipped": "This article cannot be added (no review).",
-    "addSelection": "Add the selection as an evidence quote"
+    "addSelection": "Add the selection as an evidence quote",
+    "previousArticle": "Previous",
+    "navArticles": "Article navigation",
+    "nextShort": "Next"
   },
   "sex": {
     "MALE_ONLY": "Males only",

@@ -645,7 +645,10 @@
     "goldAdded": "✓ Zum Goldstandard hinzugefügt.",
     "goldUpdated": "✓ Goldstandard mit dieser Prüfung aktualisiert.",
     "goldSkipped": "Dieser Artikel kann nicht hinzugefügt werden (keine Prüfung).",
-    "addSelection": "Auswahl als Beleg hinzufügen"
+    "addSelection": "Auswahl als Beleg hinzufügen",
+    "previousArticle": "Zurück",
+    "navArticles": "Artikelnavigation",
+    "nextShort": "Weiter"
   },
   "sex": {
     "MALE_ONLY": "Nur Männchen",
