@@ -4,8 +4,9 @@ import { ReactNode, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, usePathname } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { cancelInference, getProject, getInference, listJobs, ImportJob, InferenceJob, Project } from "@/lib/api";
+import { cancelInference, deleteProject, getProject, getInference, listJobs, ImportJob, InferenceJob, Project } from "@/lib/api";
 import { Badge, statusColor } from "@/components/ui/Card";
+import { Menu, MenuItem } from "@/components/ui/Menu";
 import { ProgressBar } from "@/components/ui/Feedback";
 import { JobProgress } from "@/components/JobProgress";
 import { withSearch } from "@/lib/search";
@@ -137,6 +138,15 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
       /* l'état réel est relu au prochain tick */
     }
   }
+  async function handleDelete() {
+    if (!window.confirm(t("deleteConfirm"))) return;
+    try {
+      await deleteProject(id);
+      window.location.href = "/projects";
+    } catch {
+      window.alert(t("deleteFailed"));
+    }
+  }
   const ir = inf?.result ?? {};
   const itotal = typeof ir.total === "number" ? ir.total : 0;
   const idone = typeof ir.done === "number" ? ir.done : 0;
@@ -158,7 +168,9 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
             {t("backToProjects")}
           </Link>
           <span className="mx-1">/</span>
-          <span className="font-medium text-foreground">{project?.title ?? "…"}</span>
+          <span className="font-medium text-foreground" title={project?.description ?? undefined}>
+            {project?.title ?? "…"}
+          </span>
         </nav>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
           {analysing && (
@@ -194,6 +206,13 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
             />
           )}
           {project && <Badge color={statusColor(project.status)}>{project.status}</Badge>}
+          {project && isLead && (
+            <Menu label="⋯">
+              <MenuItem onClick={() => void handleDelete()}>
+                <span className="text-danger">{t("deleteProject")}</span>
+              </MenuItem>
+            </Menu>
+          )}
         </div>
       </div>
 

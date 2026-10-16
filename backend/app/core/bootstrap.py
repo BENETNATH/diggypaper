@@ -13,7 +13,7 @@ from sqlalchemy import select
 from app.core.config import Settings
 from app.core.security import hash_password
 from app.db.base import SessionLocal
-from app.db.models import BackendType, ModelRegistry, User, UserRole
+from app.db.models import User, UserRole
 
 logger = logging.getLogger(__name__)
 
@@ -43,32 +43,4 @@ async def bootstrap_admin(settings: Settings) -> None:
                 )
             )
             logger.info("Bootstrap : création du premier admin (ADMIN_EMAIL)")
-        await session.commit()
-
-
-async def bootstrap_models(settings: Settings) -> None:
-    """Pré-enregistre les serveurs de décision configurés (idempotent : n'écrase rien)."""
-    wanted = []
-    if settings.laya_url:
-        u = settings.laya_url.rstrip("/")
-        wanted += [
-            ("Laya (multilingue)", f"{u}#multilingual", 800),
-            ("Laya (anglais)", f"{u}#english", 1700),
-        ]
-    if settings.kev_url:
-        wanted.append(("Kev-4B", settings.kev_url.rstrip("/"), 2800))
-    if not wanted:
-        return
-    async with SessionLocal() as session:
-        known = set((await session.execute(select(ModelRegistry.name))).scalars().all())
-        for name, ident, ram in wanted:
-            if name not in known:
-                session.add(
-                    ModelRegistry(
-                        name=name,
-                        backend_type=BackendType.SYSTEMONE,
-                        model_identifier=ident,
-                        ram_usage_mb=ram,
-                    )
-                )
         await session.commit()

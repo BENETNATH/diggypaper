@@ -1,13 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import {
   ApiError,
   createSearch,
   generatePrompt,
-  isScorer,
   listGold,
   triggerBenchmark,
   ModelInfo,
@@ -31,7 +30,7 @@ import {
 import { notifySearchesChanged } from "@/lib/useSearch";
 import { ArticleSelector } from "@/components/ArticleSelector";
 import { Button } from "@/components/ui/Button";
-import { Badge, Card } from "@/components/ui/Card";
+import { Card } from "@/components/ui/Card";
 import { Checkbox, Field, Input, Select, Textarea } from "@/components/ui/Field";
 
 const newSeed = (): number => Math.floor(Math.random() * 1e9);
@@ -106,11 +105,7 @@ export function BenchmarkForm({
     }
   }, [noGold]);
 
-  const scorers = useMemo(
-    () => selected.map((n) => models.find((m) => m.name === n)).map((m) => (m ? isScorer(m) : false)),
-    [selected, models]
-  );
-  const calls = estimateCalls(lot, scorers, drafts.length);
+  const calls = estimateCalls(lot, selected.length, drafts.length);
   const problem = variantsProblem(drafts);
   const tooMany = calls > MAX_CALLS;
   const canRun = selected.length > 0 && lot > 0 && !problem && !tooMany && !submitting;
@@ -267,20 +262,10 @@ export function BenchmarkForm({
                 key={m.id}
                 checked={selected.includes(m.name)}
                 onChange={() => toggleModel(m.name)}
-                label={
-                  <>
-                    {m.name}
-                    {isScorer(m) && (
-                      <span className="ml-2">
-                        <Badge>{t("scorerBadge")}</Badge>
-                      </span>
-                    )}
-                  </>
-                }
+                label={m.name}
               />
             ))}
           </div>
-          {scorers.includes(true) && drafts.length > 0 && <p className="text-xs text-muted">{t("scorerHint")}</p>}
         </section>
 
         {/* 3. Variantes de prompt */}

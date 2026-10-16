@@ -104,7 +104,6 @@ function BenchmarksContent() {
               projectId={projectId}
               run={run}
               search={currentSearch(searches, run.search_id ?? undefined)}
-              models={models}
               analysisSearchId={searchId}
               onStop={(id) => void handleStop(id)}
             />

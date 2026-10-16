@@ -31,7 +31,6 @@ from app.db.models import (
     User,
     UserRole,
 )
-from app.inference.scoring import is_scorer
 from app.model_access import usable_models
 from app.schema import project_fields
 from app.searches import get_search, gold_condition, lot_condition
@@ -130,7 +129,7 @@ async def trigger_benchmark(
     ).scalar_one()
     if lot == 0:
         raise HTTPException(status_code=422, detail="the search has no articles")
-    calls = lot * sum(1 if is_scorer(m) else max(1, len(variants)) for m in models)
+    calls = lot * len(models) * max(1, len(variants))
     if calls > BENCHMARK_MAX_CALLS:
         raise HTTPException(
             status_code=422,

@@ -22,7 +22,7 @@ from app.api.v1 import (
     team,
     users,
 )
-from app.core.bootstrap import bootstrap_admin, bootstrap_models
+from app.core.bootstrap import bootstrap_admin
 from app.core.config import get_settings, validate_settings
 from app.i18n import I18nMiddleware
 
@@ -41,10 +41,6 @@ async def lifespan(app: FastAPI):
         await bootstrap_admin(settings)
     except Exception:  # noqa: BLE001 - le bootstrap ne doit pas bloquer le démarrage
         logger.exception("Bootstrap admin en échec (continuer sans admin)")
-    try:
-        await bootstrap_models(settings)
-    except Exception:  # noqa: BLE001
-        logger.exception("Pré-enregistrement des modèles en échec (ignoré)")
     yield
 
 

@@ -40,7 +40,6 @@ from app.db.models import (
     User,
     UserRole,
 )
-from app.inference.scoring import DEFAULT_WINDOWS
 from app.pubmed import NCBIError, _esearch_max, search_volume
 from app.refimport import dedupe, parse_references
 from app.schema import DEFAULT_QUESTION, check_fields, project_fields
@@ -225,7 +224,7 @@ def _project_payload(
         "default_language": project.default_language,
         "text_sections": src.text_sections or DEFAULT_KINDS,
         "question": src.question or DEFAULT_QUESTION,
-        "read_windows": src.read_windows or DEFAULT_WINDOWS,
+        "read_windows": src.read_windows,
         "fields": project_fields(src),
         "custom_schema": src.fields is not None,
         "question_set": src.question is not None or src.fields is not None,

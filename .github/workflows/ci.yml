@@ -22,7 +22,7 @@ jobs:
           cache: pip
           cache-dependency-path: backend/constraints.txt
       # constraints.txt : versions testées (même fichier que l'image Docker)
-      - run: pip install -c constraints.txt -e ".[dev,onnx]"
+      - run: pip install -c constraints.txt -e ".[dev]"
       - run: ruff check .
       - run: ruff format --check .
       - run: pytest -q

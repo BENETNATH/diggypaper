@@ -44,8 +44,6 @@ from app.inference import (
     make_inference_service,
     unload_ollama,
 )
-from app.inference.onnx_driver import unload as onnx_unload
-from app.inference.scoring import is_scorer, score_prediction
 from app.schema import project_fields
 from app.searches import ScopedProject, get_search, gold_condition, lot_condition
 
@@ -215,13 +213,12 @@ async def _do_benchmark(
     if not models:
         raise LookupError(f"no registered models for {run.models_tested}")
 
-    total_steps = sum(len(lot) * (1 if is_scorer(m) else len(variants)) for m in models)
+    total_steps = len(lot) * len(variants) * len(models)
     done_steps = 0
     results_payload = []
     ram_mb = 0.0
     for model in models:
-        scorer = is_scorer(model)  # un scoreur ignore le prompt : une seule « variante »
-        todo = variants[:1] if scorer else variants
+        todo = variants
         by_variant: dict[str, dict] = {}
         pending: list[BenchmarkResult] = []
         for vname, system, user_schema in todo:
@@ -233,15 +230,12 @@ async def _do_benchmark(
                 start = time.monotonic()
                 error = None
                 try:
-                    if scorer:
-                        prediction = await score_prediction(model, project, article, light=False)
-                    else:
-                        prediction = await infer_with(
-                            model,
-                            inference,
-                            (system + "\n\n" + shots).strip() if shots else system,
-                            fill_prompt(user_schema, article, project.text_sections),
-                        )
+                    prediction = await infer_with(
+                        model,
+                        inference,
+                        (system + "\n\n" + shots).strip() if shots else system,
+                        fill_prompt(user_schema, article, project.text_sections),
+                    )
                     if not isinstance(prediction, dict):
                         raise InferenceError("invalid_json")  # JSON valide mais pas un objet
                 except InferenceError as exc:
@@ -316,8 +310,6 @@ async def _do_benchmark(
                     "ram_usage_mb": ram_mb,
                 }
             )
-        if scorer and model.backend_type == BackendType.ONNX_LOCAL:
-            onnx_unload(model.model_identifier)
         base = getattr(inference, "base_url", None)
         if model.backend_type == BackendType.OLLAMA and isinstance(base, str):
             await unload_ollama(base, model.model_identifier)  # libère la RAM avant le suivant

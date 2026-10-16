@@ -14,7 +14,7 @@ WORKDIR /app
 # Dépendances + package (app/ requis pour le build du wheel)
 COPY pyproject.toml constraints.txt ./
 COPY app ./app
-RUN pip install --upgrade pip && pip install -c constraints.txt '.[onnx]'
+RUN pip install --upgrade pip && pip install -c constraints.txt .
 
 # Migrations + bootstrap
 COPY alembic ./alembic

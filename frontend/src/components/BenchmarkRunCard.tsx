@@ -3,7 +3,7 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
-import { createPrompt, getBenchmark, BenchmarkResult, BenchmarkRun, ModelInfo, SearchInfo, isScorer } from "@/lib/api";
+import { createPrompt, getBenchmark, BenchmarkResult, BenchmarkRun, SearchInfo } from "@/lib/api";
 import { pct, primaryParts, rankResults, resultKey, savedPromptVersion } from "@/lib/benchmark";
 import { withSearch } from "@/lib/search";
 import { BenchmarkDisagreements } from "@/components/BenchmarkDisagreements";
@@ -20,14 +20,12 @@ export function BenchmarkRunCard({
   projectId,
   run,
   search,
-  models,
   analysisSearchId,
   onStop,
 }: {
   projectId: string;
   run: BenchmarkRun;
   search?: SearchInfo;
-  models: ModelInfo[];
   /** Recherche à analyser ensuite (la recherche courante, pas forcément le sous-lot du benchmark). */
   analysisSearchId?: string;
   onStop: (runId: string) => void;
@@ -62,10 +60,6 @@ export function BenchmarkRunCard({
   const ranked = results ? rankResults(results) : [];
   const crit = primaryParts(ranked.find((r) => r.details?.primary)?.details?.primary, fields);
   const withAgreement = ranked.some((r) => r.details?.agreement != null);
-  const scorerOf = (name: string) => {
-    const m = models.find((x) => x.name === name);
-    return m ? isScorer(m) : false;
-  };
 
   /** Identifiant du prompt à utiliser pour analyser : le prompt enregistré, ou la variante libre enregistrée à la volée. */
   async function promptFor(r: BenchmarkResult): Promise<string | undefined> {
@@ -201,11 +195,6 @@ export function BenchmarkRunCard({
                             <td className="px-2 py-1.5 text-left text-muted">{i + 1}</td>
                             <td className="px-2 py-1.5 text-left font-medium text-foreground">
                               {r.model_name}
-                              {scorerOf(r.model_name) && (
-                                <span className="ml-1">
-                                  <Badge>{t("scorerBadge")}</Badge>
-                                </span>
-                              )}
                             </td>
                             <td className="px-2 py-1.5 text-left">{r.variant ?? t("singlePrompt")}</td>
                             <td className={`${td} font-semibold text-foreground`}>{pct(r.details?.primary?.value)}</td>

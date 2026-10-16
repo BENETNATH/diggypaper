@@ -797,7 +797,7 @@ export interface HfModel {
   id: string;
   downloads: number;
   likes: number;
-  decision?: boolean; // modèle de décision (Kev…) : ne s'installe pas via Ollama
+  decision?: boolean; // modèle de décision (sans chat) : ne s'installe pas via Ollama
 }
 export interface HfFile {
   file: string;
@@ -806,27 +806,15 @@ export interface HfFile {
   recommended?: boolean;
 }
 
-export async function searchHf(q: string, kind: "chat" | "encoder"): Promise<HfModel[]> {
-  return (
-    await request<{ items: HfModel[] }>(
-      `/models/search?q=${encodeURIComponent(q)}&kind=${kind}`
-    )
-  ).items;
+export async function searchHf(q: string): Promise<HfModel[]> {
+  return (await request<{ items: HfModel[] }>(`/models/search?q=${encodeURIComponent(q)}`)).items;
 }
 
-export async function hfFiles(
-  repo: string,
-  kind: "chat" | "encoder"
-): Promise<{ items: HfFile[]; tokenizer?: boolean }> {
-  return request(`/models/hf/files?repo=${encodeURIComponent(repo)}&kind=${kind}`);
+export async function hfFiles(repo: string): Promise<{ items: HfFile[] }> {
+  return request(`/models/hf/files?repo=${encodeURIComponent(repo)}`);
 }
 
-export async function installHf(payload: {
-  repo: string;
-  kind: "chat" | "encoder";
-  quant?: string;
-  file?: string;
-}): Promise<void> {
+export async function installHf(payload: { repo: string; quant?: string }): Promise<void> {
   await request("/models/hf/install", { method: "POST", body: JSON.stringify(payload) });
 }
 
@@ -998,12 +986,17 @@ export interface Capability {
   configured: boolean;
   reachable: boolean;
 }
-export type ModelCapabilities = Record<"ollama" | "laya" | "kev", Capability>;
-export const getModelCapabilities = (): Promise<ModelCapabilities> => request("/models/capabilities");
-
-export function isScorer(m: Pick<ModelInfo, "backend_type">): boolean {
-  return m.backend_type === "SYSTEMONE" || m.backend_type === "ONNX_LOCAL";
+export interface ModelRecommendation {
+  profile: "small" | "medium" | "large" | "gpu";
+  slow_cpu: boolean; // CPU sans AVX2 : inférence 2 à 3 fois plus lente
+  models: { tag: string; ram_gb: number; kind: "tiny" | "small" | "moe" | "gpu"; fits: boolean }[];
 }
+export interface ModelCapabilities {
+  ollama: Capability;
+  hardware: { cores: number; ram_gb: number; avx: boolean; avx2: boolean; avx512: boolean; gpu: boolean };
+  recommendation: ModelRecommendation;
+}
+export const getModelCapabilities = (): Promise<ModelCapabilities> => request("/models/capabilities");
 
 // --- Équipe + export ---------------------------------------------------------
 

@@ -150,9 +150,7 @@ async def test_hf_search_files_and_install_validation(client, admin_user, do_log
     assert r.json()["items"] == [
         {"file": "kev-4b-Q4_K_M.gguf", "quant": "Q4_K_M", "size": 10, "recommended": True}
     ]
-    bad = {"repo": "a/b", "kind": "encoder"}  # fichier manquant
-    assert (await client.post("/api/v1/models/hf/install", json=bad)).status_code == 422
-    bad = {"repo": "../x", "kind": "chat"}
+    bad = {"repo": "../x"}
     assert (await client.post("/api/v1/models/hf/install", json=bad)).status_code == 422
 
 
@@ -176,9 +174,7 @@ async def test_hf_decision_models_flagged_and_not_installable(
         "ggml-org/Kev-4B-GGUF": True,
         "unsloth/Qwen3-4B-GGUF": False,
     }
-    r = await client.post(
-        "/api/v1/models/hf/install", json={"repo": "ggml-org/Kev-4B-GGUF", "kind": "chat"}
-    )
+    r = await client.post("/api/v1/models/hf/install", json={"repo": "ggml-org/Kev-4B-GGUF"})
     assert r.status_code == 422 and r.json()["detail"] == "decision_model"
     assert m._PULLS == {}  # rien de lancé
 
@@ -260,20 +256,47 @@ async def test_infer_with_uses_model_url_and_key():
     assert seen == {"url": "https://api.x/v1/chat/completions", "auth": "Bearer sk-1"}
 
 
-async def test_capabilities_reports_configured_and_reachable(
+async def test_capabilities_reports_ollama_hardware_and_recommendation(
     client, session, admin_user, do_login, monkeypatch
 ):
+    from app import hardware
     from app.api.v1 import models as m
-    from app.core.config import get_settings
 
     async def fake_reachable(url, path=""):
-        return "laya" in url
+        return True
 
     monkeypatch.setattr(m, "_reachable", fake_reachable)
-    monkeypatch.setattr(get_settings(), "laya_url", "http://laya:8000")
-    monkeypatch.setattr(get_settings(), "kev_url", "")
+    monkeypatch.setattr(
+        hardware,
+        "detect",
+        lambda: {
+            "cores": 8,
+            "ram_gb": 54,
+            "avx": True,
+            "avx2": False,
+            "avx512": False,
+            "gpu": False,
+        },
+    )
     await do_login("admin@lab.fr", "admin-pass-123")
     caps = (await client.get("/api/v1/models/capabilities")).json()
-    assert caps["laya"] == {"configured": True, "reachable": True}
-    assert caps["kev"] == {"configured": False, "reachable": False}
-    assert caps["ollama"]["configured"] is True  # défaut de test : localhost:11434
+    assert caps["ollama"] == {"configured": True, "reachable": True}  # défaut : localhost:11434
+    assert caps["hardware"]["ram_gb"] == 54
+    rec = caps["recommendation"]
+    assert rec["profile"] == "large" and rec["slow_cpu"] is True  # sans AVX2 : avertissement
+    assert rec["models"][0]["kind"] == "moe" and rec["models"][0]["fits"] is True
+
+
+def test_recommend_by_resources():
+    from app import hardware
+
+    base = {"cores": 8, "avx": True, "avx2": True, "avx512": False, "gpu": False}
+    pick = lambda **kw: hardware.recommend({**base, **kw})  # noqa: E731
+    assert pick(ram_gb=8)["profile"] == "small"
+    assert pick(ram_gb=8)["models"][0]["tag"].startswith("qwen2.5:3b")
+    assert pick(ram_gb=24)["profile"] == "medium"
+    assert pick(ram_gb=64)["profile"] == "large" and not pick(ram_gb=64)["slow_cpu"]
+    assert pick(ram_gb=16, gpu=True)["profile"] == "gpu"
+    assert (
+        pick(ram_gb=8)["models"][0]["fits"] is True and pick(ram_gb=2)["models"][0]["fits"] is False
+    )

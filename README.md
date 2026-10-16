@@ -33,11 +33,10 @@ critères — par exemple « les articles où la recherche 1 a répondu oui », 
 ou texte intégral, dans une plage de pertinence, un tirage au hasard ou une liste. On pose ainsi
 une seconde question aux seuls articles retenus par la première, sans rien réanalyser.
 - Choix des **parties du texte** lues par les modèles (résumé, méthodes, résultats…).
-- **Modèles de décision** (Laya, Kev) : un seul passage, probabilités calibrées, très
-  rapides sur CPU — adaptés au tri et aux items oui/non ou à choix.
-- **Modèles génératifs** (Ollama en local, ou toute API compatible OpenAI) : réponses en texte
-  libre et citations de preuve.
-- **Pré-filtre** rapide avant le modèle principal, **triage automatique** (accepté, rejeté,
+- **Modèles génératifs** (Ollama en local, ou toute API compatible OpenAI) : réponses
+  structurées, texte libre et citations de preuve. La page *Modèles* lit les ressources du
+  serveur (RAM, cœurs, AVX2, GPU) et recommande un modèle adapté.
+- **Pré-filtre** rapide (petit modèle sur titre + résumé) avant le modèle principal, **triage automatique** (accepté, rejeté,
   à relire) selon des seuils de confiance, estimation du temps, **reprise** d'une analyse
   interrompue et **arrêt** d'une analyse en cours (les articles déjà traités sont conservés).
 
@@ -116,8 +115,8 @@ une seconde question aux seuls articles retenus par la première, sans rien réa
   Celery + Redis (ingestion PubMed, inférence batch), FastAPI-Mail.
 - **Frontend** : Next.js 14 (App Router) + TypeScript + Tailwind + next-intl +
   react-swipeable. Composants UI sur **design tokens** (OKLCH, light/dark).
-- **Modèles** : modèles de décision (protocole `/v1/systemone` : Laya, Kev) et modèles
-  génératifs (endpoint OpenAI-compatible `/v1/chat/completions` : Ollama, API externe).
+- **Modèles** : modèles génératifs (endpoint OpenAI-compatible `/v1/chat/completions` :
+  Ollama, API externe).
   Réglages SMTP / NCBI / LLM gérés en base (chiffrés) ou, à défaut, par variables d'environnement.
 
 ---
@@ -196,7 +195,7 @@ Voir [`.env.example`](.env.example) (racine) pour la liste complète.
 ## Production (Docker)
 
 Stack de base (nginx, frontend, backend, worker, postgres, redis) + services de modèles
-**optionnels** (ollama, laya, kev : voir « Modèles »). nginx est le **seul service exposé**, tout
+**optionnel** (ollama : voir « Modèles »). nginx est le **seul service exposé**, tout
 le reste reste sur le réseau interne de Docker.
 
 ```
@@ -206,7 +205,7 @@ reverse proxy TLS (établissement)            ← HTTPS, certificat, HSTS
         └── /*         ──►  frontend (Next.js, :3000)
 
 backend ──►  postgres (16)  ·  redis (7)  ◄──  worker (Celery)
-backend / worker ──►  ollama (génératif)  ·  laya (décision)
+backend / worker ──►  ollama (optionnel)  ·  API externe de votre choix
 ```
 
 ### Quick-start
@@ -271,12 +270,13 @@ server {
 
 Après `git pull`, avant `docker compose up -d --build` :
 
-1. **Services de modèles.** Ollama et Laya ne démarrent plus par défaut. Pour garder l'ancien
-   comportement, ajoutez à votre `.env` :
+1. **Services de modèles.** Laya et Kev (modèles de décision) sont retirés : peu fiables en
+   zéro-shot sur des revues de littérature. Les modèles correspondants sont désactivés en base
+   (les prédictions déjà produites sont conservées). Retirez `laya` de `COMPOSE_PROFILES`,
+   `LAYA_URL` et `KEV_URL` de votre `.env` (`docker compose up -d --remove-orphans` arrête leur
+   conteneur). Ollama reste un profil optionnel :
    ```bash
-   COMPOSE_PROFILES=ollama,laya
-   LLM_API_BASE_URL=http://ollama:11434/v1
-   LAYA_URL=http://laya:8000
+   COMPOSE_PROFILES=ollama
    ```
    Sans modèle local (API externe seulement), ne mettez rien : aucun service de modèle ne démarre.
 2. **Cookies.** `COOKIE_SECURE` vaut `true` par défaut : derrière HTTPS rien à faire ; pour un accès
@@ -304,7 +304,7 @@ Après `git pull`, avant `docker compose up -d --build` :
 | `WORKER_CONCURRENCY` | tâches de fond en parallèle (imports, analyses, exports) — défaut `3` |
 | `IMPORT_MAX_ARTICLES` | plafond d'articles par import — défaut `5000` (max NCBI : 10 000) |
 | `TASK_SOFT_TIME_LIMIT` | durée max d'une tâche en secondes — `0` = aucune |
-| `*_MEM_LIMIT` | `OLLAMA_`, `LAYA_`, `WORKER_`, `BACKEND_`, `FRONTEND_` : plafonds mémoire (défauts 24g, 8g, 8g, 2g, 1g) |
+| `*_MEM_LIMIT` | `OLLAMA_`, `WORKER_`, `BACKEND_`, `FRONTEND_` : plafonds mémoire (défauts 24g, 8g, 2g, 1g) |
 | `PRIVACY_URL` | lien « politique de confidentialité » affiché à la première connexion |
 
 Les PDF d'articles sont stockés dans PostgreSQL : prévoir de la place (jusqu'à 25 Mo par
@@ -338,31 +338,30 @@ instance exposée à des utilisateurs non fiables, filtrez aussi la sortie des c
 
 ### Modèles : ce qui fonctionne, et ce qu'on déploie
 
-Aucun service de modèle n'est lancé par défaut. Activez uniquement ce dont vous avez besoin
-dans `.env` (profils du compose), puis `docker compose up -d --build` :
+Le tri utilise un **modèle génératif** qui répond en JSON (décision, items, citations). Deux
+voies, au choix, dans `.env` puis `docker compose up -d --build` :
 
 ```bash
-COMPOSE_PROFILES=ollama,laya        # au choix : ollama, laya, kev (ou aucun)
-LLM_API_BASE_URL=http://ollama:11434/v1
-LAYA_URL=http://laya:8000
-KEV_URL=http://kev:8080             # avec le profil kev
+COMPOSE_PROFILES=ollama          # modèles locaux (sinon : aucun service de modèle)
+# LLM_API_BASE_URL=http://ollama:11434/v1   # défaut du compose
 ```
 
-| Modèle | Famille | Usage | Déploiement |
-|--------|---------|-------|-------------|
-| **Laya** (encodeur ~400 M) | décision | tri et items oui/non ou à choix ; très rapide, CPU | profil `laya` |
-| **Kev** (4B, GGUF) | décision | idem, plus fin ; **pas de chat** | profil `kev` (llama.cpp) |
-| **Qwen, Gemma, Llama…** (GGUF) | génératif | texte libre, citations de preuve ; plus lent | profil `ollama` |
-| **API externe** (OpenAI, Mistral, serveur interne…) | génératif | idem, sans rien déployer | aucun : URL + clé dans *Modèles* |
+| Voie | Déploiement | Usage |
+|------|-------------|-------|
+| **Ollama** (Qwen, Gemma, Llama… en GGUF) | profil `ollama` | local et souverain ; vitesse selon le CPU/GPU |
+| **API externe** (OpenAI, Mistral, serveur interne…) | rien : URL + clé dans *Modèles* | rapide, pas de matériel ; les articles quittent le serveur |
 
-- Les **modèles de décision** (protocole `POST /v1/systemone`) lisent un texte et répondent à
-  des questions typées avec des probabilités calibrées, en un seul passage. Ils ne génèrent
-  ni texte libre ni citations, et n'ont **pas** d'interface de chat : Kev ne s'installe donc
-  **pas** via Ollama (qui ne propose que `/v1/chat/completions`, d'où une erreur 400).
-- Les **modèles génératifs** (`/v1/chat/completions`) sont installés depuis la page *Modèles*
-  (recherche Hugging Face → Ollama) ou saisis comme **modèle externe**.
-- La page *Modèles* affiche l'état de chaque service (actif, injoignable, non déployé).
-- Seuls les modèles qu'un compte possède ou qu'on lui a partagés sont utilisables.
+- La page *Modèles* détecte les ressources du serveur (cœurs, RAM, AVX2, GPU) et recommande un
+  modèle adapté, installable en un clic : moins de 16 Go de RAM → très petit modèle (ou API
+  externe) ; 16–32 Go → ~4B ; 32 Go et plus → « mixture d'experts » 30B (3B actifs) ; GPU → ~12B.
+  Les modèles conseillés sont de type *instruct* (sans mode « réflexion », qui multiplie le
+  temps par article). Sans AVX2 ni GPU, l'inférence locale est 2 à 3 fois plus lente. Les temps
+  affichés sont des ordres de grandeur : mesurez toujours la précision sur votre gold (*Benchmarks*).
+- Chaque compte peut enregistrer ses propres modèles externes (clé chiffrée) et les partager avec
+  des comptes ou des projets ; seuls les modèles qu'un compte possède ou qu'on lui a partagés
+  sont utilisables. Un modèle partagé dépense les crédits de son propriétaire.
+- Les modèles de décision sans chat (Laya, Kev…) ne sont plus pris en charge : la recherche
+  Hugging Face les signale et refuse de les installer.
 
 **GPU sur Windows (Docker Desktop)** : pas de passthrough d'iGPU Intel dans
 Docker Desktop (NVIDIA uniquement) — un Ollama en conteneur reste sur CPU,

@@ -55,5 +55,5 @@ def fill_prompt(template: str | None, article, kinds: list[str] | None = None) -
 
 
 def title_abstract(article) -> str:
-    """Texte de l'étage 1 (encodeur) : titre + abstract."""
+    """Texte de l'étage 1 (pré-filtre) : titre + abstract."""
     return "\n".join(x for x in (article.title, article.abstract) if x)

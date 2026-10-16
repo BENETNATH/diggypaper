@@ -7,7 +7,6 @@ import { useTranslations } from "next-intl";
 import {
   getProject,
   getOverview,
-  deleteProject,
   listJobs,
   listModels,
   Project,
@@ -20,17 +19,9 @@ import { withSearch } from "@/lib/search";
 import { RequireAuth } from "@/components/RequireAuth";
 import { Badge } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { Menu, MenuItem } from "@/components/ui/Menu";
 import { Spinner, ErrorBanner } from "@/components/ui/Feedback";
 
 const pct = (n: number, d: number): number => (d > 0 ? Math.round((n / d) * 100) : 0);
-
-/** Étape suivante selon l'avancement du projet. */
-function nextStep(project: Project): "import" | "inference" | "articles" {
-  if (project.status === "DRAFT" || project.status === "PROCESSING") return "import";
-  if (project.status === "FROZEN") return "inference";
-  return "articles"; // tri terminé : résultats et relecture
-}
 
 function Kpi({ label, value, sub }: { label: string; value: ReactNode; sub?: ReactNode }) {
   return (
@@ -156,7 +147,6 @@ function ProjectDashboard() {
   const [overview, setOverview] = useState<ProjectOverview | null>(null);
   const [jobs, setJobs] = useState<ImportJob[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [deleting, setDeleting] = useState(false);
   const [modelCount, setModelCount] = useState<number | null>(null);
 
   const load = useCallback(async () => {
@@ -176,61 +166,22 @@ function ProjectDashboard() {
     listModels(projectId).then((m) => setModelCount(m.length)).catch(() => setModelCount(null));
   }, [load, projectId]);
 
-  async function handleDelete() {
-    if (!window.confirm(t("deleteConfirm"))) return;
-    setDeleting(true);
-    try {
-      await deleteProject(projectId);
-      window.location.href = "/projects";
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "error");
-      setDeleting(false);
-    }
-  }
-
   if (error) return <ErrorBanner message={error} onRetry={() => void load()} />;
   if (!project || !overview) return <Spinner label={t("loading")} />;
 
   const isLead = project.role_in_project === "LEAD";
   const frozen = project.status === "FROZEN" || project.status === "COMPLETED";
-  const next = nextStep(project);
   const toReviewTotal = overview.searches.reduce((a, s) => a + s.to_review, 0);
   const imports = (jobs ?? []).filter((j) => j.kind !== "fulltext");
   const lastJob = imports.length > 0 ? imports[imports.length - 1] : null;
   const initial = overview.searches.find((s) => s.is_default);
-  const nextLabel = { import: t("ctaImport"), inference: t("ctaInference"), articles: t("ctaArticles") }[next];
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h1 className="text-xl font-bold text-foreground">{project.title}</h1>
-          {project.description && <p className="mt-0.5 text-sm text-muted">{project.description}</p>}
-        </div>
-        <Menu label={deleting ? "…" : "⋯"}>
-          <MenuItem onClick={() => void handleDelete()}>
-            <span className="text-danger">{t("deleteProject")}</span>
-          </MenuItem>
-        </Menu>
-      </div>
-
       {project.status === "PROCESSING" && (
         <Link href={`/projects/${projectId}/import`} className="rounded-lg border border-primary bg-primary/10 p-3 text-sm font-medium text-primary hover:underline">
           {t("importInProgress")} →
         </Link>
-      )}
-
-      {/* Une seule action primaire : la suite logique du projet */}
-      {!(next === "inference" && !isLead) && (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary/40 bg-primary/5 px-4 py-3">
-          <div>
-            <div className="text-xs text-muted">{t("nextStep")}</div>
-            <div className="font-semibold text-foreground">{nextLabel}</div>
-          </div>
-          <Link href={`/projects/${projectId}/${next}`}>
-            <Button>{nextLabel} →</Button>
-          </Link>
-        </div>
       )}
 
       {modelCount === 0 && (
@@ -252,17 +203,17 @@ function ProjectDashboard() {
         <Kpi
           label={t("kpiFulltext")}
           value={`${pct(overview.fulltext, overview.articles)} %`}
-          sub={t("outOf", { n: overview.fulltext.toLocaleString() })}
+          sub={t("outOf", { n: overview.fulltext })}
         />
         <Kpi
           label={t("kpiAnalysed")}
           value={`${pct(overview.analysed, overview.articles)} %`}
-          sub={t("outOf", { n: overview.analysed.toLocaleString() })}
+          sub={t("outOf", { n: overview.analysed })}
         />
         <Kpi
           label={t("kpiReviewed")}
           value={`${pct(overview.reviewed, overview.articles)} %`}
-          sub={t("outOf", { n: overview.reviewed.toLocaleString() })}
+          sub={t("outOf", { n: overview.reviewed })}
         />
         <Kpi label={t("kpiToReview")} value={toReviewTotal.toLocaleString()} />
         <Kpi label={t("kpiGold")} value={overview.gold.toLocaleString()} />
@@ -283,7 +234,14 @@ function ProjectDashboard() {
           )}
         </div>
         {overview.articles === 0 ? (
-          <p className="rounded-lg border border-dashed border-border p-4 text-sm text-muted">{t("emptyCorpus")}</p>
+          <p className="rounded-lg border border-dashed border-border p-4 text-sm text-muted">
+            {t("emptyCorpus")}{" "}
+            {isLead && (
+              <Link href={`/projects/${projectId}/import`} className="font-medium text-primary hover:underline">
+                {t("ctaImport")} →
+              </Link>
+            )}
+          </p>
         ) : (
           <ul className="flex flex-col gap-3">
             {overview.searches.map((s) => (

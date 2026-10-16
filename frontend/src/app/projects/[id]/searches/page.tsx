@@ -338,7 +338,7 @@ function SearchesContent() {
                   <summary className="cursor-pointer text-sm font-medium text-foreground">{t("questionTitle")}</summary>
                   <p className="my-2 text-xs text-muted">{t("questionHint")}</p>
                   {edit ?? originDef ? (
-                    <QuestionEditor {...(edit ?? originDef)!} articleCount={count ?? undefined} onChange={setEdit} />
+                    <QuestionEditor {...(edit ?? originDef)!} onChange={setEdit} />
                   ) : (
                     <p className="text-sm text-muted">…</p>
                   )}

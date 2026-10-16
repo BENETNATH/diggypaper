@@ -6,8 +6,7 @@ import {
   listModels,
   deleteModel,
   listOllama,
-  createModel,
-  isScorer,
+  pullOllama,
   getModelCapabilities,
   ModelCapabilities,
   registerOllama,
@@ -37,9 +36,6 @@ function ModelsContent() {
   const [pulls, setPulls] = useState<Record<string, Pull>>({});
   const [error, setError] = useState<string | null>(null);
   const [caps, setCaps] = useState<ModelCapabilities | null>(null);
-  const [srvName, setSrvName] = useState("");
-  const [srvUrl, setSrvUrl] = useState("");
-  const [srvModel, setSrvModel] = useState("");
   const [ext, setExt] = useState({ name: "", base_url: "", model: "", api_key: "" });
   const [extMsg, setExtMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -81,21 +77,6 @@ function ModelsContent() {
     } catch (e) {
       setError(e instanceof Error ? e.message : "error");
     }
-  }
-
-  async function addServer(e: React.FormEvent) {
-    e.preventDefault();
-    await run(async () => {
-      const base = srvUrl.trim().replace(/\/+$/, "");
-      await createModel({
-        name: srvName.trim(),
-        backend_type: "SYSTEMONE",
-        model_identifier: srvModel.trim() ? `${base}#${srvModel.trim()}` : base,
-      });
-      setSrvName("");
-      setSrvUrl("");
-      setSrvModel("");
-    });
   }
 
   async function testExt() {
@@ -148,26 +129,45 @@ function ModelsContent() {
       {caps && (
         <Card title={t("servicesTitle")}>
           <ul className="flex flex-col gap-2 text-sm">
-            {(
-              [
-                ["ollama", t("svcOllama")],
-                ["laya", t("svcLaya")],
-                ["kev", t("svcKev")],
-              ] as const
-            ).map(([k, label]) => (
-              <li key={k} className="flex flex-wrap items-center gap-2">
-                <Badge color={caps[k].reachable ? "green" : caps[k].configured ? "red" : "gray"}>
-                  {caps[k].reachable ? t("svcUp") : caps[k].configured ? t("svcDown") : t("svcOff")}
-                </Badge>
-                <span className="font-medium text-foreground">{label}</span>
-                {!caps[k].configured && <span className="text-xs text-muted">{t("svcHow", { profile: k })}</span>}
-              </li>
-            ))}
+            <li className="flex flex-wrap items-center gap-2">
+              <Badge color={caps.ollama.reachable ? "green" : caps.ollama.configured ? "red" : "gray"}>
+                {caps.ollama.reachable ? t("svcUp") : caps.ollama.configured ? t("svcDown") : t("svcOff")}
+              </Badge>
+              <span className="font-medium text-foreground">{t("svcOllama")}</span>
+              {!caps.ollama.reachable && <span className="text-xs text-muted">{t("svcHow", { profile: "ollama" })}</span>}
+            </li>
             <li className="flex flex-wrap items-center gap-2">
               <Badge color="green">{t("svcUp")}</Badge>
               <span className="font-medium text-foreground">{t("svcExternal")}</span>
             </li>
           </ul>
+          <div className="mt-4 border-t border-border pt-3 text-sm">
+            <p className="font-medium text-foreground">
+              {t("hwTitle")} : {caps.hardware.cores} {t("hwCores")} · {caps.hardware.ram_gb} {t("hwRam")} ·{" "}
+              {caps.hardware.gpu ? t("hwGpu") : t("hwNoGpu")}
+              {caps.hardware.avx2 ? "" : ` · ${t("hwNoAvx2")}`}
+            </p>
+            {caps.recommendation.slow_cpu && <p className="mt-1 text-xs text-warning">{t("hwSlow")}</p>}
+            <p className="mt-2 text-xs text-muted">{t(`hwProfile_${caps.recommendation.profile}`)}</p>
+            <ul className="mt-2 flex flex-col gap-2">
+              {caps.recommendation.models.map((m, i) => (
+                <li key={m.tag} className="flex flex-wrap items-center gap-2">
+                  <code className="rounded bg-surface-muted px-1.5 py-0.5 text-xs">{m.tag}</code>
+                  <span className="text-xs text-muted">
+                    ≈ {m.ram_gb} GB · {t(`hwKind_${m.kind}`)}
+                    {i === 0 ? ` · ★ ${t("recommended")}` : ""}
+                    {!m.fits ? ` · ${t("hwTooBig")}` : ""}
+                  </span>
+                  {isAdmin && caps.ollama.reachable && m.fits && (
+                    <Button size="sm" variant="secondary" onClick={() => void run(() => pullOllama(m.tag))}>
+                      {t("install")}
+                    </Button>
+                  )}
+                </li>
+              ))}
+            </ul>
+            <p className="mt-2 text-xs text-muted">{t("hwEstimate")}</p>
+          </div>
         </Card>
       )}
 
@@ -183,9 +183,6 @@ function ModelsContent() {
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-medium text-foreground">{m.name}</span>
-                    <Badge color={isScorer(m) ? "blue" : "gray"}>
-                      {isScorer(m) ? t("typeDecision") : t("typeGenerative")}
-                    </Badge>
                     <Badge color={m.mine ? "green" : m.platform ? "yellow" : "gray"}>
                       {m.mine ? t("ownMine") : m.platform ? t("ownPlatform") : t("ownShared")}
                     </Badge>
@@ -235,42 +232,13 @@ function ModelsContent() {
       </Card>
 
       <Card title={t("addTitle")}>
-        <div className="mb-4 grid gap-3 md:grid-cols-2">
-          <div className="rounded-lg bg-surface-muted p-3 text-sm">
-            <p className="font-semibold text-foreground">{t("decisionTitle")}</p>
-            <p className="mt-1 text-muted">{t("decisionBody")}</p>
-          </div>
-          <div className="rounded-lg bg-surface-muted p-3 text-sm">
-            <p className="font-semibold text-foreground">{t("generativeTitle")}</p>
-            <p className="mt-1 text-muted">{t("generativeBody")}</p>
-          </div>
+        <div className="mb-4 rounded-lg bg-surface-muted p-3 text-sm">
+          <p className="font-semibold text-foreground">{t("generativeTitle")}</p>
+          <p className="mt-1 text-muted">{t("generativeBody")}</p>
         </div>
 
-        {isAdmin && (
-          <>
-        <h3 className="mb-2 text-sm font-semibold text-foreground">A. {t("serverTitle")}</h3>
-        <p className="mb-3 text-xs text-muted">{t("serverHint")}</p>
-        <form onSubmit={addServer} className="grid gap-3 sm:grid-cols-3">
-          <Field label={t("name")}>
-            <Input value={srvName} onChange={(e) => setSrvName(e.target.value)} placeholder="Kev-4B" required />
-          </Field>
-          <Field label={t("serverUrl")}>
-            <Input value={srvUrl} onChange={(e) => setSrvUrl(e.target.value)} placeholder="http://kev:8080" required />
-          </Field>
-          <Field label={t("serverModel")} hint={t("serverModelHint")}>
-            <Input value={srvModel} onChange={(e) => setSrvModel(e.target.value)} placeholder="multilingual" />
-          </Field>
-          <div className="sm:col-span-3">
-            <Button type="submit" variant="secondary" disabled={!srvName.trim() || !srvUrl.trim()}>
-              {t("serverAdd")}
-            </Button>
-          </div>
-        </form>
-
-          </>
-        )}
-        <div className={isAdmin ? "mt-6 border-t border-border pt-4" : ""}>
-          <h3 className="mb-2 text-sm font-semibold text-foreground">{isAdmin ? "B. " : ""}{t("extTitle")}</h3>
+        <div>
+          <h3 className="mb-2 text-sm font-semibold text-foreground">{t("extTitle")}</h3>
           <p className="mb-3 text-xs text-muted">{t("extHint")}</p>
           <form onSubmit={addExt} className="grid gap-3 sm:grid-cols-2">
             <Field label={t("name")}>

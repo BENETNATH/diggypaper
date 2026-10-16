@@ -6,12 +6,10 @@ import { searchHf, hfFiles, installHf, pullOllama, HfModel, HfFile } from "@/lib
 import { Button } from "@/components/ui/Button";
 import { Input, Select } from "@/components/ui/Field";
 
-type Kind = "chat" | "encoder";
-
 const fmtSize = (n?: number | null) =>
   n ? (n > 1e9 ? `${(n / 1e9).toFixed(1)} GB` : `${Math.round(n / 1e6)} MB`) : "";
 
-/** Recherche Hugging Face (GGUF via Ollama / ONNX) → choix de la variante → installation. */
+/** Recherche Hugging Face (GGUF via Ollama) → choix de la variante → installation. */
 export function HfSearch({
   onStarted,
   onError,
@@ -21,12 +19,10 @@ export function HfSearch({
 }) {
   const t = useTranslations("models");
   const [q, setQ] = useState("");
-  const kind: Kind = "chat"; // génératifs (GGUF via Ollama) ; les modèles de décision ont leur formulaire
   const [results, setResults] = useState<HfModel[] | null>(null);
   const [searching, setSearching] = useState(false);
   const [repo, setRepo] = useState<string | null>(null);
   const [files, setFiles] = useState<HfFile[] | null>(null);
-  const [noTokenizer, setNoTokenizer] = useState(false);
   const [choice, setChoice] = useState("");
   const [started, setStarted] = useState(false);
 
@@ -36,7 +32,7 @@ export function HfSearch({
     setStarted(false);
     setRepo(null);
     try {
-      setResults(await searchHf(q.trim(), kind));
+      setResults(await searchHf(q.trim()));
     } catch (err) {
       onError(err instanceof Error ? err.message : "error");
     } finally {
@@ -50,11 +46,10 @@ export function HfSearch({
     setChoice("");
     if (results?.find((r) => r.id === id)?.decision) return;
     try {
-      const r = await hfFiles(id, kind);
+      const r = await hfFiles(id);
       setFiles(r.items);
-      setNoTokenizer(kind === "encoder" && r.tokenizer === false);
       // Présélection : la variante recommandée pour le CPU, sinon la première (déjà triée).
-      setChoice(kind === "chat" ? (r.items.find((f) => f.recommended) ?? r.items[0])?.quant ?? "" : r.items[0]?.file ?? "");
+      setChoice((r.items.find((f) => f.recommended) ?? r.items[0])?.quant ?? "");
     } catch (err) {
       onError(err instanceof Error ? err.message : "error");
     }
@@ -63,11 +58,7 @@ export function HfSearch({
   async function install() {
     if (!repo) return;
     try {
-      await installHf(
-        kind === "chat"
-          ? { repo, kind, ...(choice ? { quant: choice } : {}) }
-          : { repo, kind, file: choice }
-      );
+      await installHf({ repo, ...(choice ? { quant: choice } : {}) });
       done();
     } catch (err) {
       onError(err instanceof Error ? err.message : "error");
@@ -92,7 +83,7 @@ export function HfSearch({
   }
 
   // Nom Ollama direct (« qwen3:4b ») : pas de recherche possible côté Ollama.
-  const ollamaName = kind === "chat" && /^[\w.-]+(:[\w.-]+)?$/.test(q.trim()) ? q.trim() : null;
+  const ollamaName = /^[\w.-]+(:[\w.-]+)?$/.test(q.trim()) ? q.trim() : null;
 
   return (
     <section>
@@ -166,21 +157,20 @@ export function HfSearch({
                     <p className="text-sm text-warning">{t("noVariants")}</p>
                   ) : (
                     <>
-                      <label className="text-sm font-medium">{kind === "chat" ? t("pickQuant") : t("pickFile")}</label>
+                      <label className="text-sm font-medium">{t("pickQuant")}</label>
                       <Select value={choice} onChange={(e) => setChoice(e.target.value)}>
                         {files.map((f) => (
-                          <option key={f.file} value={kind === "chat" ? f.quant ?? "" : f.file}>
-                            {kind === "chat" ? `${f.quant ?? f.file}` : f.file} {fmtSize(f.size)}
+                          <option key={f.file} value={f.quant ?? ""}>
+                            {f.quant ?? f.file} {fmtSize(f.size)}
                             {f.recommended ? ` ★ ${t("recommended")}` : ""}
                           </option>
                         ))}
                       </Select>
-                      {kind === "chat" && !files.some((f) => f.recommended) && (
+                      {!files.some((f) => f.recommended) && (
                         <p className="text-xs text-warning">{t("noRecommended")}</p>
                       )}
-                      {noTokenizer && <p className="text-xs text-warning">{t("noTokenizer")}</p>}
                       <div>
-                        <Button size="sm" onClick={() => void install()} disabled={noTokenizer}>
+                        <Button size="sm" onClick={() => void install()}>
                           {t("install")}
                         </Button>
                       </div>

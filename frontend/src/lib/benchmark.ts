@@ -27,8 +27,8 @@ export interface VariantDraft {
  * Nombre d'appels au modèle : articles × somme sur les modèles (variantes, ou 1 pour un modèle de
  * décision qui ignore le prompt). Sans variante saisie, un seul prompt (généré) est utilisé.
  */
-export function estimateCalls(lot: number, scorers: boolean[], variants: number): number {
-  return lot * scorers.reduce((n, scorer) => n + (scorer ? 1 : Math.max(1, variants)), 0);
+export function estimateCalls(lot: number, models: number, variants: number): number {
+  return lot * models * Math.max(1, variants);
 }
 
 /** Nom « Variante N » absent de la liste. */

@@ -16,13 +16,12 @@ const res = (model: string, over: Partial<BenchmarkResult> & { primary?: number 
 });
 
 describe("estimateCalls", () => {
-  it("articles × modèles × variantes ; un modèle de décision compte 1", () => {
-    expect(estimateCalls(30, [false, false], 3)).toBe(180);
-    expect(estimateCalls(30, [false, true], 3)).toBe(120);
+  it("articles × modèles × variantes", () => {
+    expect(estimateCalls(30, 2, 3)).toBe(180);
   });
   it("sans variante : un seul prompt", () => {
-    expect(estimateCalls(10, [false, false], 0)).toBe(20);
-    expect(estimateCalls(10, [], 2)).toBe(0);
+    expect(estimateCalls(10, 2, 0)).toBe(20);
+    expect(estimateCalls(10, 0, 2)).toBe(0);
   });
 });
 

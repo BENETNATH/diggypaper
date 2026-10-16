@@ -18,8 +18,8 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import hardware
 from app.api.deps import get_current_user, get_db, rate_limit_user
-from app.core.config import get_settings
 from app.core.crypto import encrypt_secret
 from app.db.base import SessionLocal
 from app.db.models import ModelRegistry, ModelShare, Project, ProjectMember, User, UserRole
@@ -32,7 +32,7 @@ router = APIRouter(prefix="/models", tags=["models"])
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 UserDep = Annotated[User, Depends(get_current_user)]
 
-_BACKENDS = {"OLLAMA", "LLAMA_CPP", "TRANSFORMERS", "ONNX_LOCAL", "SYSTEMONE", "OPENAI_API"}
+_BACKENDS = {"OLLAMA", "LLAMA_CPP", "TRANSFORMERS", "OPENAI_API"}
 
 
 class ModelCreate(BaseModel):
@@ -159,19 +159,15 @@ async def _reachable(url: str, path: str = "") -> bool:
 
 @router.get("/capabilities")
 async def capabilities(db: DbDep, user: UserDep) -> dict:
-    """Services de modèles déployés sur cette instance (profils du compose) : configurés ?
-    joignables ? Les modèles externes (API compatible OpenAI) fonctionnent toujours."""
+    """Service Ollama de cette instance (profil du compose) : configuré ? joignable ? Ressources du
+    serveur et modèles conseillés. Les modèles externes (API compatible OpenAI) fonctionnent
+    toujours."""
     ollama = await _ollama_base(db) if await get_setting(db, "llm_api_base_url") else ""
-    settings = get_settings()
-    ok = await asyncio.gather(
-        _reachable(ollama, "/api/tags"),
-        _reachable(settings.laya_url),
-        _reachable(settings.kev_url, "/health"),
-    )
-    cfg = (ollama, settings.laya_url, settings.kev_url)
+    hw = hardware.detect()
     return {
-        name: {"configured": bool(url), "reachable": up}
-        for name, url, up in zip(("ollama", "laya", "kev"), cfg, ok, strict=True)
+        "ollama": {"configured": bool(ollama), "reachable": await _reachable(ollama, "/api/tags")},
+        "hardware": hw,
+        "recommendation": hardware.recommend(hw),
     }
 
 
@@ -432,70 +428,6 @@ async def remove_share(model_id: uuid.UUID, share_id: uuid.UUID, db: DbDep, user
     await db.commit()
 
 
-# --- Téléchargements ONNX (utilisés par l'installation Hugging Face) ---------
-
-_MAX_ONNX_BYTES = 3 * 1024**3
-
-
-async def _download(http: httpx.AsyncClient, url: str, dest, state: dict) -> None:
-    """Télécharge ``url`` vers ``dest`` ; ``state['completed']`` avance en octets."""
-    async with http.stream("GET", url, follow_redirects=True) as resp:
-        resp.raise_for_status()
-        got = 0
-        with open(dest, "wb") as fh:
-            async for chunk in resp.aiter_bytes(1024 * 256):
-                got += len(chunk)
-                if got > _MAX_ONNX_BYTES:
-                    raise RuntimeError("file too large")
-                fh.write(chunk)
-                state["completed"] += len(chunk)
-
-
-def _onnx_companions(files: list[dict], model_path: str) -> list[dict]:
-    """Fichiers de poids externes du modèle (``model.onnx_data`` / ``model.onnx.data``)."""
-    return [
-        f
-        for f in files
-        if f["path"] in (model_path + "_data", model_path + ".data")
-        or (f["path"].startswith(model_path) and f["path"].endswith(("_data", ".data")))
-    ]
-
-
-async def _install_onnx(key: str, name: str, repo: str, model_path: str, files: list[dict]) -> None:
-    """Installe un encodeur ONNX dans ``models/<repo>/`` avec ses poids externes + tokenizer."""
-    from pathlib import Path
-
-    from app.core.config import get_settings
-
-    state = _PULLS[key]
-    try:
-        todo = [f for f in files if f["path"] == model_path] + _onnx_companions(files, model_path)
-        tok = next((f for f in files if f["path"] == "tokenizer.json"), None)
-        if tok is None:
-            raise RuntimeError("tokenizer.json missing in repository")
-        todo.append(tok)
-        state["total"] = sum(f.get("size") or 0 for f in todo) or 1
-        folder_name = repo.replace("/", "__")
-        folder = Path(get_settings().models_dir) / folder_name
-        folder.mkdir(parents=True, exist_ok=True)
-        async with httpx.AsyncClient(timeout=httpx.Timeout(30, read=None)) as http:
-            for f in todo:
-                state["status"] = Path(f["path"]).name
-                await _download(
-                    http,
-                    f"{_HF}/{repo}/resolve/main/{f['path']}",
-                    folder / Path(f["path"]).name,
-                    state,
-                )
-        async with SessionLocal() as db:
-            ident = f"{folder_name}/{Path(model_path).name}"
-            await _register(db, ident, name, "ONNX_LOCAL", None)
-        state.update(state="done", completed=state["total"])
-    except Exception as exc:
-        logger.warning("onnx install %s failed: %s", key, type(exc).__name__)
-        state.update(state="error", error=str(exc)[:200] or type(exc).__name__)
-
-
 # --- Recherche Hugging Face + installation ---------------------------------
 
 _HF = "https://huggingface.co"
@@ -538,15 +470,14 @@ async def _hf_get(path: str, params: dict | None = None):
 async def search_hf(
     user: UserDep,
     q: Annotated[str, Query(min_length=2, max_length=100)],
-    kind: Annotated[str, Query(pattern="^(chat|encoder)$")] = "chat",
 ) -> dict:
-    """Recherche sur Hugging Face : GGUF (génératifs, via Ollama) ou ONNX (encodeurs)."""
+    """Recherche sur Hugging Face : modèles GGUF (installés via Ollama)."""
     await _require_admin(user)
     data = await _hf_get(
         "/api/models",
         {
             "search": q,
-            "filter": "gguf" if kind == "chat" else "onnx",
+            "filter": "gguf",
             "limit": 20,
             "sort": "downloads",
             "direction": -1,
@@ -558,7 +489,7 @@ async def search_hf(
                 "id": m["id"],
                 "downloads": m.get("downloads", 0),
                 "likes": m.get("likes", 0),
-                # Kev & co : modèle de décision (/v1/systemone), inutilisable comme modèle de chat
+                # modèle de décision (sans chat) : non installable comme modèle générique
                 "decision": "decision-model" in (m.get("tags") or []),
             }
             for m in data
@@ -571,50 +502,33 @@ async def search_hf(
 async def hf_files(
     user: UserDep,
     repo: Annotated[str, Query(pattern=_REPO_RE)],
-    kind: Annotated[str, Query(pattern="^(chat|encoder)$")] = "chat",
 ) -> dict:
-    """Variantes installables d'un dépôt : quantifications GGUF ou fichiers .onnx."""
+    """Variantes installables d'un dépôt : quantifications GGUF."""
     await _require_admin(user)
     tree = await _hf_get(f"/api/models/{repo}/tree/main", {"recursive": "true"})
     files = [f for f in tree if f.get("type") == "file"]
-    if kind == "chat":
-        # Une entrée par quantification (fichiers fragmentés regroupés), triées pour le CPU.
-        groups: dict[str, dict] = {}
-        for f in files:
-            name = f["path"]
-            if not name.lower().endswith(".gguf") or "mmproj" in name.lower():
-                continue
-            m = _QUANT_RE.search(name)
-            quant = m.group(1).upper() if m else None
-            g = groups.setdefault(quant or name, {"quant": quant, "file": name, "size": 0})
-            g["size"] += f.get("size") or 0
-        items = sorted(groups.values(), key=lambda g: _quant_rank(g["quant"]))
-        # Recommandée : la première variante « CPU-friendly » disponible (Q4_K_M de préférence).
-        for g in items:
-            g["recommended"] = False
-        if items and _quant_rank(items[0]["quant"]) < len(_CPU_PREFERENCE):
-            items[0]["recommended"] = True
-        return {"items": items}
-    has_tok = any(f["path"] == "tokenizer.json" for f in files)
-    return {
-        "items": [
-            {
-                "file": f["path"],
-                "size": (f.get("size") or 0)
-                + sum(c.get("size") or 0 for c in _onnx_companions(files, f["path"])),
-            }
-            for f in files
-            if f["path"].lower().endswith(".onnx")
-        ],
-        "tokenizer": has_tok,
-    }
+    # Une entrée par quantification (fichiers fragmentés regroupés), triées pour le CPU.
+    groups: dict[str, dict] = {}
+    for f in files:
+        name = f["path"]
+        if not name.lower().endswith(".gguf") or "mmproj" in name.lower():
+            continue
+        m = _QUANT_RE.search(name)
+        quant = m.group(1).upper() if m else None
+        g = groups.setdefault(quant or name, {"quant": quant, "file": name, "size": 0})
+        g["size"] += f.get("size") or 0
+    items = sorted(groups.values(), key=lambda g: _quant_rank(g["quant"]))
+    # Recommandée : la première variante « CPU-friendly » disponible (Q4_K_M de préférence).
+    for g in items:
+        g["recommended"] = False
+    if items and _quant_rank(items[0]["quant"]) < len(_CPU_PREFERENCE):
+        items[0]["recommended"] = True
+    return {"items": items}
 
 
 class HFInstall(BaseModel):
     repo: str = Field(pattern=_REPO_RE)
-    kind: str = Field(pattern="^(chat|encoder)$")
     quant: str | None = Field(default=None, max_length=30, pattern=r"^[\w]+$")
-    file: str | None = Field(default=None, max_length=300, pattern=r"^[\w./\-]+\.onnx$")
     name: str | None = Field(default=None, max_length=100)
 
 
@@ -622,17 +536,12 @@ class HFInstall(BaseModel):
 async def install_hf(payload: HFInstall, db: DbDep, user: UserDep) -> dict:
     """Installe un modèle trouvé sur Hugging Face (suivi via GET /models/ollama → pulls)."""
     await _require_admin(user)
-    if payload.file and ".." in payload.file:
-        raise HTTPException(status_code=422, detail="invalid file")
-    if payload.kind == "encoder" and not payload.file:
-        raise HTTPException(status_code=422, detail="file required for encoder")
-    if payload.kind == "chat":  # un modèle de décision ne se sert pas par Ollama (pas de chat)
-        info = await _hf_get(f"/api/models/{payload.repo}")
-        if isinstance(info, dict) and "decision-model" in (info.get("tags") or []):
-            raise HTTPException(status_code=422, detail="decision_model")
+    info = await _hf_get(f"/api/models/{payload.repo}")
+    if isinstance(info, dict) and "decision-model" in (info.get("tags") or []):
+        raise HTTPException(status_code=422, detail="decision_model")  # pas de chat : inutilisable
     short = payload.repo.split("/")[1]
     name = (payload.name or short).strip() or short
-    key = f"hf:{payload.repo}:{payload.quant or payload.file or ''}"
+    key = f"hf:{payload.repo}:{payload.quant or ''}"
     if _PULLS.get(key, {}).get("state") == "running":
         raise HTTPException(status_code=409, detail="install already running")
     _PULLS[key] = {
@@ -642,11 +551,6 @@ async def install_hf(payload: HFInstall, db: DbDep, user: UserDep) -> dict:
         "total": 0,
         "name": name,
     }
-    if payload.kind == "chat":
-        ref = f"hf.co/{payload.repo}" + (f":{payload.quant}" if payload.quant else "")
-        asyncio.create_task(_pull(await _ollama_base(db), key, ref, name, None))
-    else:
-        tree = await _hf_get(f"/api/models/{payload.repo}/tree/main", {"recursive": "true"})
-        files = [f for f in tree if f.get("type") == "file"]
-        asyncio.create_task(_install_onnx(key, name, payload.repo, payload.file, files))
+    ref = f"hf.co/{payload.repo}" + (f":{payload.quant}" if payload.quant else "")
+    asyncio.create_task(_pull(await _ollama_base(db), key, ref, name, None))
     return {"key": key, "state": "running"}

@@ -52,7 +52,6 @@ from app.inference import (
     infer_with,
     make_inference_service,
 )
-from app.inference.scoring import is_scorer, score_prediction
 from app.schema import project_fields
 from app.searches import ScopedProject, get_search, gold_condition, in_search, lot_condition
 from app.settings.service import get_setting
@@ -277,7 +276,7 @@ async def _do_inference(
             "needs_review": needs_review,
         }
 
-    # Modèles du registre : étage 1 (scoreur rapide, optionnel) et modèle principal.
+    # Modèles du registre : étage 1 (petit modèle rapide, optionnel) et modèle principal.
     names = [n for n in (job.model_used, job.prefilter_model) if n]
     registry = {
         m.name: m
@@ -292,9 +291,7 @@ async def _do_inference(
     await _progress(session, job, 0, len(articles), 0, counts())
 
     async def predict(model, article, *, light: bool) -> dict:
-        """Scoreur (Laya…) ou LLM génératif ; ``light`` = étage 1 (abstract seulement)."""
-        if is_scorer(model):
-            return await score_prediction(model, project, article, light=light)
+        """Appel du modèle ; ``light`` = étage 1 (titre + abstract seulement)."""
         kinds = ["abstract"] if light else project.text_sections
         user_prompt = fill_prompt(prompt.user_prompt_schema, article, kinds)
         system = prompt.system_prompt or ""

@@ -32,13 +32,8 @@ class Settings(BaseSettings):
     cors_origins: list[str] = []
     # Bootstrap du premier admin (idempotent) : si définis et qu'aucun admin n'existe,
     # le compte est créé au démarrage. Vide = pas de bootstrap.
-    # Dossier des modèles ONNX (identifiants relatifs, ex. models/laya-400m-v1.onnx).
     # Langue par défaut (fr/en/de/es) : e-mails, nouveaux comptes, Accept-Language absent.
     default_language: str = "en"
-    models_dir: str = "models"
-    # Serveurs de modèles de décision (protocole /v1/systemone) pré-enregistrés au démarrage.
-    laya_url: str = ""  # ex. http://laya:8000 (service du compose)
-    kev_url: str = ""  # ex. http://kev:8080 (llama.cpp : llama serve -hf ggml-org/Kev-4B-GGUF)
     admin_email: str = ""
     admin_password: str = ""
     # Plafond d'articles ramenés par un import (NCBI esearch : 10 000 max par requête).

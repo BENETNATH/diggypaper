@@ -46,7 +46,7 @@ INFERENCE_RATE_LIMIT = 5
 class InferenceCreate(BaseModel):
     prompt_template_id: uuid.UUID | None = None  # défaut : prompt généré depuis la question
     model: str = Field(min_length=1)
-    prefilter_model: str | None = None  # étage 1 ONNX (ex. Laya-400M), optionnel
+    prefilter_model: str | None = None  # étage 1 : petit modèle sur titre + abstract, optionnel
     resume: bool = False  # reprend la dernière analyse interrompue (saute les articles déjà faits)
     search_id: uuid.UUID | None = None  # recherche analysée (défaut : la recherche initiale)
     gold_examples: int = Field(default=0, ge=0, le=20)  # exemples du gold ajoutés au prompt

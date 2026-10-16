@@ -1,7 +1,7 @@
 #!/bin/sh
 # Sauvegarde de la base Diggypaper (comptes, projets, articles, PDF, annotations, modèles
 # et clés chiffrées) : un pg_dump compressé par exécution, dans ./backups (BACKUP_DIR).
-# Les zips d'export, poids de modèles (ollama, laya) et encodeurs sont reproductibles : non
+# Les zips d'export, poids de modèles (ollama) sont reproductibles : non
 # sauvegardés. ⚠ Garder aussi .env (ENCRYPTION_KEY : sans elle, les clés API chiffrées de la
 # base sont illisibles) et copier ./backups HORS de cette machine.
 #

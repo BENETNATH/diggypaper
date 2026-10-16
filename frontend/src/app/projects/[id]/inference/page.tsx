@@ -16,7 +16,6 @@ import {
   InferenceJob,
   ModelInfo,
   SchemaField,
-  isScorer,
   Validation,
   createSearch,
   Selection,
@@ -85,9 +84,7 @@ function InferenceContent() {
 
   const active = job?.status === "PENDING" || job?.status === "RUNNING";
   const label = (m: ModelInfo) =>
-    `${m.name} — ${isScorer(m) ? t("kindDecision") : t("kindGenerative")}${
-      m.ram_usage_mb ? ` · ~${m.ram_usage_mb} MB` : ""
-    }`;
+    `${m.name}${m.ram_usage_mb ? ` · ~${m.ram_usage_mb} MB` : ""}`;
 
   const load = useCallback(async () => {
     try {
@@ -312,7 +309,7 @@ function InferenceContent() {
 
       <Card title={`1. ${t("questionTitle")}`}>
         {q ? (
-          <QuestionEditor {...q} articleCount={current?.lot_size ?? 0} onChange={setQ} />
+          <QuestionEditor {...q} onChange={setQ} />
         ) : (
           <p className="text-sm text-muted">…</p>
         )}

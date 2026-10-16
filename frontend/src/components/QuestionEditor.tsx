@@ -16,15 +16,7 @@ const SECTION_KINDS = [
   "other",
 ];
 
-const DEPTHS = [1, 2, 4, 8, 16];
 const CHOICE_METRICS: RankMetric[] = ["accuracy"];
-
-/** Durée lisible à partir de secondes. */
-function fmtDuration(sec: number): string {
-  if (sec < 90) return `${Math.round(sec)} s`;
-  if (sec < 5400) return `${Math.round(sec / 60)} min`;
-  return `${(sec / 3600).toFixed(1)} h`;
-}
 
 const slug = (s: string) =>
   s
@@ -42,14 +34,12 @@ export function QuestionEditor({
   fields,
   sections,
   readWindows,
-  articleCount,
   onChange,
 }: {
   question: string;
   fields: SchemaField[];
   sections: string[];
   readWindows: number;
-  articleCount?: number;
   onChange: (next: {
     question: string;
     fields: SchemaField[];
@@ -206,26 +196,6 @@ export function QuestionEditor({
               onChange={() => toggleSection(k)}
             />
           ))}
-        </div>
-
-        <div className="mt-4 max-w-md">
-          <Field label={t("depthLabel")} hint={t("depthHint")}>
-            <Select value={String(readWindows)} onChange={(e) => set({ readWindows: Number(e.target.value) })}>
-              {DEPTHS.map((w) => (
-                <option key={w} value={w}>
-                  {t(`depth_${w}`)} — ≈ {w === 1 ? 1 : Math.round(w * 4)} s {t("perArticle")}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          {articleCount ? (
-            <p className="mt-1 text-xs text-muted">
-              {t("depthEstimate", {
-                n: articleCount.toLocaleString(),
-                time: fmtDuration(articleCount * (readWindows === 1 ? 1 : readWindows * 4)),
-              })}
-            </p>
-          ) : null}
         </div>
       </div>
     </div>
