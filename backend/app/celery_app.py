@@ -32,6 +32,7 @@ celery_app.conf.update(
     include=[
         "app.tasks",
         "app.tasks.benchmark",
+        "app.tasks.crate_import",
         "app.tasks.export",
         "app.tasks.inference",
         "app.tasks.maintenance",

@@ -137,7 +137,7 @@ function JobProgress({ job, onRetry }: { job: ImportJob; onRetry?: (job: ImportJ
       {job.status === "FAILED" && job.error && (
         <p className="rounded-lg bg-danger/10 p-3 text-sm text-danger">{job.error}</p>
       )}
-      {job.status === "FAILED" && onRetry && job.kind !== "references" && job.kind !== "citations" && (
+      {job.status === "FAILED" && onRetry && job.kind !== "references" && job.kind !== "citations" && job.kind !== "crate" && (
         <div className="flex flex-col items-start gap-1">
           <Button size="sm" onClick={() => onRetry(job)}>
             ↻ {t("retry")}
@@ -251,7 +251,7 @@ function ImportContent() {
   /** Relance un job échoué (requête identique : les articles déjà importés sont ignorés). */
   async function handleRetry(failed: ImportJob) {
     if (failed.kind === "fulltext") return handleFulltext();
-    if (failed.kind === "references" || failed.kind === "citations") return;
+    if (failed.kind === "references" || failed.kind === "citations" || failed.kind === "crate") return;
     setError(null);
     try {
       jobsBefore.current = jobs?.length ?? 0;

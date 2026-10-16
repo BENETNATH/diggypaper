@@ -26,6 +26,19 @@ server {
     add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
     add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'" always;
 
+    # Import d'un RO-Crate (zip pouvant contenir des centaines de PDF) : corps volumineux, sans tampon
+    location = /api/v1/projects/import-crate {
+        client_max_body_size 1100m;
+        proxy_request_buffering off;
+        proxy_pass http://backend:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $fwd_proto;
+        proxy_read_timeout 600s;
+        proxy_send_timeout 600s;
+    }
+
     # API backend FastAPI
     location /api/v1/ {
         client_max_body_size 30m;  # dépôt de PDF d'articles

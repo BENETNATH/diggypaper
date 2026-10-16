@@ -551,3 +551,25 @@ async def test_filter_results_by_full_text_or_abstract_only(client, session, cor
     assert await total("articles", fulltext="true", status="AUTO_ACCEPTED") == 1  # se combine
     ris = await total("export.ris", fulltext="true")  # les références suivent le filtre
     assert ris.count("TY  - ") == 2
+
+
+async def test_quick_search_ignores_accents_and_case(client, session, corpus):
+    project, arts = corpus
+    base = f"/api/v1/projects/{project.id}"
+    arts[0].title, arts[0].authors = (
+        "Étude du sommeil chez la souris",
+        ["Smith J", "Dupont-Martin A"],
+    )
+    arts[1].title, arts[1].journal = "Ordinary title", "Revue Française d'Épidémiologie"
+    await session.commit()
+
+    async def found(q):
+        r = await client.get(f"{base}/articles", params={"q": q})
+        assert r.status_code == 200, r.text
+        return sorted(i["title"] for i in r.json()["items"])
+
+    assert await found("etude SOMMEIL") == ["Étude du sommeil chez la souris"]  # sans accents
+    assert await found("Étude") == ["Étude du sommeil chez la souris"]  # avec accents
+    assert await found("SMITH dupont") == ["Étude du sommeil chez la souris"]  # auteurs
+    assert await found("epidemiologie francaise") == ["Ordinary title"]  # journal
+    assert await found("100%") == []  # % et _ restent littéraux

@@ -114,7 +114,7 @@ export type AnnotationPayload = Record<string, unknown>;
 export interface ImportJob {
   id: string;
   task: string;
-  kind?: "import" | "fulltext" | "references" | "citations";
+  kind?: "import" | "fulltext" | "references" | "citations" | "crate";
   status: "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
   query: string | null;
   result: Record<string, unknown> | null;
@@ -682,6 +682,15 @@ export async function matchArticlePdf(
   return request(`/projects/${projectId}/fulltext/match`, {
     method: "POST",
     headers: { "Content-Type": "application/pdf" },
+    body: file,
+  });
+}
+
+/** Importe un RO-Crate (zip exporté par Diggypaper) : crée un projet et restaure son contenu. */
+export function importCrate(file: File): Promise<{ project_id: string; job_id: string }> {
+  return request("/projects/import-crate", {
+    method: "POST",
+    headers: { "Content-Type": "application/zip" },
     body: file,
   });
 }

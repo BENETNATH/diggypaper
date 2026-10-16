@@ -15,6 +15,12 @@ s'exportent en tableur, en RO-Crate et en diagramme PRISMA.
 ### Constituer le corpus
 - **Import PubMed/PMC** par requête, avec le volume attendu avant import, un plafond réglable
   (`IMPORT_MAX_ARTICLES`), le dédoublonnage et les métadonnées (journal, date, auteurs, DOI).
+- **Import d'un RO-Crate** : un zip exporté par Diggypaper (Projets → « Importer un RO-Crate »,
+  jusqu'à 1 Go) recrée un projet : question et items, articles, textes intégraux, PDF, réponses du
+  modèle (certitudes, extraits de preuve) et réponses humaines finales. Le crate ne contient qu'une
+  recherche : elle devient la recherche initiale. Les relectures sont attribuées à la personne qui
+  importe, sans note de pertinence ; le gold, les autres recherches et l'équipe ne sont pas dans
+  le crate. Le zip est vérifié (structure, tailles, chemins) avant toute lecture.
 - **Assistant de requête PubMed** : on décrit sa recherche en texte libre, un modèle (au choix
   parmi ceux du compte) propose une requête, on affine en discutant. Chaque proposition est
   vérifiée par PubMed : nombre de résultats, termes inconnus (un MeSH inventé est signalé) et, si

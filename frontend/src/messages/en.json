@@ -56,7 +56,10 @@
     "articles": "Articles",
     "loading": "Loading projects…",
     "empty": "No projects",
-    "emptyHint": "Create your first project to get started."
+    "emptyHint": "Create your first project to get started.",
+    "importCrate": "Import an RO-Crate",
+    "importCrateBusy": "Importing…",
+    "importCrateHelp": "Restores a project from a zip exported by Diggypaper: corpus, texts, PDFs, model answers and human answers."
   },
   "project": {
     "loading": "Loading project…",

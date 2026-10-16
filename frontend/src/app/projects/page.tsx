@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { useAuth } from "@/lib/auth";
-import { listProjects, createProject, Project } from "@/lib/api";
+import { listProjects, createProject, importCrate, Project } from "@/lib/api";
 import { RequireAuth } from "@/components/RequireAuth";
 import { Button } from "@/components/ui/Button";
 import { Field, Input, Select } from "@/components/ui/Field";
@@ -22,6 +22,7 @@ function ProjectsContent() {
   const [description, setDescription] = useState("");
   const [language, setLanguage] = useState("en");
   const [creating, setCreating] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   const load = useCallback(async () => {
     setError(null);
@@ -53,6 +54,19 @@ function ProjectsContent() {
     }
   }
 
+  async function handleCrate(file: File | undefined) {
+    if (!file) return;
+    setImporting(true);
+    setError(null);
+    try {
+      const r = await importCrate(file);
+      window.location.href = `/projects/${r.project_id}/import`;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "error");
+      setImporting(false);
+    }
+  }
+
   if (error && !projects) {
     return <ErrorBanner message={error} onRetry={() => void load()} />;
   }
@@ -64,8 +78,29 @@ function ProjectsContent() {
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold text-foreground">{t("title")}</h1>
-        {canCreate && <Button onClick={() => setShowForm((v) => !v)}>{t("newProject")}</Button>}
+        {canCreate && (
+          <div className="flex items-center gap-2">
+            <label
+              className={`cursor-pointer rounded-lg border border-border px-3 py-2 text-sm text-foreground hover:bg-surface-muted ${importing ? "pointer-events-none opacity-60" : ""}`}
+              title={t("importCrateHelp")}
+            >
+              {importing ? t("importCrateBusy") : t("importCrate")}
+              <input
+                type="file"
+                accept=".zip,application/zip"
+                className="hidden"
+                disabled={importing}
+                onChange={(e) => {
+                  void handleCrate(e.target.files?.[0]);
+                  e.target.value = "";
+                }}
+              />
+            </label>
+            <Button onClick={() => setShowForm((v) => !v)}>{t("newProject")}</Button>
+          </div>
+        )}
       </div>
+      {error && projects && <ErrorBanner message={error} />}
 
       {canCreate && showForm && (
         <Card title={t("newProject")}>

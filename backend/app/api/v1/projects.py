@@ -18,7 +18,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import String, cast, false, func, or_, select
+from sqlalchemy import String, Text, cast, false, func, literal_column, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db
@@ -607,20 +607,38 @@ def _answer_filters(search: Search, raw: str | None, pdec, hdec) -> list:
     return conds
 
 
+def search_blob():
+    """Titre, journal, PMID, DOI et auteurs en un seul texte sans accents ni majuscules.
+
+    Même expression que l'index trigramme ``ix_articles_search_trgm`` (migration 0028) : PostgreSQL
+    s'en sert pour la recherche rapide, quel que soit le nombre d'articles. Les ``''`` sont inlinés
+    (``literal_column``), pas des paramètres, sinon l'expression ne correspond plus à l'index.
+    """
+    empty, space = literal_column("''"), literal_column("' '")
+    parts = [
+        func.coalesce(Article.title, empty),
+        func.coalesce(Article.journal, empty),
+        func.coalesce(Article.pmid, empty),
+        func.coalesce(Article.doi, empty),
+        func.coalesce(cast(Article.authors, Text), empty),
+    ]
+    joined = parts[0]
+    for p in parts[1:]:
+        joined = joined.op("||")(space).op("||")(p)
+    return func.lower(func.immutable_unaccent(joined))
+
+
 def text_conditions(q: str | None) -> list:
-    """Recherche rapide : chaque mot saisi doit figurer (casse ignorée) dans le titre, les auteurs,
-    le journal, le PMID ou le DOI ; les mots se cumulent (ET)."""
+    """Recherche rapide : chaque mot saisi doit figurer dans le titre, les auteurs, le journal,
+    le PMID ou le DOI, sans tenir compte de la casse ni des accents ; les mots se cumulent (ET)."""
     conds = []
+    blob = search_blob()
     for word in (q or "").split()[:8]:
-        esc = word.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-        like = f"%{esc}%"
+        norm = func.lower(func.immutable_unaccent(word))  # même normalisation des deux côtés
+        esc = func.replace(func.replace(func.replace(norm, "\\", "\\\\"), "%", "\\%"), "_", "\\_")
         conds.append(
-            or_(
-                Article.title.ilike(like, escape="\\"),
-                cast(Article.authors, String).ilike(like, escape="\\"),
-                Article.journal.ilike(like, escape="\\"),
-                Article.pmid.ilike(like, escape="\\"),
-                Article.doi.ilike(like, escape="\\"),
+            blob.like(
+                literal_column("'%'").op("||")(esc).op("||")(literal_column("'%'")), escape="\\"
             )
         )
     return conds
