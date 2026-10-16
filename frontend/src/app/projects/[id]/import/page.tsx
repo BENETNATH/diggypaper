@@ -18,6 +18,7 @@ import { useSearchId } from "@/lib/useSearch";
 import { RequireAuth } from "@/components/RequireAuth";
 import { ReferencesImport } from "@/components/ReferencesImport";
 import { CitationExpand } from "@/components/CitationExpand";
+import { QueryAssistant } from "@/components/QueryAssistant";
 import { Button } from "@/components/ui/Button";
 import { Field, Input } from "@/components/ui/Field";
 import { Card, Badge, statusColor } from "@/components/ui/Card";
@@ -359,6 +360,19 @@ function ImportContent() {
                 }}
               />
             ) : (
+            <div className="flex flex-col gap-4">
+            <details className="rounded-lg border border-border p-3">
+              <summary className="cursor-pointer text-sm font-medium text-foreground">{t("qaTitle")}</summary>
+              <div className="mt-3">
+                <QueryAssistant
+                  projectId={projectId}
+                  onUse={(q) => {
+                    setQuery(q);
+                    setVolume(null);
+                  }}
+                />
+              </div>
+            </details>
           <form onSubmit={handleCheckVolume} className="flex flex-col gap-4">
             {hasCorpus && <p className="text-sm text-muted">{t("addHint", { n: project?.article_count ?? 0 })}</p>}
             <Field label={t("queryLabel")} hint={t("queryHint")}>
@@ -395,6 +409,7 @@ function ImportContent() {
               <p className="text-xs text-muted">{t("checkFirst")}</p>
             )}
           </form>
+            </div>
             )}
           </>
         )}

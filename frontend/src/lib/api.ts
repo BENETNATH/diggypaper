@@ -532,6 +532,32 @@ export async function expandByCitations(
   });
 }
 
+export interface QueryCheck {
+  count?: number;
+  translation?: string;
+  not_found?: string[];
+  too_long?: boolean;
+  recall?: { total: number; found: number; missing: string[] };
+  error?: string;
+}
+export interface QueryAssist {
+  reply: string;
+  query: string | null;
+  refused: boolean;
+  check: QueryCheck | null;
+}
+
+/** Assistant de requête PubMed : un modèle propose une requête, PubMed la vérifie. */
+export async function assistQuery(
+  projectId: string,
+  body: { model: string; messages: { role: "user" | "assistant"; content: string }[]; seeds: string }
+): Promise<QueryAssist> {
+  return request<QueryAssist>(`/projects/${projectId}/query-assistant`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
 export async function completeFulltext(projectId: string): Promise<void> {
   await request(`/projects/${projectId}/fulltext`, { method: "POST" });
 }

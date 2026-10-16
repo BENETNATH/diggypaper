@@ -19,6 +19,7 @@ from app.api.v1 import (
     models,
     projects,
     prompts,
+    query_assistant,
     searches,
     team,
     users,
@@ -71,6 +72,7 @@ def create_app() -> FastAPI:
     app.include_router(team.router, prefix="/api/v1")
     app.include_router(searches.router, prefix="/api/v1")
     app.include_router(citations.router, prefix="/api/v1")
+    app.include_router(query_assistant.router, prefix="/api/v1")
     app.include_router(export.router, prefix="/api/v1")
     app.include_router(models.router, prefix="/api/v1")
     app.include_router(prompts.router, prefix="/api/v1")

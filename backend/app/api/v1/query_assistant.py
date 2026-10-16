@@ -1,0 +1,84 @@
+"""Assistant de requête PubMed (responsable du projet) : conversation libre → requête vérifiée."""
+
+import logging
+import uuid
+from typing import Annotated, Literal
+
+import httpx
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app import query_assistant as qa
+from app.api.deps import get_current_user, get_db, rate_limit_user
+from app.api.v1.projects import _require_lead_or_admin, _require_project_member
+from app.db.models import User
+from app.inference import InferenceError, infer_with, make_inference_service
+from app.model_access import usable_models
+from app.pubmed import NCBIError
+from app.settings.service import get_setting
+
+logger = logging.getLogger(__name__)
+router = APIRouter(prefix="/projects", tags=["query-assistant"])
+
+DbDep = Annotated[AsyncSession, Depends(get_db)]
+UserDep = Annotated[User, Depends(get_current_user)]
+
+
+class Message(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=qa.MAX_USER_CHARS)
+
+
+class AssistRequest(BaseModel):
+    model: str = Field(min_length=1)
+    messages: list[Message] = Field(min_length=1, max_length=qa.MAX_MESSAGES)
+    seeds: str = Field(default="", max_length=20000)  # articles attendus : DOI / PMID, un par ligne
+
+
+@router.post(
+    "/{project_id}/query-assistant",
+    dependencies=[Depends(rate_limit_user("query_assistant", 20))],
+)
+async def assist(project_id: uuid.UUID, payload: AssistRequest, db: DbDep, user: UserDep) -> dict:
+    """Le modèle propose une requête à partir de la conversation ; PubMed la vérifie (volume,
+    traduction, termes inconnus) et, avec des articles attendus, mesure combien elle en retrouve."""
+    await _require_project_member(db, project_id, user)
+    await _require_lead_or_admin(db, project_id, user)
+    if payload.messages[-1].role != "user":
+        raise HTTPException(status_code=422, detail="last message must come from the user")
+    models = await usable_models(db, user, [payload.model], project_id)
+    if not models:
+        raise HTTPException(status_code=422, detail="unknown model")
+    prompt = qa.build_prompt([m.model_dump() for m in payload.messages])
+    service = await make_inference_service(db)
+    answer = None
+    for attempt in range(2):  # un modèle qui raisonne répond parfois sans JSON : une seconde chance
+        try:
+            answer = await infer_with(models[0], service, qa.SYSTEM_PROMPT, prompt)
+            break
+        except InferenceError as exc:
+            if str(exc) != "invalid_json" or attempt == 1:
+                raise HTTPException(status_code=502, detail=f"model_error:{exc}") from exc
+    if not isinstance(answer, dict):
+        raise HTTPException(status_code=502, detail="model_error:invalid_json")
+    logger.info(
+        "query-assistant: user=%s project=%s model=%s msg=%r",
+        user.id,
+        project_id,
+        payload.model,
+        payload.messages[-1].content[:80],
+    )
+    result = qa.constrain(answer) | {"check": None}
+    query = result["query"]
+    if query:
+        api_key = await get_setting(db, "ncbi_api_key")
+        try:
+            async with httpx.AsyncClient(timeout=60) as http:
+                result["check"] = await qa.check_query(
+                    query, api_key, qa.parse_seeds(payload.seeds), http
+                )
+        except NCBIError as exc:
+            logger.error("query-assistant NCBI error: %s", exc)
+            result["check"] = {"error": "ncbi_unavailable"}
+    return result

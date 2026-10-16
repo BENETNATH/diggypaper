@@ -132,6 +132,33 @@ async def search_volume(query: str, api_key: str | None, http: httpx.AsyncClient
     return int(resp.json()["esearchresult"]["count"])
 
 
+async def explain_query(query: str, api_key: str | None, http: httpx.AsyncClient) -> dict:
+    """Comment PubMed comprend la requête : {count, translation, not_found}.
+
+    ``translation`` = la requête réécrite par PubMed (termes MeSH, champs) ; ``not_found`` = termes
+    ou champs qu'il ne connaît pas (MeSH inventé, faute de frappe) : signal d'une requête fausse.
+    """
+    await _throttle(api_key)
+    resp = await _get_with_retry(
+        http, f"{EUTILS_BASE}/esearch.fcgi", _esearch_params(query, 0, api_key)
+    )
+    r = resp.json()["esearchresult"]
+    errors = r.get("errorlist") or {}
+    warnings = r.get("warninglist") or {}
+    not_found = [
+        *errors.get("phrasesnotfound", []),
+        *errors.get("fieldsnotfound", []),
+        *warnings.get("phrasesignored", []),
+        *warnings.get("quotedphrasesnotfound", []),
+        *warnings.get("outputmessage", []),
+    ]
+    return {
+        "count": int(r.get("count") or 0),
+        "translation": r.get("querytranslation") or "",
+        "not_found": [str(x) for x in not_found][:20],
+    }
+
+
 async def fetch_pmids(
     query: str, api_key: str | None, http: httpx.AsyncClient, retmax: int | None = None
 ) -> list[str]:

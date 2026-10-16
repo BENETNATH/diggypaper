@@ -15,6 +15,12 @@ s'exportent en tableur, en RO-Crate et en diagramme PRISMA.
 ### Constituer le corpus
 - **Import PubMed/PMC** par requête, avec le volume attendu avant import, un plafond réglable
   (`IMPORT_MAX_ARTICLES`), le dédoublonnage et les métadonnées (journal, date, auteurs, DOI).
+- **Assistant de requête PubMed** : on décrit sa recherche en texte libre, un modèle (au choix
+  parmi ceux du compte) propose une requête, on affine en discutant. Chaque proposition est
+  vérifiée par PubMed : nombre de résultats, termes inconnus (un MeSH inventé est signalé) et, si
+  on donne des articles attendus (DOI / PMID), combien la requête en retrouve. Le modèle est
+  borné côté serveur : il ne peut servir qu'à cela (sorties hors requête refusées, conversation
+  et débit limités).
 - **Liste de références** à la place d'une recherche : DOI ou PMID collés (un par ligne), ou
   export BibTeX, RIS, CSL JSON ou CSV de Zotero / EndNote / Mendeley. Chaque entrée est
   complétée via PubMed (Europe PMC pour retrouver le PMID d'un DOI), sinon Crossref, sinon les
