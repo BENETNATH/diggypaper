@@ -20,7 +20,6 @@ const STEPS = [
   { key: "team", href: "/team", needsCorpus: false, leadOnly: false, optional: false },
   { key: "gold", href: "/gold", needsCorpus: true, leadOnly: false, optional: true },
   { key: "benchmarks", href: "/benchmarks", needsCorpus: true, leadOnly: true, optional: true },
-  { key: "prompts", href: "/prompts", needsCorpus: true, leadOnly: true, optional: true },
 ] as const;
 
 /** Navigation persistante du projet : fil d'Ariane + onglets des étapes. */

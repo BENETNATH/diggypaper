@@ -75,6 +75,8 @@ function InferenceContent() {
   const [submitting, setSubmitting] = useState(false);
   const [launched, setLaunched] = useState(false);
   const [promptId, setPromptId] = useState<string | null>(wantedPrompt);
+  const [instructions, setInstructions] = useState("");
+  const [sentPrompt, setSentPrompt] = useState<string | null>(null);
   const [promptTitle, setPromptTitle] = useState<string | null>(null);
   const [goldCount, setGoldCount] = useState<number | null>(null);
   const [examplesOn, setExamplesOn] = useState(false);
@@ -126,6 +128,15 @@ function InferenceContent() {
       .then((p) => setPromptTitle(p.title ?? p.version_number))
       .catch(() => setPromptId(null)); // prompt introuvable : retour au prompt généré
   }, [projectId, promptId]);
+
+  // Prompt exact de la dernière analyse (consultable sous la progression).
+  useEffect(() => {
+    setSentPrompt(null);
+    if (!job?.prompt_template_id) return;
+    getPrompt(projectId, job.prompt_template_id)
+      .then((p) => setSentPrompt(`${p.system_prompt ?? ""}\n\n${p.user_prompt_schema ?? ""}`.trim()))
+      .catch(() => setSentPrompt(null));
+  }, [projectId, job?.prompt_template_id]);
 
   // Références du gold de la recherche : sans elles, ni exemples ni validation.
   useEffect(() => {
@@ -244,6 +255,7 @@ function InferenceContent() {
         model: stage2 || stage1,
         ...(stage2 && stage1 && stage2 !== stage1 ? { prefilter_model: stage1 } : {}),
         ...(promptId ? { prompt_template_id: promptId } : {}),
+        ...(!promptId && instructions.trim() ? { instructions: instructions.trim() } : {}),
         ...goldOptions(),
         ...(runSearchId ? { search_id: runSearchId } : {}),
       });
@@ -365,6 +377,21 @@ function InferenceContent() {
                 </Button>
               </div>
             )}
+            {!promptId && (
+              <details className="rounded-lg border border-border p-3" open={instructions.length > 0}>
+                <summary className="cursor-pointer text-sm font-semibold text-foreground">{t("instructionsTitle")}</summary>
+                <p className="mb-2 mt-1 text-xs text-muted">{t("instructionsHint")}</p>
+                <textarea
+                  value={instructions}
+                  onChange={(e) => setInstructions(e.target.value)}
+                  maxLength={2000}
+                  rows={3}
+                  disabled={active}
+                  placeholder={t("instructionsPlaceholder")}
+                  className="w-full rounded border border-border bg-surface p-2 text-sm text-foreground"
+                />
+              </details>
+            )}
             <div className="flex flex-col gap-2 rounded-lg border border-border p-3">
               <p className="text-sm font-semibold text-foreground">{t("goldTitle")}</p>
               <p className="text-xs text-muted">{noGold ? t("goldNone") : t("goldHint")}</p>
@@ -436,6 +463,14 @@ function InferenceContent() {
               <span className="font-mono">{job.model_used}</span>
               <Badge color={statusColor(job.status)}>{job.status}</Badge>
             </div>
+          )}
+          {sentPrompt && (
+            <details className="mb-3 text-sm">
+              <summary className="cursor-pointer text-xs font-medium text-muted">{t("promptSent")}</summary>
+              <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap rounded bg-surface-muted p-3 text-xs text-foreground">
+                {sentPrompt}
+              </pre>
+            </details>
           )}
           {!active && job.status === "COMPLETED" && (
             <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">

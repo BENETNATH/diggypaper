@@ -70,7 +70,6 @@
     "articlesHint": "Entscheidungen der Modelle ansehen, unsichere Fälle prüfen.",
     "gold": "Goldstandard",
     "goldHint": "Referenzstichprobe von Hand annotieren (30-50 Artikel).",
-    "prompts": "Prompts",
     "promptsHint": "Fortgeschritten: Der Prompt wird aus Ihrer Frage erzeugt; hier bei Bedarf anpassen.",
     "benchmarks": "Benchmarks",
     "benchmarksHint": "Mehrere Modelle an dieser Stichprobe vergleichen: Genauigkeit, Recall, F1, Zeit.",
@@ -349,20 +348,6 @@
     "remove": "Entfernen",
     "removeConfirm": "Diesen Artikel aus dem Goldstandard entfernen?"
   },
-  "prompts": {
-    "title": "Titel",
-    "loading": "Prompts werden geladen…",
-    "empty": "Keine Prompts",
-    "emptyHint": "Erstellen Sie Ihre erste Prompt-Vorlage.",
-    "new": "Neuer Prompt",
-    "edit": "Bearbeiten",
-    "version": "Version",
-    "systemPrompt": "System-Prompt",
-    "userSchema": "Nutzer-Prompt-Schema",
-    "save": "Speichern",
-    "cancel": "Abbrechen",
-    "validate": "Validieren"
-  },
   "benchmarks": {
     "title": "Benchmarks",
     "loading": "Benchmarks werden geladen…",
@@ -544,7 +529,11 @@
     "scopeNewHint": "Wählen Sie die Artikel nach Kriterien (Antworten einer früheren Analyse, geprüft, Volltext, Zufallsauswahl…). Mit der Frage unten wird eine Suche angelegt und analysiert; sie bleibt unter „Alle Suchen“ verfügbar.",
     "scopeNewName": "Name der neuen Suche",
     "scopeDefaultName": "Automatisch (JJMMTT-n)",
-    "scopeCount": "{n, plural, one {# Artikel wird analysiert} other {# Artikel werden analysiert}}"
+    "scopeCount": "{n, plural, one {# Artikel wird analysiert} other {# Artikel werden analysiert}}",
+    "instructionsTitle": "Zusätzliche Anweisung (optional)",
+    "instructionsHint": "Ein Satz, der dem aus Ihrer Frage erzeugten Prompt hinzugefügt wird: Begriffe, Grenzfälle, streng anzuwendende Kriterien…",
+    "instructionsPlaceholder": "Z. B. nur randomisierte Humanstudien als „klinische Studie“ zählen.",
+    "promptSent": "An das Modell gesendeter Prompt"
   },
   "settings": {
     "title": "Systemeinstellungen",

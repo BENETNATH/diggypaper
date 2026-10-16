@@ -70,7 +70,6 @@
     "articlesHint": "Ver lo que decidieron los modelos y revisar los casos inciertos.",
     "gold": "Gold standard",
     "goldHint": "Anotar a mano una muestra de referencia (30-50 artículos).",
-    "prompts": "Prompts",
     "promptsHint": "Avanzado: el prompt se genera desde su pregunta; edítelo aquí si hace falta.",
     "benchmarks": "Benchmarks",
     "benchmarksHint": "Comparar varios modelos en esa muestra: precisión, exhaustividad, F1, tiempo.",
@@ -349,20 +348,6 @@
     "remove": "Quitar",
     "removeConfirm": "¿Quitar este artículo del gold?"
   },
-  "prompts": {
-    "title": "Título",
-    "loading": "Cargando prompts…",
-    "empty": "Sin prompts",
-    "emptyHint": "Cree su primera plantilla de prompt.",
-    "new": "Nuevo prompt",
-    "edit": "Editar",
-    "version": "Versión",
-    "systemPrompt": "Prompt de sistema",
-    "userSchema": "Esquema del prompt de usuario",
-    "save": "Guardar",
-    "cancel": "Cancelar",
-    "validate": "Validar"
-  },
   "benchmarks": {
     "title": "Benchmarks",
     "loading": "Cargando benchmarks…",
@@ -544,7 +529,11 @@
     "scopeNewHint": "Elija los artículos por criterios (respuestas de un análisis previo, revisados, texto completo, sorteo…). Se crea una búsqueda con la pregunta de abajo y se analiza: sigue disponible en «Todas las búsquedas».",
     "scopeNewName": "Nombre de la nueva búsqueda",
     "scopeDefaultName": "Automático (AAMMDD-n)",
-    "scopeCount": "{n, plural, one {se analizará # artículo} other {se analizarán # artículos}}"
+    "scopeCount": "{n, plural, one {se analizará # artículo} other {se analizarán # artículos}}",
+    "instructionsTitle": "Instrucción adicional (opcional)",
+    "instructionsHint": "Una frase añadida al prompt generado a partir de su pregunta: vocabulario, casos límite, criterios a aplicar estrictamente…",
+    "instructionsPlaceholder": "P. ej.: contar como «ensayo clínico» solo los estudios aleatorizados en humanos.",
+    "promptSent": "Prompt enviado al modelo"
   },
   "settings": {
     "title": "Ajustes del sistema",

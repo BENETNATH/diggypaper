@@ -937,6 +937,7 @@ export async function triggerInference(
     resume?: boolean;
     search_id?: string;
     gold_examples?: number;
+    instructions?: string;
     validate_with_gold?: boolean;
   }
 ): Promise<{ job_id: string; status: string }> {

@@ -70,7 +70,6 @@
     "articlesHint": "Voir ce que les modèles ont décidé, relire les cas incertains.",
     "gold": "Gold standard",
     "goldHint": "Annoter à la main un échantillon de référence (30-50 articles).",
-    "prompts": "Prompts",
     "promptsHint": "Avancé : le prompt est généré depuis votre question ; modifiez-le ici si besoin.",
     "benchmarks": "Benchmarks",
     "benchmarksHint": "Comparer plusieurs modèles sur cet échantillon : précision, rappel, F1, temps.",
@@ -349,20 +348,6 @@
     "remove": "Retirer",
     "removeConfirm": "Retirer cet article du gold ?"
   },
-  "prompts": {
-    "title": "Titre",
-    "loading": "Chargement des prompts…",
-    "empty": "Aucun prompt",
-    "emptyHint": "Créez votre premier modèle de prompt.",
-    "new": "Nouveau prompt",
-    "edit": "Modifier",
-    "version": "Version",
-    "systemPrompt": "Prompt système",
-    "userSchema": "Schéma du prompt utilisateur",
-    "save": "Enregistrer",
-    "cancel": "Annuler",
-    "validate": "Valider"
-  },
   "benchmarks": {
     "title": "Benchmarks",
     "loading": "Chargement des benchmarks…",
@@ -544,7 +529,11 @@
     "scopeNewHint": "Choisissez les articles par critères (réponses d'une analyse précédente, relus, texte intégral, tirage au hasard…). Une recherche est créée avec la question ci-dessous, puis analysée : elle reste consultable dans « Toutes les recherches ».",
     "scopeNewName": "Nom de la nouvelle recherche",
     "scopeDefaultName": "Automatique (AAMMJJ-n)",
-    "scopeCount": "{n, plural, one {# article sera analysé} other {# articles seront analysés}}"
+    "scopeCount": "{n, plural, one {# article sera analysé} other {# articles seront analysés}}",
+    "instructionsTitle": "Consigne supplémentaire (facultatif)",
+    "instructionsHint": "Une phrase ajoutée au prompt généré depuis votre question : précision de vocabulaire, cas limites, critères à appliquer strictement…",
+    "instructionsPlaceholder": "Ex. : ne compter comme « essai clinique » que les études randomisées chez l'humain.",
+    "promptSent": "Prompt envoyé au modèle"
   },
   "settings": {
     "title": "Paramètres système",

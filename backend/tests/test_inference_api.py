@@ -348,3 +348,33 @@ async def test_cancel_inference_stops_active_job_and_allows_resume(
     assert job.status == InferenceJobStatus.FAILED and job.completed_at is not None
     # une analyse arrêtée se reprend, et une nouvelle peut être lancée
     assert (await client.post(url, json={**body, "resume": True})).status_code == 202
+
+
+async def test_extra_instructions_extend_the_generated_prompt(
+    client, session, researcher_user, do_login, monkeypatch
+):
+    """Sans prompt choisi, la consigne s'ajoute au prompt généré (réutilisé s'il est identique)."""
+    from sqlalchemy import select
+
+    from app.db.models import PromptTemplate
+
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project_id, _ = await _create_frozen_project(client, session, researcher_user)
+    _mock_inference_task(monkeypatch)
+    url = f"/api/v1/projects/{project_id}/inference"
+    ids = []
+    for _ in range(2):
+        r = await client.post(url, json={"model": "Kev-4B", "instructions": "  Only humans.  "})
+        assert r.status_code == 202, r.text
+        job = await session.get(InferenceJob, uuid.UUID(r.json()["job_id"]))
+        ids.append(job.prompt_template_id)
+        job.status = InferenceJobStatus.COMPLETED  # une analyse à la fois
+        await session.commit()
+    assert ids[0] == ids[1]
+    prompt = await session.get(PromptTemplate, ids[0])
+    assert prompt.system_prompt.endswith("Additional instructions from the reviewer:\nOnly humans.")
+    plain = await client.post(url, json={"model": "Kev-4B"})
+    job = await session.get(InferenceJob, uuid.UUID(plain.json()["job_id"]))
+    assert job.prompt_template_id != ids[0]  # sans consigne : le prompt généré tout court
+    count = (await session.execute(select(PromptTemplate))).scalars().all()
+    assert len(count) == 3  # le prompt de départ, avec consigne, sans consigne

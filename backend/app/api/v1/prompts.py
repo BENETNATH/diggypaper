@@ -106,11 +106,15 @@ async def create_prompt(
     return _payload(p)
 
 
-async def ensure_prompt(db: AsyncSession, project, search=None) -> PromptTemplate:
+async def ensure_prompt(
+    db: AsyncSession, project, search=None, extra: str | None = None
+) -> PromptTemplate:
     """Prompt généré depuis la question + items de la recherche (par défaut ceux du projet) ;
-    réutilise l'identique, sinon nouvelle version."""
+    réutilise l'identique, sinon nouvelle version. ``extra`` : consigne du responsable."""
     src = search or project
     system = build_system_prompt(src.question, project_fields(src))
+    if extra and extra.strip():
+        system += f"\n\nAdditional instructions from the reviewer:\n{extra.strip()}"
     user = "Article text:\n{article_text}"
     existing = (
         (await db.execute(select(PromptTemplate).where(PromptTemplate.project_id == project.id)))
@@ -123,7 +127,7 @@ async def ensure_prompt(db: AsyncSession, project, search=None) -> PromptTemplat
     p = PromptTemplate(
         project_id=project.id,
         version_number=f"v{len(existing) + 1}.0",
-        title="Généré depuis la question du projet",
+        title="Généré depuis la question" + (" + consigne" if extra and extra.strip() else ""),
         system_prompt=system,
         user_prompt_schema=user,
         prompt_type=PromptType.EXTRACTION,

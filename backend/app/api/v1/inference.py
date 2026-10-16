@@ -50,6 +50,7 @@ class InferenceCreate(BaseModel):
     resume: bool = False  # reprend la dernière analyse interrompue (saute les articles déjà faits)
     search_id: uuid.UUID | None = None  # recherche analysée (défaut : la recherche initiale)
     gold_examples: int = Field(default=0, ge=0, le=20)  # exemples du gold ajoutés au prompt
+    instructions: str | None = Field(default=None, max_length=2000)  # consigne ajoutée au prompt
     validate_with_gold: bool = False  # noter les résultats contre le gold (articles du lot au gold)
 
 
@@ -93,7 +94,7 @@ async def trigger_inference(
         raise HTTPException(status_code=409, detail="project corpus not frozen")
     scope = await get_search(db, project, payload.search_id)
     if payload.prompt_template_id is None:
-        prompt = await ensure_prompt(db, project, scope)
+        prompt = await ensure_prompt(db, project, scope, payload.instructions)
     else:
         prompt = await db.get(PromptTemplate, payload.prompt_template_id)
         if prompt is None or prompt.project_id != project_id:
