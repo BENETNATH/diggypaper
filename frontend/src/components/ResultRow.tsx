@@ -57,17 +57,25 @@ function AnswerCell({ r }: { r: Answer }) {
           {shown || "—"}
         </p>
       </div>
+      {/* Pas d'interstice entre la cellule et la fiche (pt-1, pas mt-1) et pointeur actif : on peut
+          y amener la souris et la faire défiler ; un léger délai évite qu'elle se ferme en route. */}
       <div
         role="tooltip"
-        className="pointer-events-none invisible absolute left-0 top-full z-30 mt-1 w-80 max-w-[min(20rem,calc(100vw-3rem))] rounded-lg border border-border bg-surface p-3 text-xs opacity-0 shadow-lg transition-opacity group-focus-within/cell:visible group-focus-within/cell:opacity-100 group-hover/cell:visible group-hover/cell:opacity-100"
+        onClick={(e) => {
+          e.preventDefault(); // la ligne est un lien : un clic dans la fiche n'ouvre pas l'article
+          e.stopPropagation();
+        }}
+        className="invisible absolute left-0 top-full z-30 w-80 max-w-[min(20rem,calc(100vw-3rem))] pt-1 opacity-0 transition-[opacity,visibility] delay-150 group-focus-within/cell:visible group-focus-within/cell:opacity-100 group-focus-within/cell:delay-0 group-hover/cell:visible group-hover/cell:opacity-100 group-hover/cell:delay-0"
       >
-        <p className="text-muted">{r.label}</p>
-        <p className="mt-1 max-h-48 overflow-y-auto whitespace-pre-wrap break-words text-sm text-foreground">
-          {typeof r.value === "boolean" || r.value == null ? shown || "—" : String(r.value)}
-        </p>
-        <p className="mt-2 text-muted">
-          {r.source === "human" ? t("humanAnswer") : pct != null ? `${t("certaintyHelp")} : ${pct} %` : ""}
-        </p>
+        <div className="rounded-lg border border-border bg-surface p-3 text-xs shadow-lg">
+          <p className="text-muted">{r.label}</p>
+          <p className="mt-1 max-h-48 overflow-y-auto overscroll-contain whitespace-pre-wrap break-words text-sm text-foreground">
+            {typeof r.value === "boolean" || r.value == null ? shown || "—" : String(r.value)}
+          </p>
+          <p className="mt-2 text-muted">
+            {r.source === "human" ? t("humanAnswer") : pct != null ? `${t("certaintyHelp")} : ${pct} %` : ""}
+          </p>
+        </div>
       </div>
     </div>
   );
