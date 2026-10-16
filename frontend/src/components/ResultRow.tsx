@@ -11,8 +11,11 @@ const STATUS_DOT: Record<string, string> = {
   NEEDS_HUMAN_REVIEW: "bg-warning",
 };
 
-/** « BOTH_SEXES » → « both sexes » ; les libellés trop longs sont tronqués (texte complet en infobulle). */
-const pretty = (v: unknown): string => String(v).replace(/_/g, " ").toLowerCase();
+/** Valeur technique (« BOTH_SEXES ») → « both sexes » ; un texte libre reste tel quel. */
+const pretty = (v: unknown): string => {
+  const text = String(v);
+  return /^[A-Z0-9_]+$/.test(text) ? text.replace(/_/g, " ").toLowerCase() : text;
+};
 
 /** Petit point de certitude (vert / orange / rouge) ; le pourcentage est dans l'infobulle. */
 function CertaintyDot({ value }: { value: number | null | undefined }) {
@@ -20,12 +23,59 @@ function CertaintyDot({ value }: { value: number | null | undefined }) {
   if (value == null) return null;
   const pct = Math.round(value * 100);
   const tone = pct >= 85 ? "bg-success" : pct >= 60 ? "bg-warning" : "bg-danger";
-  return <span className={`inline-block h-1.5 w-1.5 rounded-full ${tone}`} title={`${t("certaintyHelp")} : ${pct} %`} aria-label={`${pct} %`} />;
+  return <span className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${tone}`} title={`${t("certaintyHelp")} : ${pct} %`} aria-label={`${pct} %`} />;
+}
+
+type Answer = NonNullable<Article["answers"]>[number];
+
+/**
+ * Une réponse dans un cadre de taille fixe : l'item (une ligne) et la réponse (deux lignes au plus)
+ * sont tronqués, la pastille de certitude reste toujours visible ; au survol (ou au clavier), une
+ * fiche affiche l'item, la réponse complète et son origine.
+ */
+function AnswerCell({ r }: { r: Answer }) {
+  const t = useTranslations("articles");
+  const yes = r.value === true;
+  const no = r.value === false;
+  const shown = typeof r.value === "boolean" ? (yes ? `✓ ${t("yes")}` : `✗ ${t("no")}`) : pretty(r.value);
+  const muted = no || r.value === "UNSPECIFIED" || shown === "";
+  const pct = r.confidence != null ? Math.round(r.confidence * 100) : null;
+  return (
+    <div className="group/cell relative" tabIndex={0}>
+      <div className="h-[3.4rem] overflow-hidden rounded-md border border-border/70 bg-surface-muted/40 px-2.5 py-1.5">
+        <div className="flex items-center justify-between gap-2">
+          <span className="truncate text-[11px] text-muted">{r.label}</span>
+          {r.source === "human" ? (
+            <span title={t("humanAnswer")} className="shrink-0 text-xs text-primary">
+              ✎
+            </span>
+          ) : (
+            <CertaintyDot value={r.confidence} />
+          )}
+        </div>
+        <p className={`mt-0.5 line-clamp-2 break-words text-xs leading-snug ${muted ? "text-muted" : "text-foreground"}`}>
+          {shown || "—"}
+        </p>
+      </div>
+      <div
+        role="tooltip"
+        className="pointer-events-none invisible absolute left-0 top-full z-30 mt-1 w-80 max-w-[min(20rem,calc(100vw-3rem))] rounded-lg border border-border bg-surface p-3 text-xs opacity-0 shadow-lg transition-opacity group-focus-within/cell:visible group-focus-within/cell:opacity-100 group-hover/cell:visible group-hover/cell:opacity-100"
+      >
+        <p className="text-muted">{r.label}</p>
+        <p className="mt-1 max-h-48 overflow-y-auto whitespace-pre-wrap break-words text-sm text-foreground">
+          {typeof r.value === "boolean" || r.value == null ? shown || "—" : String(r.value)}
+        </p>
+        <p className="mt-2 text-muted">
+          {r.source === "human" ? t("humanAnswer") : pct != null ? `${t("certaintyHelp")} : ${pct} %` : ""}
+        </p>
+      </div>
+    </div>
+  );
 }
 
 /**
  * Une ligne de la liste des résultats : titre, une seule ligne de repères en gris, réponses en
- * texte courant (sans gras ni pastilles), et à droite l'état : relu ou décision du modèle.
+ * cadres de taille fixe, et à droite l'état : relu ou décision du modèle.
  */
 export function ResultRow({ a, href }: { a: Article; href: string }) {
   const t = useTranslations("articles");
@@ -47,29 +97,11 @@ export function ResultRow({ a, href }: { a: Article; href: string }) {
           <p className="line-clamp-2 text-[15px] leading-snug text-foreground">{a.title ?? t("untitled")}</p>
           <p className="mt-1 truncate text-xs text-muted">{meta.join(" · ")}</p>
           {answers.length > 0 && (
-            <p className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted">
-              {answers.map((r) => {
-                const yes = r.value === true;
-                const no = r.value === false;
-                return (
-                  <span key={r.key} className="inline-flex items-center gap-1.5">
-                    <span className="max-w-[14rem] truncate" title={r.label}>
-                      {r.label}
-                    </span>
-                    <span className={no || r.value === "UNSPECIFIED" ? "text-muted" : "text-foreground"}>
-                      {typeof r.value === "boolean" ? (yes ? `✓ ${t("yes")}` : `✗ ${t("no")}`) : pretty(r.value)}
-                    </span>
-                    {r.source === "human" ? (
-                      <span title={t("humanAnswer")} className="text-primary">
-                        ✎
-                      </span>
-                    ) : (
-                      <CertaintyDot value={r.confidence} />
-                    )}
-                  </span>
-                );
-              })}
-            </p>
+            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {answers.map((r) => (
+                <AnswerCell key={r.key} r={r} />
+              ))}
+            </div>
           )}
         </div>
         <div className="flex shrink-0 flex-col gap-1 text-xs sm:items-end">
