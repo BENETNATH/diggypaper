@@ -295,7 +295,11 @@
     "exportMenu": "Exportieren",
     "searchPlaceholder": "Artikel suchen: Titel, Autor, Journal, PMID, DOI…",
     "searchLabel": "In der Liste suchen",
-    "searchClear": "Suche löschen"
+    "searchClear": "Suche löschen",
+    "textFilter": "Text",
+    "textAll": "Alle Texte",
+    "textFull": "Volltext",
+    "textAbstract": "Nur Abstract"
   },
   "gold": {
     "title": "Goldstandard",

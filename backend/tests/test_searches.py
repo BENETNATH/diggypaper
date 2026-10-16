@@ -532,3 +532,22 @@ async def test_quick_text_search_on_title_authors_pmid_and_doi(client, session, 
     assert n == {"count": 1}
     ris = await client.get(f"{base}/export.ris", params={"q": "zebrafish"})
     assert ris.text.count("TY  -") == 1
+
+
+async def test_filter_results_by_full_text_or_abstract_only(client, session, corpus):
+    project, arts = corpus
+    base = f"/api/v1/projects/{project.id}"
+    arts[0].fulltext_source, arts[2].fulltext_source = "pmc", "pdf:upload"
+    await session.commit()
+
+    async def total(path, **params):
+        r = await client.get(f"{base}/{path}", params=params)
+        assert r.status_code == 200, r.text
+        return r.json()["total"] if path == "articles" else r.text
+
+    assert await total("articles", fulltext="true") == 2
+    assert await total("articles", fulltext="false") == 2
+    assert await total("articles") == 4
+    assert await total("articles", fulltext="true", status="AUTO_ACCEPTED") == 1  # se combine
+    ris = await total("export.ris", fulltext="true")  # les références suivent le filtre
+    assert ris.count("TY  - ") == 2

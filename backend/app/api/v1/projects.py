@@ -588,7 +588,13 @@ def text_conditions(q: str | None) -> list:
 STATUS_PATTERN = "^(AUTO_ACCEPTED|AUTO_REJECTED|NEEDS_HUMAN_REVIEW|NONE|TO_REVIEW)$"
 
 
-def article_filter(search: Search, status: str | None, answers: str | None, q: str | None = None):
+def article_filter(
+    search: Search,
+    status: str | None,
+    answers: str | None,
+    q: str | None = None,
+    fulltext: bool | None = None,
+):
     """Conditions de la liste des articles d'une recherche (statut IA + réponses) et
     sous-requêtes associées : seuls comptent les résultats et relectures de CETTE recherche.
 
@@ -628,6 +634,10 @@ def article_filter(search: Search, status: str | None, answers: str | None, q: s
         .exists()
     )
     where = [lot_condition(search), *text_conditions(q)]
+    if fulltext is not None:  # texte intégral / résumé seul (même critère que les comptages)
+        where.append(
+            Article.fulltext_source.is_not(None) if fulltext else Article.fulltext_source.is_(None)
+        )
     if search.kind == "blind":
         # Échantillon à l'aveugle : aucun critère ne doit révéler les réponses de l'IA ni celles
         # des autres relecteurs (sinon le filtre sert d'oracle article par article).
@@ -660,6 +670,7 @@ async def list_articles(
     answers: Annotated[str | None, Query(max_length=4000)] = None,
     search: uuid.UUID | None = None,
     q: Annotated[str | None, Query(max_length=200)] = None,
+    fulltext: bool | None = None,
 ) -> dict:
     """Articles du lot d'une recherche (par défaut la recherche initiale = tout le corpus) avec
     le statut de leur dernière prédiction dans cette recherche.
@@ -671,7 +682,7 @@ async def list_articles(
     project = await _require_project_member(db, project_id, user)
     scope = await get_search(db, project, search)
 
-    where, pstatus, pconf, pdec, annotated = article_filter(scope, status, answers, q)
+    where, pstatus, pconf, pdec, annotated = article_filter(scope, status, answers, q, fulltext)
     total = (await db.execute(select(func.count()).select_from(Article).where(*where))).scalar_one()
     order = {
         "date_desc": [Article.pub_date.desc().nulls_last()],

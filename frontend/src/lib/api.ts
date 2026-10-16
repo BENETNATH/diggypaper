@@ -543,7 +543,8 @@ export async function listArticles(
   sort: "added" | "date_desc" | "date_asc" | "score_desc" = "added",
   answers: Record<string, string | boolean> = {},
   searchId?: string,
-  text?: string
+  text?: string,
+  fulltext?: boolean
 ): Promise<{
   items: Article[];
   total: number;
@@ -556,6 +557,7 @@ export async function listArticles(
     (status ? `&status=${status}` : "") +
     (searchId ? `&search=${searchId}` : "") +
     (text?.trim() ? `&q=${encodeURIComponent(text.trim())}` : "") +
+    (fulltext != null ? `&fulltext=${fulltext}` : "") +
     `&sort=${sort}` +
     (Object.keys(active).length ? `&answers=${encodeURIComponent(JSON.stringify(active))}` : "");
   return request(`/projects/${projectId}/articles?page=${page}&per_page=${perPage}${q}`);
@@ -1040,11 +1042,13 @@ export function referencesUrl(
   status?: string,
   answers: Record<string, string> = {},
   searchId?: string,
-  text?: string
+  text?: string,
+  fulltext?: boolean
 ): string {
   const active = Object.fromEntries(Object.entries(answers).filter(([, v]) => v !== ""));
   const q = new URLSearchParams();
   if (searchId) q.set("search", searchId);
+  if (fulltext != null) q.set("fulltext", String(fulltext));
   if (text?.trim()) q.set("q", text.trim());
   if (status) q.set("status", status);
   if (Object.keys(active).length) q.set("answers", JSON.stringify(active));

@@ -24,7 +24,7 @@ const PER_PAGE = 100;
 
 type Sort = "added" | "date_desc" | "date_asc" | "score_desc";
 /** Filtres mémorisés par projet et par recherche : retrouvés au retour d'un article (ou d'un rechargement). */
-function loadSaved(projectId: string, searchId?: string): { filter?: Filter; sort?: Sort; page?: number; answers?: Answers; q?: string } {
+function loadSaved(projectId: string, searchId?: string): { filter?: Filter; sort?: Sort; page?: number; answers?: Answers; q?: string; fulltext?: boolean } {
   try {
     return JSON.parse(sessionStorage.getItem(articlesStoreKey(projectId, searchId)) ?? "{}");
   } catch {
@@ -54,6 +54,7 @@ function ResultsContent() {
   const [draft, setDraft] = useState<Answers>({}); // saisie (texte retardé de 300 ms)
   const [text, setText] = useState(""); // recherche rapide appliquée (titre, auteurs, PMID, DOI)
   const [textDraft, setTextDraft] = useState("");
+  const [fulltext, setFulltext] = useState<boolean | undefined>(undefined); // texte intégral (true) / résumé seul (false)
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout>>();
@@ -72,6 +73,7 @@ function ResultsContent() {
     setDraft(saved.answers ?? {});
     setText(saved.q ?? "");
     setTextDraft(saved.q ?? "");
+    setFulltext(saved.fulltext);
     getProject(projectId, searchId)
       .then((p) => setFields(p.fields ?? []))
       .catch(() => setFields([]))
@@ -86,12 +88,12 @@ function ResultsContent() {
     try {
       sessionStorage.setItem(
         articlesStoreKey(projectId, searchId),
-        JSON.stringify({ filter, sort, page, answers, q: text })
+        JSON.stringify({ filter, sort, page, answers, q: text, fulltext })
       );
     } catch {
       /* stockage indisponible : filtres non mémorisés */
     }
-  }, [ready, projectId, searchId, filter, sort, page, answers, text]);
+  }, [ready, projectId, searchId, filter, sort, page, answers, text, fulltext]);
 
   // Recherche rapide : appliquée 300 ms après la dernière frappe, repart à la première page.
   useEffect(() => {
@@ -125,14 +127,14 @@ function ResultsContent() {
   const load = useCallback(async () => {
     setError(null);
     try {
-      const res = await listArticles(projectId, page, PER_PAGE, filter === "ALL" ? undefined : filter, sort, answers, searchId, text);
+      const res = await listArticles(projectId, page, PER_PAGE, filter === "ALL" ? undefined : filter, sort, answers, searchId, text, fulltext);
       setArticles(res.items);
       setTotal(res.total);
       setStats(res.stats);
     } catch (e) {
       setError(e instanceof Error ? e.message : "error");
     }
-  }, [projectId, page, filter, sort, answers, searchId, text]);
+  }, [projectId, page, filter, sort, answers, searchId, text, fulltext]);
 
   useEffect(() => {
     if (ready && restoredFor.current === articlesStoreKey(projectId, searchId)) void load();
@@ -150,7 +152,7 @@ function ResultsContent() {
     try {
       sessionStorage.setItem(
         prefillStoreKey(projectId),
-        JSON.stringify(selectionFromFilters(filter, answers, searchId, text))
+        JSON.stringify(selectionFromFilters(filter, answers, searchId, text, fulltext))
       );
     } catch {
       /* stockage indisponible : la page Recherches s'ouvre sans préremplissage */
@@ -175,7 +177,7 @@ function ResultsContent() {
               </Button>
             </Link>
           )}
-          <ExportMenu projectId={projectId} status={filter === "ALL" ? undefined : filter} answers={answers} text={text} />
+          <ExportMenu projectId={projectId} status={filter === "ALL" ? undefined : filter} answers={answers} text={text} fulltext={fulltext} />
           <Menu label={t("tools")}>
             <MenuItem onClick={() => setPdfOpen(true)}>{t("bulkTitle")}</MenuItem>
             <MenuItem onClick={() => setPrismaOpen(true)}>{t("prisma")}</MenuItem>
@@ -256,6 +258,21 @@ function ResultsContent() {
               {hasAnswerFilter && <span className="ml-1 text-xs">•</span>}
             </button>
           )}
+          <select
+            value={fulltext === undefined ? "" : fulltext ? "yes" : "no"}
+            aria-label={t("textFilter")}
+            onChange={(e) => {
+              setFulltext(e.target.value === "" ? undefined : e.target.value === "yes");
+              setPage(1);
+            }}
+            className={`rounded-lg border bg-surface px-2 py-1 text-sm text-foreground ${
+              fulltext === undefined ? "border-border" : "border-primary bg-primary/10"
+            }`}
+          >
+            <option value="">{t("textAll")}</option>
+            <option value="yes">{t("textFull")}</option>
+            <option value="no">{t("textAbstract")}</option>
+          </select>
           <select
             value={sort}
             aria-label={t("sortBy")}

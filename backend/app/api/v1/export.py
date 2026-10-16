@@ -314,11 +314,11 @@ def _notes(articles, preds: dict, fields: list[dict]) -> dict:
 
 
 async def _references(
-    project_id, db, user, status, answers, fmt: str, search=None, q=None
+    project_id, db, user, status, answers, fmt: str, search=None, q=None, fulltext=None
 ) -> Response:
     project = await _require_project_member(db, project_id, user)
     scope = await get_search(db, project, search)
-    where = article_filter(scope, status, answers, q)[0]
+    where = article_filter(scope, status, answers, q, fulltext)[0]
     articles, preds, *_ = await _load(db, project, where, scope)
     project = ScopedProject(project, scope)
     notes = _notes(articles, preds, project_fields(project))
@@ -424,9 +424,10 @@ async def export_ris(
     answers: Annotated[str | None, Query(max_length=4000)] = None,
     search: uuid.UUID | None = None,
     q: Annotated[str | None, Query(max_length=200)] = None,
+    fulltext: bool | None = None,
 ) -> Response:
     """Références RIS (Zotero, EndNote, Mendeley…) ; mêmes filtres que la liste des articles."""
-    return await _references(project_id, db, user, status, answers, "ris", search, q)
+    return await _references(project_id, db, user, status, answers, "ris", search, q, fulltext)
 
 
 @router.get("/{project_id}/export.bib")
@@ -438,9 +439,10 @@ async def export_bibtex(
     answers: Annotated[str | None, Query(max_length=4000)] = None,
     search: uuid.UUID | None = None,
     q: Annotated[str | None, Query(max_length=200)] = None,
+    fulltext: bool | None = None,
 ) -> Response:
     """Références BibTeX ; mêmes filtres que la liste des articles."""
-    return await _references(project_id, db, user, status, answers, "bib", search, q)
+    return await _references(project_id, db, user, status, answers, "bib", search, q, fulltext)
 
 
 async def write_crate(

@@ -65,12 +65,14 @@ export function selectionFromFilters(
   filter: PredictionFilter | "ALL" | undefined,
   answers: Record<string, string | boolean>,
   fromSearchId?: string,
-  text?: string
+  text?: string,
+  fulltext?: boolean
 ): Selection {
   return cleanSelection({
     from_search_id: fromSearchId,
     status: filter && filter !== "ALL" ? filter : undefined,
     answers,
     q: text,
+    has_fulltext: fulltext,
   });
 }

@@ -34,6 +34,10 @@ describe("selection", () => {
     expect(selectionFromFilters("ALL", {}, "s1")).toEqual({ from_search_id: "s1" });
     expect(selectionFromFilters("ALL", {})).toEqual({});
   });
+  it("selectionFromFilters reprend le filtre texte intégral / résumé seul", () => {
+    expect(selectionFromFilters("ALL", {}, "s1", undefined, true)).toEqual({ from_search_id: "s1", has_fulltext: true });
+    expect(selectionFromFilters("ALL", {}, "s1", undefined, false)).toEqual({ from_search_id: "s1", has_fulltext: false });
+  });
   it("selectionFromFilters reprend statut et réponses", () => {
     expect(selectionFromFilters("AUTO_ACCEPTED", { x: "true", y: "" }, "s1")).toEqual({
       from_search_id: "s1",

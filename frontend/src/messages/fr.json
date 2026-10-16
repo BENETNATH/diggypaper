@@ -295,7 +295,11 @@
     "exportMenu": "Exporter",
     "searchPlaceholder": "Rechercher un article : titre, auteur, journal, PMID, DOI…",
     "searchLabel": "Rechercher dans la liste",
-    "searchClear": "Effacer la recherche"
+    "searchClear": "Effacer la recherche",
+    "textFilter": "Texte",
+    "textAll": "Tous les textes",
+    "textFull": "Texte intégral",
+    "textAbstract": "Résumé seul"
   },
   "gold": {
     "title": "Gold standard",
