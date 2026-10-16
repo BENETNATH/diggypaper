@@ -165,6 +165,8 @@ def test_projects_columns():
         "question",
         "fields",
         "created_at",
+        "kept_at",
+        "retention_warned_at",
     }
     assert c["id"].primary_key
     assert isinstance(c["id"].type, Uuid)
@@ -238,6 +240,9 @@ def test_articles_columns():
         "authors",
         "pub_types",
         "original_language",
+        "origin",
+        "origin_seeds",
+        "origin_ref",
         "created_at",
     }
     assert c["id"].primary_key

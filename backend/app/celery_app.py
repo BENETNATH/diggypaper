@@ -34,8 +34,13 @@ celery_app.conf.update(
         "app.tasks.benchmark",
         "app.tasks.export",
         "app.tasks.inference",
+        "app.tasks.maintenance",
         "app.tasks.notify",
     ],
+    # Beat intégré au worker (un seul worker) : alerte disque + projets inactifs.
+    beat_schedule={
+        "maintenance": {"task": "diggypaper.maintenance", "schedule": 6 * 3600.0},
+    },
 )
 
 

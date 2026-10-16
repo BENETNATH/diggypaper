@@ -15,6 +15,16 @@ s'exportent en tableur, en RO-Crate et en diagramme PRISMA.
 ### Constituer le corpus
 - **Import PubMed/PMC** par requête, avec le volume attendu avant import, un plafond réglable
   (`IMPORT_MAX_ARTICLES`), le dédoublonnage et les métadonnées (journal, date, auteurs, DOI).
+- **Liste de références** à la place d'une recherche : DOI ou PMID collés (un par ligne), ou
+  export BibTeX, RIS, CSL JSON ou CSV de Zotero / EndNote / Mendeley. Chaque entrée est
+  complétée via PubMed (Europe PMC pour retrouver le PMID d'un DOI), sinon Crossref, sinon les
+  données du fichier ; les doublons sont ignorés et les références non résolues listées.
+- **Enrichissement par citations** : à partir de tout ou partie du corpus (sans analyse
+  préalable), ajoute les références et les citants des articles de départ (iCite, NIH). Les
+  candidats les plus liés aux articles de départ entrent d'abord (seuil et plafond réglables,
+  estimation avant import) ; une recherche est créée sur les nouveaux articles pour que le
+  modèle valide leur inclusion. L'origine de chaque article (PubMed, liste, citation) est
+  conservée et apparaît dans le PRISMA (« identification par d'autres méthodes »).
 - **Textes intégraux libres d'accès** : PMC, puis Europe PMC, Unpaywall et OpenAlex
   (manuscrits acceptés, dépôts institutionnels, préprints bioRxiv / medRxiv / arXiv). Les
   articles sans copie ouverte restent en résumé seul. Aucune source pirate.
@@ -305,10 +315,17 @@ Après `git pull`, avant `docker compose up -d --build` :
 | `IMPORT_MAX_ARTICLES` | plafond d'articles par import — défaut `5000` (max NCBI : 10 000) |
 | `TASK_SOFT_TIME_LIMIT` | durée max d'une tâche en secondes — `0` = aucune |
 | `*_MEM_LIMIT` | `OLLAMA_`, `WORKER_`, `BACKEND_`, `FRONTEND_` : plafonds mémoire (défauts 24g, 8g, 2g, 1g) |
+| `DISK_ALERT_PERCENT` / `DISK_ALERT_FREE_GB` | alerte disque (e-mail aux admins, bandeau) — défauts `85` % / `5` Go |
+| `PROJECT_RETENTION_DAYS` | jours d'inactivité avant d'avertir les responsables d'un projet — `0` (défaut) = jamais de suppression automatique |
+| `PROJECT_RETENTION_GRACE_DAYS` | délai de grâce avant suppression, après l'avertissement — défaut `14` |
 | `PRIVACY_URL` | lien « politique de confidentialité » affiché à la première connexion |
 
 Les PDF d'articles sont stockés dans PostgreSQL : prévoir de la place (jusqu'à 25 Mo par
-fichier). Seuls les membres LEAD peuvent lancer un import, un export RO-Crate ou remplacer le
+fichier). La page *Paramètres* (admin) montre l'espace disque, le poids des PDF et les projets
+(taille, inactivité) ; le worker (celery beat, toutes les 6 h) envoie une alerte aux admins quand
+le disque dépasse le seuil. Avec `PROJECT_RETENTION_DAYS`, les responsables d'un projet inactif
+sont prévenus par e-mail, puis le projet est supprimé à l'issue du délai de grâce sauf activité ou
+clic sur « Conserver ce projet ». Seuls les membres LEAD peuvent lancer un import, un export RO-Crate ou remplacer le
 texte intégral d'un article (les exports tableur, références et PRISMA sont ouverts à tout membre).
 
 ### Sauvegarde et restauration

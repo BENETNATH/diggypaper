@@ -12,6 +12,7 @@ from app.api.v1 import (
     annotations,
     auth,
     benchmarks,
+    citations,
     export,
     gold,
     inference,
@@ -69,6 +70,7 @@ def create_app() -> FastAPI:
     app.include_router(annotations.router, prefix="/api/v1")
     app.include_router(team.router, prefix="/api/v1")
     app.include_router(searches.router, prefix="/api/v1")
+    app.include_router(citations.router, prefix="/api/v1")
     app.include_router(export.router, prefix="/api/v1")
     app.include_router(models.router, prefix="/api/v1")
     app.include_router(prompts.router, prefix="/api/v1")

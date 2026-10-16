@@ -6,6 +6,7 @@ import { AuthProvider } from "@/lib/auth";
 import { TopBar } from "@/components/TopBar";
 import { BottomNav } from "@/components/BottomNav";
 import { Footer } from "@/components/Footer";
+import { StorageAlert } from "@/components/StorageAlert";
 import "./globals.css";
 
 const geistSans = localFont({
@@ -40,6 +41,7 @@ export default async function RootLayout({
         <NextIntlClientProvider messages={messages}>
           <AuthProvider>
             <TopBar />
+            <StorageAlert />
             <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6">{children}</main>
             <Footer />
             <BottomNav />

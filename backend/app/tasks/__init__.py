@@ -40,6 +40,7 @@ from sqlalchemy.dialects.sqlite import insert as _sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.celery_app import celery_app
+from app.citations import fetch_links, rank
 from app.db.base import DATABASE_URL as _IMPORT_TIME_DATABASE_URL
 from app.db.base import make_engine
 from app.db.models import (
@@ -48,6 +49,8 @@ from app.db.models import (
     ImportJobStatus,
     Project,
     ProjectStatus,
+    Search,
+    SearchArticle,
 )
 from app.fulltext import complete_article, long_enough, pmc_not_archived
 from app.pubmed import (
@@ -58,7 +61,16 @@ from app.pubmed import (
     fetch_pmids,
     search_volume,
 )
-from app.refimport import crossref, dedupe, epmc_pmid_by_title, epmc_pmids_by_doi, label, norm_title
+from app.refimport import (
+    _entry,
+    crossref,
+    dedupe,
+    epmc_pmid_by_title,
+    epmc_pmids_by_doi,
+    label,
+    norm_title,
+)
+from app.searches import default_search, definition_hash, next_search_name
 from app.settings.service import get_setting
 
 logger = logging.getLogger(__name__)
@@ -138,7 +150,9 @@ def _make_session_factory():
 
 
 @celery_app.task(name="diggypaper.import_pubmed")
-def import_pubmed_task(project_id: str, query: str, refs: list[dict] | None = None) -> dict:
+def import_pubmed_task(
+    project_id: str, query: str, refs: list[dict] | None = None, options: dict | None = None
+) -> dict:
     """Wrapper sync Celery : exécute le core async dans un thread dédié (C1/C2).
 
     ``asyncio.run`` tourne dans le thread worker (pas de boucle en cours dans
@@ -156,7 +170,9 @@ def import_pubmed_task(project_id: str, query: str, refs: list[dict] | None = No
     def _run() -> None:
         nonlocal result, error
         try:
-            result = asyncio.run(_import_pubmed(project_id, query, job_id=job_id, refs=refs))
+            result = asyncio.run(
+                _import_pubmed(project_id, query, job_id=job_id, refs=refs, options=options)
+            )
         except BaseException as exc:  # propagée au thread principal
             error = exc
 
@@ -178,6 +194,7 @@ async def _import_pubmed(
     http: httpx.AsyncClient | None = None,
     job_id: str | None = None,
     refs: list[dict] | None = None,
+    options: dict | None = None,
 ) -> dict:
     """Core async de l'import PubMed (ou, avec ``refs``, d'une liste de références).
 
@@ -222,7 +239,8 @@ async def _import_pubmed(
                 project_id=project.id,
                 query=query,
                 job_id=job_id,
-                kind="references" if refs is not None else "import",
+                kind=(options or {}).get("kind")
+                or ("references" if refs is not None else "import"),
             )
             session.add(job)
             await session.commit()  # PENDING (server_default)
@@ -232,6 +250,10 @@ async def _import_pubmed(
             await session.commit()
 
             try:
+                if options and options.get("citations"):
+                    return await _do_import_citations(
+                        session, project, job, options["citations"], client
+                    )
                 if refs is not None:
                     return await _do_import_refs(session, project, job, refs, client)
                 return await _do_import(session, project, job, query, client)
@@ -307,6 +329,7 @@ async def _do_import(
                 failed += 1
             else:
                 try:
+                    meta |= {"origin": "pubmed", "origin_ref": str(job.id)}
                     inserted, has_text = await _insert_article(session, project.id, meta, client)
                     if inserted:
                         imported += 1
@@ -337,8 +360,12 @@ async def _do_import_refs(
     job: ImportJob,
     refs: list[dict],
     client: httpx.AsyncClient,
+    finish=None,
 ) -> dict:
     """Liste de références (DOI, PMID, titres…) → articles du corpus.
+
+    ``finish`` (coroutine, optionnelle) : appelée avant la clôture du job, son résultat (dict) est
+    ajouté au résultat (ex. recherche créée sur les nouveaux articles).
 
     Résolution : PMID connu (ou trouvé via Europe PMC par DOI / titre exact) → notice PubMed
     complète ; sinon Crossref (DOI) ; sinon les métadonnées du fichier. Le texte intégral est
@@ -414,6 +441,11 @@ async def _do_import_refs(
                 else:
                     if not meta.get("doi"):
                         meta["doi"] = e["doi"]
+                    meta |= {
+                        "origin": e.get("origin") or "references",
+                        "origin_seeds": e.get("seeds"),
+                        "origin_ref": str(job.id),
+                    }
                     inserted, has_text = await _insert_article(session, project.id, meta, client)
                     if inserted:
                         imported, fulltext = imported + 1, fulltext + has_text
@@ -427,21 +459,93 @@ async def _do_import_refs(
                 failed_items.append(label(e))
             done += 1
             await progress()
-    return await _finish_success(
-        session,
-        project,
-        job,
-        {
-            "imported": imported,
-            "failed": failed,
-            "fulltext": fulltext,
-            "total_count": len(refs),
-            "truncated": truncated,
-            "duplicates": duplicates,
-            "sources": sources,
-            "failed_items": failed_items[:200],
-        },
-    )
+    result = {
+        "imported": imported,
+        "failed": failed,
+        "fulltext": fulltext,
+        "total_count": len(refs),
+        "truncated": truncated,
+        "duplicates": duplicates,
+        "sources": sources,
+        "failed_items": failed_items[:200],
+    }
+    if finish is not None:
+        result |= await finish()
+    return await _finish_success(session, project, job, result)
+
+
+async def _do_import_citations(
+    session: AsyncSession, project: Project, job: ImportJob, opts: dict, client: httpx.AsyncClient
+) -> dict:
+    """Chaînage de citations : références / citants des articles de départ → corpus.
+
+    ``opts`` : seeds (PMID), direction, min_overlap, max_candidates, search_id (recherche dont la
+    question est reprise). Les candidats les plus liés aux graines entrent d'abord ; une recherche
+    est créée sur les nouveaux articles, prête à être analysée avec le modèle.
+    """
+    seeds = [str(p) for p in opts["seeds"]]
+
+    async def linking(done: int, total: int) -> None:
+        job.result_json = {"phase": "linking", "done": done, "total": total}
+        await session.commit()
+
+    links = await fetch_links(seeds, client, opts.get("direction", "both"), linking)
+    known = {
+        p
+        for p in (
+            await session.execute(select(Article.pmid).where(Article.project_id == project.id))
+        ).scalars()
+        if p
+    }
+    ranked = rank(links, known, opts.get("min_overlap", 1), opts.get("max_candidates", 300))
+    refs = [{**_entry(pmid=pmid), "origin": "citation", "seeds": n} for pmid, n in ranked]
+
+    async def derive() -> dict:
+        ids = list(
+            (await session.execute(select(Article.id).where(Article.origin_ref == str(job.id))))
+            .scalars()
+            .all()
+        )
+        if not ids:
+            return {"candidates": len(links), "search_id": None}
+        origin = (
+            await session.get(Search, uuid.UUID(opts["search_id"]))
+            if opts.get("search_id")
+            else None
+        ) or await default_search(session, project)
+        search = Search(
+            project_id=project.id,
+            name=await next_search_name(session, project.id),
+            question=origin.question,
+            fields=origin.fields,
+            text_sections=origin.text_sections,
+            read_windows=origin.read_windows,
+            definition_hash=definition_hash(origin.question, origin.fields),
+            lot_all=False,
+            parent_spec={
+                "citations": {
+                    "direction": opts.get("direction", "both"),
+                    "seeds": len(seeds),
+                    "min_overlap": opts.get("min_overlap", 1),
+                    "from": origin.name,
+                }
+            },
+        )
+        session.add(search)
+        await session.flush()
+        session.add_all(SearchArticle(search_id=search.id, article_id=i) for i in ids)
+        await session.commit()
+        return {"candidates": len(links), "search_id": str(search.id)}
+
+    if not refs:
+        return await _finish_success(
+            session,
+            project,
+            job,
+            {"imported": 0, "failed": 0, "fulltext": 0, "total_count": 0, "truncated": False}
+            | {"candidates": len(links), "search_id": None},
+        )
+    return await _do_import_refs(session, project, job, refs, client, finish=derive)
 
 
 async def _file_meta(e: dict, email: str, client: httpx.AsyncClient) -> tuple[dict | None, str]:
@@ -482,6 +586,9 @@ async def _insert_article(
         "abstract": meta.get("abstract"),
         **_biblio(meta),
         "original_language": _map_language(meta.get("language")),
+        "origin": meta.get("origin"),
+        "origin_seeds": meta.get("origin_seeds"),
+        "origin_ref": meta.get("origin_ref"),
     }
     if meta.get("pmcid"):
         try:

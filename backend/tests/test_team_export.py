@@ -383,6 +383,7 @@ async def test_prisma_counts_and_svg(client, session, lead_project):
         "failed": 2,
         "duplicates": 0,
         "by_criteria": 0,
+        "via_citations": 0,
         "origin": None,
         "not_screened": 1,
         "screened": 4,

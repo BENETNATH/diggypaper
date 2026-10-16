@@ -17,7 +17,13 @@
     "export_ready_body": "Hello,\n\nThe RO-Crate export (zip) of project “{project}” is ready: {articles} articles, {pdf} PDF.\n\nDownload it from the results page (valid 7 days):\n{link}\n\n— The Diggypaper team",
     "export_failed_subject": "Diggypaper: corpus export failed",
     "export_failed_body": "Hello,\n\nThe export of project “{project}” failed. Please try again from the results page:\n{link}\n\n— The Diggypaper team",
-    "account_disabled": "This account is disabled. Contact the administrator."
+    "account_disabled": "This account is disabled. Contact the administrator.",
+    "retention_warn_subject": "Diggypaper: project “{project}” will be deleted on {date}",
+    "retention_warn_body": "Hello,\n\nThe project “{project}” has had no activity for {days} days. To free disk space it will be deleted on {date} (articles, PDFs, analyses and reviews included).\n\nTo keep it, open the project and click “Keep this project”, or export it first (RO-Crate):\n{link}\n\n— The Diggypaper team",
+    "retention_deleted_subject": "Diggypaper: project “{project}” deleted",
+    "retention_deleted_body": "Hello,\n\nThe project “{project}” was deleted after {days} days without activity.\n\n— The Diggypaper team",
+    "disk_alert_subject": "Diggypaper: low disk space ({percent} % used)",
+    "disk_alert_body": "Hello,\n\nThe server disk is {percent} % full ({free} GB free of {total} GB). Database: {db} GB, stored PDFs: {pdf} GB.\n\nFree space by deleting inactive projects or old exports: {link}\n\n— The Diggypaper team"
   },
   "fr": {
     "consent_required": "Vous devez accepter le traitement de vos données avant de vous connecter.",
@@ -37,7 +43,13 @@
     "export_ready_body": "Bonjour,\n\nL'export RO-Crate (zip) du projet « {project} » est prêt : {articles} articles, {pdf} PDF.\n\nTéléchargez-le depuis la page des résultats (valable 7 jours) :\n{link}\n\n— L'équipe Diggypaper",
     "export_failed_subject": "Diggypaper : échec de l'export du corpus",
     "export_failed_body": "Bonjour,\n\nL'export du projet « {project} » a échoué. Relancez-le depuis la page des résultats :\n{link}\n\n— L'équipe Diggypaper",
-    "account_disabled": "Ce compte est désactivé. Contactez l'administrateur."
+    "account_disabled": "Ce compte est désactivé. Contactez l'administrateur.",
+    "retention_warn_subject": "Diggypaper : le projet « {project} » sera supprimé le {date}",
+    "retention_warn_body": "Bonjour,\n\nLe projet « {project} » n'a eu aucune activité depuis {days} jours. Pour libérer de l'espace disque, il sera supprimé le {date} (articles, PDF, analyses et relectures compris).\n\nPour le conserver, ouvrez le projet et cliquez sur « Conserver ce projet », ou exportez-le d'abord (RO-Crate) :\n{link}\n\n— L'équipe Diggypaper",
+    "retention_deleted_subject": "Diggypaper : projet « {project} » supprimé",
+    "retention_deleted_body": "Bonjour,\n\nLe projet « {project} » a été supprimé après {days} jours sans activité.\n\n— L'équipe Diggypaper",
+    "disk_alert_subject": "Diggypaper : espace disque faible ({percent} % utilisé)",
+    "disk_alert_body": "Bonjour,\n\nLe disque du serveur est plein à {percent} % ({free} Go libres sur {total} Go). Base de données : {db} Go, PDF stockés : {pdf} Go.\n\nLibérez de l'espace en supprimant des projets inactifs ou d'anciens exports : {link}\n\n— L'équipe Diggypaper"
   },
   "de": {
     "consent_required": "Sie müssen die Datenverarbeitungsbedingungen akzeptieren, bevor Sie sich anmelden.",
@@ -57,7 +69,13 @@
     "export_ready_body": "Hallo,\n\nDer RO-Crate-Export (zip) des Projekts „{project}“ ist fertig: {articles} Artikel, {pdf} PDF.\n\nLaden Sie ihn auf der Ergebnisseite herunter (7 Tage gültig):\n{link}\n\n— Das Diggypaper-Team",
     "export_failed_subject": "Diggypaper: Korpus-Export fehlgeschlagen",
     "export_failed_body": "Hallo,\n\nDer Export des Projekts „{project}“ ist fehlgeschlagen. Bitte starten Sie ihn auf der Ergebnisseite erneut:\n{link}\n\n— Das Diggypaper-Team",
-    "account_disabled": "Dieses Konto ist deaktiviert. Kontaktieren Sie den Administrator."
+    "account_disabled": "Dieses Konto ist deaktiviert. Kontaktieren Sie den Administrator.",
+    "retention_warn_subject": "Diggypaper: Projekt „{project}“ wird am {date} gelöscht",
+    "retention_warn_body": "Hallo,\n\nDas Projekt „{project}“ war {days} Tage lang inaktiv. Um Speicherplatz freizugeben, wird es am {date} gelöscht (Artikel, PDFs, Analysen und Prüfungen eingeschlossen).\n\nZum Behalten öffnen Sie das Projekt und klicken auf „Projekt behalten“, oder exportieren Sie es vorher (RO-Crate):\n{link}\n\n— Das Diggypaper-Team",
+    "retention_deleted_subject": "Diggypaper: Projekt „{project}“ gelöscht",
+    "retention_deleted_body": "Hallo,\n\nDas Projekt „{project}“ wurde nach {days} Tagen ohne Aktivität gelöscht.\n\n— Das Diggypaper-Team",
+    "disk_alert_subject": "Diggypaper: wenig Speicherplatz ({percent} % belegt)",
+    "disk_alert_body": "Hallo,\n\nDie Serverplatte ist zu {percent} % belegt ({free} GB frei von {total} GB). Datenbank: {db} GB, gespeicherte PDFs: {pdf} GB.\n\nGeben Sie Platz frei, indem Sie inaktive Projekte oder alte Exporte löschen: {link}\n\n— Das Diggypaper-Team"
   },
   "es": {
     "consent_required": "Debe aceptar las condiciones de tratamiento de datos antes de iniciar sesión.",
@@ -77,6 +95,12 @@
     "export_ready_body": "Hola:\n\nLa exportación RO-Crate (zip) del proyecto «{project}» está lista: {articles} artículos, {pdf} PDF.\n\nDescárguela desde la página de resultados (válida 7 días):\n{link}\n\n— El equipo de Diggypaper",
     "export_failed_subject": "Diggypaper: error en la exportación del corpus",
     "export_failed_body": "Hola:\n\nLa exportación del proyecto «{project}» ha fallado. Vuelva a lanzarla desde la página de resultados:\n{link}\n\n— El equipo de Diggypaper",
-    "account_disabled": "Esta cuenta está desactivada. Contacte con el administrador."
+    "account_disabled": "Esta cuenta está desactivada. Contacte con el administrador.",
+    "retention_warn_subject": "Diggypaper: el proyecto «{project}» se eliminará el {date}",
+    "retention_warn_body": "Hola:\n\nEl proyecto «{project}» no ha tenido actividad en {days} días. Para liberar espacio en disco se eliminará el {date} (artículos, PDF, análisis y revisiones incluidos).\n\nPara conservarlo, abra el proyecto y pulse «Conservar este proyecto», o expórtelo antes (RO-Crate):\n{link}\n\n— El equipo Diggypaper",
+    "retention_deleted_subject": "Diggypaper: proyecto «{project}» eliminado",
+    "retention_deleted_body": "Hola:\n\nEl proyecto «{project}» se eliminó tras {days} días sin actividad.\n\n— El equipo Diggypaper",
+    "disk_alert_subject": "Diggypaper: poco espacio en disco ({percent} % usado)",
+    "disk_alert_body": "Hola:\n\nEl disco del servidor está al {percent} % ({free} GB libres de {total} GB). Base de datos: {db} GB, PDF almacenados: {pdf} GB.\n\nLibere espacio eliminando proyectos inactivos o exportaciones antiguas: {link}\n\n— El equipo Diggypaper"
   }
 }

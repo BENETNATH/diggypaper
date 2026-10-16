@@ -44,6 +44,14 @@ class Settings(BaseSettings):
     crate_license_name: str = "CC BY 4.0"
     # Lien « politique de confidentialité' (page de l'établissement) ; vide = non affiché.
     privacy_url: str = ""
+    # Alerte disque (e-mail aux admins, bandeau) : au-delà de ce taux d'occupation ou sous cet
+    # espace libre.
+    disk_alert_percent: int = 85
+    disk_alert_free_gb: int = 5
+    # Projets inactifs : après N jours sans activité, les responsables sont prévenus ; sans
+    # activité (ou « Conserver ») pendant le délai de grâce, le projet est supprimé. 0 = jamais.
+    project_retention_days: int = 0
+    project_retention_grace_days: int = 14
 
 
 # Valeurs de dev par défaut : refusées en production (fail-fast, F5).

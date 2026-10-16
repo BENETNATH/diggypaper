@@ -35,6 +35,7 @@ export interface SchemaField {
 }
 
 export interface Project {
+  retention_delete_on?: string | null; // suppression programmée pour inactivité
   id: string;
   title: string;
   description: string | null;
@@ -63,6 +64,8 @@ export interface Article {
   methods_text: string | null;
   text?: string;
   has_fulltext?: boolean;
+  origin?: string | null; // pubmed | references | citation
+  origin_seeds?: number | null;
   fulltext_source?: string | null;
   fulltext_note?: string | null;
   doi_url?: string | null;
@@ -112,7 +115,7 @@ export type AnnotationPayload = Record<string, unknown>;
 export interface ImportJob {
   id: string;
   task: string;
-  kind?: "import" | "fulltext" | "references";
+  kind?: "import" | "fulltext" | "references" | "citations";
   status: "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
   query: string | null;
   result: Record<string, unknown> | null;
@@ -497,6 +500,32 @@ export async function importReferences(
   return request<ReferencesPreview>(`/projects/${projectId}/import-references`, {
     method: "POST",
     body: JSON.stringify({ content, dry_run: dryRun }),
+  });
+}
+
+export interface CitationPreview {
+  selected: number;
+  seeds: number;
+  candidates: number;
+  by_overlap: Record<string, number>;
+  max: number;
+}
+export interface CitationRequest {
+  selection: Selection;
+  direction: "backward" | "forward" | "both";
+  min_overlap: number;
+  max_candidates: number;
+}
+
+/** Chaînage de citations : estimation (dryRun) ou import des candidats les plus liés aux graines. */
+export async function expandByCitations(
+  projectId: string,
+  body: CitationRequest,
+  dryRun: boolean
+): Promise<CitationPreview> {
+  return request<CitationPreview>(`/projects/${projectId}/citations`, {
+    method: "POST",
+    body: JSON.stringify({ ...body, dry_run: dryRun }),
   });
 }
 
@@ -935,6 +964,39 @@ export type SettingsScope = "GLOBAL" | "PROJECT" | "USER";
 /** Valeurs venant de l'environnement du serveur (.env) : elles s'appliquent tant que la base est vide. */
 export type EnvSettings = Record<string, { set: boolean; value: string | null }>;
 export const getEnvSettings = (): Promise<EnvSettings> => request("/admin/settings/env");
+
+export interface DiskStatus {
+  total: number;
+  used: number;
+  free: number;
+  percent: number;
+  low: boolean;
+  alert_percent: number;
+  alert_free_gb: number;
+}
+export interface StorageProject {
+  id: string;
+  title: string;
+  articles: number;
+  pdf_bytes: number;
+  last_activity: string;
+  idle_days: number;
+  warned_at: string | null;
+  delete_on: string | null;
+}
+export interface Storage {
+  disk: DiskStatus;
+  db_bytes: number | null;
+  pdf_bytes: number;
+  retention_days: number;
+  grace_days: number;
+  projects: StorageProject[];
+}
+export const getStorageStatus = (): Promise<DiskStatus> => request("/admin/storage/status");
+export const getStorage = (): Promise<Storage> => request("/admin/storage");
+/** « Conserver ce projet » : annule la suppression programmée pour inactivité. */
+export const keepProject = (projectId: string): Promise<{ kept_at: string }> =>
+  request(`/projects/${projectId}/keep`, { method: "POST" });
 
 export async function getSettings(params?: {
   scope?: SettingsScope;

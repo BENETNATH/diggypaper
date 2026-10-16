@@ -349,6 +349,7 @@ function ResultsContent() {
                       {a.has_fulltext
                         ? ` · ${t("fulltext")}${a.fulltext_source && a.fulltext_source !== "pmc" ? ` (${a.fulltext_source})` : ""}`
                         : ` · ${t("abstractOnly")}`}
+                      {a.origin === "citation" && ` · ${t("originCitation", { n: a.origin_seeds ?? 0 })}`}
                     </p>
                     {(a.answers?.length ?? 0) > 0 && (
                       <p className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted">

@@ -12,6 +12,7 @@ HUMAN_INCLUDE_AT = 0.5
 
 LABELS = {
     "fr": {
+        "via_citations": "dont par chaînage de citations",
         "identified": "Références identifiées (PubMed, listes importées)",
         "from_search": "Références de la recherche « {name} »",
         "criteria": "Hors critères de sélection",
@@ -51,6 +52,7 @@ LABELS = {
         "foot": "Adapté de PRISMA 2020 (tri automatique + relecture humaine) — Diggypaper",
     },
     "en": {
+        "via_citations": "of which via citation chaining",
         "identified": "Records identified (PubMed, imported lists)",
         "from_search": "Records of search “{name}”",
         "criteria": "Not meeting selection criteria",
@@ -90,6 +92,7 @@ LABELS = {
         "foot": "Adapted from PRISMA 2020 (automatic screening + human review) — Diggypaper",
     },
     "de": {
+        "via_citations": "davon über Zitationsketten",
         "identified": "Identifizierte Datensätze (PubMed, importierte Listen)",
         "from_search": "Datensätze der Suche „{name}“",
         "criteria": "Auswahlkriterien nicht erfüllt",
@@ -129,6 +132,7 @@ LABELS = {
         "foot": "Nach PRISMA 2020 angepasst (autom. Screening + menschliche Prüfung) — Diggypaper",
     },
     "es": {
+        "via_citations": "de ellos por encadenamiento de citas",
         "identified": "Registros identificados (PubMed, listas importadas)",
         "from_search": "Registros de la búsqueda «{name}»",
         "criteria": "Fuera de los criterios de selección",
@@ -215,6 +219,7 @@ def prisma_counts(
             retrieved += bool(a.sections)
     screened = total - c["untriaged"]
     return {
+        "via_citations": sum(1 for a in articles if getattr(a, "origin", None) == "citation"),
         "identified": identified,
         "failed": failed,
         "duplicates": 0 if origin else dups,
@@ -333,7 +338,10 @@ def render_svg(c: dict, lang: str = "fr") -> str:
         )
 
     first = L["from_search"].format(name=origin["name"]) if origin else L["identified"]
-    parts.append(_box(left, rows[0], _W, _H, first, [n("identified")]))
+    first_lines = [n("identified")]
+    if c.get("via_citations"):  # PRISMA 2020 : identification par d'autres méthodes
+        first_lines.append(f"{L['via_citations']} ({n('via_citations')})")
+    parts.append(_box(left, rows[0], _W, _H, first, first_lines))
     parts.append(_box(right, rows[0], _W, top_h, L["removed"], removed, "#f8fafc"))
     parts.append(_box(left, rows[1], _W, _H, L["screened"], [n("screened")]))
     parts.append(

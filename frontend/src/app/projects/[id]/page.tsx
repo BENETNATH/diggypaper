@@ -3,11 +3,12 @@
 import { ReactNode, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import {
   getProject,
   getOverview,
   listJobs,
+  keepProject,
   listModels,
   Project,
   ProjectOverview,
@@ -142,6 +143,7 @@ function ProjectDashboard() {
   const t = useTranslations("project");
   const projectId = useParams<{ id: string }>().id;
   const { user } = useAuth();
+  const locale = useLocale();
 
   const [project, setProject] = useState<Project | null>(null);
   const [overview, setOverview] = useState<ProjectOverview | null>(null);
@@ -178,6 +180,23 @@ function ProjectDashboard() {
 
   return (
     <div className="flex flex-col gap-5">
+      {project.retention_delete_on && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-danger/40 bg-danger/10 p-3 text-sm">
+          <span className="text-danger">
+            {t("retentionWarn", { date: new Date(project.retention_delete_on).toLocaleDateString(locale) })}
+          </span>
+          {isLead && (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => void keepProject(projectId).then(() => load()).catch(() => undefined)}
+            >
+              {t("keepProject")}
+            </Button>
+          )}
+        </div>
+      )}
+
       {project.status === "PROCESSING" && (
         <Link href={`/projects/${projectId}/import`} className="rounded-lg border border-primary bg-primary/10 p-3 text-sm font-medium text-primary hover:underline">
           {t("importInProgress")} →

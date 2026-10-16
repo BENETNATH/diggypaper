@@ -11,6 +11,7 @@ reproductibilité). Pas de dict in-memory, pas d'appel ``AsyncResult`` bloquant.
 import json
 import logging
 import uuid
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 import httpx
@@ -25,6 +26,7 @@ from app.api.v1.auth import _rate_limit_dependency
 from app.article_text import DEFAULT_KINDS, KINDS
 from app.celery_app import celery_app
 from app.cleanup import delete_projects
+from app.core.config import get_settings
 from app.db.models import (
     Article,
     ArticlePrediction,
@@ -230,6 +232,15 @@ def _project_payload(
         "question_set": src.question is not None or src.fields is not None,
         "search_id": str(search.id) if search else None,
         "created_at": project.created_at.isoformat() if project.created_at else None,
+        # Suppression programmée pour inactivité (None : aucune)
+        "retention_delete_on": (
+            (
+                project.retention_warned_at
+                + timedelta(days=get_settings().project_retention_grace_days)
+            ).isoformat()
+            if project.retention_warned_at
+            else None
+        ),
     }
     if article_count is not None:
         payload["article_count"] = article_count
@@ -496,6 +507,18 @@ async def import_references(
     }
 
 
+@router.post("/{project_id}/keep")
+async def keep_project(project_id: uuid.UUID, db: DbDep, user: UserDep) -> dict:
+    """« Conserver ce projet » : compte comme une activité et annule l'avertissement de
+    suppression pour inactivité."""
+    project = await _require_project_member(db, project_id, user)
+    await _require_lead_or_admin(db, project_id, user)
+    project.kept_at = datetime.now(UTC)
+    project.retention_warned_at = None
+    await db.commit()
+    return {"kept_at": project.kept_at.isoformat()}
+
+
 @router.post("/{project_id}/fulltext", status_code=202)
 async def complete_fulltext(project_id: uuid.UUID, db: DbDep, user: UserDep) -> dict:
     """Cherche le texte intégral manquant dans les sources ouvertes (Europe PMC, Unpaywall,
@@ -755,6 +778,8 @@ async def list_articles(
                 "title": a.title,
                 "abstract": a.abstract,
                 "original_language": a.original_language,
+                "origin": a.origin,
+                "origin_seeds": a.origin_seeds,
                 "has_fulltext": bool(a.sections),
                 "fulltext_source": a.fulltext_source,
                 **biblio_payload(a),

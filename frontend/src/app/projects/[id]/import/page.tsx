@@ -17,6 +17,7 @@ import { withSearch } from "@/lib/search";
 import { useSearchId } from "@/lib/useSearch";
 import { RequireAuth } from "@/components/RequireAuth";
 import { ReferencesImport } from "@/components/ReferencesImport";
+import { CitationExpand } from "@/components/CitationExpand";
 import { Button } from "@/components/ui/Button";
 import { Field, Input } from "@/components/ui/Field";
 import { Card, Badge, statusColor } from "@/components/ui/Card";
@@ -27,6 +28,7 @@ const num = (v: unknown): number => (typeof v === "number" ? v : 0);
 /** Progression lisible d'un job : phase, pourcentage, compteurs. */
 function JobProgress({ job, onRetry }: { job: ImportJob; onRetry?: (job: ImportJob) => void }) {
   const t = useTranslations("import");
+  const projectId = useParams<{ id: string }>().id;
   const r = job.result ?? {};
   const active = job.status === "PENDING" || job.status === "RUNNING";
   const total = num(r.total);
@@ -40,7 +42,10 @@ function JobProgress({ job, onRetry }: { job: ImportJob; onRetry?: (job: ImportJ
       label = t("phaseFulltext", { done, total, found: num(r.found) });
     }
   } else if (job.status === "RUNNING") {
-    if (r.phase === "importing" && total > 0) {
+    if (r.phase === "linking" && total > 0) {
+      value = (done / total) * 100;
+      label = t("phaseLinking", { done, total });
+    } else if (r.phase === "importing" && total > 0) {
       value = (done / total) * 100;
       label = t("phaseImporting", { done, total });
     } else {
@@ -52,7 +57,7 @@ function JobProgress({ job, onRetry }: { job: ImportJob; onRetry?: (job: ImportJ
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-2">
         <code className="min-w-0 truncate text-xs text-muted">
-          {job.kind === "fulltext" ? t("fulltextJob") : job.kind === "references" ? t("refsJob") : job.query}
+          {job.kind === "fulltext" ? t("fulltextJob") : job.kind === "references" ? t("refsJob") : job.kind === "citations" ? t("citJob") : job.query}
         </code>
         <Badge color={statusColor(job.status)}>{job.status}</Badge>
       </div>
@@ -82,6 +87,19 @@ function JobProgress({ job, onRetry }: { job: ImportJob; onRetry?: (job: ImportJ
             </div>
           ))}
         </dl>
+      )}
+      {job.kind === "citations" && job.status === "COMPLETED" && (
+        <div className="flex flex-col gap-1 text-sm">
+          <span className="text-muted">{t("citDone", { found: num(r.candidates), n: num(r.imported) })}</span>
+          {typeof r.search_id === "string" && (
+            <Link
+              href={withSearch(`/projects/${projectId}/inference`, r.search_id)}
+              className="font-medium text-primary hover:underline"
+            >
+              {t("citAnalyse", { n: num(r.imported) })} →
+            </Link>
+          )}
+        </div>
       )}
       {job.kind === "references" && job.status === "COMPLETED" && (
         <div className="flex flex-col gap-1 text-xs text-muted">
@@ -118,7 +136,7 @@ function JobProgress({ job, onRetry }: { job: ImportJob; onRetry?: (job: ImportJ
       {job.status === "FAILED" && job.error && (
         <p className="rounded-lg bg-danger/10 p-3 text-sm text-danger">{job.error}</p>
       )}
-      {job.status === "FAILED" && onRetry && job.kind !== "references" && (
+      {job.status === "FAILED" && onRetry && job.kind !== "references" && job.kind !== "citations" && (
         <div className="flex flex-col items-start gap-1">
           <Button size="sm" onClick={() => onRetry(job)}>
             ↻ {t("retry")}
@@ -138,7 +156,7 @@ function ImportContent() {
 
   const [project, setProject] = useState<Project | null>(null);
   const [jobs, setJobs] = useState<ImportJob[] | null>(null);
-  const [mode, setMode] = useState<"pubmed" | "refs">("pubmed");
+  const [mode, setMode] = useState<"pubmed" | "refs" | "cites">("pubmed");
   const [query, setQuery] = useState("");
   const [volume, setVolume] = useState<number | null>(null);
   const [checking, setChecking] = useState(false);
@@ -229,7 +247,7 @@ function ImportContent() {
   /** Relance un job échoué (requête identique : les articles déjà importés sont ignorés). */
   async function handleRetry(failed: ImportJob) {
     if (failed.kind === "fulltext") return handleFulltext();
-    if (failed.kind === "references") return;
+    if (failed.kind === "references" || failed.kind === "citations") return;
     setError(null);
     try {
       jobsBefore.current = jobs?.length ?? 0;
@@ -309,7 +327,7 @@ function ImportContent() {
         ) : (
           <>
             <div role="tablist" className="mb-4 inline-flex rounded-lg border border-border p-0.5 text-sm">
-              {(["pubmed", "refs"] as const).map((m) => (
+              {(["pubmed", "refs", ...(hasCorpus ? (["cites"] as const) : [])] as const).map((m) => (
                 <button
                   key={m}
                   type="button"
@@ -320,11 +338,19 @@ function ImportContent() {
                     mode === m ? "bg-primary text-white" : "text-muted hover:text-foreground"
                   }`}
                 >
-                  {t(m === "pubmed" ? "modePubmed" : "modeRefs")}
+                  {t(m === "pubmed" ? "modePubmed" : m === "refs" ? "modeRefs" : "modeCites")}
                 </button>
               ))}
             </div>
-            {mode === "refs" ? (
+            {mode === "cites" ? (
+              <CitationExpand
+                projectId={projectId}
+                onStarted={() => {
+                  jobsBefore.current = jobs?.length ?? 0;
+                  setWatching(true);
+                }}
+              />
+            ) : mode === "refs" ? (
               <ReferencesImport
                 projectId={projectId}
                 onStarted={() => {

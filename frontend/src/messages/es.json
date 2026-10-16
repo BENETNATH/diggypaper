@@ -152,7 +152,9 @@
     "reviewedShort": "revisados",
     "analysedPctHelp": "Parte del lote de esta búsqueda ya analizada por un modelo",
     "reviewedPctHelp": "Parte del lote revisada por al menos una persona",
-    "deleteFailed": "No se pudo eliminar."
+    "deleteFailed": "No se pudo eliminar.",
+    "retentionWarn": "Este proyecto no tiene actividad: se eliminará el {date}. Expórtelo (RO-Crate) o consérvelo.",
+    "keepProject": "Conservar este proyecto"
   },
   "import": {
     "title": "Importación del corpus",
@@ -228,7 +230,25 @@
     "refsFormat_bibtex": "BibTeX",
     "refsFormat_ris": "RIS",
     "refsFormat_csl": "CSL JSON",
-    "refsFormat_csv": "CSV"
+    "refsFormat_csv": "CSV",
+    "modeCites": "Citas vinculadas",
+    "citIntro": "Añada al corpus los artículos citados por los suyos (referencias) y los que los citan, desde PubMed (iCite, NIH). No requiere análisis previo.",
+    "citSeeds": "Artículos de partida",
+    "citDirection": "Sentido",
+    "citBoth": "Referencias y citantes",
+    "citBackward": "Referencias (artículos citados)",
+    "citForward": "Artículos citantes",
+    "citMinOverlap": "Vinculados a al menos N de partida",
+    "citMax": "Como máximo",
+    "citEstimate": "Estimar",
+    "citRun": "Enriquecer el corpus",
+    "citFound": "{seeds} artículo(s) de partida con PMID: {candidates} candidato(s) fuera del corpus.",
+    "citAtLeast": "Con umbral ≥ {n}: {count} retenido(s).",
+    "citHint": "Entran primero los candidatos más vinculados a los artículos de partida. Se crea una búsqueda sobre los nuevos artículos: analícela con su modelo para conservar los que respondan a la pregunta.",
+    "citJob": "Enriquecimiento por citas",
+    "phaseLinking": "Buscando citas: {done} / {total} artículos de partida",
+    "citDone": "{found} candidato(s) encontrado(s), {n} añadido(s) al corpus.",
+    "citAnalyse": "Analizar los {n} artículos nuevos"
   },
   "articles": {
     "title": "Resultados y revisión",
@@ -300,7 +320,8 @@
     "textFilter": "Texto",
     "textAll": "Todos los textos",
     "textFull": "Texto completo",
-    "textAbstract": "Solo resumen"
+    "textAbstract": "Solo resumen",
+    "originCitation": "por cita (vinculada a {n})"
   },
   "gold": {
     "title": "Gold standard",
@@ -944,5 +965,20 @@
     "accepted": "{n} validados",
     "review": "{n} por revisar",
     "rejected": "{n} descartados"
+  },
+  "storage": {
+    "title": "Almacenamiento",
+    "disk": "Disco: {percent} % usado — {free} libres de {total}",
+    "alertAt": "Alerta al {percent} % o con menos de {gb} GB libres",
+    "breakdown": "Base de datos: {db} · PDF almacenados: {pdf}",
+    "retentionOn": "Proyectos inactivos: se avisa a los responsables tras {days} días sin actividad; eliminación {grace} días después sin actividad ni «Conservar».",
+    "retentionOff": "Eliminación de proyectos inactivos desactivada (defina PROJECT_RETENTION_DAYS en .env).",
+    "project": "Proyecto",
+    "articles": "Artículos",
+    "idle": "Inactivo",
+    "deletion": "Eliminación",
+    "days": "{n} d",
+    "alert": "Disco del servidor al {percent} % ({free} GB libres).",
+    "manage": "Gestionar almacenamiento"
   }
 }

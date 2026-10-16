@@ -152,7 +152,9 @@
     "reviewedShort": "reviewed",
     "analysedPctHelp": "Share of this search's lot already analysed by a model",
     "reviewedPctHelp": "Share of the lot reviewed by at least one person",
-    "deleteFailed": "Deletion failed."
+    "deleteFailed": "Deletion failed.",
+    "retentionWarn": "This project has no activity: it will be deleted on {date}. Export it (RO-Crate) or keep it.",
+    "keepProject": "Keep this project"
   },
   "import": {
     "title": "Corpus import",
@@ -228,7 +230,25 @@
     "refsFormat_bibtex": "BibTeX",
     "refsFormat_ris": "RIS",
     "refsFormat_csl": "CSL JSON",
-    "refsFormat_csv": "CSV"
+    "refsFormat_csv": "CSV",
+    "modeCites": "Linked citations",
+    "citIntro": "Add to the corpus the articles cited by your articles (references) and those that cite them, from PubMed (iCite, NIH). No prior analysis is needed.",
+    "citSeeds": "Starting articles",
+    "citDirection": "Direction",
+    "citBoth": "References and citing articles",
+    "citBackward": "References (cited articles)",
+    "citForward": "Citing articles",
+    "citMinOverlap": "Linked to at least N starters",
+    "citMax": "At most",
+    "citEstimate": "Estimate",
+    "citRun": "Enrich the corpus",
+    "citFound": "{seeds} starting article(s) with a PMID: {candidates} candidate(s) outside the corpus.",
+    "citAtLeast": "At threshold ≥ {n}: {count} kept.",
+    "citHint": "The candidates most linked to the starting articles come first. A search is created on the new articles: analyse it with your model to keep or discard those that answer the question.",
+    "citJob": "Citation enrichment",
+    "phaseLinking": "Looking up citations: {done} / {total} starting articles",
+    "citDone": "{found} candidate(s) found, {n} added to the corpus.",
+    "citAnalyse": "Analyse the {n} new articles"
   },
   "articles": {
     "title": "Results and review",
@@ -300,7 +320,8 @@
     "textFilter": "Text",
     "textAll": "All texts",
     "textFull": "Full text",
-    "textAbstract": "Abstract only"
+    "textAbstract": "Abstract only",
+    "originCitation": "via citation (linked to {n})"
   },
   "gold": {
     "title": "Gold standard",
@@ -944,5 +965,20 @@
     "accepted": "{n} accepted",
     "review": "{n} to review",
     "rejected": "{n} rejected"
+  },
+  "storage": {
+    "title": "Storage",
+    "disk": "Disk: {percent}% used — {free} free of {total}",
+    "alertAt": "Alert at {percent}% or under {gb} GB free",
+    "breakdown": "Database: {db} · stored PDFs: {pdf}",
+    "retentionOn": "Inactive projects: leads are warned after {days} days without activity, deletion {grace} days later with no activity or “Keep”.",
+    "retentionOff": "Deletion of inactive projects is off (set PROJECT_RETENTION_DAYS in .env to enable it).",
+    "project": "Project",
+    "articles": "Articles",
+    "idle": "Idle",
+    "deletion": "Deletion",
+    "days": "{n} d",
+    "alert": "Server disk is {percent}% full ({free} GB free).",
+    "manage": "Manage storage"
   }
 }

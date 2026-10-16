@@ -152,7 +152,9 @@
     "reviewedShort": "geprüft",
     "analysedPctHelp": "Anteil des Lots dieser Suche, der von einem Modell analysiert wurde",
     "reviewedPctHelp": "Anteil des Lots, der von mindestens einer Person geprüft wurde",
-    "deleteFailed": "Löschen fehlgeschlagen."
+    "deleteFailed": "Löschen fehlgeschlagen.",
+    "retentionWarn": "Dieses Projekt ist inaktiv: Es wird am {date} gelöscht. Exportieren Sie es (RO-Crate) oder behalten Sie es.",
+    "keepProject": "Projekt behalten"
   },
   "import": {
     "title": "Korpus-Import",
@@ -228,7 +230,25 @@
     "refsFormat_bibtex": "BibTeX",
     "refsFormat_ris": "RIS",
     "refsFormat_csl": "CSL JSON",
-    "refsFormat_csv": "CSV"
+    "refsFormat_csv": "CSV",
+    "modeCites": "Verknüpfte Zitate",
+    "citIntro": "Fügen Sie dem Korpus die von Ihren Artikeln zitierten (Referenzen) und die sie zitierenden Artikel aus PubMed (iCite, NIH) hinzu. Keine vorherige Analyse nötig.",
+    "citSeeds": "Ausgangsartikel",
+    "citDirection": "Richtung",
+    "citBoth": "Referenzen und zitierende Artikel",
+    "citBackward": "Referenzen (zitierte Artikel)",
+    "citForward": "Zitierende Artikel",
+    "citMinOverlap": "Mit mindestens N Ausgangsartikeln verknüpft",
+    "citMax": "Höchstens",
+    "citEstimate": "Schätzen",
+    "citRun": "Korpus erweitern",
+    "citFound": "{seeds} Ausgangsartikel mit PMID: {candidates} Kandidat(en) außerhalb des Korpus.",
+    "citAtLeast": "Bei Schwelle ≥ {n}: {count} übernommen.",
+    "citHint": "Die am stärksten mit den Ausgangsartikeln verknüpften Kandidaten kommen zuerst. Für die neuen Artikel wird eine Suche angelegt: Analysieren Sie sie mit Ihrem Modell, um passende zu behalten.",
+    "citJob": "Erweiterung durch Zitate",
+    "phaseLinking": "Zitate werden gesucht: {done} / {total} Ausgangsartikel",
+    "citDone": "{found} Kandidat(en) gefunden, {n} zum Korpus hinzugefügt.",
+    "citAnalyse": "Die {n} neuen Artikel analysieren"
   },
   "articles": {
     "title": "Ergebnisse und Prüfung",
@@ -300,7 +320,8 @@
     "textFilter": "Text",
     "textAll": "Alle Texte",
     "textFull": "Volltext",
-    "textAbstract": "Nur Abstract"
+    "textAbstract": "Nur Abstract",
+    "originCitation": "über Zitat (mit {n} verknüpft)"
   },
   "gold": {
     "title": "Goldstandard",
@@ -944,5 +965,20 @@
     "accepted": "{n} angenommen",
     "review": "{n} zu prüfen",
     "rejected": "{n} verworfen"
+  },
+  "storage": {
+    "title": "Speicher",
+    "disk": "Datenträger: {percent} % belegt — {free} frei von {total}",
+    "alertAt": "Alarm bei {percent} % oder unter {gb} GB frei",
+    "breakdown": "Datenbank: {db} · gespeicherte PDFs: {pdf}",
+    "retentionOn": "Inaktive Projekte: Verantwortliche werden nach {days} Tagen ohne Aktivität gewarnt, Löschung {grace} Tage später ohne Aktivität oder „Behalten“.",
+    "retentionOff": "Löschen inaktiver Projekte ist aus (PROJECT_RETENTION_DAYS in .env setzen).",
+    "project": "Projekt",
+    "articles": "Artikel",
+    "idle": "Inaktiv",
+    "deletion": "Löschung",
+    "days": "{n} T",
+    "alert": "Serverplatte zu {percent} % belegt ({free} GB frei).",
+    "manage": "Speicher verwalten"
   }
 }

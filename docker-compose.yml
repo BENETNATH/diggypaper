@@ -95,7 +95,7 @@ services:
     logging: *logging
     mem_limit: ${WORKER_MEM_LIMIT:-8g}
     # WORKER_CONCURRENCY : tâches en parallèle (imports, analyses, exports) ; 3 par défaut.
-    command: ["celery", "-A", "app.celery_app.celery_app", "worker", "--loglevel=info", "--concurrency=${WORKER_CONCURRENCY:-3}"]
+    command: ["celery", "-A", "app.celery_app.celery_app", "worker", "-B", "-s", "/tmp/celerybeat-schedule", "--loglevel=info", "--concurrency=${WORKER_CONCURRENCY:-3}"]
     volumes:
       - exports:/app/exports
     environment:
