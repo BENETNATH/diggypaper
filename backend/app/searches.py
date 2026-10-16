@@ -38,17 +38,7 @@ async def default_search(db: AsyncSession, project: Project) -> Search:
         .scalars()
         .first()
     )
-    if s is not None:  # la recherche initiale reflète toujours les réglages du projet
-        if (s.question, s.fields, s.text_sections, s.read_windows) != (
-            project.question,
-            project.fields,
-            project.text_sections,
-            project.read_windows,
-        ):
-            s.question, s.fields = project.question, project.fields
-            s.text_sections, s.read_windows = project.text_sections, project.read_windows
-            s.definition_hash = definition_hash(project.question, project.fields)
-    else:
+    if s is None:  # créée à la première lecture, à partir des réglages du projet à cet instant
         s = Search(
             project_id=project.id,
             name=await next_search_name(db, project.id, project.created_at),

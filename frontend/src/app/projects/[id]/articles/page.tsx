@@ -6,13 +6,13 @@ import { useParams, useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { getProject, prismaUrl, prismaPdfUrl, listArticles, Article, PredictionFilter, SchemaField } from "@/lib/api";
 import { AnswerFilters, Answers } from "@/components/AnswerFilters";
-import { ArticleLinks, Certainty, biblioLine } from "@/components/Certainty";
 import { BulkPdfUpload } from "@/components/BulkPdfUpload";
 import { ExportMenu } from "@/components/ExportMenu";
+import { ResultRow } from "@/components/ResultRow";
 import { Menu, MenuItem } from "@/components/ui/Menu";
 import { Modal } from "@/components/ui/Modal";
 import { RequireAuth } from "@/components/RequireAuth";
-import { Card, Badge, statusColor } from "@/components/ui/Card";
+import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Skeleton, ErrorBanner, EmptyState } from "@/components/ui/Feedback";
 import { articlesStoreKey, prefillStoreKey, selectionFromFilters, withSearch } from "@/lib/search";
@@ -336,63 +336,14 @@ function ResultsContent() {
           hint={filter !== "ALL" || text || hasAnswerFilter || fulltext !== undefined ? t("emptyFiltered") : t("emptyHint")}
         />
       ) : (
-        <Card>
-          <ul className="divide-y divide-border">
+        <Card className="p-1 sm:p-2">
+          <ul className="divide-y divide-border/60">
             {articles.map((a) => (
-              <li key={a.id} className="py-1">
-                <Link
-                  href={withSearch(`/projects/${projectId}/annotate?article=${a.id}&queue=${queue}`, searchId)}
-                  className="flex flex-col gap-1 py-2 hover:bg-surface-muted sm:flex-row sm:items-center sm:justify-between sm:gap-3"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-foreground">{a.title ?? t("untitled")}</p>
-                    {biblioLine(a) && <p className="truncate text-xs text-foreground/80">{biblioLine(a)}</p>}
-                    <p className="text-xs text-muted">
-                      {a.pmid ? `PMID ${a.pmid}` : (a.doi ?? a.id)}
-                      {a.has_fulltext
-                        ? ` · ${t("fulltext")}${a.fulltext_source && a.fulltext_source !== "pmc" ? ` (${a.fulltext_source})` : ""}`
-                        : ` · ${t("abstractOnly")}`}
-                      {a.origin === "citation" && ` · ${t("originCitation", { n: a.origin_seeds ?? 0 })}`}
-                    </p>
-                    {(a.answers?.length ?? 0) > 0 && (
-                      <p className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted">
-                        {a.answers!.map((r) => (
-                          <span key={r.key} className="inline-flex items-center gap-1">
-                            {r.label} :{" "}
-                            <strong className="text-foreground">
-                              {typeof r.value === "boolean" ? (r.value ? t("yes") : t("no")) : String(r.value)}
-                            </strong>
-                            {r.source === "human" ? (
-                              <span title={t("humanAnswer")} className="text-primary">
-                                ✎
-                              </span>
-                            ) : (
-                              <Certainty value={r.confidence} />
-                            )}
-                          </span>
-                        ))}
-                      </p>
-                    )}
-                  </div>
-                  <div className="flex shrink-0 flex-wrap items-center gap-2">
-                    {a.confidence != null && (
-                      <span className="text-xs text-muted" title={t("relevanceHelp")}>
-                        {t("relevance")} {Math.round(a.confidence * 100)} %
-                      </span>
-                    )}
-                    {a.annotated && (
-                      <Badge color={a.review?.status === "CORRECTED" ? "yellow" : "green"}>
-                        ✓ {a.review?.status ? t(`review_${a.review.status}`) : t("reviewed")}
-                        {a.review?.by ? ` · ${t("reviewedBy", { name: a.review.by })}` : ""}
-                      </Badge>
-                    )}
-                    {a.prediction_status && (
-                      <Badge color={statusColor(a.prediction_status)}>{t(`status_${a.prediction_status}`)}</Badge>
-                    )}
-                  </div>
-                </Link>
-                <ArticleLinks article={a} className="pb-1" />
-              </li>
+              <ResultRow
+                key={a.id}
+                a={a}
+                href={withSearch(`/projects/${projectId}/annotate?article=${a.id}&queue=${queue}`, searchId)}
+              />
             ))}
           </ul>
         </Card>

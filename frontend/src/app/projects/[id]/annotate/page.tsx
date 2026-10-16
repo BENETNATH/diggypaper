@@ -39,6 +39,7 @@ import {
  */
 export default function AnnotatePage() {
   const t = useTranslations("annotate");
+  const ti = useTranslations("import"); // libellés des parties du texte
   const tc = useTranslations("common");
   const locale = useLocale();
   const params = useParams<{ id: string }>();
@@ -62,6 +63,7 @@ export default function AnnotatePage() {
   const [tab, setTab] = useState<"document" | "annotation">("document");
   const router = useRouter();
   const [fields, setFields] = useState<SchemaField[]>([]);
+  const [sections, setSections] = useState<string[]>(["methods"]); // parties du texte lues par la recherche
   const [queue, setQueue] = useState<string[]>([]);
   const [status, setStatus] = useState<
     "idle" | "accepted" | "rejected" | "submitted"
@@ -119,7 +121,10 @@ export default function AnnotatePage() {
     if (!projectId || !articleId) return;
     setLoading(true);
     getProject(projectId, searchId)
-      .then((p) => setFields(p.fields ?? []))
+      .then((p) => {
+        setFields(p.fields ?? []);
+        setSections(p.text_sections ?? ["methods"]);
+      })
       .catch(() => {});
     getArticleWithPrediction(projectId, articleId, searchId)
       .then(({ article, prediction, review }) => {
@@ -354,7 +359,7 @@ export default function AnnotatePage() {
             className="h-full"
           >
             <h2 className="mb-2 text-sm font-medium text-muted">
-              {t("methods")}
+              {sections.includes("all") ? ti("kind_all") : sections.map((k) => ti(`kind_${k}`)).join(" · ")}
             </h2>
             <div
               className={`mb-2 rounded border p-2 text-xs ${
