@@ -17,7 +17,7 @@ from openpyxl import Workbook
 from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import crate, prisma, references
@@ -38,6 +38,7 @@ from app.db.models import (
     InferenceJob,
     ModelRegistry,
     PromptTemplate,
+    Search,
     User,
 )
 from app.schema import project_fields
@@ -332,6 +333,26 @@ async def _references(
     )
 
 
+async def _prisma_origin(db, project, scope) -> dict | None:
+    """Recherche autre que la recherche initiale : son point de départ et ses critères."""
+    if scope.is_default:
+        return None
+    parent = await db.get(Search, scope.parent_id) if scope.parent_id else None
+    lot = parent or scope
+    size = (
+        await db.execute(select(func.count()).select_from(Article).where(lot_condition(lot)))
+    ).scalar_one()
+    spec = dict(scope.parent_spec or {})
+    if "ids" in spec:  # pas la liste des identifiants dans le diagramme / project.json
+        spec["n_ids"] = len(spec.pop("ids"))
+    return {
+        "name": (parent or scope).name,
+        "size": size,
+        "criteria": spec,
+        "labels": {f["key"]: f["label"] for f in (lot.fields or [])},
+    }
+
+
 PRISMA_LANGS = "^(fr|en|de|es)$"
 
 
@@ -343,7 +364,9 @@ async def get_prisma(
     project = await _require_project_member(db, project_id, user)
     scope = await get_search(db, project, search)
     articles, preds, annos, import_jobs, _ = await _load(db, project, search=scope)
-    return prisma.prisma_counts(articles, preds, annos, import_jobs)
+    return prisma.prisma_counts(
+        articles, preds, annos, import_jobs, await _prisma_origin(db, project, scope)
+    )
 
 
 @router.get("/{project_id}/prisma.svg")
@@ -358,7 +381,9 @@ async def get_prisma_svg(
     project = await _require_project_member(db, project_id, user)
     scope = await get_search(db, project, search)
     articles, preds, annos, import_jobs, _ = await _load(db, project, search=scope)
-    counts = prisma.prisma_counts(articles, preds, annos, import_jobs)
+    counts = prisma.prisma_counts(
+        articles, preds, annos, import_jobs, await _prisma_origin(db, project, scope)
+    )
     svg = prisma.render_svg(counts, lang or project.default_language or "fr")
     return Response(
         svg,
@@ -379,7 +404,9 @@ async def get_prisma_pdf(
     project = await _require_project_member(db, project_id, user)
     scope = await get_search(db, project, search)
     articles, preds, annos, import_jobs, _ = await _load(db, project, search=scope)
-    counts = prisma.prisma_counts(articles, preds, annos, import_jobs)
+    counts = prisma.prisma_counts(
+        articles, preds, annos, import_jobs, await _prisma_origin(db, project, scope)
+    )
     pdf = prisma.svg_to_pdf(prisma.render_svg(counts, lang or project.default_language or "fr"))
     return Response(
         pdf,
@@ -423,6 +450,7 @@ async def write_crate(
 
     ``progress(done, total)`` (async, optionnel) est appelé tous les 10 articles.
     """
+    search = search or await default_search(db, project)
     articles, preds, annos, import_jobs, inf_job = await _load(db, project, search=search)
     fields = project_fields(project)
     names = {n for n in (inf_job.model_used, inf_job.prefilter_model) if n} if inf_job else set()
@@ -472,7 +500,9 @@ async def write_crate(
             if progress and i % 10 == 0:
                 await progress(i, len(articles))
         now = datetime.now(UTC).isoformat(timespec="seconds")
-        counts = prisma.prisma_counts(articles, preds, annos, import_jobs)
+        counts = prisma.prisma_counts(
+            articles, preds, annos, import_jobs, await _prisma_origin(db, project, search)
+        )
         info["prisma"] = counts
         put("prisma.svg", prisma.render_svg(counts, project.default_language or "fr"))
         put("README.md", crate.readme(project, len(articles), n_pdf, n_text))

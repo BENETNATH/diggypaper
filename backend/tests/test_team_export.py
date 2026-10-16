@@ -382,6 +382,8 @@ async def test_prisma_counts_and_svg(client, session, lead_project):
         "identified": 7,
         "failed": 2,
         "duplicates": 0,
+        "by_criteria": 0,
+        "origin": None,
         "not_screened": 1,
         "screened": 4,
         "excluded": 2,
@@ -395,13 +397,26 @@ async def test_prisma_counts_and_svg(client, session, lead_project):
     }
     svg = await client.get(f"{base}/prisma.svg", params={"lang": "en"})
     assert svg.headers["content-type"].startswith("image/svg+xml")
-    assert "Records identified from PubMed" in svg.text and "n = 7" in svg.text
+    assert "Records identified (PubMed, imported lists)" in svg.text and "n = 7" in svg.text
     pdf = await client.get(f"{base}/prisma.pdf", params={"lang": "fr"})
     assert pdf.headers["content-type"] == "application/pdf" and pdf.content.startswith(b"%PDF")
     from pypdf import PdfReader
 
     text = PdfReader(io.BytesIO(pdf.content)).pages[0].extract_text()
-    assert "Références identifiées dans PubMed" in text and "n = 7" in text  # accents conservés
+    assert "Références identifiées" in text and "n = 7" in text  # accents conservés
+
+    # Recherche dérivée : le point de départ est la recherche d'origine, les critères sont
+    # indiqués et les articles écartés ne sont pas des « doublons ».
+    r = await client.post(
+        f"{base}/searches", json={"name": "Retenus", "selection": {"status": "AUTO_ACCEPTED"}}
+    )
+    assert r.status_code == 201, r.text
+    d = (await client.get(f"{base}/prisma", params={"search": r.json()["id"]})).json()
+    assert (d["identified"], d["duplicates"], d["failed"], d["by_criteria"]) == (5, 0, 0, 4)
+    assert d["origin"]["criteria"] == {"status": "AUTO_ACCEPTED"}
+    svg = await client.get(f"{base}/prisma.svg", params={"search": r.json()["id"], "lang": "fr"})
+    assert "Hors critères de sélection (n = 4)" in svg.text and "statut IA : accepté" in svg.text
+    assert "Doublons" not in svg.text
 
 
 async def test_resume_inference_skips_done_articles(engine, session):

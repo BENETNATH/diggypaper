@@ -12,10 +12,29 @@ HUMAN_INCLUDE_AT = 0.5
 
 LABELS = {
     "fr": {
+        "identified": "Références identifiées (PubMed, listes importées)",
+        "from_search": "Références de la recherche « {name} »",
+        "criteria": "Hors critères de sélection",
+        "c_status": "statut IA : {v}",
+        "c_reviewed": "relus par un humain",
+        "c_unreviewed": "non relus",
+        "c_fulltext": "avec texte intégral",
+        "c_abstract": "résumé seul",
+        "c_q": "texte : « {v} »",
+        "c_conf_min": "pertinence ≥ {v} %",
+        "c_conf_max": "pertinence ≤ {v} %",
+        "c_ids": "liste de {v} articles",
+        "c_sample": "tirage au sort de {v}",
+        "c_yes": "oui",
+        "c_no": "non",
+        "s_AUTO_ACCEPTED": "accepté",
+        "s_AUTO_REJECTED": "rejeté",
+        "s_NEEDS_HUMAN_REVIEW": "à relire",
+        "s_NONE": "non analysé",
+        "s_TO_REVIEW": "à relire / non relu",
         "ident": "Identification",
         "screen": "Tri",
         "incl": "Inclus",
-        "identified": "Références identifiées dans PubMed",
         "removed": "Références retirées avant le tri",
         "dups": "Doublons",
         "errors": "Erreurs de récupération",
@@ -32,10 +51,29 @@ LABELS = {
         "foot": "Adapté de PRISMA 2020 (tri automatique + relecture humaine) — Diggypaper",
     },
     "en": {
+        "identified": "Records identified (PubMed, imported lists)",
+        "from_search": "Records of search “{name}”",
+        "criteria": "Not meeting selection criteria",
+        "c_status": "AI status: {v}",
+        "c_reviewed": "human-reviewed",
+        "c_unreviewed": "not reviewed",
+        "c_fulltext": "with full text",
+        "c_abstract": "abstract only",
+        "c_q": "text: “{v}”",
+        "c_conf_min": "relevance ≥ {v}%",
+        "c_conf_max": "relevance ≤ {v}%",
+        "c_ids": "list of {v} articles",
+        "c_sample": "random sample of {v}",
+        "c_yes": "yes",
+        "c_no": "no",
+        "s_AUTO_ACCEPTED": "accepted",
+        "s_AUTO_REJECTED": "rejected",
+        "s_NEEDS_HUMAN_REVIEW": "needs review",
+        "s_NONE": "not analysed",
+        "s_TO_REVIEW": "to review / unreviewed",
         "ident": "Identification",
         "screen": "Screening",
         "incl": "Included",
-        "identified": "Records identified from PubMed",
         "removed": "Records removed before screening",
         "dups": "Duplicate records",
         "errors": "Retrieval errors",
@@ -52,10 +90,29 @@ LABELS = {
         "foot": "Adapted from PRISMA 2020 (automatic screening + human review) — Diggypaper",
     },
     "de": {
+        "identified": "Identifizierte Datensätze (PubMed, importierte Listen)",
+        "from_search": "Datensätze der Suche „{name}“",
+        "criteria": "Auswahlkriterien nicht erfüllt",
+        "c_status": "KI-Status: {v}",
+        "c_reviewed": "manuell geprüft",
+        "c_unreviewed": "nicht geprüft",
+        "c_fulltext": "mit Volltext",
+        "c_abstract": "nur Abstract",
+        "c_q": "Text: „{v}“",
+        "c_conf_min": "Relevanz ≥ {v} %",
+        "c_conf_max": "Relevanz ≤ {v} %",
+        "c_ids": "Liste von {v} Artikeln",
+        "c_sample": "Zufallsstichprobe von {v}",
+        "c_yes": "ja",
+        "c_no": "nein",
+        "s_AUTO_ACCEPTED": "akzeptiert",
+        "s_AUTO_REJECTED": "abgelehnt",
+        "s_NEEDS_HUMAN_REVIEW": "zu prüfen",
+        "s_NONE": "nicht analysiert",
+        "s_TO_REVIEW": "zu prüfen / ungeprüft",
         "ident": "Identifikation",
         "screen": "Screening",
         "incl": "Eingeschlossen",
-        "identified": "In PubMed identifizierte Datensätze",
         "removed": "Vor dem Screening entfernte Datensätze",
         "dups": "Duplikate",
         "errors": "Abruffehler",
@@ -72,10 +129,29 @@ LABELS = {
         "foot": "Nach PRISMA 2020 angepasst (autom. Screening + menschliche Prüfung) — Diggypaper",
     },
     "es": {
+        "identified": "Registros identificados (PubMed, listas importadas)",
+        "from_search": "Registros de la búsqueda «{name}»",
+        "criteria": "Fuera de los criterios de selección",
+        "c_status": "estado IA: {v}",
+        "c_reviewed": "revisados por un humano",
+        "c_unreviewed": "sin revisar",
+        "c_fulltext": "con texto completo",
+        "c_abstract": "solo resumen",
+        "c_q": "texto: «{v}»",
+        "c_conf_min": "relevancia ≥ {v} %",
+        "c_conf_max": "relevancia ≤ {v} %",
+        "c_ids": "lista de {v} artículos",
+        "c_sample": "muestra aleatoria de {v}",
+        "c_yes": "sí",
+        "c_no": "no",
+        "s_AUTO_ACCEPTED": "aceptado",
+        "s_AUTO_REJECTED": "rechazado",
+        "s_NEEDS_HUMAN_REVIEW": "por revisar",
+        "s_NONE": "sin analizar",
+        "s_TO_REVIEW": "por revisar / sin revisar",
         "ident": "Identificación",
         "screen": "Cribado",
         "incl": "Incluidos",
-        "identified": "Registros identificados en PubMed",
         "removed": "Registros eliminados antes del cribado",
         "dups": "Duplicados",
         "errors": "Errores de recuperación",
@@ -94,16 +170,26 @@ LABELS = {
 }
 
 
-def prisma_counts(articles, preds: dict, annos: dict, import_jobs) -> dict:
-    """Effectifs de chaque case du diagramme (cf. ``render_svg``)."""
+def prisma_counts(
+    articles, preds: dict, annos: dict, import_jobs, origin: dict | None = None
+) -> dict:
+    """Effectifs de chaque case du diagramme (cf. ``render_svg``).
+
+    ``origin`` (recherche autre que la recherche initiale) : ``{name, size, criteria, labels}`` —
+    l'identification part alors des références de la recherche d'origine, et celles que les
+    critères de sélection écartent remplacent les « doublons » (qui sont ceux des imports).
+    """
     total = len(articles)
     identified = failed = 0
-    for j in import_jobs:
-        r = j.result_json or {}
-        if j.status is not None and j.status.value == "COMPLETED":
-            identified += int(r.get("imported", 0)) + int(r.get("failed", 0))
-            failed += int(r.get("failed", 0))
-    identified = max(identified, total + failed)
+    if origin is not None:
+        identified = max(origin["size"], total)
+    else:
+        for j in import_jobs:
+            r = j.result_json or {}
+            if j.status is not None and j.status.value == "COMPLETED":
+                identified += int(r.get("imported", 0)) + int(r.get("failed", 0))
+                failed += int(r.get("failed", 0))
+        identified = max(identified, total + failed)
     dups = identified - failed - total  # références déjà présentes (ré-imports)
 
     c = {"included": 0, "ai_excluded": 0, "human_excluded": 0, "pending": 0, "untriaged": 0}
@@ -131,7 +217,9 @@ def prisma_counts(articles, preds: dict, annos: dict, import_jobs) -> dict:
     return {
         "identified": identified,
         "failed": failed,
-        "duplicates": dups,
+        "duplicates": 0 if origin else dups,
+        "by_criteria": dups if origin else 0,
+        "origin": origin,
         "not_screened": c["untriaged"],
         "screened": screened,
         "excluded": c["ai_excluded"] + c["human_excluded"],
@@ -145,7 +233,36 @@ def prisma_counts(articles, preds: dict, annos: dict, import_jobs) -> dict:
     }
 
 
+def describe_criteria(spec: dict, labels: dict, lang: str = "fr") -> list[str]:
+    """Critères de sélection (``Selection`` d'une recherche dérivée) en phrases courtes."""
+    L = LABELS.get(lang, LABELS["en"])
+    out = []
+    if spec.get("status"):
+        out.append(L["c_status"].format(v=L.get(f"s_{spec['status']}", spec["status"])))
+    for key, val in (spec.get("answers") or {}).items():
+        shown = L["c_yes" if val is True else "c_no"] if isinstance(val, bool) else val
+        out.append(f"{labels.get(key, key)} = {shown}")
+    if "reviewed" in spec:
+        out.append(L["c_reviewed" if spec["reviewed"] else "c_unreviewed"])
+    if "has_fulltext" in spec:
+        out.append(L["c_fulltext" if spec["has_fulltext"] else "c_abstract"])
+    if spec.get("q"):
+        out.append(L["c_q"].format(v=spec["q"]))
+    for key in ("confidence_min", "confidence_max"):
+        if spec.get(key) is not None:
+            out.append(L["c_conf_" + key[-3:]].format(v=round(spec[key] * 100)))
+    if spec.get("n_ids"):
+        out.append(L["c_ids"].format(v=spec["n_ids"]))
+    if spec.get("sample_n"):
+        out.append(L["c_sample"].format(v=spec["sample_n"]))
+    return out
+
+
 _W, _H, _GAP = 300, 88, 40
+
+
+def _clip(text: str, width: int = 46) -> str:
+    return text if len(text) <= width else text[: width - 1] + "…"
 
 
 def _box(x, y, w, h, title, lines, fill="#ffffff") -> str:
@@ -173,8 +290,28 @@ def _arrow(x1, y1, x2, y2) -> str:
 def render_svg(c: dict, lang: str = "fr") -> str:
     """Diagramme PRISMA 2020 (colonne principale à gauche, exclusions à droite)."""
     L = LABELS.get(lang, LABELS["en"])
+
+    def n(k: str) -> str:
+        return f"n = {c[k]}"
+
     left, right = 60, 410
-    rows = [20, 20 + _H + _GAP, 20 + 2 * (_H + _GAP), 20 + 3 * (_H + _GAP), 20 + 4 * (_H + _GAP)]
+    origin = c.get("origin")
+    removed = [
+        f"{L['dups']} ({n('duplicates')})",
+        f"{L['errors']} ({n('failed')})",
+        f"{L['notscreened']} ({n('not_screened')})",
+    ]
+    if origin:  # recherche dérivée : les critères de sélection remplacent doublons et erreurs
+        crit = [_clip(x) for x in describe_criteria(origin["criteria"], origin["labels"], lang)]
+        crit = crit[:8] + ["…"] * (len(crit) > 8)
+        removed = [
+            f"{L['criteria']} ({n('by_criteria')})",
+            *crit,
+            f"{L['notscreened']} ({n('not_screened')})",
+        ]
+    top_h = max(_H, 50 + 16 * len(removed) - 8)
+    shift = top_h - _H
+    rows = [20] + [20 + k * (_H + _GAP) + shift for k in range(1, 5)]
     height = rows[-1] + _H + 50
     parts = [
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 740 {height}" '
@@ -195,25 +332,9 @@ def render_svg(c: dict, lang: str = "fr") -> str:
             f'font-size="12" font-weight="700">{escape(name)}</text>'
         )
 
-    def n(k: str) -> str:
-        return f"n = {c[k]}"
-
-    parts.append(_box(left, rows[0], _W, _H, L["identified"], [n("identified")]))
-    parts.append(
-        _box(
-            right,
-            rows[0],
-            _W,
-            _H,
-            L["removed"],
-            [
-                f"{L['dups']} ({n('duplicates')})",
-                f"{L['errors']} ({n('failed')})",
-                f"{L['notscreened']} ({n('not_screened')})",
-            ],
-            "#f8fafc",
-        )
-    )
+    first = L["from_search"].format(name=origin["name"]) if origin else L["identified"]
+    parts.append(_box(left, rows[0], _W, _H, first, [n("identified")]))
+    parts.append(_box(right, rows[0], _W, top_h, L["removed"], removed, "#f8fafc"))
     parts.append(_box(left, rows[1], _W, _H, L["screened"], [n("screened")]))
     parts.append(
         _box(
