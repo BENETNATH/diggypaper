@@ -16,6 +16,17 @@ const SECTION_KINDS = [
   "other",
 ];
 
+/** Exemple proposé (jamais appliqué sans clic) ; le texte de la question est traduit. */
+const SUGGESTED_FIELDS: SchemaField[] = [
+  { key: "use_ai_behavior", label: "Uses AI behavior analysis", type: "boolean" },
+  {
+    key: "animal_sex",
+    label: "Animal sex",
+    type: "choice",
+    options: ["MALE_ONLY", "FEMALE_ONLY", "BOTH_SEXES", "UNSPECIFIED"],
+  },
+];
+
 const CHOICE_METRICS: RankMetric[] = ["accuracy"];
 
 const slug = (s: string) =>
@@ -90,6 +101,20 @@ export function QuestionEditor({
       <Field label={t("questionLabel")} hint={t("questionHint")}>
         <Textarea rows={2} value={question} onChange={(e) => set({ question: e.target.value })} />
       </Field>
+      {!question.trim() && !fields.length && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-border p-3 text-sm">
+          <span className="text-muted">{t("suggestion")} :</span>
+          <span className="text-foreground">{t("suggestionText")}</span>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={() => set({ question: t("suggestionText"), fields: SUGGESTED_FIELDS })}
+          >
+            {t("suggestionUse")}
+          </Button>
+        </div>
+      )}
 
       <div>
         <p className="text-sm font-medium text-foreground">{t("fieldsTitle")}</p>

@@ -1,4 +1,4 @@
-import { articlesStoreKey, cleanSelection, currentSearch, resolveSearchId, selectionFromFilters, withSearch } from "@/lib/search";
+import { articlesStoreKey, cleanSelection, currentSearch, isUntouched, resolveSearchId, selectionFromFilters, withSearch } from "@/lib/search";
 import type { SearchInfo } from "@/lib/api";
 
 describe("resolveSearchId", () => {
@@ -63,5 +63,18 @@ describe("recherches", () => {
   it("la recherche rapide entre dans la sélection (nettoyée) et dans les filtres", () => {
     expect(selectionFromFilters("ALL", {}, "s1", "  deep gait ")).toEqual({ from_search_id: "s1", q: "deep gait" });
     expect(selectionFromFilters("ALL", {}, "s1", "   ")).toEqual({ from_search_id: "s1" });
+  });
+});
+
+describe("isUntouched", () => {
+  const base = { is_default: true, predicted: 0, reviewed: 0, last_job: null } as SearchInfo;
+  it("recherche initiale sans analyse ni relecture : masquée", () => {
+    expect(isUntouched(base)).toBe(true);
+  });
+  it("dès qu'une analyse, une relecture ou une tâche existe, ou si ce n'est pas l'initiale : visible", () => {
+    expect(isUntouched({ ...base, predicted: 1 })).toBe(false);
+    expect(isUntouched({ ...base, reviewed: 1 })).toBe(false);
+    expect(isUntouched({ ...base, last_job: { status: "FAILED", model: "m" } })).toBe(false);
+    expect(isUntouched({ ...base, is_default: false })).toBe(false);
   });
 });

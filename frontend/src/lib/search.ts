@@ -76,3 +76,8 @@ export function selectionFromFilters(
     has_fulltext: fulltext,
   });
 }
+
+/** Recherche initiale jamais utilisée (aucune analyse, relecture ni tâche) : simple contenant du
+ * corpus, à ne pas montrer comme une recherche tant qu'aucune analyse n'a été lancée. */
+export const isUntouched = (s: SearchInfo): boolean =>
+  s.is_default && s.predicted === 0 && s.reviewed === 0 && !s.last_job;

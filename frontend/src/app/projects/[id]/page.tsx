@@ -17,7 +17,7 @@ import {
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { isProjectLead } from "@/lib/role";
-import { withSearch } from "@/lib/search";
+import { isUntouched, withSearch } from "@/lib/search";
 import { RequireAuth } from "@/components/RequireAuth";
 import { Badge } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -186,6 +186,7 @@ function ProjectDashboard() {
   const imports = (jobs ?? []).filter((j) => j.kind !== "fulltext");
   const lastJob = imports.length > 0 ? imports[imports.length - 1] : null;
   const initial = overview.searches.find((s) => s.is_default);
+  const shown = overview.searches.filter((s) => !isUntouched(s));
 
   return (
     <div className="flex flex-col gap-5">
@@ -245,7 +246,7 @@ function ProjectDashboard() {
       <section className="flex flex-col gap-3">
         <div className="flex items-center justify-between gap-2">
           <h2 className="text-base font-semibold text-foreground">
-            {t("searchesTitle")} <span className="text-sm font-normal text-muted">{overview.searches.length}</span>
+            {t("searchesTitle")} <span className="text-sm font-normal text-muted">{shown.length}</span>
           </h2>
           {isLead && hasCorpus && (
             <Link href={withSearch(`/projects/${projectId}/searches`, initial?.id)}>
@@ -264,9 +265,18 @@ function ProjectDashboard() {
               </Link>
             )}
           </p>
+        ) : shown.length === 0 ? (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary/40 bg-primary/5 p-4 text-sm text-foreground">
+            <span>{t("noSearchYet", { n: overview.articles })}</span>
+            {isLead && (
+              <Link href={`/projects/${projectId}/inference`}>
+                <Button>{t("runAnalysis")} →</Button>
+              </Link>
+            )}
+          </div>
         ) : (
           <ul className="flex flex-col gap-3">
-            {overview.searches.map((s) => (
+            {shown.map((s) => (
               <SearchRow key={s.id} s={s} projectId={projectId} isLead={isLead} hasCorpus={hasCorpus} />
             ))}
           </ul>

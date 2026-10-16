@@ -27,7 +27,7 @@ import { QuestionEditor } from "@/components/QuestionEditor";
 import { Button } from "@/components/ui/Button";
 import { Checkbox, Field, Input, Select } from "@/components/ui/Field";
 import { ValidationView } from "@/components/ValidationView";
-import { cleanSelection, withSearch } from "@/lib/search";
+import { cleanSelection, isUntouched, withSearch } from "@/lib/search";
 import { notifySearchesChanged, storeSearchId, useSearchId, useSearches, useSelectSearch } from "@/lib/useSearch";
 import { ArticleSelector } from "@/components/ArticleSelector";
 import { Card, Badge, statusColor } from "@/components/ui/Card";
@@ -114,12 +114,13 @@ function InferenceContent() {
     void load();
     getProject(projectId, searchId)
       .then((p) => {
+        const set = p.question_set !== false; // sinon : pas de question, seulement une suggestion
         setQ({
-          question: p.question ?? "",
-          fields: p.fields ?? [],
+          question: set ? (p.question ?? "") : "",
+          fields: set ? (p.fields ?? []) : [],
           sections: p.text_sections ?? ["methods"],
         });
-        setSaved0(JSON.stringify([p.question ?? "", p.fields ?? []]));
+        setSaved0(JSON.stringify([set ? (p.question ?? "") : "", set ? (p.fields ?? []) : []]));
       })
       .catch(() => {});
   }, [load, projectId, searchId]);
@@ -317,14 +318,16 @@ function InferenceContent() {
           <div className="mb-3 flex flex-wrap gap-4 text-sm">
             <label className="flex items-center gap-2">
               <input type="radio" checked={scopeMode === "existing"} onChange={() => setScopeMode("existing")} disabled={active} />
-              {t("scopeExisting")}
+              {searches.every(isUntouched) ? t("scopeCorpus") : t("scopeExisting")}
             </label>
             <label className="flex items-center gap-2">
               <input type="radio" checked={scopeMode === "new"} onChange={() => setScopeMode("new")} disabled={active} />
-              {t("scopeNew")}
+              {searches.every(isUntouched) ? t("scopeCorpusSelection") : t("scopeNew")}
             </label>
           </div>
-          {scopeMode === "existing" ? (
+          {scopeMode === "existing" && searches.every(isUntouched) ? (
+            <p className="text-sm font-medium text-foreground">{t("scopeCount", { n: current?.lot_size ?? 0 })}</p>
+          ) : scopeMode === "existing" ? (
             <Field label={t("searchTitle")} hint={t("searchHint")}>
               <Select value={current?.id ?? ""} onChange={(e) => selectSearch(e.target.value)} disabled={active}>
                 {searches.map((s) => (
@@ -459,7 +462,7 @@ function InferenceContent() {
               {goldCount !== null && !noGold && <p className="text-xs text-muted">{t("goldCount", { n: goldCount })}</p>}
             </div>
             <div className="flex flex-wrap items-center gap-3">
-              <Button type="submit" loading={submitting} disabled={active || busyElsewhere || (!stage2 && !stage1) || !q || q.sections.length === 0 || (scopeMode === "new" && !newCount)}>
+              <Button type="submit" loading={submitting} disabled={active || busyElsewhere || (!stage2 && !stage1) || !q || !q.question.trim() || q.fields.length === 0 || q.sections.length === 0 || (scopeMode === "new" && !newCount)}>
                 {job ? t("rerun") : t("run")}
               </Button>
               {launched && active && <span className="text-sm text-success">✓ {t("launched")}</span>}

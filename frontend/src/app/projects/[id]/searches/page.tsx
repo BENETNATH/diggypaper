@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import {
@@ -16,7 +17,7 @@ import {
   Selection,
 } from "@/lib/api";
 import { SearchCreate } from "@/lib/api";
-import { cleanSelection, prefillStoreKey, withSearch } from "@/lib/search";
+import { cleanSelection, isUntouched, prefillStoreKey, withSearch } from "@/lib/search";
 import { notifySearchesChanged, storeSearchId, useSearchId, useSearches, useSelectSearch } from "@/lib/useSearch";
 import { ArticleSelector } from "@/components/ArticleSelector";
 import { QuestionEditor } from "@/components/QuestionEditor";
@@ -213,13 +214,14 @@ function SearchesContent() {
     if (!originId || !showForm) return;
     setEdit(null);
     getProject(projectId, originId)
-      .then((p) =>
+      .then((p) => {
+        const set = p.question_set !== false; // sinon : formulaire vide + suggestion
         setOriginDef({
-          question: p.question ?? "",
-          fields: p.fields ?? [],
+          question: set ? (p.question ?? "") : "",
+          fields: set ? (p.fields ?? []) : [],
           sections: p.text_sections ?? ["methods"],
-        })
-      )
+        });
+      })
       .catch(() => setOriginDef(null));
   }, [projectId, originId, showForm]);
 
@@ -292,6 +294,9 @@ function SearchesContent() {
     }
   }
 
+  // Aucune vraie recherche : on masque « Nouvelle recherche » (l'analyse la crée) ; l'échantillon à l'aveugle reste (référence avant analyse).
+  const none = !!searches && searches.every(isUntouched);
+
   if (!searches) return error ? <ErrorBanner message={error} onRetry={() => void reload()} /> : <Skeleton rows={3} />;
 
   return (
@@ -303,11 +308,21 @@ function SearchesContent() {
 
       {error && <ErrorBanner message={error} />}
 
-      {searches.length === 0 ? (
-        <EmptyState title={t("empty")} />
+      {none ? (
+        <EmptyState
+          title={t("empty")}
+          hint={t("emptyHint")}
+          action={
+            isLead && (
+              <Link href={`/projects/${projectId}/inference`}>
+                <Button>{t("runAnalysis")} →</Button>
+              </Link>
+            )
+          }
+        />
       ) : (
         <ul className="flex flex-col gap-3">
-          {searches.map((s) => (
+          {searches.filter((s) => !isUntouched(s)).map((s) => (
             <SearchCard
               key={s.id}
               s={s}
@@ -350,7 +365,7 @@ function SearchesContent() {
             </div>
           </Card>
 
-          {!showForm ? (
+          {none ? null : !showForm ? (
             <div>
               <Button variant="secondary" onClick={() => setShowForm(true)}>
                 + {t("newTitle")}
