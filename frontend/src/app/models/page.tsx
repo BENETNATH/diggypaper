@@ -171,6 +171,12 @@ function ModelsContent() {
         </Card>
       )}
 
+      {isAdmin && caps?.ollama.configured && (
+      <div className="mt-6 border-t border-border pt-4">
+        <HfSearch onStarted={() => void load()} onError={setError} />
+      </div>
+      )}
+
       <Card title={t("installedTitle")}>
         {models === null ? (
           <Skeleton rows={2} height="h-10" />
@@ -265,11 +271,6 @@ function ModelsContent() {
           </form>
         </div>
 
-        {isAdmin && caps?.ollama.configured && (
-        <div className="mt-6 border-t border-border pt-4">
-          <HfSearch onStarted={() => void load()} onError={setError} />
-        </div>
-        )}
       </Card>
     </div>
   );
