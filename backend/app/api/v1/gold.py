@@ -212,8 +212,26 @@ async def gold_from_reviews(
     project = await _require_project_member(db, project_id, user)
     scope = await get_search(db, project, search)
     fields = project_fields(scope)
-    reviews = await latest_reviews(db, payload.article_ids or await _reviewed_ids(db, scope), scope)
-    wanted = set(payload.article_ids) if payload.article_ids else set(reviews)
+    if payload.article_ids:
+        # Seulement les articles de CE projet : ``latest_reviews`` ne joint pas Article, et la
+        # recherche initiale retient aussi les relectures legacy (``search_id`` NULL) de tout
+        # projet.
+        wanted = set(payload.article_ids)
+        own = set(
+            (
+                await db.execute(
+                    select(Article.id).where(
+                        Article.project_id == project.id, Article.id.in_(wanted)
+                    )
+                )
+            ).scalars()
+        )
+        if own != wanted:
+            raise HTTPException(status_code=422, detail="article not in this project")
+        reviews = await latest_reviews(db, list(wanted), scope)
+    else:
+        reviews = await latest_reviews(db, await _reviewed_ids(db, scope), scope)
+        wanted = set(reviews)
     existing = {
         g.article_id: g
         for g in (
