@@ -128,6 +128,16 @@ def _check_xml_size(resp: httpx.Response) -> None:
         raise ValueError(f"NCBI XML payload too large: {len(resp.content)} bytes")
 
 
+def _term_bounded(query: str, date_from: date | None, date_to: date | None) -> str:
+    """Terme NCBI borné par date de publication ([dp]) ; query brute si aucune borne
+    ou si la query contient déjà ``[dp]`` (pas de doublon du champ)."""
+    if (date_from is None and date_to is None) or re.search(r"\[dp\]", query, re.IGNORECASE):
+        return query
+    lo = date_from or date(1800, 1, 1)
+    hi = date_to or date.today() + timedelta(days=366)
+    return f'({query}) AND ("{lo:%Y/%m/%d}"[dp] : "{hi:%Y/%m/%d}"[dp])'
+
+
 def _esearch_params(query: str, retmax: int, api_key: str | None) -> dict:
     params = {"db": "pubmed", "term": query, "retmax": retmax, "retmode": "json"}
     if api_key:
@@ -188,6 +198,8 @@ async def fetch_all_pmids(
     http: httpx.AsyncClient,
     count: int,
     limit: int | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
 ) -> list[str]:
     """Tous les PMIDs d'une requête, même au-delà de 10 000 résultats.
 
@@ -201,11 +213,15 @@ async def fetch_all_pmids(
     au sein d'une tranche) ; les identifiants d'une tranche sont insérés en inversant l'ordre
     renvoyé par esearch, qui est croissant par date sur les fenêtres étroites. En deçà de la
     fenêtre (un seul esearch), l'ordre renvoyé est celui de NCBI.
+
+    ``date_from``/``date_to`` (bornes utilisateur, optionnelles) bornent la requête par date de
+    publication (``[dp]``) ; absentes : comportement inchangé.
     """
     limit = limit or _esearch_max()
+    term = _term_bounded(query, date_from, date_to)
     if count <= PUBMED_WINDOW:
         # Un seul esearch : l'ordre est celui de NCBI ; le cap s'applique côté NCBI (retmax).
-        return await fetch_pmids(query, api_key, http, min(count, limit))
+        return await fetch_pmids(term, api_key, http, min(count, limit))
     found: dict[str, None] = {}
 
     async def walk(lo: date, hi: date) -> None:
@@ -225,7 +241,8 @@ async def fetch_all_pmids(
         await walk(mid + timedelta(days=1), hi)  # les plus récents d'abord
         await walk(lo, mid)
 
-    await walk(date(1800, 1, 1), date.today() + timedelta(days=366))
+    # Bornes utilisateur (optionnelles) ; une borne absente retombe sur le défaut actuel.
+    await walk(date_from or date(1800, 1, 1), date_to or date.today() + timedelta(days=366))
     if len(found) < count:
         logger.warning(
             "PubMed: %d identifiants sur %d (articles sans date de publication)", len(found), count

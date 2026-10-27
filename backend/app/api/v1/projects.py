@@ -11,13 +11,13 @@ reproductibilité). Pas de dict in-memory, pas d'appel ``AsyncResult`` bloquant.
 import json
 import logging
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Annotated
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import String, Text, cast, false, func, literal_column, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -112,6 +112,16 @@ class ProjectUpdate(BaseModel):
 class ImportRequest(BaseModel):
     # m8 : bornage de la requête PubMed (max 2000 caractères).
     query: str = Field(min_length=1, max_length=2000)
+    # Bornes optionnelles de date de publication (ISO YYYY-MM-DD) : ANDées dans le terme
+    # NCBI ([dp]) et bornes de la bissection des gros jeux (moins d'appels esearch).
+    date_from: date | None = None
+    date_to: date | None = None
+
+    @model_validator(mode="after")
+    def _check_date_bounds(self) -> "ImportRequest":
+        if self.date_from is not None and self.date_to is not None and self.date_from > self.date_to:
+            raise ValueError("date_from must be before or equal to date_to")
+        return self
 
 
 def _make_http_client() -> httpx.AsyncClient:
@@ -471,7 +481,9 @@ async def trigger_import(
     if project.status == ProjectStatus.PROCESSING:
         raise HTTPException(status_code=409, detail="import already in progress")
     await _require_no_active_job(db, project.id)
-    job = import_pubmed_task.delay(str(project.id), payload.query)
+    job = import_pubmed_task.delay(
+        str(project.id), payload.query, date_from=payload.date_from, date_to=payload.date_to
+    )
     if celery_app.conf.task_always_eager:
         status = job.state  # SUCCESS / FAILURE (le job est déjà terminé)
     else:

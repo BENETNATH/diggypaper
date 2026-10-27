@@ -209,6 +209,22 @@ async def test_get_project_not_found_404(client, researcher_user, do_login):
 # --- POST /projects/{id}/import ---
 
 
+def test_import_request_dates_optional_and_reversed_rejected():
+    """ImportRequest : date_from/date_to optionnelles (ISO) ; bornes inversées →
+    ValidationError (422 via FastAPI, aucun job)."""
+    from datetime import date
+
+    from pydantic import ValidationError
+    from app.api.v1.projects import ImportRequest
+
+    req = ImportRequest(query="q")
+    assert req.date_from is None and req.date_to is None
+    req = ImportRequest(query="q", date_from="2024-01-15", date_to="2024-06-30")
+    assert (req.date_from, req.date_to) == (date(2024, 1, 15), date(2024, 6, 30))
+    with pytest.raises(ValidationError):
+        ImportRequest(query="q", date_from="2024-05-01", date_to="2024-01-01")
+
+
 async def test_import_triggers_task(client, session, researcher_user, do_login, monkeypatch):
     """POST /projects/{id}/import trigger le task Celery (mock .delay) → 202."""
     import app.tasks as tasks
@@ -227,7 +243,9 @@ async def test_import_triggers_task(client, session, researcher_user, do_login, 
     data = resp.json()
     assert data["job_id"] == "job-123"
     assert data["status"] == "PENDING"
-    mock_delay.assert_called_once_with(project_id, "cancer AND mice")
+    mock_delay.assert_called_once_with(
+        project_id, "cancer AND mice", date_from=None, date_to=None
+    )
 
 
 async def test_import_empty_query_422(client, researcher_user, do_login):

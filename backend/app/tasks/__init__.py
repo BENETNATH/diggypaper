@@ -30,7 +30,7 @@ import os
 import re
 import threading
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 import httpx
 from celery import current_task
@@ -56,6 +56,7 @@ from app.fulltext import complete_article, long_enough, pmc_not_archived
 from app.pubmed import (
     NCBIError,
     _esearch_max,
+    _term_bounded,
     fetch_all_pmids,
     fetch_fulltext,
     fetch_metadata,
@@ -151,7 +152,12 @@ def _make_session_factory():
 
 @celery_app.task(name="diggypaper.import_pubmed")
 def import_pubmed_task(
-    project_id: str, query: str, refs: list[dict] | None = None, options: dict | None = None
+    project_id: str,
+    query: str,
+    refs: list[dict] | None = None,
+    options: dict | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
 ) -> dict:
     """Wrapper sync Celery : exécute le core async dans un thread dédié (C1/C2).
 
@@ -171,7 +177,15 @@ def import_pubmed_task(
         nonlocal result, error
         try:
             result = asyncio.run(
-                _import_pubmed(project_id, query, job_id=job_id, refs=refs, options=options)
+                _import_pubmed(
+                    project_id,
+                    query,
+                    job_id=job_id,
+                    refs=refs,
+                    options=options,
+                    date_from=date_from,
+                    date_to=date_to,
+                )
             )
         except BaseException as exc:  # propagée au thread principal
             error = exc
@@ -195,6 +209,8 @@ async def _import_pubmed(
     job_id: str | None = None,
     refs: list[dict] | None = None,
     options: dict | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
 ) -> dict:
     """Core async de l'import PubMed (ou, avec ``refs``, d'une liste de références).
 
@@ -256,7 +272,7 @@ async def _import_pubmed(
                     )
                 if refs is not None:
                     return await _do_import_refs(session, project, job, refs, client)
-                return await _do_import(session, project, job, query, client)
+                return await _do_import(session, project, job, query, client, date_from, date_to)
             except Exception as exc:
                 await _record_failure(session, project, job, exc, restore=previous)
                 raise
@@ -268,13 +284,19 @@ async def _import_pubmed(
 
 
 async def _do_import(
-    session: AsyncSession, project: Project, job: ImportJob, query: str, client: httpx.AsyncClient
+    session: AsyncSession,
+    project: Project,
+    job: ImportJob,
+    query: str,
+    client: httpx.AsyncClient,
+    date_from: date | None = None,
+    date_to: date | None = None,
 ) -> dict:
     """Corps de l'import : esearch → efetch par lots → insertion (m6 : commit par batch)."""
     api_key = await get_setting(session, "ncbi_api_key")
     # m11 : TOCTOU entre les deux esearch (count puis idlist) — acceptable,
     # l'import est un instantané ; ``total_count`` est le count réel.
-    count = await search_volume(query, api_key, client)
+    count = await search_volume(_term_bounded(query, date_from, date_to), api_key, client)
     if count == 0:
         return await _finish_success(
             session,
@@ -282,7 +304,9 @@ async def _do_import(
             job,
             {"imported": 0, "failed": 0, "fulltext": 0, "total_count": 0, "truncated": False},
         )
-    pmids = await fetch_all_pmids(query, api_key, client, count)
+    pmids = await fetch_all_pmids(
+        query, api_key, client, count, date_from=date_from, date_to=date_to
+    )
     truncated = count > _esearch_max()
     if truncated:
         logger.warning(

@@ -444,6 +444,288 @@ async def test_fetch_all_pmids_splits_queries_over_the_ncbi_window(monkeypatch):
     assert len(capped) == 12 and capped[0] == "1039"  # plafond configurable : on garde les récents
 
 
+async def test_fetch_all_pmids_bisection_uses_user_date_bounds(monkeypatch):
+    """Bornes utilisateur : la bissection démarre dans [date_from, date_to] (pas today+366)."""
+    import re
+    from datetime import date
+
+    from app import pubmed
+    from app.pubmed import fetch_all_pmids
+
+    monkeypatch.setattr(pubmed, "PUBMED_WINDOW", 5)
+    # 10 articles 2021-01-10 → 2021-01-19 (pmid = 1000 + jour)
+    records = {str(1000 + d): date(2021, 1, 10).toordinal() + d for d in range(10)}
+    terms: list[str] = []
+
+    def in_range(term: str) -> list[str]:
+        lo, hi = (
+            date.fromisoformat(x.replace("/", "-")).toordinal()
+            for x in re.findall(r'"(\d{4}/\d\d/\d\d)"', term)
+        )
+        return [p for p, day in records.items() if lo <= day <= hi]
+
+    async def volume(term, key, http):
+        terms.append(term)
+        return len(in_range(term))
+
+    async def pmids(term, key, http, retmax=None):
+        return in_range(term)[: retmax or 10**9]
+
+    monkeypatch.setattr(pubmed, "search_volume", volume)
+    monkeypatch.setattr(pubmed, "fetch_pmids", pmids)
+    got = await fetch_all_pmids(
+        "q", None, None, count=10, limit=10**9, date_from=date(2021, 1, 5), date_to=date(2021, 1, 20)
+    )
+    assert sorted(got) == sorted(records) and len(set(got)) == 10
+    assert got[0] == "1009"  # le plus récent
+    for term in terms:  # chaque feuillet reste dans [2021/01/05, 2021/01/20]
+        lo, hi = (
+            date.fromisoformat(x.replace("/", "-")) for x in re.findall(r'"(\d{4}/\d\d/\d\d)"', term)
+        )
+        assert date(2021, 1, 5) <= lo <= hi <= date(2021, 1, 20)
+    lo0, hi0 = (
+        date.fromisoformat(x.replace("/", "-")) for x in re.findall(r'"(\d{4}/\d\d/\d\d)"', terms[0])
+    )
+    assert (lo0, hi0) == (date(2021, 1, 5), date(2021, 1, 20))  # racine : bornes utilisateur
+
+
+async def test_fetch_all_pmids_only_date_from_keeps_default_hi(monkeypatch):
+    """Une seule borne (date_from) : la borne haute retombe sur today+366 (≥ today)."""
+    import re
+    from datetime import date, timedelta
+
+    from app import pubmed
+    from app.pubmed import fetch_all_pmids
+
+    monkeypatch.setattr(pubmed, "PUBMED_WINDOW", 5)
+    records = {str(1000 + d): date(2021, 1, 10).toordinal() + d for d in range(6)}
+    terms: list[str] = []
+
+    def in_range(term: str) -> list[str]:
+        lo, hi = (
+            date.fromisoformat(x.replace("/", "-")).toordinal()
+            for x in re.findall(r'"(\d{4}/\d\d/\d\d)"', term)
+        )
+        return [p for p, day in records.items() if lo <= day <= hi]
+
+    async def volume(term, key, http):
+        terms.append(term)
+        return len(in_range(term))
+
+    async def pmids(term, key, http, retmax=None):
+        return in_range(term)[: retmax or 10**9]
+
+    monkeypatch.setattr(pubmed, "search_volume", volume)
+    monkeypatch.setattr(pubmed, "fetch_pmids", pmids)
+    got = await fetch_all_pmids("q", None, None, count=6, limit=10**9, date_from=date(2021, 1, 5))
+    assert len(got) == 6
+    assert '"2021/01/05"[dp]' in terms[0]
+    lo, hi = (
+        date.fromisoformat(x.replace("/", "-")) for x in re.findall(r'"(\d{4}/\d\d/\d\d)"', terms[0])
+    )
+    assert hi == date.today() + timedelta(days=366) and hi >= date.today()
+
+
+async def test_fetch_all_pmids_only_date_to_keeps_default_lo(monkeypatch):
+    """Une seule borne (date_to) : la borne basse de racine reste 1800/01/01."""
+    import re
+    from datetime import date
+
+    from app import pubmed
+    from app.pubmed import fetch_all_pmids
+
+    monkeypatch.setattr(pubmed, "PUBMED_WINDOW", 5)
+    records = {str(1000 + d): date(2021, 1, 10).toordinal() + d for d in range(6)}
+    terms: list[str] = []
+
+    def in_range(term: str) -> list[str]:
+        lo, hi = (
+            date.fromisoformat(x.replace("/", "-")).toordinal()
+            for x in re.findall(r'"(\d{4}/\d\d/\d\d)"', term)
+        )
+        return [p for p, day in records.items() if lo <= day <= hi]
+
+    async def volume(term, key, http):
+        terms.append(term)
+        return len(in_range(term))
+
+    async def pmids(term, key, http, retmax=None):
+        return in_range(term)[: retmax or 10**9]
+
+    monkeypatch.setattr(pubmed, "search_volume", volume)
+    monkeypatch.setattr(pubmed, "fetch_pmids", pmids)
+    got = await fetch_all_pmids("q", None, None, count=6, limit=10**9, date_to=date(2021, 1, 20))
+    assert len(got) == 6
+    lo, hi = (
+        date.fromisoformat(x.replace("/", "-")) for x in re.findall(r'"(\d{4}/\d\d/\d\d)"', terms[0])
+    )
+    assert (lo, hi) == (date(1800, 1, 1), date(2021, 1, 20))  # borne basse par défaut inchangée
+
+
+async def test_fetch_all_pmids_user_dates_cap_keeps_most_recent(monkeypatch):
+    """Cap limit sur le chemin de bissection : on garde les plus récents de la plage."""
+    import re
+    from datetime import date
+
+    from app import pubmed
+    from app.pubmed import fetch_all_pmids
+
+    monkeypatch.setattr(pubmed, "PUBMED_WINDOW", 5)
+    records = {str(1000 + d): date(2021, 1, 1).toordinal() + d for d in range(1, 31)}
+
+    def in_range(term: str) -> list[str]:
+        lo, hi = (
+            date.fromisoformat(x.replace("/", "-")).toordinal()
+            for x in re.findall(r'"(\d{4}/\d\d/\d\d)"', term)
+        )
+        return [p for p, day in records.items() if lo <= day <= hi]
+
+    async def volume(term, key, http):
+        return len(in_range(term))
+
+    async def pmids(term, key, http, retmax=None):
+        return in_range(term)[: retmax or 10**9]
+
+    monkeypatch.setattr(pubmed, "search_volume", volume)
+    monkeypatch.setattr(pubmed, "fetch_pmids", pmids)
+    got = await fetch_all_pmids(
+        "sleep", None, None, count=30, limit=12, date_from=date(2021, 1, 1), date_to=date(2021, 1, 30)
+    )
+    assert len(got) == 12 and got[0] == "1029"  # les plus récents de la plage
+
+
+async def test_fetch_all_pmids_no_dates_unchanged_bounds(monkeypatch):
+    """Sans bornes : la bissection démarre de 1800/01/01 → today+366 (comportement actuel)."""
+    import re
+    from datetime import date, timedelta
+
+    from app import pubmed
+    from app.pubmed import fetch_all_pmids
+
+    monkeypatch.setattr(pubmed, "PUBMED_WINDOW", 5)
+    records = {str(1000 + d): date(2021, 1, 1).toordinal() + d for d in range(40)}
+    terms: list[str] = []
+
+    def in_range(term: str) -> list[str]:
+        lo, hi = (
+            date.fromisoformat(x.replace("/", "-")).toordinal()
+            for x in re.findall(r'"(\d{4}/\d\d/\d\d)"', term)
+        )
+        return [p for p, day in records.items() if lo <= day <= hi]
+
+    async def volume(term, key, http):
+        terms.append(term)
+        return len(in_range(term))
+
+    async def pmids(term, key, http, retmax=None):
+        return in_range(term)[: retmax or 10**9]
+
+    monkeypatch.setattr(pubmed, "search_volume", volume)
+    monkeypatch.setattr(pubmed, "fetch_pmids", pmids)
+    got = await fetch_all_pmids("sleep", None, None, count=40, limit=10**9)
+    assert sorted(got) == sorted(records) and len(set(got)) == 40  # tout est récupéré
+    lo, hi = (
+        date.fromisoformat(x.replace("/", "-")) for x in re.findall(r'"(\d{4}/\d\d/\d\d)"', terms[0])
+    )
+    assert lo == date(1800, 1, 1) and hi == date.today() + timedelta(days=366)
+
+
+async def test_fetch_all_pmids_shortcut_with_dates_single_bounded_esearch(monkeypatch):
+    """Chemin direct (count <= fenêtre) avec bornes : un seul esearch borné, retmax =
+    min(count, limit), ordre NCBI non inversé."""
+    from datetime import date
+
+    from app import pubmed
+    from app.pubmed import fetch_all_pmids
+
+    calls: list[tuple[str, int | None]] = []
+
+    async def pmids(term, key, http, retmax=None):
+        calls.append((term, retmax))
+        return ["a", "b", "c"]
+
+    monkeypatch.setattr(pubmed, "fetch_pmids", pmids)
+    got = await fetch_all_pmids(
+        "q", None, None, count=40, limit=10**9, date_from=date(2024, 3, 1), date_to=date(2024, 3, 31)
+    )
+    assert len(calls) == 1
+    term, retmax = calls[0]
+    assert term == '(q) AND ("2024/03/01"[dp] : "2024/03/31"[dp])'
+    assert retmax == 40  # min(count, limit)
+    assert got == ["a", "b", "c"]  # ordre NCBI, pas d'inversion
+
+
+async def test_fetch_all_pmids_shortcut_with_dates_no_dp_doubling_when_query_has_dp(monkeypatch):
+    """Query auto-bornée ([dp] déjà présent) : terme brut sur le chemin direct, pas de doublon."""
+    from datetime import date
+
+    from app import pubmed
+    from app.pubmed import fetch_all_pmids
+
+    query = "cancer AND 2020/01/01[dp] : 2020/12/31[dp]"
+    calls: list[str] = []
+
+    async def pmids(term, key, http, retmax=None):
+        calls.append(term)
+        return ["1"]
+
+    monkeypatch.setattr(pubmed, "fetch_pmids", pmids)
+    got = await fetch_all_pmids(
+        query,
+        None,
+        None,
+        count=5,
+        limit=10**9,
+        date_from=date(2020, 1, 1),
+        date_to=date(2020, 12, 31),
+    )
+    assert calls == [query]  # brute, aucun [dp] ajouté
+    assert got == ["1"]
+
+
+async def test_fetch_all_pmids_bisection_query_with_dp_keeps_leaf_subrange(monkeypatch):
+    """Query avec [dp] + bornes : les feuillets gardent le sous-intervalle [dp] dans les bornes
+    utilisateur (mécanique de bissection inchangée, convergence bornée)."""
+    import re
+    from datetime import date
+
+    from app import pubmed
+    from app.pubmed import fetch_all_pmids
+
+    monkeypatch.setattr(pubmed, "PUBMED_WINDOW", 5)
+    query = "cancer AND 2020[dp]"
+    records = {str(1000 + d): date(2021, 1, 10).toordinal() + d for d in range(8)}
+    terms: list[str] = []
+
+    def in_range(term: str) -> list[str]:
+        lo, hi = (
+            date.fromisoformat(x.replace("/", "-")).toordinal()
+            for x in re.findall(r'"(\d{4}/\d\d/\d\d)"', term)
+        )
+        return [p for p, day in records.items() if lo <= day <= hi]
+
+    async def volume(term, key, http):
+        terms.append(term)
+        return len(in_range(term))
+
+    async def pmids(term, key, http, retmax=None):
+        return in_range(term)[: retmax or 10**9]
+
+    monkeypatch.setattr(pubmed, "search_volume", volume)
+    monkeypatch.setattr(pubmed, "fetch_pmids", pmids)
+    got = await fetch_all_pmids(
+        query, None, None, count=8, limit=10**9, date_from=date(2021, 1, 5), date_to=date(2021, 1, 20)
+    )
+    assert sorted(got) == sorted(records) and len(got) == 8  # tout l'intersection
+    for term in terms:  # feuillet : (query) AND ("sous-intervalle"[dp] : "sous-intervalle"[dp])
+        assert term.startswith(f"({query}) AND (")
+        lo, hi = (
+            date.fromisoformat(x.replace("/", "-")) for x in re.findall(r'"(\d{4}/\d\d/\d\d)"', term)
+        )
+        assert date(2021, 1, 5) <= lo <= hi <= date(2021, 1, 20)
+    assert len(terms) < 100  # convergence bornée
+
+
 def test_import_cap_zero_means_unlimited(monkeypatch):
     from app.core.config import get_settings
     from app.pubmed import UNLIMITED, _esearch_max

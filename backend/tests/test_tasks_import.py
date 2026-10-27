@@ -409,6 +409,75 @@ async def test_chunking_over_100_pmids(engine):
     assert efetch_batches[1].split(",") == pmids[100:]
 
 
+# --- Bornes date (date_from / date_to) ---
+
+
+async def test_import_pubmed_count_term_bounded_by_dates(engine):
+    """Le compte esearch (retmax=0) reçoit le terme borné [dp] ; total_count = count borné."""
+    from datetime import date
+
+    project = await _make_project(engine)
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("esearch.fcgi"):
+            if request.url.params.get("retmax") == "0":
+                term = request.url.params["term"]
+                assert '"2021/01/01"[dp]' in term and '"2021/12/31"[dp]' in term
+                return httpx.Response(200, json={"esearchresult": {"count": "2"}})
+            return httpx.Response(200, json={"esearchresult": {"idlist": ["111", "222"]}})
+        return httpx.Response(200, text=_efetch_xml(["111", "222"]))
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        result = await _import_pubmed(
+            str(project.id),
+            "cancer",
+            session_factory=factory,
+            http=http,
+            date_from=date(2021, 1, 1),
+            date_to=date(2021, 12, 31),
+        )
+    assert result["imported"] == 2
+    assert result["total_count"] == 2
+
+
+async def test_import_pubmed_without_dates_count_term_unchanged(engine):
+    """Sans bornes : le terme du compte est la query brute (pas de [dp] ajouté)."""
+    project = await _make_project(engine)
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("esearch.fcgi"):
+            if request.url.params.get("retmax") == "0":
+                term = request.url.params["term"]
+                assert term == "cancer" and "[dp]" not in term
+                return httpx.Response(200, json={"esearchresult": {"count": "1"}})
+            return httpx.Response(200, json={"esearchresult": {"idlist": ["111"]}})
+        return httpx.Response(200, text=_efetch_xml(["111"]))
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        result = await _import_pubmed(str(project.id), "cancer", session_factory=factory, http=http)
+    assert result["imported"] == 1
+    assert result["total_count"] == 1
+
+
+def test_import_pubmed_task_wrapper_passes_dates():
+    """Le wrapper sync propage les bornes date au core async."""
+    from datetime import date
+
+    with patch("app.tasks._import_pubmed", new_callable=AsyncMock) as mock_core:
+        mock_core.return_value = {
+            "imported": 0,
+            "failed": 0,
+            "total_count": 0,
+            "fulltext": 0,
+            "truncated": False,
+        }
+        import_pubmed_task("proj-id", "q", date_from=date(2024, 1, 1), date_to=date(2024, 6, 30))
+    assert mock_core.await_args.kwargs["date_from"] == date(2024, 1, 1)
+    assert mock_core.await_args.kwargs["date_to"] == date(2024, 6, 30)
+
+
 # --- C-1 : assainissement de l'erreur (job.error + log serveur) ---
 
 
