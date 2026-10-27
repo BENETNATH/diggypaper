@@ -51,6 +51,7 @@ from app.inference import (
     OpenAICompatibleService,
     infer_with,
     make_inference_service,
+    warmup,
 )
 from app.schema import project_fields
 from app.searches import ScopedProject, get_search, gold_condition, in_search, lot_condition
@@ -300,6 +301,15 @@ async def _do_inference(
     pre = registry.get(job.prefilter_model) if job.prefilter_model else None
     main = registry.get(job.model_used)
     prefiltered = 0
+    # Cold start : le premier appel d'un modèle local charge les poids dans
+    # Ollama (plusieurs minutes sur CPU) — on l'absorbe dans le budget du
+    # timeout plutôt que de le faire payer au premier article.
+    for m, name in ((pre, job.prefilter_model), (main, job.model_used)):
+        if m is not None and m.backend_type == "OPENAI_API":
+            continue  # backend distant : pas de chargement local
+        ident = m.model_identifier if m is not None else (name or "")
+        if ident:
+            await warmup(inference, ident)
     # Visible tout de suite (0 / N) : le premier appel peut télécharger les poids du modèle.
     await _progress(session, job, 0, len(articles), 0, counts())
 

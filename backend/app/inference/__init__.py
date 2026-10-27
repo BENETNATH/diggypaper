@@ -115,12 +115,43 @@ async def make_inference_service(
 ) -> OpenAICompatibleService:
     """Fabrique le service depuis system_settings (DB > env, secrets chiffrés).
 
-    ``llm_api_base_url`` (défaut ``http://localhost:11434/v1`` via ``DEFAULTS``) et
-    ``llm_api_key`` (secret, optionnel).
+    ``llm_api_base_url`` (défaut ``http://localhost:11434/v1`` via ``DEFAULTS``),
+    ``llm_api_key`` (secret, optionnel) et ``inference_timeout`` (défaut
+    ``LLM_TIMEOUT_SECONDS`` env ou 120 s).
     """
     base_url = await get_setting(db, "llm_api_base_url")
     api_key = await get_setting(db, "llm_api_key")
-    return OpenAICompatibleService(base_url=base_url, api_key=api_key, http=http)
+    timeout = 120.0
+    raw = await get_setting(db, "inference_timeout")
+    if raw:
+        try:
+            timeout = float(raw)
+        except ValueError:
+            logger.warning("inference_timeout invalide (%r) : 120 s", raw)
+    return OpenAICompatibleService(
+        base_url=base_url, api_key=api_key, http=http, timeout=timeout
+    )
+
+
+async def warmup(
+    service: OpenAICompatibleService,
+    model_identifier: str,
+) -> None:
+    """Absorbe le cold start (chargement des poids) avant la boucle d'inférence.
+
+    Le premier appel réel d'un job paie le téléchargement/chargement du modèle
+    dans Ollama ; sans ce ping, c'est le premier article qui dépasse le timeout.
+    Best-effort : un échec de warmup ne doit pas tuer le job (le premier appel
+    réel relèvera l'erreur, assainie).
+    """
+    try:
+        await service.infer(
+            model_identifier,
+            "Tu es un service d'inférence.",
+            'Réponds uniquement {"ok": true}',
+        )
+    except InferenceError as exc:
+        logger.warning("warmup %s : %s", model_identifier, exc)
 
 
 async def infer_with(

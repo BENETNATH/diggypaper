@@ -24,9 +24,12 @@ class FakeInference:
     def __init__(self, confidence: float = 0.9):
         self._confidence = confidence
         self.calls = 0
+        self.warmups = 0
 
     async def infer(self, model, system_prompt, user_prompt) -> dict:
         self.calls += 1
+        if '{"ok": true}' in user_prompt:
+            self.warmups += 1
         return {
             "use_ai_behavior": True,
             "animal_sex": "BOTH_SEXES",
@@ -104,7 +107,8 @@ async def test_run_inference_completes(engine, session):
     assert result["auto_accepted"] == 2
     assert result["auto_rejected"] == 0
     assert result["needs_review"] == 0
-    assert fake.calls == 2
+    # 1 warm-up (cold start) + 2 articles
+    assert fake.warmups == 1 and fake.calls == 3
     # job COMPLETED
     await session.refresh(job)
     assert job.status == InferenceJobStatus.COMPLETED
@@ -143,6 +147,8 @@ async def test_run_inference_triage_mixed(engine, session):
             self.i = 0
 
         async def infer(self, model, system_prompt, user_prompt) -> dict:
+            if '{"ok": true}' in user_prompt:  # warm-up : ne consomme pas de confiance
+                return {"ok": True}
             c = confidences[self.i]
             self.i += 1
             return {
@@ -243,6 +249,8 @@ async def test_run_inference_stops_when_cancelled(engine, session):
     class StopAfterFirst(FakeInference):
         async def infer(self, model, system_prompt, user_prompt) -> dict:
             out = await super().infer(model, system_prompt, user_prompt)
+            if '{"ok": true}' in user_prompt:
+                return out  # warm-up : pas d'arrêt simulé pendant celui-ci
             row = await session.get(InferenceJob, job.id)
             row.status, row.error = InferenceJobStatus.FAILED, "cancelled"  # clic sur « Arrêter »
             await session.commit()
@@ -251,7 +259,8 @@ async def test_run_inference_stops_when_cancelled(engine, session):
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     fake = StopAfterFirst()
     result = await _run_inference(str(job.id), session_factory=factory, inference=fake)
-    assert result["cancelled"] is True and result["processed"] == 1 and fake.calls == 1
+    # warm-up + 1 article traité, puis arrêt
+    assert result["cancelled"] is True and result["processed"] == 1 and fake.calls == 2
     await session.refresh(job)
     assert job.status == InferenceJobStatus.FAILED and job.error == "cancelled"
     assert len((await session.execute(select(ArticlePrediction))).scalars().all()) == 1
@@ -277,3 +286,65 @@ async def test_run_inference_skips_job_cancelled_before_start(engine, session):
     fake = FakeInference()
     assert await _run_inference(str(job.id), session_factory=factory, inference=fake) == {}
     assert fake.calls == 0
+
+# --- Warm-up (cold start Ollama) ---
+
+
+async def test_warmup_once_for_ollama_model(engine, session):
+    """Modèle local : un seul warm-up (absorbe le chargement des poids), pas un par article."""
+    project = Project(title="P", created_by=None, status=ProjectStatus.FROZEN)
+    session.add(project)
+    await session.commit()
+    prompt = PromptTemplate(project_id=project.id, version_number="v1.0", system_prompt="SYS")
+    session.add(prompt)
+    await session.commit()
+    session.add(ModelRegistry(name="Kev-4B", model_identifier="x", backend_type="OLLAMA"))
+    await session.commit()
+    await _seed(session, project, prompt, None, n_articles=2)
+    job = InferenceJob(
+        project_id=project.id,
+        prompt_template_id=prompt.id,
+        model_used="Kev-4B",
+        status=InferenceJobStatus.PENDING,
+    )
+    session.add(job)
+    await session.commit()
+
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    fake = FakeInference()
+    result = await _run_inference(str(job.id), session_factory=factory, inference=fake)
+    assert result["processed"] == 2
+    assert fake.warmups == 1 and fake.calls == 3
+
+
+async def test_warmup_skipped_for_openai_api_model(engine, session):
+    """Backend distant (OPENAI_API) : pas de chargement local → pas de warm-up."""
+    project = Project(title="P", created_by=None, status=ProjectStatus.FROZEN)
+    session.add(project)
+    await session.commit()
+    prompt = PromptTemplate(project_id=project.id, version_number="v1.0", system_prompt="SYS")
+    session.add(prompt)
+    await session.commit()
+    session.add(
+        ModelRegistry(
+            name="GPT",
+            model_identifier="https://llm.test/v1#gpt-4o-mini",
+            backend_type="OPENAI_API",
+        )
+    )
+    await session.commit()
+    # 0 article : la boucle n'appelle jamais infer_with (reste 100 % offline)
+    job = InferenceJob(
+        project_id=project.id,
+        prompt_template_id=prompt.id,
+        model_used="GPT",
+        status=InferenceJobStatus.PENDING,
+    )
+    session.add(job)
+    await session.commit()
+
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    fake = FakeInference()
+    result = await _run_inference(str(job.id), session_factory=factory, inference=fake)
+    assert result["processed"] == 0
+    assert fake.warmups == 0 and fake.calls == 0

@@ -15,6 +15,7 @@ SECRET_KEYS: frozenset[str] = frozenset(
 NON_SECRET_KEYS: frozenset[str] = frozenset(
     {
         "llm_api_base_url",
+        "inference_timeout",
         "smtp_host",
         "smtp_port",
         "smtp_user",
@@ -30,8 +31,11 @@ KNOWN_KEYS: frozenset[str] = SECRET_KEYS | NON_SECRET_KEYS
 
 #: Valeurs par défaut appliquées quand la clé n'est pas définie en base.
 # LLM_API_BASE_URL (env) : en Docker, pointer vers le service « ollama » du compose.
+# LLM_TIMEOUT_SECONDS (env) : timeout par appel d'inférence — à augmenter sur CPU
+# (cold start Ollama : chargement des poids + prefill peuvent dépasser 120 s).
 DEFAULTS: dict[str, str] = {
-    "llm_api_base_url": os.environ.get("LLM_API_BASE_URL", "http://localhost:11434/v1")
+    "llm_api_base_url": os.environ.get("LLM_API_BASE_URL", "http://localhost:11434/v1"),
+    "inference_timeout": os.environ.get("LLM_TIMEOUT_SECONDS", "120"),
 }
 
 

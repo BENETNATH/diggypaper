@@ -5,7 +5,12 @@ import json
 import httpx
 import pytest
 
-from app.inference import InferenceError, OpenAICompatibleService, make_inference_service
+from app.inference import (
+    InferenceError,
+    OpenAICompatibleService,
+    make_inference_service,
+    warmup,
+)
 
 
 def _llm_handler(content: str, status: int = 200):
@@ -105,3 +110,44 @@ async def test_make_inference_service_defaults(session):
     svc = await make_inference_service(session)
     assert svc._base_url == "http://localhost:11434/v1"
     assert svc._api_key is None
+
+
+# --- Timeout paramétrable + warm-up ---
+
+
+async def test_make_inference_service_timeout_from_settings(session):
+    from app.settings.service import set_setting
+
+    await set_setting(session, "inference_timeout", "300")
+    svc = await make_inference_service(session)
+    assert svc._timeout == 300.0
+
+
+async def test_make_inference_service_timeout_invalid_falls_back(session):
+    from app.settings.service import set_setting
+
+    await set_setting(session, "inference_timeout", "pas-un-nombre")
+    svc = await make_inference_service(session)
+    assert svc._timeout == 120.0
+
+
+async def test_warmup_calls_infer_with_model():
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, json={"choices": [{"message": {"content": "{}"}}]})
+
+    svc = OpenAICompatibleService("http://llm.test/v1", http=_client(handler))
+    await warmup(svc, "qwen3:4b")
+    assert captured["body"]["model"] == "qwen3:4b"
+
+
+async def test_warmup_absorbs_failure():
+    """Un échec de warmup (timeout cold start, modèle absent) ne doit pas lever."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(503, json={"error": "busy"})
+
+    svc = OpenAICompatibleService("http://llm.test/v1", http=_client(handler))
+    await warmup(svc, "qwen3:4b")  # ne lève pas
