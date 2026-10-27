@@ -433,7 +433,9 @@ async def test_fetch_all_pmids_splits_queries_over_the_ncbi_window(monkeypatch):
         return len(in_range(term))
 
     async def pmids(term, key, http, retmax=None):
-        return in_range(term)[: retmax or 10**9]
+        # Comme esearch : les plus récents d'abord dans chaque tranche (sinon le premier élément
+        # dépend de la largeur des tranches, donc de la date du jour).
+        return sorted(in_range(term), reverse=True)[: retmax or 10**9]
 
     monkeypatch.setattr(pubmed, "search_volume", volume)
     monkeypatch.setattr(pubmed, "fetch_pmids", pmids)
