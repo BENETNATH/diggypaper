@@ -196,14 +196,16 @@ async def fetch_all_pmids(
     récentes d'abord ; les doublons (dates imprimée / électronique) sont retirés. ``limit`` borne
     le total (les plus récents sont gardés).
 
-    Ordre : « les plus récents d'abord » tient au niveau des tranches (la bissection visite les
-    tranches les plus récentes en premier, NCBI ne triant pas par date au sein d'une tranche) ;
-    les identifiants d'une tranche sont insérés en inversant l'ordre renvoyé par esearch, qui
-    est croissant par date sur les fenêtres étroites.
+    Ordre : au-delà de la fenêtre, « les plus récents d'abord » tient au niveau des tranches
+    (la bissection visite les tranches les plus récentes en premier, NCBI ne triant pas par date
+    au sein d'une tranche) ; les identifiants d'une tranche sont insérés en inversant l'ordre
+    renvoyé par esearch, qui est croissant par date sur les fenêtres étroites. En deçà de la
+    fenêtre (un seul esearch), l'ordre renvoyé est celui de NCBI.
     """
     limit = limit or _esearch_max()
     if count <= PUBMED_WINDOW:
-        return list(reversed(await fetch_pmids(query, api_key, http, min(count, limit))))
+        # Un seul esearch : l'ordre est celui de NCBI ; le cap s'applique côté NCBI (retmax).
+        return await fetch_pmids(query, api_key, http, min(count, limit))
     found: dict[str, None] = {}
 
     async def walk(lo: date, hi: date) -> None:
