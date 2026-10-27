@@ -1,5 +1,9 @@
 """Tests des routes modèle (app/api/v1/models.py) — 100 % offline."""
 
+import json
+
+import httpx
+
 from app.db.models import ModelRegistry, Project, ProjectMember, ProjectMemberRole
 
 
@@ -105,13 +109,170 @@ async def test_update_model_404(client, session, admin_user, do_login):
 
 
 async def test_delete_model_admin(client, session, admin_user, do_login):
+    """Mock Ollama requis : sans lui, DELETE pointerait vers localhost:11434 et ferait 502."""
+    def handler(req: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"deleted": True})
+
     await do_login("admin@lab.fr", "admin-pass-123")
     mid = (
         await client.post("/api/v1/models", json={"name": "Kev-4B", "model_identifier": "x"})
     ).json()["id"]
-    resp = await client.delete(f"/api/v1/models/{mid}")
+    real = httpx.AsyncClient
+    httpx.AsyncClient = lambda **kw: real(transport=httpx.MockTransport(handler), **kw)
+    try:
+        resp = await client.delete(f"/api/v1/models/{mid}")
+    finally:
+        httpx.AsyncClient = real
     assert resp.status_code == 204
     assert (await client.get("/api/v1/models")).json()["items"] == []
+
+
+async def test_delete_ollama_model_calls_ollama_delete_then_removes_row(
+    client, session, admin_user, do_login
+):
+    seen = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        assert req.method == "DELETE"
+        assert req.url.path == "/api/delete"
+        assert json.loads(req.content) == {"name": "qwen3:4b"}
+        seen.append(req)
+        return httpx.Response(200, json={"deleted": True})
+
+    await do_login("admin@lab.fr", "admin-pass-123")
+    mid = (
+        await client.post(
+            "/api/v1/models", json={"name": "Q", "model_identifier": "qwen3:4b"}
+        )
+    ).json()["id"]
+    real = httpx.AsyncClient
+    httpx.AsyncClient = lambda **kw: real(transport=httpx.MockTransport(handler), **kw)
+    try:
+        resp = await client.delete(f"/api/v1/models/{mid}")
+    finally:
+        httpx.AsyncClient = real
+    assert resp.status_code == 204
+    assert (await client.get("/api/v1/models")).json()["items"] == []
+    assert len(seen) == 1
+
+
+async def test_delete_ollama_model_missing_on_ollama_still_removes_row(
+    client, session, admin_user, do_login
+):
+    """Idempotence : modèle déjà absent d'Ollama (404) → la ligne registre part quand même."""
+    def handler(req: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, json={"error": "model 'qwen3:4b' not found"})
+
+    await do_login("admin@lab.fr", "admin-pass-123")
+    mid = (
+        await client.post(
+            "/api/v1/models", json={"name": "Q", "model_identifier": "qwen3:4b"}
+        )
+    ).json()["id"]
+    real = httpx.AsyncClient
+    httpx.AsyncClient = lambda **kw: real(transport=httpx.MockTransport(handler), **kw)
+    try:
+        resp = await client.delete(f"/api/v1/models/{mid}")
+    finally:
+        httpx.AsyncClient = real
+    assert resp.status_code == 204
+    assert (await client.get("/api/v1/models")).json()["items"] == []
+
+
+async def test_delete_ollama_model_ollama_http_error_502_keeps_row(
+    client, session, admin_user, do_login
+):
+    def handler(req: httpx.Request) -> httpx.Response:
+        return httpx.Response(500, json={"error": "boom"})
+
+    await do_login("admin@lab.fr", "admin-pass-123")
+    mid = (
+        await client.post(
+            "/api/v1/models", json={"name": "Q", "model_identifier": "qwen3:4b"}
+        )
+    ).json()["id"]
+    real = httpx.AsyncClient
+    httpx.AsyncClient = lambda **kw: real(transport=httpx.MockTransport(handler), **kw)
+    try:
+        resp = await client.delete(f"/api/v1/models/{mid}")
+    finally:
+        httpx.AsyncClient = real
+    assert resp.status_code == 502
+    assert resp.json()["detail"] == "ollama_delete_failed"
+    names = [m["name"] for m in (await client.get("/api/v1/models")).json()["items"]]
+    assert "Q" in names
+
+
+async def test_delete_ollama_model_network_error_502_keeps_row(
+    client, session, admin_user, do_login
+):
+    def handler(req: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("refused", request=req)
+
+    await do_login("admin@lab.fr", "admin-pass-123")
+    mid = (
+        await client.post(
+            "/api/v1/models", json={"name": "Q", "model_identifier": "qwen3:4b"}
+        )
+    ).json()["id"]
+    real = httpx.AsyncClient
+    httpx.AsyncClient = lambda **kw: real(transport=httpx.MockTransport(handler), **kw)
+    try:
+        resp = await client.delete(f"/api/v1/models/{mid}")
+    finally:
+        httpx.AsyncClient = real
+    assert resp.status_code == 502
+    assert resp.json()["detail"] == "ollama_unreachable"
+    names = [m["name"] for m in (await client.get("/api/v1/models")).json()["items"]]
+    assert "Q" in names
+
+
+async def test_delete_ollama_model_no_call_for_openai_api_backend(
+    client, session, admin_user, do_login
+):
+    def handler(req: httpx.Request) -> httpx.Response:
+        raise AssertionError("Ollama ne doit pas être appelé")
+
+    await do_login("admin@lab.fr", "admin-pass-123")
+    mid = (
+        await client.post(
+            "/api/v1/models/external",
+            json={"name": "GPT", "base_url": "https://api.x/v1", "model": "gpt-4o"},
+        )
+    ).json()["id"]
+    real = httpx.AsyncClient
+    httpx.AsyncClient = lambda **kw: real(transport=httpx.MockTransport(handler), **kw)
+    try:
+        resp = await client.delete(f"/api/v1/models/{mid}")
+    finally:
+        httpx.AsyncClient = real
+    assert resp.status_code == 204
+    assert (await client.get("/api/v1/models")).json()["items"] == []
+
+
+async def test_delete_ollama_model_forbidden_before_ollama_call(
+    client, session, admin_user, researcher_user, do_login
+):
+    """Le contrôle de permission précède tout appel Ollama (403, handler non appelé)."""
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        raise AssertionError("Ollama ne doit pas être appelé")
+
+    from sqlalchemy import select
+
+    session.add(ModelRegistry(name="Q", backend_type="OLLAMA", model_identifier="qwen3:4b"))
+    await session.commit()
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    row = (
+        await session.execute(select(ModelRegistry).where(ModelRegistry.name == "Q"))
+    ).scalar_one().id
+    real = httpx.AsyncClient
+    httpx.AsyncClient = lambda **kw: real(transport=httpx.MockTransport(handler), **kw)
+    try:
+        resp = await client.delete(f"/api/v1/models/{row}")
+    finally:
+        httpx.AsyncClient = real
+    assert resp.status_code == 403
 
 
 async def test_ollama_register_admin_only_and_idempotent(

@@ -193,6 +193,19 @@ async def list_ollama(db: DbDep, user: UserDep) -> dict:
     }
 
 
+async def _ollama_delete(db: AsyncSession, name: str) -> None:
+    """Supprime un modèle côté Ollama (idempotent : 404 = déjà supprimé).
+    502 ``ollama_unreachable`` (réseau) ou ``ollama_delete_failed`` (HTTP ≥ 400 ≠ 404)."""
+    base = await _ollama_base(db)
+    try:
+        async with httpx.AsyncClient(timeout=10) as http:
+            resp = await http.request("DELETE", f"{base}/api/delete", json={"name": name})
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail="ollama_unreachable") from exc
+    if resp.status_code >= 400 and resp.status_code != 404:
+        raise HTTPException(status_code=502, detail="ollama_delete_failed")
+
+
 async def _pull(
     base: str, key: str, ref: str | None = None, reg_name: str | None = None, ram: int | None = None
 ) -> None:
@@ -339,6 +352,8 @@ async def delete_model(model_id: uuid.UUID, db: DbDep, user: UserDep) -> None:
     if m is None:
         raise HTTPException(status_code=404, detail="model not found")
     _require_owner_or_admin(m, user)
+    if m.backend_type == "OLLAMA":  # retirer les poids AVANT la ligne registre (502 → ligne conservée)
+        await _ollama_delete(db, m.model_identifier)
     await db.delete(m)
     await db.commit()
 
