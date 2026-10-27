@@ -195,10 +195,15 @@ async def fetch_all_pmids(
     tranches de dates de publication (bissection tant qu'une tranche dépasse la limite), les plus
     récentes d'abord ; les doublons (dates imprimée / électronique) sont retirés. ``limit`` borne
     le total (les plus récents sont gardés).
+
+    Ordre : « les plus récents d'abord » tient au niveau des tranches (la bissection visite les
+    tranches les plus récentes en premier, NCBI ne triant pas par date au sein d'une tranche) ;
+    les identifiants d'une tranche sont insérés en inversant l'ordre renvoyé par esearch, qui
+    est croissant par date sur les fenêtres étroites.
     """
     limit = limit or _esearch_max()
     if count <= PUBMED_WINDOW:
-        return await fetch_pmids(query, api_key, http, min(count, limit))
+        return list(reversed(await fetch_pmids(query, api_key, http, min(count, limit))))
     found: dict[str, None] = {}
 
     async def walk(lo: date, hi: date) -> None:
@@ -211,8 +216,8 @@ async def fetch_all_pmids(
         if n <= PUBMED_WINDOW or lo == hi:
             if n > PUBMED_WINDOW:  # plus de 9 999 articles un même jour : improbable
                 logger.warning("PubMed: %d résultats le %s, tronqués", n, lo)
-            for pmid in await fetch_pmids(term, api_key, http, PUBMED_WINDOW):
-                found.setdefault(pmid)
+            for pmid in reversed(await fetch_pmids(term, api_key, http, PUBMED_WINDOW)):
+                found.setdefault(pmid)  # inversé : esearch renvoie les plus anciens d'abord
             return
         mid = lo + (hi - lo) // 2
         await walk(mid + timedelta(days=1), hi)  # les plus récents d'abord
