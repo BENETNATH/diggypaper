@@ -388,6 +388,60 @@ async def test_blind_search_hides_model_and_other_reviewers_everywhere(
     assert len(shown) == 1 and shown[0]["prediction_status"] == "AUTO_ACCEPTED"
 
 
+async def test_blind_list_shows_only_the_callers_own_review(
+    client, session, corpus, do_login, researcher_user
+):
+    """Aveugle : une fois SA relecture faite, la liste projette SA relecture, pas la dernière
+    en date d'un autre membre (fuite review / answers / confidence / by)."""
+    import asyncio
+
+    project, arts = corpus
+    base = f"/api/v1/projects/{project.id}"
+    s = await _blind_search(client, project)
+    article_url = f"{base}/articles/{arts[0].id}"
+    aid = str(arts[0].id)
+
+    async def annotate(ai: bool, conf: float):
+        r = await client.post(
+            f"{article_url}/annotation",
+            params={"search": s["id"]},
+            json={"ai": ai, "confidence_score": conf},
+        )
+        assert r.status_code == 201, r.text
+
+    async def listed() -> dict:
+        items = (await client.get(f"{base}/articles", params={"search": s["id"]})).json()["items"]
+        return next(i for i in items if i["id"] == aid)
+
+    # A (LEAD) relit d'abord, puis B relit le même article plus tard
+    await annotate(False, 0.2)
+    b = await _member(session, project, "b@lab.fr")
+    await _member(session, project, "c@lab.fr")
+    await do_login("b@lab.fr", "member-pass-123", consent=True)
+    await asyncio.sleep(1.1)  # created_at à la seconde : B est bien « la plus récente »
+    await annotate(True, 0.8)
+
+    # B voit SA relecture
+    mine_b = await listed()
+    assert mine_b["review"]["by"] == (b.full_name or b.email)
+    assert mine_b["confidence"] == 0.8
+    assert [x["value"] for x in mine_b["answers"] if x["key"] == "ai"] == [True]
+
+    # A voit SA relecture, pas celle de B (pourtant plus récente)
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    mine_a = await listed()
+    assert mine_a["review"]["by"] == (researcher_user.full_name or researcher_user.email)
+    assert mine_a["confidence"] == 0.2
+    assert [x["value"] for x in mine_a["answers"] if x["key"] == "ai"] == [False]
+    assert mine_a["annotated"] is True
+
+    # C n'a rien relu : aucune relecture (ni A ni B) ne lui est montrée
+    await do_login("c@lab.fr", "member-pass-123", consent=True)
+    none_c = await listed()
+    assert none_c["review"] is None and none_c["answers"] == []
+    assert none_c["confidence"] is None and none_c["prediction_status"] is None
+
+
 async def test_only_lead_or_author_can_refresh_a_gold_reference(client, session, corpus, do_login):
     project, arts = corpus
     base = f"/api/v1/projects/{project.id}"
