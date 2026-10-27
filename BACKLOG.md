@@ -21,8 +21,9 @@ Mise à jour : 2026-10-27. Commits cités : `git log --oneline`.
 
 1. **`DELETE /models/{id}` ne libère pas le disque** — supprime seulement la ligne registre ;
    les poids restent dans Ollama. Attendu : pour un modèle `backend_type=OLLAMA`, appeler
-   l'API Ollama `/api/delete` (ou `ollama rm`) avant de retirer la ligne registre.
-   (Suppression manuelle faite le 2026-10-27 : qwen3:4b, 2,5 Go libérés.)
+    l'API Ollama `/api/delete` (ou `ollama rm`) avant de retirer la ligne registre.
+    (Suppression manuelle faite le 2026-10-27 : qwen3:4b, 2,5 Go libérés.)
+    Spec : specs/2026-10-27-suppression-modeles-ollama.md
 2. **Pas de gestion de pipeline multi-utilisateurs sur le LLM local** — seule garde :
    « un job PENDING/RUNNING par projet ». Worker celery `concurrency=3` → plusieurs
    utilisateurs (projets différents) peuvent frapper le même Ollama en parallèle ;
@@ -37,8 +38,9 @@ Mise à jour : 2026-10-27. Commits cités : `git log --oneline`.
 
 1. **Bornes date de recherche PubMed** (petit, ~quelques h) — `ImportRequest` n'a que
    `query` (chaîne brute). Ajouter `date_from`/`date_to` optionnelles :
-   (a) ANDées dans la requête NCBI, (b) utilisées comme bornes de la bissection
-   `walk()` au lieu de `1800-01-01 → today+366` → moins d'appels esearch.
+    (a) ANDées dans la requête NCBI, (b) utilisées comme bornes de la bissection
+    `walk()` au lieu de `1800-01-01 → today+366` → moins d'appels esearch.
+    Spec : specs/2026-10-27-bornes-date-import-pubmed.md
 2. **Lock par modèle + file visible** (demi-journée) — lock Redis
    `SET NX` + TTL par identifiant de modèle au démarrage du job ; modèle occupé →
    requeue (retry countdown 30-60 s) + phase `waiting_model` dans `result_json`
