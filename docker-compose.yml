@@ -65,6 +65,7 @@ services:
     environment:
       LLM_API_BASE_URL: ${LLM_API_BASE_URL:-http://ollama:11434/v1}
       LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-120}  # timeout par appel LLM (à ↑ sur CPU : cold start + prefill)
+      LLM_EXTRA_BODY: '${LLM_EXTRA_BODY:-{"think": false, "options": {"num_ctx": 16384}}}'  # corps additionnel LLM (backends locaux) : num_ctx anti-troncature, pas de mode thinking
       DEFAULT_LANGUAGE: ${DEFAULT_LANGUAGE:-fr}
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:8080}  # base des liens des e-mails (invitations, exports)
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-diggypaper}:${POSTGRES_PASSWORD:-diggypaper}@postgres:5432/${POSTGRES_DB:-diggypaper}
@@ -102,6 +103,7 @@ services:
     environment:
       LLM_API_BASE_URL: ${LLM_API_BASE_URL:-http://ollama:11434/v1}
       LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-120}  # timeout par appel LLM (à ↑ sur CPU : cold start + prefill)
+      LLM_EXTRA_BODY: '${LLM_EXTRA_BODY:-{"think": false, "options": {"num_ctx": 16384}}}'  # corps additionnel LLM (backends locaux) : num_ctx anti-troncature, pas de mode thinking
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-diggypaper}:${POSTGRES_PASSWORD:-diggypaper}@postgres:5432/${POSTGRES_DB:-diggypaper}
       REDIS_URL: redis://redis:6379/0
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET manquant dans .env}

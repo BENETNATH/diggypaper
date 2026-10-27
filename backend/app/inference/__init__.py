@@ -36,6 +36,7 @@ class OpenAICompatibleService:
         timeout: float = 120.0,
         http: httpx.AsyncClient | None = None,
         public_only: bool = False,
+        extra_body: dict | None = None,
     ) -> None:
         self._public_only = public_only  # modèle d'un utilisateur : jamais d'adresse interne
         self._base_url = base_url.rstrip("/")
@@ -43,6 +44,7 @@ class OpenAICompatibleService:
         self._api_key = api_key
         self._timeout = timeout
         self._http = http  # injectable (mock en tests) ; sinon créé à la demande
+        self._extra_body = extra_body or {}  # backends locaux ; les clés fixes priment
 
     async def infer(self, model: str, system_prompt: str, user_prompt: str) -> dict:
         """Appelle le modèle et renvoie l'objet JSON parsé (spec §5).
@@ -62,6 +64,7 @@ class OpenAICompatibleService:
             "temperature": 0.0,
             "response_format": {"type": "json_object"},
         }
+        body = {**self._extra_body, **body}  # corps fixe : jamais écrasé par le réglage
         url = f"{self._base_url}/chat/completions"
         if self._public_only:
             # Revérifié à CHAQUE appel (pas seulement à l'enregistrement) : une réécriture DNS
@@ -112,12 +115,15 @@ async def unload_ollama(base_url: str, model: str, http: httpx.AsyncClient | Non
 async def make_inference_service(
     db,
     http: httpx.AsyncClient | None = None,
+    model=None,
 ) -> OpenAICompatibleService:
     """Fabrique le service depuis system_settings (DB > env, secrets chiffrés).
 
     ``llm_api_base_url`` (défaut ``http://localhost:11434/v1`` via ``DEFAULTS``),
-    ``llm_api_key`` (secret, optionnel) et ``inference_timeout`` (défaut
-    ``LLM_TIMEOUT_SECONDS`` env ou 120 s).
+    ``llm_api_key`` (secret, optionnel), ``inference_timeout`` (défaut
+    ``LLM_TIMEOUT_SECONDS`` env ou 120 s) et ``llm_extra_body`` (corps JSON
+    additionnel, appliqué uniquement aux backends locaux — jamais à un modèle
+    ``OPENAI_API`` ; None ou invalide → corps vide).
     """
     base_url = await get_setting(db, "llm_api_base_url")
     api_key = await get_setting(db, "llm_api_key")
@@ -128,8 +134,19 @@ async def make_inference_service(
             timeout = float(raw)
         except ValueError:
             logger.warning("inference_timeout invalide (%r) : 120 s", raw)
+    extra_body: dict = {}
+    raw_body = await get_setting(db, "llm_extra_body")
+    if raw_body and (model is None or model.backend_type != "OPENAI_API"):
+        try:
+            parsed = json.loads(raw_body)
+        except (json.JSONDecodeError, TypeError):
+            parsed = None
+        if isinstance(parsed, dict):
+            extra_body = parsed
+        else:
+            logger.warning("llm_extra_body invalide (%r) : corps vide", raw_body)
     return OpenAICompatibleService(
-        base_url=base_url, api_key=api_key, http=http, timeout=timeout
+        base_url=base_url, api_key=api_key, http=http, timeout=timeout, extra_body=extra_body
     )
 
 

@@ -170,7 +170,18 @@ async def _run_inference(
 
             try:
                 if inference is None:
-                    inference = await make_inference_service(session, http=client)
+                    # Le modèle du job (registre) détermine l'application du corps
+                    # additionnel : jamais à un backend OPENAI_API (spec corps requête).
+                    main_model = (
+                        await session.execute(
+                            select(ModelRegistry).where(
+                                ModelRegistry.name == job.model_used
+                            )
+                        )
+                    ).scalars().first()
+                    inference = await make_inference_service(
+                        session, http=client, model=main_model
+                    )
                 stats = await _do_inference(session, job, inference)
             except Exception as exc:
                 await _record_failure(session, job, exc)

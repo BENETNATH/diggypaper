@@ -151,3 +151,100 @@ async def test_warmup_absorbs_failure():
 
     svc = OpenAICompatibleService("http://llm.test/v1", http=_client(handler))
     await warmup(svc, "qwen3:4b")  # ne lève pas
+
+
+# --- Corps de requête paramétrable (llm_extra_body) ---
+
+
+def _capture_client():
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, json={"choices": [{"message": {"content": "{}"}}]})
+
+    return captured, _client(handler)
+
+
+async def test_infer_no_extra_body_unchanged():
+    """Verrou de régression : sans extra_body, le corps est exactement le corps fixe."""
+    captured, client = _capture_client()
+    svc = OpenAICompatibleService("http://llm.test/v1", http=client)
+    await svc.infer("Kev-4B", "SYS", "USR")
+    assert captured["body"] == {
+        "model": "Kev-4B",
+        "messages": [
+            {"role": "system", "content": "SYS"},
+            {"role": "user", "content": "USR"},
+        ],
+        "temperature": 0.0,
+        "response_format": {"type": "json_object"},
+    }
+
+
+async def test_infer_with_extra_body_merged():
+    captured, client = _capture_client()
+    svc = OpenAICompatibleService(
+        "http://llm.test/v1",
+        http=client,
+        extra_body={"think": False, "options": {"num_ctx": 16384}},
+    )
+    await svc.infer("Kev-4B", "SYS", "USR")
+    body = captured["body"]
+    assert body["think"] is False
+    assert body["options"] == {"num_ctx": 16384}
+    assert body["temperature"] == 0.0
+    assert body["response_format"] == {"type": "json_object"}
+
+
+async def test_infer_extra_body_cannot_override_fixed_keys():
+    captured, client = _capture_client()
+    svc = OpenAICompatibleService(
+        "http://llm.test/v1", http=client, extra_body={"temperature": 1.0, "model": "autre"}
+    )
+    await svc.infer("Kev-4B", "SYS", "USR")
+    assert captured["body"]["temperature"] == 0.0
+    assert captured["body"]["model"] == "Kev-4B"
+
+
+async def test_make_service_ollama_applies_extra_body_from_setting(session):
+    from types import SimpleNamespace
+
+    from app.settings.service import set_setting
+
+    await set_setting(
+        session, "llm_extra_body", '{"think": false, "options": {"num_ctx": 8192}}'
+    )
+    model = SimpleNamespace(backend_type="OLLAMA")
+    svc = await make_inference_service(session, model=model)
+    assert svc._extra_body == {"think": False, "options": {"num_ctx": 8192}}
+
+
+async def test_make_service_openai_api_never_applies_extra_body(session):
+    from types import SimpleNamespace
+
+    from app.settings.service import set_setting
+
+    await set_setting(
+        session, "llm_extra_body", '{"think": false, "options": {"num_ctx": 8192}}'
+    )
+    model = SimpleNamespace(backend_type="OPENAI_API")
+    svc = await make_inference_service(session, model=model)
+    assert svc._extra_body == {}
+
+
+async def test_make_service_invalid_extra_body_is_empty(session):
+    from types import SimpleNamespace
+
+    from app.settings.service import set_setting
+
+    await set_setting(session, "llm_extra_body", "pas-un-json")
+    svc = await make_inference_service(session, model=SimpleNamespace(backend_type="OLLAMA"))
+    assert svc._extra_body == {}
+
+
+async def test_make_service_null_extra_body_is_empty(session):
+    from types import SimpleNamespace
+
+    svc = await make_inference_service(session, model=SimpleNamespace(backend_type="OLLAMA"))
+    assert svc._extra_body == {}

@@ -16,6 +16,7 @@ NON_SECRET_KEYS: frozenset[str] = frozenset(
     {
         "llm_api_base_url",
         "inference_timeout",
+        "llm_extra_body",
         "smtp_host",
         "smtp_port",
         "smtp_user",
@@ -33,9 +34,15 @@ KNOWN_KEYS: frozenset[str] = SECRET_KEYS | NON_SECRET_KEYS
 # LLM_API_BASE_URL (env) : en Docker, pointer vers le service « ollama » du compose.
 # LLM_TIMEOUT_SECONDS (env) : timeout par appel d'inférence — à augmenter sur CPU
 # (cold start Ollama : chargement des poids + prefill peuvent dépasser 120 s).
-DEFAULTS: dict[str, str] = {
+# LLM_EXTRA_BODY (env) : corps JSON additionnel des requêtes LLM (ex.
+# {"think": false, "options": {"num_ctx": 16384}}), appliqué uniquement aux
+# backends locaux ; None ou invalide → corps vide. num_ctx à ajuster par
+# déploiement (16384 par défaut ; 32768 jouable sur GPU) — Ollama ne signale
+# pas la troncature du prompt, un num_ctx suffisant est la seule contre-mesure.
+DEFAULTS: dict[str, str | None] = {
     "llm_api_base_url": os.environ.get("LLM_API_BASE_URL", "http://localhost:11434/v1"),
     "inference_timeout": os.environ.get("LLM_TIMEOUT_SECONDS", "120"),
+    "llm_extra_body": os.environ.get("LLM_EXTRA_BODY"),
 }
 
 
