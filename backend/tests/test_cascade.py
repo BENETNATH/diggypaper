@@ -31,7 +31,7 @@ class FakeChat:
         return {"confidence_score": score, "evidence_quotes": [], "reasoning_summary": ""}
 
 
-async def test_prefilter_rejects_before_main_model(engine, session):
+async def test_prefilter_rejects_before_main_model(engine, session, fake_redis):
     project = Project(title="P", status=ProjectStatus.FROZEN)
     session.add(project)
     await session.commit()
@@ -63,7 +63,9 @@ async def test_prefilter_rejects_before_main_model(engine, session):
 
     chat = FakeChat()
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-    result = await _run_inference(str(job.id), session_factory=factory, inference=chat)
+    result = await _run_inference(
+        str(job.id), session_factory=factory, inference=chat, redis=fake_redis
+    )
 
     # étage 1 sur les 2 articles ; l'étage 2 ne voit que l'article « mid »
     assert sorted(chat.models) == ["big:30b", "small:1b", "small:1b"]

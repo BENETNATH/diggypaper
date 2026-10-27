@@ -420,7 +420,7 @@ async def test_prisma_counts_and_svg(client, session, lead_project):
     assert "Doublons" not in svg.text
 
 
-async def test_resume_inference_skips_done_articles(engine, session):
+async def test_resume_inference_skips_done_articles(engine, session, fake_redis):
     from datetime import UTC, datetime, timedelta
 
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -474,7 +474,9 @@ async def test_resume_inference_skips_done_articles(engine, session):
 
     chat = Chat()
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-    stats = await _run_inference(str(job.id), session_factory=factory, inference=chat)
+    stats = await _run_inference(
+        str(job.id), session_factory=factory, inference=chat, redis=fake_redis
+    )
     assert chat.calls == 2  # 1 warm-up + seul l'article restant est analysé
     assert stats["processed"] == 2 and stats["auto_accepted"] == 1 and stats["auto_rejected"] == 1
 

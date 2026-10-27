@@ -71,6 +71,40 @@ def mock_mailer() -> MockMailer:
     return MockMailer()
 
 
+class FakeRedis:
+    """Redis en mémoire pour les tests du lock par modèle : SET NX / GET / DEL.
+
+    ``set_calls`` : [(key, value, nx, ex)] ; ``events`` : journal d'ordonnancement.
+    """
+
+    def __init__(self) -> None:
+        self.store: dict = {}
+        self.set_calls: list[tuple] = []
+        self.events: list[str] = []
+
+    async def set(self, key, value, nx=False, ex=None):
+        self.set_calls.append((key, value, nx, ex))
+        self.events.append("set")
+        if nx and key in self.store:
+            return None
+        self.store[key] = value
+        return True
+
+    async def get(self, key):
+        return self.store.get(key)
+
+    async def delete(self, key):
+        return 1 if self.store.pop(key, None) is not None else 0
+
+    async def aclose(self):
+        pass
+
+
+@pytest.fixture
+def fake_redis():
+    return FakeRedis()
+
+
 @pytest.fixture
 async def client(engine, session, mock_mailer):
     """Client API : app réelle, DB in-memory, mailer mocké (100 % offline)."""

@@ -157,7 +157,7 @@ async def test_non_lead_cannot_create_and_foreign_search_is_404(
     ).status_code == 404
 
 
-async def test_inference_runs_only_on_the_search_lot(engine, session, corpus):
+async def test_inference_runs_only_on_the_search_lot(engine, session, corpus, fake_redis):
     project, arts = corpus
     prompt = PromptTemplate(project_id=project.id, version_number="v1", system_prompt="S")
     session.add_all([prompt, ModelRegistry(name="Kev-4B", model_identifier="x")])
@@ -190,7 +190,9 @@ async def test_inference_runs_only_on_the_search_lot(engine, session, corpus):
             return {"ai": True, "confidence_score": 0.9, "evidence_quotes": []}
 
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-    res = await _run_inference(str(job.id), session_factory=factory, inference=Fake())
+    res = await _run_inference(
+        str(job.id), session_factory=factory, inference=Fake(), redis=fake_redis
+    )
     assert res["processed"] == 2 and Fake.calls == 3  # 1 warm-up + 2 articles du lot, pas les 4
     preds = (
         (

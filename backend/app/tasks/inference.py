@@ -18,6 +18,7 @@ une notification est envoyée (e-mail best-effort via ``notify_job_complete``).
 
 import asyncio
 import logging
+import os
 import threading
 import time
 import uuid
@@ -77,6 +78,16 @@ _session_factory_override: async_sessionmaker[AsyncSession] | None = None
 _AUTO_ACCEPT_THRESHOLD = 0.85
 _AUTO_REJECT_THRESHOLD = 0.15
 
+#: Lock par modèle (backends locaux) : requeue 30 s, ~20 min max ; TTL = timeout + marge
+#: anti-fuite (crash du worker → le lock expire, le job passe FAILED au redémarrage).
+_MODEL_BUSY_RETRY_SECONDS = 30
+_MODEL_BUSY_MAX_RETRIES = 40
+_MODEL_BUSY_TTL_GRACE_SECONDS = 300
+
+
+class ModelBusy(Exception):
+    """Modèle local déjà utilisé par un autre job (lock Redis) → requeue le job."""
+
 
 def _make_session_factory():
     import os
@@ -105,9 +116,14 @@ def _triage(confidence_score: float | None) -> PredictionStatus:
     return PredictionStatus.NEEDS_HUMAN_REVIEW
 
 
-@celery_app.task(name="diggypaper.inference")
-def inference_task(inference_job_id: str) -> dict:
-    """Wrapper sync Celery : exécute le core async dans un thread dédié (C1/C2)."""
+@celery_app.task(name="diggypaper.inference", bind=True)
+def inference_task(self, inference_job_id: str) -> dict:
+    """Wrapper sync Celery : exécute le core async dans un thread dédié (C1/C2).
+
+    ``ModelBusy`` (modèle local locké par un autre job) : requeue
+    ``_MODEL_BUSY_RETRY_SECONDS`` s, jusqu'à ``_MODEL_BUSY_MAX_RETRIES`` ; au-delà,
+    le job passe FAILED puis l'exception est relancée.
+    """
     result: dict = {}
     error: BaseException | None = None
 
@@ -122,6 +138,12 @@ def inference_task(inference_job_id: str) -> dict:
     thread.start()
     thread.join()
     if error is not None:
+        if isinstance(error, ModelBusy):
+            if self.request.retries >= _MODEL_BUSY_MAX_RETRIES:
+                asyncio.run(_mark_model_busy_failed(inference_job_id))
+            raise self.retry(
+                countdown=_MODEL_BUSY_RETRY_SECONDS, max_retries=_MODEL_BUSY_MAX_RETRIES
+            )
         raise error
     return result
 
@@ -131,11 +153,15 @@ async def _run_inference(
     session_factory=None,
     http=None,
     inference: OpenAICompatibleService | None = None,
+    redis=None,
 ) -> dict:
     """Core async de l'inférence massive.
 
     - ``session_factory`` injectable (tests) ; sinon engine par run (C2).
     - ``inference`` injectable (tests) ; sinon ``make_inference_service``.
+    - ``redis`` injectable (tests) ; sinon client à la demande pour le lock par modèle.
+    - Lock par modèle (backends locaux, pas le pré-filtre) : si le modèle est
+      occupé → ``ModelBusy`` (job PENDING, phase ``waiting_model``), requeue au wrapper.
     - Séquentiel par article (CPU-friendly, spec).
     - Renvoie les statistiques clés (``processed``, ``auto_accepted``,
       ``auto_rejected``, ``needs_review``, ``duration_seconds``).
@@ -147,6 +173,9 @@ async def _run_inference(
     else:
         engine, factory = _make_session_factory()
     client = http if http is not None else None
+    lock = None  # (key, token) si le lock par modèle a été acquis
+    redis_client = redis
+    own_redis = False
     try:
         try:
             job_uuid = uuid.UUID(inference_job_id)
@@ -165,6 +194,30 @@ async def _run_inference(
                 # Redélivrance : job déjà clos, ou déjà en cours dans un autre processus
                 # (un redémarrage du worker passe d'abord RUNNING → FAILED).
                 return {}
+            main_model = (
+                await session.execute(
+                    select(ModelRegistry).where(ModelRegistry.name == job.model_used)
+                )
+            ).scalars().first()
+            # Lock par modèle (backends locaux seulement) : rend visible l'attente
+            # sérialisée dans Ollama ; le pré-filtre n'est pas locké (limitation
+            # documentée). L'acquisition est avant RUNNING : un job en attente
+            # reste PENDING en base (garde « un job par projet » conservée).
+            if main_model is not None and main_model.backend_type != "OPENAI_API":
+                if redis_client is None:
+                    from redis import asyncio as redis_asyncio
+
+                    redis_client = redis_asyncio.from_url(
+                        os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+                    )
+                    own_redis = True
+                token = uuid.uuid4().hex
+                key = f"inference:lock:{main_model.backend_type}:{main_model.model_identifier}"
+                if not await redis_client.set(key, token, nx=True, ex=await _lock_ttl(session)):
+                    job.result_json = {"phase": "waiting_model"}
+                    await session.commit()
+                    raise ModelBusy(key)
+                lock = (key, token)
             job.status = InferenceJobStatus.RUNNING
             await session.commit()
 
@@ -172,13 +225,6 @@ async def _run_inference(
                 if inference is None:
                     # Le modèle du job (registre) détermine l'application du corps
                     # additionnel : jamais à un backend OPENAI_API (spec corps requête).
-                    main_model = (
-                        await session.execute(
-                            select(ModelRegistry).where(
-                                ModelRegistry.name == job.model_used
-                            )
-                        )
-                    ).scalars().first()
                     inference = await make_inference_service(
                         session, http=client, model=main_model
                     )
@@ -200,6 +246,65 @@ async def _run_inference(
             )
             await _start_scheduled(session, job.project_id)
             return stats
+    finally:
+        if lock is not None:
+            await _release_lock(redis_client, lock[0], lock[1])
+        if own_redis:
+            try:
+                await redis_client.aclose()
+            except Exception:  # noqa: BLE001 - fermer le client ne doit pas casser le job
+                pass
+        if engine is not None:
+            await engine.dispose()
+
+
+async def _lock_ttl(session: AsyncSession) -> int:
+    """TTL du lock = ``inference_timeout`` (même lecture que make_inference_service,
+    défaut 120 s) + marge anti-fuite : crash du worker → le lock expirera au TTL."""
+    try:
+        timeout = float(await get_setting(session, "inference_timeout"))
+    except (TypeError, ValueError):
+        timeout = 120.0
+    return int(timeout) + _MODEL_BUSY_TTL_GRACE_SECONDS
+
+
+async def _release_lock(redis_client, key: str, token: str) -> None:
+    """Release du lock : DEL seulement si la valeur courante est notre token
+    (owner check) ; appelé en finally (succès, échec, annulation).
+
+    Un échec (Redis injoignable) est loggé, pas relancé : le TTL expirera le lock.
+    """
+    try:
+        current = await redis_client.get(key)
+        if isinstance(current, bytes):
+            current = current.decode()
+        if current == token:
+            await redis_client.delete(key)
+    except Exception:  # noqa: BLE001
+        logger.warning("inference: release du lock %s en échec (le TTL expirera)", key)
+
+
+async def _mark_model_busy_failed(inference_job_id: str) -> None:
+    """Retries épuisées : job FAILED (même pattern que ``_record_failure``)."""
+    factory = _session_factory_override
+    engine = None
+    if factory is None:
+        engine, factory = _make_session_factory()
+    try:
+        try:
+            job_uuid = uuid.UUID(inference_job_id)
+        except (TypeError, ValueError):
+            return
+        async with factory() as session:
+            job = await session.get(InferenceJob, job_uuid)
+            if job is None:
+                return
+            job.status = InferenceJobStatus.FAILED
+            job.error = f"modèle occupé : abandonné après {_MODEL_BUSY_MAX_RETRIES} tentatives (waiting_model)"
+            job.completed_at = datetime.now(UTC)
+            await session.commit()
+    except Exception:  # noqa: BLE001
+        logger.exception("inference: marquage FAILED (modèle occupé, retries épuisées) en échec")
     finally:
         if engine is not None:
             await engine.dispose()
