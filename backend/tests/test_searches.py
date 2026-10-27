@@ -191,7 +191,7 @@ async def test_inference_runs_only_on_the_search_lot(engine, session, corpus):
 
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     res = await _run_inference(str(job.id), session_factory=factory, inference=Fake())
-    assert res["processed"] == 2 and Fake.calls == 2  # 2 articles du lot, pas les 4
+    assert res["processed"] == 2 and Fake.calls == 3  # 1 warm-up + 2 articles du lot, pas les 4
     preds = (
         (
             await session.execute(

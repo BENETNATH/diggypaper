@@ -24,6 +24,8 @@ class FakeChat:
         self.models: list[str] = []
 
     async def infer(self, model, system_prompt, user_prompt) -> dict:
+        if '{"ok": true}' in user_prompt:  # warm-up : ne compte pas
+            return {"ok": True}
         self.models.append(model)
         score = 0.05 if model == "small:1b" and "low" in user_prompt else 0.9
         return {"confidence_score": score, "evidence_quotes": [], "reasoning_summary": ""}

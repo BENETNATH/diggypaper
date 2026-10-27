@@ -475,7 +475,7 @@ async def test_resume_inference_skips_done_articles(engine, session):
     chat = Chat()
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     stats = await _run_inference(str(job.id), session_factory=factory, inference=chat)
-    assert chat.calls == 1  # seul l'article restant est analysé
+    assert chat.calls == 2  # 1 warm-up + seul l'article restant est analysé
     assert stats["processed"] == 2 and stats["auto_accepted"] == 1 and stats["auto_rejected"] == 1
 
 
