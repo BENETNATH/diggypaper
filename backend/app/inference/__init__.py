@@ -37,6 +37,7 @@ class OpenAICompatibleService:
         http: httpx.AsyncClient | None = None,
         public_only: bool = False,
         extra_body: dict | None = None,
+        native_ollama: bool = False,
     ) -> None:
         self._public_only = public_only  # modèle d'un utilisateur : jamais d'adresse interne
         self._base_url = base_url.rstrip("/")
@@ -45,6 +46,8 @@ class OpenAICompatibleService:
         self._timeout = timeout
         self._http = http  # injectable (mock en tests) ; sinon créé à la demande
         self._extra_body = extra_body or {}  # backends locaux ; les clés fixes priment
+        # Ollama local : endpoint natif /api/chat (l'endpoint /v1 ignore options, ex. num_ctx).
+        self._native_ollama = native_ollama
 
     async def infer(self, model: str, system_prompt: str, user_prompt: str) -> dict:
         """Appelle le modèle et renvoie l'objet JSON parsé (spec §5).
@@ -55,17 +58,32 @@ class OpenAICompatibleService:
         headers = {"Content-Type": "application/json"}
         if self._api_key:
             headers["Authorization"] = f"Bearer {self._api_key}"
-        body = {
-            "model": model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            "temperature": 0.0,
-            "response_format": {"type": "json_object"},
-        }
+        if self._native_ollama:
+            # Endpoint natif : root sans le suffixe /v1 ; options/think lues en racine,
+            # format "json" (pas response_format, inconnu du natif).
+            url = f"{self._base_url.removesuffix('/v1')}/api/chat"
+            body = {
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                "stream": False,
+                "temperature": 0.0,
+                "format": "json",
+            }
+        else:
+            url = f"{self._base_url}/chat/completions"
+            body = {
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                "temperature": 0.0,
+                "response_format": {"type": "json_object"},
+            }
         body = {**self._extra_body, **body}  # corps fixe : jamais écrasé par le réglage
-        url = f"{self._base_url}/chat/completions"
         if self._public_only:
             # Revérifié à CHAQUE appel (pas seulement à l'enregistrement) : une réécriture DNS
             # après coup ne mène plus au réseau interne.
@@ -88,7 +106,13 @@ class OpenAICompatibleService:
             if resp.status_code >= 400:
                 raise InferenceError(f"HTTP {resp.status_code}")
             data = resp.json()
-            content = data["choices"][0]["message"]["content"]
+            if self._native_ollama:
+                try:
+                    content = data["message"]["content"]
+                except (KeyError, TypeError) as exc:
+                    raise InferenceError("invalid_response") from exc
+            else:
+                content = data["choices"][0]["message"]["content"]
             try:
                 return json.loads(content)
             except (json.JSONDecodeError, TypeError) as exc:
@@ -124,6 +148,10 @@ async def make_inference_service(
     ``LLM_TIMEOUT_SECONDS`` env ou 120 s) et ``llm_extra_body`` (corps JSON
     additionnel, appliqué uniquement aux backends locaux — jamais à un modèle
     ``OPENAI_API`` ; None ou invalide → corps vide).
+
+    Mode natif Ollama (endpoint ``/api/chat``) : ``model is None`` (service par
+    défaut = Ollama local) ou ``model.backend_type == "OLLAMA"`` ; les autres
+    backends restent sur ``/v1/chat/completions``.
     """
     base_url = await get_setting(db, "llm_api_base_url")
     api_key = await get_setting(db, "llm_api_key")
@@ -145,8 +173,16 @@ async def make_inference_service(
             extra_body = parsed
         else:
             logger.warning("llm_extra_body invalide (%r) : corps vide", raw_body)
+    # Ollama local (modèle OLLAMA, ou service par défaut sans modèle = Ollama) : endpoint natif
+    # /api/chat. Les autres backends locaux (llama.cpp, vLLM, …) n'exposent pas /api/chat → /v1.
+    native_ollama = model is None or model.backend_type == "OLLAMA"
     return OpenAICompatibleService(
-        base_url=base_url, api_key=api_key, http=http, timeout=timeout, extra_body=extra_body
+        base_url=base_url,
+        api_key=api_key,
+        http=http,
+        timeout=timeout,
+        extra_body=extra_body,
+        native_ollama=native_ollama,
     )
 
 
