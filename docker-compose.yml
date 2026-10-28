@@ -3,8 +3,13 @@
 #
 # Services de modèles OPTIONNELS (profils) : par défaut seuls l'application, la base et la file
 # de tâches démarrent (suffisant avec un modèle externe : API compatible OpenAI). Activez ceux
-# dont vous avez besoin dans .env, ex. COMPOSE_PROFILES=ollama :
+# dont vous avez besoin dans .env, ex. COMPOSE_PROFILES=ollama. Le mode est porté par le couple
+# OLLAMA_MODE (flag lu par backend/worker) / COMPOSE_PROFILES (conteneurs démarrés) :
 #   ollama : modèles génératifs locaux (LLM_API_BASE_URL=http://ollama:11434/v1 par défaut)
+#     OLLAMA_MODE=docker : conteneur Ollama du compose (COMPOSE_PROFILES=ollama) — défaut
+#     OLLAMA_MODE=host   : Ollama déjà déployé sur la machine (pas de profil ollama,
+#                         LLM_API_BASE_URL = URL de l'Ollama hôte, ex. http://host.docker.internal:11434/v1)
+#     OLLAMA_MODE=off    : pas d'Ollama (pas de profil ollama, backends API clé uniquement)
 x-logging: &logging
   driver: json-file
   options:
@@ -48,6 +53,19 @@ services:
     restart: unless-stopped
     logging: *logging
     mem_limit: ${OLLAMA_MEM_LIMIT:-24g}
+    # GPU — décommenter selon le matériel (docs.ollama.com/docker) ; en mode « host » le GPU
+    # est celui de l'installation Ollama de la machine (aucune exposition dans ce compose).
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia        # NVIDIA (nvidia-container-toolkit requis sur l'hôte)
+    #           count: all
+    #           capabilities: [gpu]
+    # devices:
+    #   - /dev/dri                    # Intel (Arc/iGPU) ou AMD en Vulkan (OLLAMA_VULKAN=0 pour
+    #                                 # désactiver) ; AMD ROCm : image ollama/ollama:rocm
+    #   - /dev/kfd                    # AMD uniquement
 
   backend:
     build: ./backend
@@ -64,6 +82,7 @@ services:
       - exports:/app/exports  # zips RO-Crate générés par le worker, servis par le backend
     environment:
       LLM_API_BASE_URL: ${LLM_API_BASE_URL:-http://ollama:11434/v1}
+      OLLAMA_MODE: ${OLLAMA_MODE:-docker}  # docker | host | off — flag de déploiement (cf. en-tête)
       LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-120}  # timeout par appel LLM (à ↑ sur CPU : cold start + prefill)
       LLM_EXTRA_BODY: '${LLM_EXTRA_BODY:-{"think": false, "options": {"num_ctx": 16384}}}'  # corps additionnel LLM (backends locaux) : num_ctx anti-troncature, pas de mode thinking
       DEFAULT_LANGUAGE: ${DEFAULT_LANGUAGE:-fr}
@@ -90,6 +109,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"  # mode host : joindre l'Ollama de la machine hôte (Linux)
 
   worker:
     build: ./backend
@@ -102,6 +123,7 @@ services:
       - exports:/app/exports
     environment:
       LLM_API_BASE_URL: ${LLM_API_BASE_URL:-http://ollama:11434/v1}
+      OLLAMA_MODE: ${OLLAMA_MODE:-docker}  # docker | host | off — flag de déploiement (cf. en-tête)
       LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-120}  # timeout par appel LLM (à ↑ sur CPU : cold start + prefill)
       LLM_EXTRA_BODY: '${LLM_EXTRA_BODY:-{"think": false, "options": {"num_ctx": 16384}}}'  # corps additionnel LLM (backends locaux) : num_ctx anti-troncature, pas de mode thinking
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-diggypaper}:${POSTGRES_PASSWORD:-diggypaper}@postgres:5432/${POSTGRES_DB:-diggypaper}
@@ -127,6 +149,8 @@ services:
         condition: service_healthy
       backend:
         condition: service_healthy  # les migrations sont appliquées par le backend
+    extra_hosts:
+      - "host.docker.internal:host-gateway"  # mode host : joindre l'Ollama de la machine hôte (Linux)
 
   frontend:
     build: ./frontend

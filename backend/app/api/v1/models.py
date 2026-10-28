@@ -25,6 +25,7 @@ from app.db.base import SessionLocal
 from app.db.models import ModelRegistry, ModelShare, Project, ProjectMember, User, UserRole
 from app.inference import InferenceError, OpenAICompatibleService
 from app.model_access import access_filter, check_public_url
+from app.ollama_mode import COMPOSE_ROOT, MODE
 from app.settings.service import get_setting
 
 router = APIRouter(prefix="/models", tags=["models"])
@@ -122,6 +123,18 @@ async def _ollama_base(db: AsyncSession) -> str:
     return base.removesuffix("/v1")
 
 
+async def _require_ollama(db: AsyncSession) -> str:
+    """Refuse les actions Ollama interdites par le mode de déploiement (409, détail précis).
+
+    Renvoie la base Ollama (sinon le comportement existant est inchangé)."""
+    if MODE == "off":
+        raise HTTPException(status_code=409, detail="ollama_disabled_by_deployment")
+    base = await _ollama_base(db)
+    if MODE == "host" and base == COMPOSE_ROOT:
+        raise HTTPException(status_code=409, detail="ollama_base_url_is_compose_default")
+    return base
+
+
 async def _register(
     db: AsyncSession,
     identifier: str,
@@ -162,10 +175,21 @@ async def capabilities(db: DbDep, user: UserDep) -> dict:
     """Service Ollama de cette instance (profil du compose) : configuré ? joignable ? Ressources du
     serveur et modèles conseillés. Les modèles externes (API compatible OpenAI) fonctionnent
     toujours."""
-    ollama = await _ollama_base(db) if await get_setting(db, "llm_api_base_url") else ""
+    if MODE == "off":
+        ollama = {"mode": MODE, "configured": False, "reachable": False}  # AUCUN ping
+    else:
+        base = await _ollama_base(db)
+        if MODE == "host" and base == COMPOSE_ROOT:
+            logger.warning(
+                "OLLAMA_MODE=host mais llm_api_base_url pointe encore sur le conteneur du "
+                "compose (%s) : définir LLM_API_BASE_URL sur l'Ollama de la machine hôte", base
+            )
+        configured = bool(base) and not (MODE == "host" and base == COMPOSE_ROOT)
+        reachable = await _reachable(base, "/api/tags") if configured else False
+        ollama = {"mode": MODE, "configured": configured, "reachable": reachable}
     hw = hardware.detect()
     return {
-        "ollama": {"configured": bool(ollama), "reachable": await _reachable(ollama, "/api/tags")},
+        "ollama": ollama,
         "hardware": hw,
         "recommendation": hardware.recommend(hw),
     }
@@ -175,7 +199,7 @@ async def capabilities(db: DbDep, user: UserDep) -> dict:
 async def list_ollama(db: DbDep, user: UserDep) -> dict:
     """Modèles présents sur le serveur Ollama + état d'enregistrement."""
     await _require_admin(user)
-    base = await _ollama_base(db)
+    base = await _require_ollama(db)
     try:
         async with httpx.AsyncClient(timeout=10) as http:
             resp = await http.get(f"{base}/api/tags")
@@ -239,6 +263,7 @@ async def _pull(
 async def pull_ollama(payload: PullRequest, db: DbDep, user: UserDep) -> dict:
     """Télécharge un modèle sur Ollama (progression via GET /models/ollama)."""
     await _require_admin(user)
+    await _require_ollama(db)
     if _PULLS.get(payload.name, {}).get("state") == "running":
         raise HTTPException(status_code=409, detail="pull already running")
     _PULLS[payload.name] = {"state": "running", "status": "starting", "completed": 0, "total": 0}
@@ -250,6 +275,7 @@ async def pull_ollama(payload: PullRequest, db: DbDep, user: UserDep) -> dict:
 async def register_ollama(payload: PullRequest, db: DbDep, user: UserDep) -> dict:
     """Enregistre un modèle déjà présent sur Ollama."""
     await _require_admin(user)
+    await _require_ollama(db)
     await _register(db, payload.name)
     return {"name": payload.name}
 
@@ -276,6 +302,8 @@ async def list_models(
 @router.post("", status_code=201)
 async def create_model(payload: ModelCreate, db: DbDep, user: UserDep) -> dict:
     await _require_admin(user)
+    if payload.backend_type == "OLLAMA":
+        await _require_ollama(db)
     existing = (
         await db.execute(select(ModelRegistry).where(ModelRegistry.name == payload.name))
     ).scalar_one_or_none()
@@ -353,6 +381,7 @@ async def delete_model(model_id: uuid.UUID, db: DbDep, user: UserDep) -> None:
         raise HTTPException(status_code=404, detail="model not found")
     _require_owner_or_admin(m, user)
     if m.backend_type == "OLLAMA":  # retirer les poids AVANT la ligne registre (502 → ligne conservée)
+        await _require_ollama(db)  # refus du mode de déploiement AVANT tout appel Ollama
         await _ollama_delete(db, m.model_identifier)
     await db.delete(m)
     await db.commit()
@@ -551,6 +580,7 @@ class HFInstall(BaseModel):
 async def install_hf(payload: HFInstall, db: DbDep, user: UserDep) -> dict:
     """Installe un modèle trouvé sur Hugging Face (suivi via GET /models/ollama → pulls)."""
     await _require_admin(user)
+    await _require_ollama(db)  # AVANT tout appel HF
     info = await _hf_get(f"/api/models/{payload.repo}")
     if isinstance(info, dict) and "decision-model" in (info.get("tags") or []):
         raise HTTPException(status_code=422, detail="decision_model")  # pas de chat : inutilisable

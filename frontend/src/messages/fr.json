@@ -696,6 +696,8 @@
     "svcDown": "injoignable",
     "svcOff": "non déployé",
     "svcHow": "Pour l'activer : COMPOSE_PROFILES={profile} (+ URL) dans .env, puis docker compose up -d.",
+    "svcHowOff": "Ollama désactivé par OLLAMA_MODE=off — backends API clé uniquement.",
+    "offBadge": "non lançable — Ollama off",
     "svcExternal": "Modèle externe — toute API compatible OpenAI (aucun service local requis)",
     "hwTitle": "Ce serveur",
     "hwCores": "cœurs",

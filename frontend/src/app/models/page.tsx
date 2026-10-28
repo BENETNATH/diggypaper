@@ -134,7 +134,11 @@ function ModelsContent() {
                 {caps.ollama.reachable ? t("svcUp") : caps.ollama.configured ? t("svcDown") : t("svcOff")}
               </Badge>
               <span className="font-medium text-foreground">{t("svcOllama")}</span>
-              {!caps.ollama.reachable && <span className="text-xs text-muted">{t("svcHow", { profile: "ollama" })}</span>}
+              {!caps.ollama.reachable && (
+                <span className="text-xs text-muted">
+                  {caps.ollama.mode === "off" ? t("svcHowOff") : t("svcHow", { profile: "ollama" })}
+                </span>
+              )}
             </li>
             <li className="flex flex-wrap items-center gap-2">
               <Badge color="green">{t("svcUp")}</Badge>
@@ -192,6 +196,9 @@ function ModelsContent() {
                     <Badge color={m.mine ? "green" : m.platform ? "yellow" : "gray"}>
                       {m.mine ? t("ownMine") : m.platform ? t("ownPlatform") : t("ownShared")}
                     </Badge>
+                    {caps?.ollama.mode === "off" && m.backend_type === "OLLAMA" && (
+                      <Badge color="gray">{t("offBadge")}</Badge>
+                    )}
                   </div>
                   <div className="truncate font-mono text-xs text-muted">
                     {m.model_identifier}

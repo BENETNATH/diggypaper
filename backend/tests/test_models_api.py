@@ -1,10 +1,22 @@
 """Tests des routes modèle (app/api/v1/models.py) — 100 % offline."""
 
 import json
+from contextlib import contextmanager
 
 import httpx
 
 from app.db.models import ModelRegistry, Project, ProjectMember, ProjectMemberRole
+
+
+@contextmanager
+def _http(handler):
+    """Mock du transport httpx global (pattern des tests de suppression)."""
+    real = httpx.AsyncClient
+    httpx.AsyncClient = lambda **kw: real(transport=httpx.MockTransport(handler), **kw)
+    try:
+        yield
+    finally:
+        httpx.AsyncClient = real
 
 
 async def _give_project_membership(session, user) -> Project:
@@ -441,11 +453,224 @@ async def test_capabilities_reports_ollama_hardware_and_recommendation(
     )
     await do_login("admin@lab.fr", "admin-pass-123")
     caps = (await client.get("/api/v1/models/capabilities")).json()
-    assert caps["ollama"] == {"configured": True, "reachable": True}  # défaut : localhost:11434
+    # Champ `mode` gagné (flag de déploiement, défaut docker) ; le reste est inchangé.
+    assert caps["ollama"] == {"mode": "docker", "configured": True, "reachable": True}
     assert caps["hardware"]["ram_gb"] == 54
     rec = caps["recommendation"]
     assert rec["profile"] == "large" and rec["slow_cpu"] is True  # sans AVX2 : avertissement
     assert rec["models"][0]["kind"] == "moe" and rec["models"][0]["fits"] is True
+
+
+# --- Flag de déploiement OLLAMA_MODE (spec 2026-10-28-ollama-deploy-mode) ----
+
+
+async def test_capabilities_docker_mode_default_invariant(
+    client, admin_user, do_login, monkeypatch
+):
+    """Mode docker (défaut) : comportement invariant, seul le champ `mode` est ajouté."""
+    from app.api.v1 import models as m
+
+    async def fake_reachable(url, path=""):
+        return True
+
+    monkeypatch.setattr(m, "MODE", "docker")
+    monkeypatch.setattr(m, "_reachable", fake_reachable)
+    await do_login("admin@lab.fr", "admin-pass-123")
+    caps = (await client.get("/api/v1/models/capabilities")).json()
+    assert caps["ollama"] == {"mode": "docker", "configured": True, "reachable": True}
+
+
+async def test_capabilities_host_mode_custom_url_configured(
+    client, session, admin_user, do_login, monkeypatch
+):
+    from app.api.v1 import models as m
+    from app.settings.service import set_setting
+
+    async def fake_reachable(url, path=""):
+        return True
+
+    monkeypatch.setattr(m, "MODE", "host")
+    monkeypatch.setattr(m, "_reachable", fake_reachable)
+    await set_setting(session, "llm_api_base_url", "http://10.0.0.5:11434/v1")
+    await do_login("admin@lab.fr", "admin-pass-123")
+    caps = (await client.get("/api/v1/models/capabilities")).json()
+    assert caps["ollama"] == {"mode": "host", "configured": True, "reachable": True}
+
+
+async def test_capabilities_host_mode_compose_default_not_configured(
+    client, session, admin_user, do_login, monkeypatch
+):
+    """Mode host + base résiduelle du compose : non configuré, AUCUN ping, (warning loggé)."""
+    from app.api.v1 import models as m
+    from app.settings.service import set_setting
+
+    async def no_ping(url, path=""):
+        raise AssertionError("ping interdit : base résiduelle compose en mode host")
+
+    monkeypatch.setattr(m, "MODE", "host")
+    monkeypatch.setattr(m, "_reachable", no_ping)
+    await set_setting(session, "llm_api_base_url", "http://ollama:11434/v1")
+    await do_login("admin@lab.fr", "admin-pass-123")
+    caps = (await client.get("/api/v1/models/capabilities")).json()
+    assert caps["ollama"] == {"mode": "host", "configured": False, "reachable": False}
+
+
+async def test_capabilities_off_mode_no_ping(client, admin_user, do_login, monkeypatch):
+    """Mode off : {off, false, false} SANS ping (aucun ping en mode off)."""
+    from app.api.v1 import models as m
+
+    async def no_ping(url, path=""):
+        raise AssertionError("ping interdit en mode off")
+
+    monkeypatch.setattr(m, "MODE", "off")
+    monkeypatch.setattr(m, "_reachable", no_ping)
+    await do_login("admin@lab.fr", "admin-pass-123")
+    caps = (await client.get("/api/v1/models/capabilities")).json()
+    assert caps["ollama"] == {"mode": "off", "configured": False, "reachable": False}
+
+
+async def test_off_list_ollama_409(client, admin_user, do_login, monkeypatch):
+    from app.api.v1 import models as m
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        raise AssertionError("Ollama ne doit pas être appelé")
+
+    monkeypatch.setattr(m, "MODE", "off")
+    await do_login("admin@lab.fr", "admin-pass-123")
+    with _http(handler):
+        resp = await client.get("/api/v1/models/ollama")
+    assert resp.status_code == 409
+    assert resp.json()["detail"] == "ollama_disabled_by_deployment"
+
+
+async def test_off_pull_ollama_409_and_no_state(client, admin_user, do_login, monkeypatch):
+    from app.api.v1 import models as m
+
+    monkeypatch.setattr(m, "MODE", "off")
+    await do_login("admin@lab.fr", "admin-pass-123")
+    resp = await client.post("/api/v1/models/ollama/pull", json={"name": "qwen3:4b"})
+    assert resp.status_code == 409
+    assert resp.json()["detail"] == "ollama_disabled_by_deployment"
+    assert m._PULLS == {}  # rien lancé
+
+
+async def test_off_register_ollama_409(client, admin_user, do_login, monkeypatch):
+    from app.api.v1 import models as m
+
+    monkeypatch.setattr(m, "MODE", "off")
+    await do_login("admin@lab.fr", "admin-pass-123")
+    resp = await client.post("/api/v1/models/ollama/register", json={"name": "m:1"})
+    assert resp.status_code == 409
+    assert resp.json()["detail"] == "ollama_disabled_by_deployment"
+    assert (await client.get("/api/v1/models")).json()["items"] == []  # aucune ligne créée
+
+
+async def test_off_create_ollama_409_but_openai_api_still_201(
+    client, admin_user, do_login, monkeypatch
+):
+    """Les backends API clé restent opérationnels en mode off."""
+    from app.api.v1 import models as m
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        raise AssertionError("Ollama ne doit pas être appelé")
+
+    monkeypatch.setattr(m, "MODE", "off")
+    await do_login("admin@lab.fr", "admin-pass-123")
+    with _http(handler):
+        resp = await client.post(
+            "/api/v1/models",
+            json={"name": "Kev-4B", "backend_type": "OLLAMA", "model_identifier": "kef/kev-4b"},
+        )
+    assert resp.status_code == 409
+    assert resp.json()["detail"] == "ollama_disabled_by_deployment"
+    resp = await client.post(
+        "/api/v1/models/external",
+        json={"name": "GPT", "base_url": "https://api.x/v1", "model": "gpt-4o"},
+    )
+    assert resp.status_code == 201
+
+
+async def test_off_delete_ollama_model_409_keeps_row(
+    client, session, admin_user, do_login, monkeypatch
+):
+    """Suppression refusée AVANT tout appel Ollama : la ligne est conservée."""
+    from sqlalchemy import select
+
+    from app.api.v1 import models as m
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        raise AssertionError("Ollama ne doit pas être appelé")
+
+    session.add(ModelRegistry(name="Q", backend_type="OLLAMA", model_identifier="qwen3:4b"))
+    await session.commit()
+    monkeypatch.setattr(m, "MODE", "off")
+    await do_login("admin@lab.fr", "admin-pass-123")
+    row = (
+        await session.execute(select(ModelRegistry).where(ModelRegistry.name == "Q"))
+    ).scalar_one().id
+    with _http(handler):
+        resp = await client.delete(f"/api/v1/models/{row}")
+    assert resp.status_code == 409
+    assert resp.json()["detail"] == "ollama_disabled_by_deployment"
+    names = [m2["name"] for m2 in (await client.get("/api/v1/models")).json()["items"]]
+    assert "Q" in names
+
+
+async def test_off_hf_install_409_before_hf_call(client, admin_user, do_login, monkeypatch):
+    from app.api.v1 import models as m
+
+    async def fake_hf(path, params=None):
+        raise AssertionError("HF ne doit pas être appelé en mode off")
+
+    monkeypatch.setattr(m, "MODE", "off")
+    monkeypatch.setattr(m, "_hf_get", fake_hf)
+    await do_login("admin@lab.fr", "admin-pass-123")
+    resp = await client.post("/api/v1/models/hf/install", json={"repo": "a/b"})
+    assert resp.status_code == 409
+    assert resp.json()["detail"] == "ollama_disabled_by_deployment"
+    assert m._PULLS == {}  # rien lancé
+
+
+async def test_host_compose_default_endpoints_refused(
+    client, session, admin_user, do_login, monkeypatch
+):
+    """Mode host + base résiduelle compose : actions Ollama refusées (409, detail précis)."""
+    from app.api.v1 import models as m
+    from app.settings.service import set_setting
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        raise AssertionError("Ollama ne doit pas être appelé")
+
+    monkeypatch.setattr(m, "MODE", "host")
+    await set_setting(session, "llm_api_base_url", "http://ollama:11434/v1")
+    await do_login("admin@lab.fr", "admin-pass-123")
+    with _http(handler):
+        resp = await client.get("/api/v1/models/ollama")
+    assert resp.status_code == 409
+    assert resp.json()["detail"] == "ollama_base_url_is_compose_default"
+    with _http(handler):
+        resp = await client.post("/api/v1/models/ollama/register", json={"name": "m:1"})
+    assert resp.status_code == 409
+    assert resp.json()["detail"] == "ollama_base_url_is_compose_default"
+
+
+async def test_host_compose_default_url_variants_detected(
+    client, session, admin_user, do_login, monkeypatch
+):
+    """La dérive de base (sans /v1, rstrip) fait détecter les 3 variantes du compose."""
+    from app.api.v1 import models as m
+    from app.settings.service import set_setting
+
+    async def no_ping(url, path=""):
+        raise AssertionError("ping interdit : base résiduelle compose")
+
+    monkeypatch.setattr(m, "MODE", "host")
+    monkeypatch.setattr(m, "_reachable", no_ping)
+    await do_login("admin@lab.fr", "admin-pass-123")
+    for url in ("http://ollama:11434/v1/", "http://ollama:11434", "http://ollama:11434/v1"):
+        await set_setting(session, "llm_api_base_url", url)
+        caps = (await client.get("/api/v1/models/capabilities")).json()
+        assert caps["ollama"]["configured"] is False, url
 
 
 def test_recommend_by_resources():

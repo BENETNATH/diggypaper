@@ -1088,8 +1088,8 @@ export async function exportData(): Promise<Record<string, unknown>> {
 }
 
 
-/** Famille d'un modèle du registre : scoreur (décision / encodeur) ou génératif. */
-export interface Capability {
+export interface OllamaCapability {
+  mode: "docker" | "host" | "off";
   configured: boolean;
   reachable: boolean;
 }
@@ -1099,7 +1099,7 @@ export interface ModelRecommendation {
   models: { tag: string; ram_gb: number; kind: "tiny" | "small" | "moe" | "gpu"; fits: boolean }[];
 }
 export interface ModelCapabilities {
-  ollama: Capability;
+  ollama: OllamaCapability;
   hardware: { cores: number; ram_gb: number; avx: boolean; avx2: boolean; avx512: boolean; gpu: boolean };
   recommendation: ModelRecommendation;
 }
