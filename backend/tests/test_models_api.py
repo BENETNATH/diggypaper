@@ -686,3 +686,99 @@ def test_recommend_by_resources():
     assert (
         pick(ram_gb=8)["models"][0]["fits"] is True and pick(ram_gb=2)["models"][0]["fits"] is False
     )
+
+
+# ---------- POST /models/{id}/test : confirmer qu'un modèle installé est opérationnel ----------
+
+
+async def test_test_installed_ollama_ok(client, admin_user, do_login, monkeypatch):
+    import app.api.v1.models as m
+
+    await do_login("admin@lab.fr", "admin-pass-123")
+    resp = await client.post(
+        "/api/v1/models",
+        json={"name": "Q8", "backend_type": "OLLAMA", "model_identifier": "qwen3:8b"},
+    )
+    assert resp.status_code == 201
+    mid = resp.json()["id"]
+
+    calls = []
+
+    async def fake_infer(self, model, system_prompt, user_prompt):
+        calls.append((model, user_prompt))
+        return {"ok": True}
+
+    monkeypatch.setattr(m.OpenAICompatibleService, "infer", fake_infer)
+    t = await client.post(f"/api/v1/models/{mid}/test")
+    assert t.status_code == 200
+    assert t.json() == {"ok": True}
+    assert calls == [("qwen3:8b", "ping")]
+
+
+async def test_test_installed_openai_uses_model_url_and_key(client, admin_user, do_login):
+    await do_login("admin@lab.fr", "admin-pass-123")
+    resp = await client.post(
+        "/api/v1/models/external",
+        json={
+            "name": "GPT",
+            "base_url": "https://api.x/v1",
+            "model": "gpt-4o",
+            "api_key": "sk-1",
+        },
+    )
+    assert resp.status_code == 201
+    mid = resp.json()["id"]
+
+    seen = {}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        seen["url"], seen["auth"] = str(req.url), req.headers.get("authorization")
+        return httpx.Response(
+            200, json={"choices": [{"message": {"content": '{"ok": true}'}}]}
+        )
+
+    with _http(handler):
+        t = await client.post(f"/api/v1/models/{mid}/test")
+    assert t.status_code == 200
+    assert t.json() == {"ok": True}
+    assert seen == {"url": "https://api.x/v1/chat/completions", "auth": "Bearer sk-1"}
+
+
+async def test_test_installed_error_sanitized(client, admin_user, do_login, monkeypatch):
+    import app.api.v1.models as m
+    from app.inference import InferenceError
+
+    await do_login("admin@lab.fr", "admin-pass-123")
+    resp = await client.post(
+        "/api/v1/models",
+        json={"name": "Q4", "backend_type": "OLLAMA", "model_identifier": "qwen3:4b"},
+    )
+    mid = resp.json()["id"]
+
+    async def boom(self, model, system_prompt, user_prompt):
+        raise InferenceError("timeout")
+
+    monkeypatch.setattr(m.OpenAICompatibleService, "infer", boom)
+    t = await client.post(f"/api/v1/models/{mid}/test")
+    assert t.status_code == 200
+    assert t.json() == {"ok": False, "error": "timeout"}
+
+
+async def test_test_installed_unknown_404(client, admin_user, do_login):
+    await do_login("admin@lab.fr", "admin-pass-123")
+    t = await client.post("/api/v1/models/00000000-0000-4000-8000-000000000000/test")
+    assert t.status_code == 404
+
+
+async def test_test_installed_forbidden_other_user(
+    client, admin_user, researcher_user, do_login
+):
+    await do_login("admin@lab.fr", "admin-pass-123")
+    resp = await client.post(
+        "/api/v1/models",
+        json={"name": "Q8", "backend_type": "OLLAMA", "model_identifier": "qwen3:8b"},
+    )
+    mid = resp.json()["id"]
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    t = await client.post(f"/api/v1/models/{mid}/test")
+    assert t.status_code == 403

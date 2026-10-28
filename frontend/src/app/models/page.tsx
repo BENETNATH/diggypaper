@@ -11,6 +11,7 @@ import {
   ModelCapabilities,
   registerOllama,
   testExternalModel,
+  testInstalledModel,
   addExternalModel,
   ModelInfo,
   OllamaModel,
@@ -38,6 +39,8 @@ function ModelsContent() {
   const [caps, setCaps] = useState<ModelCapabilities | null>(null);
   const [ext, setExt] = useState({ name: "", base_url: "", model: "", api_key: "" });
   const [extMsg, setExtMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  // Résultat du « Test » par modèle installé : "running" ou {ok, error?}
+  const [modelTests, setModelTests] = useState<Record<string, "running" | { ok: boolean; error?: string }>>({});
 
   const load = useCallback(async () => {
     try {
@@ -89,6 +92,19 @@ function ModelsContent() {
     }
   }
 
+  async function testInstalled(modelId: string) {
+    setModelTests((s) => ({ ...s, [modelId]: "running" }));
+    try {
+      const r = await testInstalledModel(modelId);
+      setModelTests((s) => ({ ...s, [modelId]: { ok: r.ok, error: r.error } }));
+    } catch (e) {
+      setModelTests((s) => ({
+        ...s,
+        [modelId]: { ok: false, error: e instanceof Error ? e.message : "error" },
+      }));
+    }
+  }
+
   async function addExt(e: React.FormEvent) {
     e.preventDefault();
     await run(async () => {
@@ -126,61 +142,6 @@ function ModelsContent() {
         </Card>
       )}
 
-      {caps && (
-        <Card title={t("servicesTitle")}>
-          <ul className="flex flex-col gap-2 text-sm">
-            <li className="flex flex-wrap items-center gap-2">
-              <Badge color={caps.ollama.reachable ? "green" : caps.ollama.configured ? "red" : "gray"}>
-                {caps.ollama.reachable ? t("svcUp") : caps.ollama.configured ? t("svcDown") : t("svcOff")}
-              </Badge>
-              <span className="font-medium text-foreground">{t("svcOllama")}</span>
-              {!caps.ollama.reachable && (
-                <span className="text-xs text-muted">
-                  {caps.ollama.mode === "off" ? t("svcHowOff") : t("svcHow", { profile: "ollama" })}
-                </span>
-              )}
-            </li>
-            <li className="flex flex-wrap items-center gap-2">
-              <Badge color="green">{t("svcUp")}</Badge>
-              <span className="font-medium text-foreground">{t("svcExternal")}</span>
-            </li>
-          </ul>
-          <div className="mt-4 border-t border-border pt-3 text-sm">
-            <p className="font-medium text-foreground">
-              {t("hwTitle")} : {caps.hardware.cores} {t("hwCores")} · {caps.hardware.ram_gb} {t("hwRam")} ·{" "}
-              {caps.hardware.gpu ? t("hwGpu") : t("hwNoGpu")}
-              {caps.hardware.avx2 ? "" : ` · ${t("hwNoAvx2")}`}
-            </p>
-            {caps.recommendation.slow_cpu && <p className="mt-1 text-xs text-warning">{t("hwSlow")}</p>}
-            <p className="mt-2 text-xs text-muted">{t(`hwProfile_${caps.recommendation.profile}`)}</p>
-            <ul className="mt-2 flex flex-col gap-2">
-              {caps.recommendation.models.map((m, i) => (
-                <li key={m.tag} className="flex flex-wrap items-center gap-2">
-                  <code className="rounded bg-surface-muted px-1.5 py-0.5 text-xs">{m.tag}</code>
-                  <span className="text-xs text-muted">
-                    ≈ {m.ram_gb} GB · {t(`hwKind_${m.kind}`)}
-                    {i === 0 ? ` · ★ ${t("recommended")}` : ""}
-                    {!m.fits ? ` · ${t("hwTooBig")}` : ""}
-                  </span>
-                  {isAdmin && caps.ollama.reachable && m.fits && (
-                    <Button size="sm" variant="secondary" onClick={() => void run(() => pullOllama(m.tag))}>
-                      {t("install")}
-                    </Button>
-                  )}
-                </li>
-              ))}
-            </ul>
-            <p className="mt-2 text-xs text-muted">{t("hwEstimate")}</p>
-          </div>
-        </Card>
-      )}
-
-      {isAdmin && caps?.ollama.configured && (
-      <div className="mt-6 border-t border-border pt-4">
-        <HfSearch onStarted={() => void load()} onError={setError} />
-      </div>
-      )}
-
       <Card title={t("installedTitle")}>
         {models === null ? (
           <Skeleton rows={2} height="h-10" />
@@ -204,9 +165,28 @@ function ModelsContent() {
                     {m.model_identifier}
                     {m.ram_usage_mb ? ` · ${m.ram_usage_mb} MB` : ""}
                   </div>
+                  {typeof modelTests[m.id] === "object" && (
+                    (modelTests[m.id] as { ok: boolean; error?: string }).ok ? (
+                      <div className="mt-1 text-xs font-medium text-emerald-500">
+                        ✓ {t("testOk")}
+                      </div>
+                    ) : (
+                      <div className="mt-1 text-xs font-medium text-red-500">
+                        ✗ {t("testError")} {(modelTests[m.id] as { error?: string }).error}
+                      </div>
+                    )
+                  )}
                 </div>
                 {(isAdmin || m.mine) && (
                   <div className="flex shrink-0 gap-1">
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      disabled={modelTests[m.id] === "running"}
+                      onClick={() => void testInstalled(m.id)}
+                    >
+                      {modelTests[m.id] === "running" ? t("testRunning") : t("testModel")}
+                    </Button>
                     <Button size="sm" variant="secondary" onClick={() => setSharing(sharing === m.id ? null : m.id)}>
                       {t("share")}
                     </Button>
@@ -245,39 +225,96 @@ function ModelsContent() {
       </Card>
 
       <Card title={t("addTitle")}>
-        <div className="mb-4 rounded-lg bg-surface-muted p-3 text-sm">
-          <p className="font-semibold text-foreground">{t("generativeTitle")}</p>
-          <p className="mt-1 text-muted">{t("generativeBody")}</p>
-        </div>
-
-        <div>
-          <h3 className="mb-2 text-sm font-semibold text-foreground">{t("extTitle")}</h3>
-          <p className="mb-3 text-xs text-muted">{t("extHint")}</p>
-          <form onSubmit={addExt} className="grid gap-3 sm:grid-cols-2">
-            <Field label={t("name")}>
-              <Input value={ext.name} onChange={(e) => setExt({ ...ext, name: e.target.value })} placeholder="GPT-4o" required />
-            </Field>
-            <Field label={t("extModel")}>
-              <Input value={ext.model} onChange={(e) => setExt({ ...ext, model: e.target.value })} placeholder="gpt-4o-mini" required />
-            </Field>
-            <Field label={t("extUrl")} hint={t("extUrlHint")}>
-              <Input value={ext.base_url} onChange={(e) => setExt({ ...ext, base_url: e.target.value })} placeholder="https://api.openai.com/v1" required />
-            </Field>
-            <Field label={t("extKey")} hint={t("extKeyHint")}>
-              <Input type="password" autoComplete="off" value={ext.api_key} onChange={(e) => setExt({ ...ext, api_key: e.target.value })} />
-            </Field>
-            <div className="flex flex-wrap items-center gap-3 sm:col-span-2">
-              <Button type="button" variant="secondary" onClick={() => void testExt()} disabled={!ext.base_url.trim() || !ext.model.trim()}>
-                {t("extTest")}
-              </Button>
-              <Button type="submit" variant="secondary" disabled={!ext.name.trim() || !ext.base_url.trim() || !ext.model.trim()}>
-                {t("extAdd")}
-              </Button>
-              {extMsg && <span className={`text-sm ${extMsg.ok ? "text-success" : "text-danger"}`}>{extMsg.text}</span>}
+        {caps && (
+          <section>
+            <h3 className="mb-2 text-sm font-semibold text-foreground">{t("addInternal")}</h3>
+            <ul className="flex flex-col gap-2 text-sm">
+              <li className="flex flex-wrap items-center gap-2">
+                <Badge color={caps.ollama.reachable ? "green" : caps.ollama.configured ? "red" : "gray"}>
+                  {caps.ollama.reachable ? t("svcUp") : caps.ollama.configured ? t("svcDown") : t("svcOff")}
+                </Badge>
+                <span className="font-medium text-foreground">{t("svcOllama")}</span>
+                {!caps.ollama.reachable && (
+                  <span className="text-xs text-muted">
+                    {caps.ollama.mode === "off" ? t("svcHowOff") : t("svcHow", { profile: "ollama" })}
+                  </span>
+                )}
+              </li>
+            </ul>
+            <div className="mt-4 border-t border-border pt-3 text-sm">
+              <p className="font-medium text-foreground">
+                {t("hwTitle")} : {caps.hardware.cores} {t("hwCores")} · {caps.hardware.ram_gb} {t("hwRam")} ·{" "}
+                {caps.hardware.gpu ? t("hwGpu") : t("hwNoGpu")}
+                {caps.hardware.avx2 ? "" : ` · ${t("hwNoAvx2")}`}
+              </p>
+              {caps.recommendation.slow_cpu && <p className="mt-1 text-xs text-warning">{t("hwSlow")}</p>}
+              <p className="mt-2 text-xs text-muted">{t(`hwProfile_${caps.recommendation.profile}`)}</p>
+              <ul className="mt-2 flex flex-col gap-2">
+                {caps.recommendation.models.map((m, i) => (
+                  <li key={m.tag} className="flex flex-wrap items-center gap-2">
+                    <code className="rounded bg-surface-muted px-1.5 py-0.5 text-xs">{m.tag}</code>
+                    <span className="text-xs text-muted">
+                      ≈ {m.ram_gb} GB · {t(`hwKind_${m.kind}`)}
+                      {i === 0 ? ` · ★ ${t("recommended")}` : ""}
+                      {!m.fits ? ` · ${t("hwTooBig")}` : ""}
+                    </span>
+                    {isAdmin && caps.ollama.reachable && m.fits && (
+                      <Button size="sm" variant="secondary" onClick={() => void run(() => pullOllama(m.tag))}>
+                        {t("install")}
+                      </Button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-2 text-xs text-muted">{t("hwEstimate")}</p>
             </div>
-          </form>
-        </div>
-
+            {isAdmin && caps.ollama.configured && (
+              <div className="mt-6 border-t border-border pt-4">
+                <HfSearch onStarted={() => void load()} onError={setError} />
+              </div>
+            )}
+          </section>
+        )}
+        <section className={caps ? "mt-6 border-t border-border pt-4" : ""}>
+          <h3 className="mb-2 text-sm font-semibold text-foreground">{t("addExternal")}</h3>
+          <ul className="flex flex-col gap-2 text-sm">
+            <li className="flex flex-wrap items-center gap-2">
+              <Badge color="green">{t("svcUp")}</Badge>
+              <span className="font-medium text-foreground">{t("svcExternal")}</span>
+            </li>
+          </ul>
+          <div className="mt-3 rounded-lg bg-surface-muted p-3 text-sm">
+            <p className="font-semibold text-foreground">{t("generativeTitle")}</p>
+            <p className="mt-1 text-muted">{t("generativeBody")}</p>
+          </div>
+          <div className="mt-4">
+            <h4 className="mb-2 text-sm font-semibold text-foreground">{t("extTitle")}</h4>
+            <p className="mb-3 text-xs text-muted">{t("extHint")}</p>
+            <form onSubmit={addExt} className="grid gap-3 sm:grid-cols-2">
+              <Field label={t("name")}>
+                <Input value={ext.name} onChange={(e) => setExt({ ...ext, name: e.target.value })} placeholder="GPT-4o" required />
+              </Field>
+              <Field label={t("extModel")}>
+                <Input value={ext.model} onChange={(e) => setExt({ ...ext, model: e.target.value })} placeholder="gpt-4o-mini" required />
+              </Field>
+              <Field label={t("extUrl")} hint={t("extUrlHint")}>
+                <Input value={ext.base_url} onChange={(e) => setExt({ ...ext, base_url: e.target.value })} placeholder="https://api.openai.com/v1" required />
+              </Field>
+              <Field label={t("extKey")} hint={t("extKeyHint")}>
+                <Input type="password" autoComplete="off" value={ext.api_key} onChange={(e) => setExt({ ...ext, api_key: e.target.value })} />
+              </Field>
+              <div className="flex flex-wrap items-center gap-3 sm:col-span-2">
+                <Button type="button" variant="secondary" onClick={() => void testExt()} disabled={!ext.base_url.trim() || !ext.model.trim()}>
+                  {t("extTest")}
+                </Button>
+                <Button type="submit" variant="secondary" disabled={!ext.name.trim() || !ext.base_url.trim() || !ext.model.trim()}>
+                  {t("extAdd")}
+                </Button>
+                {extMsg && <span className={`text-sm ${extMsg.ok ? "text-success" : "text-danger"}`}>{extMsg.text}</span>}
+              </div>
+            </form>
+          </div>
+        </section>
       </Card>
     </div>
   );

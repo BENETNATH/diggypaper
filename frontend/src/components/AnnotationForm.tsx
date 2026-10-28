@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useTranslations } from "next-intl";
 import { SchemaField } from "@/lib/api";
-import { DecisionFields, defaultValues, Values } from "@/components/DecisionFields";
+import { AnswerTextarea, DecisionFields, defaultValues, Values } from "@/components/DecisionFields";
 
 export type Annotation = Record<string, unknown> & {
   confidence_score: number;
@@ -23,6 +23,8 @@ interface AnnotationFormProps {
   /** Extraits de preuve pilotés par la page (surlignage et « + » sur le texte) ; sinon état local. */
   quotes?: string[];
   onQuotesChange?: (quotes: string[]) => void;
+  /** Clic sur un extrait : la page le révèle dans le document (scroll sur le surlignage). */
+  onQuoteClick?: (quote: string) => void;
 }
 
 /**
@@ -31,7 +33,7 @@ interface AnnotationFormProps {
  * Champs : use_ai_behavior, animal_sex, confidence_score, evidence_quotes,
  * reasoning_summary. Validation minimale (confidence ∈ [0,1]).
  */
-export function AnnotationForm({ fields, onSubmit, onError, initial, quotes: given, onQuotesChange }: AnnotationFormProps) {
+export function AnnotationForm({ fields, onSubmit, onError, initial, quotes: given, onQuotesChange, onQuoteClick }: AnnotationFormProps) {
   const t = useTranslations("annotate");
   const [values, setValues] = useState<Values>(() => defaultValues(fields, initial));
   const [confidence, setConfidence] = useState((initial?.confidence_score as number) ?? 0.5);
@@ -127,11 +129,22 @@ export function AnnotationForm({ fields, onSubmit, onError, initial, quotes: giv
               key={i}
               className="flex items-center justify-between rounded bg-surface-muted p-2"
             >
-              <span className="text-sm">{q}</span>
+              {onQuoteClick ? (
+                <button
+                  type="button"
+                  onClick={() => onQuoteClick(q)}
+                  className="min-w-0 flex-1 text-left text-sm text-foreground underline-offset-2 hover:text-primary hover:underline"
+                  title={t("jumpToQuote")}
+                >
+                  {q}
+                </button>
+              ) : (
+                <span className="min-w-0 flex-1 text-sm">{q}</span>
+              )}
               <button
                 type="button"
                 onClick={() => removeQuote(i)}
-                className="text-danger"
+                className="ml-2 shrink-0 text-danger"
                 aria-label={t("removeQuote")}
               >
                 ×
@@ -143,12 +156,12 @@ export function AnnotationForm({ fields, onSubmit, onError, initial, quotes: giv
 
       <div>
         <label className="block text-sm font-medium">{t("reasoningSummary")}</label>
-        <textarea
-          value={reasoning}
-          onChange={(e) => setReasoning(e.target.value)}
-          rows={3}
-          className="mt-1 w-full rounded border p-2"
-        />
+        <div className="mt-1">
+          <AnswerTextarea
+            value={reasoning}
+            onChange={setReasoning}
+          />
+        </div>
       </div>
 
       {error && <p className="text-sm text-danger">{error}</p>}

@@ -70,6 +70,9 @@ export default function AnnotatePage() {
   >("idle");
   // Extraits de preuve de l'annotation en cours (réponse du modèle, relecture existante, ajouts à la main)
   const [quotes, setQuotes] = useState<string[]>([]);
+  // Extrait à révéler dans le document : clic sur une citation du formulaire → scroll + flash.
+  // `n` (nonce) relance le scroll même sur la même citation.
+  const [focus, setFocus] = useState<{ quote: string; n: number } | null>(null);
   const [goldBusy, setGoldBusy] = useState(false);
   const [goldNote, setGoldNote] = useState<string | null>(null);
 
@@ -133,6 +136,7 @@ export default function AnnotatePage() {
         setReview(review);
         setSaved(null);
         setGoldNote(null);
+        setFocus(null);
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
@@ -401,6 +405,7 @@ export default function AnnotatePage() {
               text={article.text ?? article.methods_text ?? ""}
               quotes={quotes}
               onAdd={(q) => setQuotes((prev) => addQuote(prev, q))}
+              focus={focus}
             />
             {status !== "idle" && (
               <div className="mt-4">
@@ -474,6 +479,10 @@ export default function AnnotatePage() {
             initial={initialAnnotation}
             quotes={quotes}
             onQuotesChange={setQuotes}
+            onQuoteClick={(q) => {
+              setFocus((prev) => ({ quote: q, n: (prev?.n ?? 0) + 1 }));
+              setTab("document"); // mobile : le document est sous un onglet
+            }}
           />
         </section>
       </main>

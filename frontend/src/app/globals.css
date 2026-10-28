@@ -90,6 +90,20 @@
   .text-balance {
     text-wrap: balance;
   }
+  /* Flash ponctuel d'un surlignage (clique sur un extrait du formulaire →
+     EvidenceHighlighter scrolle le texte et fait clignoter le mark). */
+  .evidence-flash {
+    animation: evidence-flash 600ms var(--ease-out) 3;
+  }
+  @keyframes evidence-flash {
+    0%,
+    100% {
+      box-shadow: 0 0 0 0 transparent;
+    }
+    50% {
+      box-shadow: 0 0 0 5px color-mix(in oklch, var(--primary) 40%, transparent);
+    }
+  }
   /* Skeleton (frontend-design-pro : skeleton > spinner) */
   .skeleton {
     position: relative;

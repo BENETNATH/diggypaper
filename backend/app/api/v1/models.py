@@ -23,7 +23,7 @@ from app.api.deps import get_current_user, get_db, rate_limit_user
 from app.core.crypto import encrypt_secret
 from app.db.base import SessionLocal
 from app.db.models import ModelRegistry, ModelShare, Project, ProjectMember, User, UserRole
-from app.inference import InferenceError, OpenAICompatibleService
+from app.inference import InferenceError, OpenAICompatibleService, infer_with, make_inference_service
 from app.model_access import access_filter, check_public_url
 from app.ollama_mode import COMPOSE_ROOT, MODE
 from app.settings.service import get_setting
@@ -372,6 +372,26 @@ async def update_model(model_id: uuid.UUID, payload: ModelUpdate, db: DbDep, use
     await db.commit()
     await db.refresh(m)
     return _payload(m)
+
+
+@router.post("/{model_id}/test", dependencies=[Depends(rate_limit_user("model_test", 10))])
+async def test_installed(model_id: uuid.UUID, db: DbDep, user: UserDep) -> dict:
+    """Appel minimal pour confirmer qu'un modèle installé est opérationnel (erreur assainie).
+
+    Le modèle est appelé avec son service réel (réglages de l'instance pour les
+    backends locaux, URL + clé chiffrées pour ``OPENAI_API``) ; le ping le réchauffe
+    en bonus. Le résultat est un état (200), pas une faute HTTP.
+    """
+    m = await db.get(ModelRegistry, model_id)
+    if m is None:
+        raise HTTPException(status_code=404, detail="model not found")
+    _require_owner_or_admin(m, user)
+    default = await make_inference_service(db)
+    try:
+        await infer_with(m, default, 'Reply with the JSON {"ok": true}.', "ping")
+    except InferenceError as exc:
+        return {"ok": False, "error": str(exc)}
+    return {"ok": True}
 
 
 @router.delete("/{model_id}", status_code=204)

@@ -846,6 +846,10 @@ export async function deleteModel(modelId: string): Promise<void> {
   await request(`/models/${modelId}`, { method: "DELETE" });
 }
 
+export async function testInstalledModel(modelId: string): Promise<{ ok: boolean; error?: string }> {
+  return request(`/models/${modelId}/test`, { method: "POST" });
+}
+
 export interface OllamaModel {
   name: string;
   size: number | null;
