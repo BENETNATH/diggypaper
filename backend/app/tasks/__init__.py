@@ -55,12 +55,10 @@ from app.db.models import (
 from app.fulltext import complete_article, long_enough, pmc_not_archived
 from app.pubmed import (
     NCBIError,
+    PubMedAdapter,
     _esearch_max,
-    _term_bounded,
-    fetch_all_pmids,
     fetch_fulltext,
     fetch_metadata,
-    search_volume,
 )
 from app.refimport import (
     _entry,
@@ -73,6 +71,7 @@ from app.refimport import (
 )
 from app.searches import default_search, definition_hash, next_search_name
 from app.settings.service import get_setting
+from app.sources import DateBounds, SourceAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -211,6 +210,7 @@ async def _import_pubmed(
     options: dict | None = None,
     date_from: date | None = None,
     date_to: date | None = None,
+    adapter: SourceAdapter | None = None,
 ) -> dict:
     """Core async de l'import PubMed (ou, avec ``refs``, d'une liste de références).
 
@@ -218,6 +218,8 @@ async def _import_pubmed(
       engine par run (DATABASE_URL) et le dispose en fin (C2).
     - ``http`` injectable (tests) ; sinon ``httpx.AsyncClient(timeout=60.0)``
       (m4), fermé en ``finally``.
+    - ``adapter`` (Phase 1) : contrat ``SourceAdapter`` ; ``None`` → ``PubMedAdapter``
+      construit dans ``_do_import``. Non utilisé par les chemins refs/citations.
     - ``job_id`` : id Celery du task (persisté dans import_jobs, M3).
     - Sémantique des statuts projet (m10) : démarrage → PROCESSING ; succès
       (y compris corpus vide) → FROZEN ; échec → DRAFT.
@@ -272,7 +274,9 @@ async def _import_pubmed(
                     )
                 if refs is not None:
                     return await _do_import_refs(session, project, job, refs, client)
-                return await _do_import(session, project, job, query, client, date_from, date_to)
+                return await _do_import(
+                    session, project, job, query, client, date_from, date_to, adapter
+                )
             except Exception as exc:
                 await _record_failure(session, project, job, exc, restore=previous)
                 raise
@@ -291,12 +295,16 @@ async def _do_import(
     client: httpx.AsyncClient,
     date_from: date | None = None,
     date_to: date | None = None,
+    adapter: SourceAdapter | None = None,
 ) -> dict:
     """Corps de l'import : esearch → efetch par lots → insertion (m6 : commit par batch)."""
     api_key = await get_setting(session, "ncbi_api_key")
+    if adapter is None:
+        adapter = PubMedAdapter(client, api_key)
+    bounds = DateBounds(date_from, date_to)
     # m11 : TOCTOU entre les deux esearch (count puis idlist) — acceptable,
     # l'import est un instantané ; ``total_count`` est le count réel.
-    count = await search_volume(_term_bounded(query, date_from, date_to), api_key, client)
+    count = await adapter.search_volume(query, bounds)
     if count == 0:
         return await _finish_success(
             session,
@@ -304,9 +312,8 @@ async def _do_import(
             job,
             {"imported": 0, "failed": 0, "fulltext": 0, "total_count": 0, "truncated": False},
         )
-    pmids = await fetch_all_pmids(
-        query, api_key, client, count, date_from=date_from, date_to=date_to
-    )
+    # Cap absent → le défaut de l'adapter (``_esearch_max()``), comme avant.
+    pmids = [nid async for nid in adapter.iter_ids(query, bounds)]
     truncated = count > _esearch_max()
     if truncated:
         logger.warning(
@@ -339,7 +346,7 @@ async def _do_import(
 
     for batch in _chunks(pmids, _EFETCH_BATCH):
         try:
-            metas = await fetch_metadata(batch, api_key, client)
+            metas = await adapter.fetch_metadata(batch)
         except Exception:
             logger.exception("efetch batch failed (%d pmids)", len(batch))
             failed += len(batch)
@@ -354,7 +361,9 @@ async def _do_import(
             else:
                 try:
                     meta |= {"origin": "pubmed", "origin_ref": str(job.id)}
-                    inserted, has_text = await _insert_article(session, project.id, meta, client)
+                    inserted, has_text = await _insert_article(
+                        session, project.id, meta, client, adapter
+                    )
                     if inserted:
                         imported += 1
                         fulltext += has_text
@@ -594,12 +603,19 @@ async def _file_meta(e: dict, email: str, client: httpx.AsyncClient) -> tuple[di
 
 
 async def _insert_article(
-    session: AsyncSession, project_id: uuid.UUID, meta: dict, client: httpx.AsyncClient
+    session: AsyncSession,
+    project_id: uuid.UUID,
+    meta: dict,
+    client: httpx.AsyncClient,
+    adapter: SourceAdapter | None = None,
 ) -> tuple[bool, bool]:
     """INSERT ... ON CONFLICT (project_id, pmid) DO NOTHING (M2) → (inséré, full text présent).
 
     ``index_where`` est requis pour que la cible de conflit corresponde à
     l'index unique partiel (``pmid IS NOT NULL``) — sur SQLite comme sur PG.
+    Phase 1 : le plein texte passe par ``adapter`` s'il est injecté, sinon la
+    fonction module-level ``fetch_fulltext`` (chemin défaut : refs, citations,
+    tests existants).
     """
     values = {
         "project_id": project_id,
@@ -616,7 +632,11 @@ async def _insert_article(
     }
     if meta.get("pmcid"):
         try:
-            methods, sections = await fetch_fulltext(meta["pmcid"], client)
+            if adapter is not None:
+                result = await adapter.fetch_fulltext(meta["pmcid"])
+                methods, sections = (None, []) if result is None else result
+            else:
+                methods, sections = await fetch_fulltext(meta["pmcid"], client)
             # Préprint non archivable dans PMC : le « corps » n'est qu'un avis de 2 lignes.
             # Trop court pour être un article : on le laisse à la complétion (autres sources).
             if long_enough(sections):

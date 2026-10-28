@@ -33,9 +33,12 @@ import asyncio
 import logging
 import re
 import xml.etree.ElementTree as ET
+from collections.abc import AsyncIterator
 from datetime import date, timedelta
 
 import httpx
+
+from app.sources import DateBounds
 
 logger = logging.getLogger(__name__)
 
@@ -450,3 +453,64 @@ def _extract_sections(xml_text: str) -> list[dict]:
         if text:
             out.append({"title": title, "kind": classify_title(title), "text": text})
     return out
+
+
+# --- Phase 1 : contrat SourceAdapter (spec 2026-10-28) -----------------------
+
+
+class PubMedAdapter:
+    """Adapter source PubMed (n°1) : les fonctions du module derrière le contrat
+    ``SourceAdapter`` (délégation mince — la logique est déplacée, pas réécrite).
+
+    ``http`` et ``api_key`` sont capturés une fois en ``__init__`` et réutilisés
+    par chaque opération. Le count de ``search_volume`` est caché et réutilisé
+    par ``iter_ids`` (le pipeline appelle toujours ``search_volume`` avant
+    ``iter_ids`` avec la même ``(query, bornes)`` → pas de 3ᵉ esearch) ; un
+    ``iter_ids`` sans count préalable (hors pipeline) fait le fallback (1
+    esearch supplémentaire).
+    """
+
+    def __init__(self, http: httpx.AsyncClient, api_key: str | None) -> None:
+        self._http = http
+        self._api_key = api_key
+        self._last_count: int | None = None  # cache search_volume → réutilisé par iter_ids
+
+    async def search_volume(self, query: str, bornes: DateBounds | None) -> int:
+        b = bornes or DateBounds()
+        self._last_count = await search_volume(
+            _term_bounded(query, b.date_from, b.date_to), self._api_key, self._http
+        )
+        return self._last_count
+
+    async def iter_ids(
+        self, query: str, bornes: DateBounds | None, limit: int | None = None
+    ) -> AsyncIterator[str]:
+        b = bornes or DateBounds()
+        count = self._last_count
+        if count is None:
+            count = await search_volume(
+                _term_bounded(query, b.date_from, b.date_to), self._api_key, self._http
+            )
+        # fetch_all_pmids absorbe le paging/bissection : comportement observable
+        # identique (même ordre « plus récents d'abord », même dédoublonnage, cap).
+        pmids = await fetch_all_pmids(
+            query, self._api_key, self._http, count, limit, b.date_from, b.date_to
+        )
+        for pmid in pmids:
+            yield pmid
+
+    async def fetch_metadata(self, ids: list[str]) -> list[dict]:
+        if not ids:
+            return []
+        metas = await fetch_metadata(ids, self._api_key, self._http)
+        for m in metas:
+            m["native_id"] = m.get("pmid")  # contrat : native_id (PubMed = PMID)
+        return metas
+
+    async def fetch_fulltext(self, id: str) -> tuple[str, list[dict]] | None:
+        if not id:
+            return None
+        methods, sections = await fetch_fulltext(id, self._http)
+        if methods is None and not sections:
+            return None  # « non disponible » (pas de XML PMC) → fulltext_note
+        return methods, sections
