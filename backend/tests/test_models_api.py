@@ -1060,3 +1060,69 @@ async def test_test_installed_llama_cpp_uses_v1(client, session, admin_user, do_
         resp = await client.post(f"/api/v1/models/{await _row_id(session, 'L')}/test")
     assert resp.json() == {"ok": True}
     assert [str(r.url) for r in seen] == ["http://llm.test/v1/chat/completions"]
+
+
+# --- POST /models/{id}/test : modèle verrouillé par une analyse → pas de ping concurrent ---
+
+
+async def _ollama_row(session, name="Q", identifier="qwen3:4b"):
+    session.add(ModelRegistry(name=name, backend_type="OLLAMA", model_identifier=identifier))
+    await session.commit()
+
+
+async def test_test_installed_model_locked_returns_busy_without_ping(
+    client, session, admin_user, do_login, monkeypatch, fake_redis
+):
+    from app.api.v1 import models as m
+    from app.inference import model_lock_key
+
+    await _ollama_row(session)
+    fake_redis.store[model_lock_key("OLLAMA", "qwen3:4b")] = "token-job"
+    monkeypatch.setattr(m, "_redis", lambda: fake_redis)
+    await do_login("admin@lab.fr", "admin-pass-123")
+    seen, handler = _recorder()
+    with _http(handler):
+        resp = await client.post(f"/api/v1/models/{await _row_id(session, 'Q')}/test")
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": False, "error": "model_busy"}
+    assert seen == []  # Ollama non contacté
+
+
+async def test_test_installed_model_free_pings(
+    client, session, admin_user, do_login, monkeypatch, fake_redis
+):
+    from app.api.v1 import models as m
+
+    await _ollama_row(session)
+    monkeypatch.setattr(m, "_redis", lambda: fake_redis)
+    await do_login("admin@lab.fr", "admin-pass-123")
+    seen, handler = _recorder()
+    with _http(handler):
+        resp = await client.post(f"/api/v1/models/{await _row_id(session, 'Q')}/test")
+    assert resp.json() == {"ok": True}
+    assert len(seen) == 1
+
+
+async def test_test_installed_redis_down_fails_open(
+    client, session, admin_user, do_login, monkeypatch
+):
+    """Redis injoignable : le bouton reste utilisable (ping best-effort), pas de 500."""
+    from redis.exceptions import ConnectionError as RedisConnectionError
+
+    from app.api.v1 import models as m
+
+    class DownRedis:
+        async def get(self, key):
+            raise RedisConnectionError("Error 111 connecting to redis:6379")
+
+        async def aclose(self):
+            pass
+
+    await _ollama_row(session)
+    monkeypatch.setattr(m, "_redis", lambda: DownRedis())
+    await do_login("admin@lab.fr", "admin-pass-123")
+    seen, handler = _recorder()
+    with _http(handler):
+        resp = await client.post(f"/api/v1/models/{await _row_id(session, 'Q')}/test")
+    assert resp.json() == {"ok": True}
+    assert len(seen) == 1

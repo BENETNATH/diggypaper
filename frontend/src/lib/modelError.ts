@@ -10,6 +10,7 @@ const KNOWN = new Set([
   "ollama_unreachable",
   "ollama_delete_failed",
   "model_in_use",
+  "model_busy",
 ]);
 
 /** Message traduit d'un code d'erreur (namespace « models ») ; code inconnu → code brut. */

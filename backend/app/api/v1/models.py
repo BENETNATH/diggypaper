@@ -8,6 +8,7 @@ modèles externes (API compatible OpenAI), qu'il peut partager avec des utilisat
 import asyncio
 import json
 import logging
+import os
 import re
 import uuid
 from typing import Annotated
@@ -15,6 +16,8 @@ from typing import Annotated
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator
+from redis import asyncio as redis_asyncio
+from redis.exceptions import RedisError
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -40,6 +43,7 @@ from app.inference import (
     OpenAICompatibleService,
     infer_with,
     make_inference_service,
+    model_lock_key,
 )
 from app.model_access import access_filter, check_public_url
 from app.ollama_mode import COMPOSE_ROOT, MODE
@@ -392,6 +396,25 @@ async def update_model(model_id: uuid.UUID, payload: ModelUpdate, db: DbDep, use
     return _payload(m)
 
 
+def _redis():
+    return redis_asyncio.from_url(
+        os.environ.get("REDIS_URL", "redis://localhost:6379/0"), socket_connect_timeout=2
+    )
+
+
+async def _model_busy(m: ModelRegistry) -> bool:
+    """Un lock d'inférence est posé sur ce modèle. Redis injoignable → False (le ping reste
+    best-effort : le bouton ne doit pas tomber avec le broker)."""
+    r = _redis()
+    try:
+        return await r.get(model_lock_key(m.backend_type, m.model_identifier)) is not None
+    except (RedisError, OSError):
+        logger.warning("test modèle : lock %s illisible (Redis)", m.name)
+        return False
+    finally:
+        await r.aclose()
+
+
 @router.post("/{model_id}/test", dependencies=[Depends(rate_limit_user("model_test", 10))])
 async def test_installed(model_id: uuid.UUID, db: DbDep, user: UserDep) -> dict:
     """Appel minimal pour confirmer qu'un modèle installé est opérationnel (erreur assainie).
@@ -406,6 +429,8 @@ async def test_installed(model_id: uuid.UUID, db: DbDep, user: UserDep) -> dict:
     _require_owner_or_admin(m, user)
     if m.backend_type == "OLLAMA":
         await _require_ollama(db)  # mode off / host + base compose : pas d'appel (409)
+    if m.backend_type != "OPENAI_API" and await _model_busy(m):
+        return {"ok": False, "error": "model_busy"}  # une analyse génère déjà sur ce modèle
     default = await make_inference_service(db)
     try:
         await infer_with(m, default, 'Reply with the JSON {"ok": true}.', "ping")

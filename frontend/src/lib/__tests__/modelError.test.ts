@@ -27,6 +27,7 @@ const CODES = [
   "ollama_unreachable",
   "ollama_delete_failed",
   "model_in_use",
+  "model_busy",
 ];
 
 const LOCALES: [string, Messages][] = [

@@ -22,8 +22,11 @@ modèles qui tuent le job. Chaque item : problème → décision → fichiers �
 - **#9c `AnswerTextarea`** : Entrée = saut de ligne, voulu (réponses multi-lignes, spec
   2026-10-28-annotation-ux-scroll-evidence) ; aucun raccourci clavier global, l'envoi passe
   par le bouton « Enregistrer ».
-- **#5 lock pour le bouton Test** : un seul appel court ; s'il tombe pendant un job, il attend
-  dans la file Ollama (au pire `{"ok": false, "error": "timeout"}`). Limitation acceptée.
+- **#5 lock pour le bouton Test** : le bouton ne prend pas le lock mais le lit (`_model_busy`,
+  api/v1/models.py) : clé posée → `{"ok": false, "error": "model_busy"}` sans contacter le
+  modèle (clé partagée `model_lock_key`) ; Redis injoignable → ping quand même (fail-open) ;
+  `OPENAI_API` non concerné. Reste une fenêtre TOCTOU (job démarré entre la lecture et le ping),
+  acceptée.
 
 ## 1. `DELETE /models/{id}` (api/v1/models.py `delete_model`)
 

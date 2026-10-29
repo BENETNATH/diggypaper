@@ -54,6 +54,7 @@ from app.inference import (
     get_inference_timeout,
     infer_with,
     make_inference_service,
+    model_lock_key,
     warmup,
 )
 from app.schema import project_fields
@@ -223,7 +224,7 @@ async def _run_inference(
                     m = registry.get(name) if name else None
                     if m is None or m.backend_type == "OPENAI_API":
                         continue
-                    key = f"inference:lock:{m.backend_type}:{m.model_identifier}"
+                    key = model_lock_key(m.backend_type, m.model_identifier)
                     if key not in keys:  # même modèle des deux côtés : une seule clé
                         keys.append(key)
                 ttl = 0

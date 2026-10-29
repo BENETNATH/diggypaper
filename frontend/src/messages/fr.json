@@ -694,6 +694,7 @@
     "err_ollama_unreachable": "Ollama injoignable",
     "err_ollama_delete_failed": "Ollama n'a pas pu supprimer le modèle",
     "err_model_in_use": "modèle utilisé par une analyse ou un benchmark en cours",
+    "err_model_busy": "modèle occupé : une analyse tourne dessus",
     "introUser": "Vos modèles et ceux qu'on a partagés avec vous. Un modèle externe que vous ajoutez n'est utilisable que par vous, sauf si vous le partagez.",
     "ownMine": "Le vôtre",
     "ownPlatform": "Plateforme",

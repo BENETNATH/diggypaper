@@ -156,6 +156,11 @@ async def get_inference_timeout(db) -> float:
     return 120.0
 
 
+def model_lock_key(backend_type: str, identifier: str) -> str:
+    """Clé Redis du lock par modèle (une génération à la fois par modèle local)."""
+    return f"inference:lock:{backend_type}:{identifier}"
+
+
 async def make_inference_service(
     db,
     http: httpx.AsyncClient | None = None,

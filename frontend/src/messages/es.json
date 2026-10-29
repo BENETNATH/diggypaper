@@ -694,6 +694,7 @@
     "err_ollama_unreachable": "Ollama inaccesible",
     "err_ollama_delete_failed": "Ollama no pudo eliminar el modelo",
     "err_model_in_use": "modelo usado por un análisis o un benchmark en curso",
+    "err_model_busy": "modelo ocupado: hay un análisis en curso",
     "introUser": "Sus modelos y los compartidos con usted. Un modelo externo que añada solo lo puede usar usted, salvo que lo comparta.",
     "ownMine": "Suyo",
     "ownPlatform": "Plataforma",

@@ -694,6 +694,7 @@
     "err_ollama_unreachable": "Ollama is unreachable",
     "err_ollama_delete_failed": "Ollama failed to delete the model",
     "err_model_in_use": "model used by a running analysis or benchmark",
+    "err_model_busy": "model busy: an analysis is running on it",
     "introUser": "Your models and those shared with you. An external model you add can only be used by you unless you share it.",
     "ownMine": "Yours",
     "ownPlatform": "Platform",
