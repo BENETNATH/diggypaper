@@ -86,6 +86,21 @@ def _sheet(ws, header: list[str], rows: list[list], widths: dict[int, int] | Non
         ws.column_dimensions[get_column_letter(i)].width = (widths or {}).get(i, 18)
 
 
+def _model_rows(label: str, name: str | None, snap: dict | None) -> list[list]:
+    """Lignes « Projet » d'un étage : nom, identifiant, version et détails de l'instantané."""
+    snap = snap or {}
+    rows = [
+        [label, name],
+        [f"{label} · identifiant", snap.get("identifier") or "non enregistré"],
+        [f"{label} · version", snap.get("version") or "non enregistrée"],
+    ]
+    keys = ("endpoint", "parameter_size", "quantization", "family", "format", "size", "modified_at")
+    details = {k: snap[k] for k in keys if snap.get(k)}
+    if details:
+        rows.append([f"{label} · détails", details])
+    return rows
+
+
 def build_workbook(project, articles, preds, annos, import_jobs, inf_job, user_email) -> bytes:
     fields = project_fields(project)
     wb = Workbook()
@@ -94,7 +109,8 @@ def build_workbook(project, articles, preds, annos, import_jobs, inf_job, user_e
     header = ["PMID", "PMCID", "DOI", "Titre", "Date de publication", "Journal"]
     header += ["Premier auteur", "Dernier auteur", "Auteurs", "Types de publication", "Langue"]
     header += ["Lien DOI", "Lien texte intégral / PDF"]
-    header += ["Texte analysé", "Statut IA", "Pertinence IA", "Modèle", "Décision IA"]
+    header += ["Texte analysé", "Statut IA", "Pertinence IA", "Modèle"]
+    header += ["Identifiant du modèle", "Version du modèle", "Décision IA"]
     header += [f"IA · {f['label']}" for f in fields]
     header += [f"Certitude · {f['label']}" for f in fields]
     header += ["Extraits (IA)", "Raisonnement (IA)", "Annotations humaines", "Statut final"]
@@ -114,7 +130,9 @@ def build_workbook(project, articles, preds, annos, import_jobs, inf_job, user_e
         row += [f"https://doi.org/{a.doi}" if a.doi else None, a.fulltext_url]
         row += [a.fulltext_source or ("abstract" if a.abstract else "—")]
         row += [p.status.value if p and p.status else None, p.confidence_score if p else None]
-        row += [p.model_used if p else None, pd_.get("decision")]
+        row += [p.model_used if p else None]
+        row += [p.model_identifier if p else None, p.model_version if p else None]
+        row += [pd_.get("decision")]
         row += [pd_.get(f["key"]) for f in fields]
         row += [(pd_.get("field_confidence") or {}).get(f["key"]) for f in fields]
         row += [(p.evidence_quotes if p else None), pd_.get("reasoning_summary")]
@@ -173,10 +191,14 @@ def build_workbook(project, articles, preds, annos, import_jobs, inf_job, user_e
     if inf_job is not None:
         res = inf_job.result_json or {}
         info += [[], ["Dernière analyse", inf_job.created_at.strftime("%Y-%m-%d %H:%M")]]
-        info += [
-            ["Modèle (étage 2)", inf_job.model_used],
-            ["Pré-filtre (étage 1)", inf_job.prefilter_model],
-        ]
+        snaps = inf_job.model_info or {}  # instantané figé ; jamais le registre vivant
+        info += _model_rows("Modèle (étage 2)", inf_job.model_used, snaps.get("main"))
+        if inf_job.prefilter_model:
+            info += _model_rows(
+                "Pré-filtre (étage 1)", inf_job.prefilter_model, snaps.get("prefilter")
+            )
+        else:
+            info.append(["Pré-filtre (étage 1)", inf_job.prefilter_model])
         info += [[k, v] for k, v in res.items()]
     for r in info:
         ws3.append([_cell(v) for v in r])
@@ -309,7 +331,12 @@ def _notes(articles, preds: dict, fields: list[dict]) -> dict:
         dec = p.decision_json or {}
         answers = "; ".join(f"{f['label']}: {dec[f['key']]}" for f in fields if f["key"] in dec)
         rel = f" ({round(p.confidence_score * 100)} %)" if p.confidence_score is not None else ""
-        out[a.id] = f"Diggypaper : {p.status.value if p.status else ''}{rel}. {answers}".strip()
+        ident = f" ({p.model_identifier})" if p.model_identifier else ""
+        version = p.model_version or "non enregistrée"
+        out[a.id] = (
+            f"Diggypaper : {p.status.value if p.status else ''}{rel}. {answers}"
+            f" Modèle : {p.model_used}{ident}, version {version}."
+        ).strip()
     return out
 
 
@@ -455,9 +482,10 @@ async def write_crate(
     search = search or await default_search(db, project)
     articles, preds, annos, import_jobs, inf_job = await _load(db, project, search=search)
     fields = project_fields(project)
+    # Registre vivant : seulement en repli, pour un ancien job sans instantané.
     names = {n for n in (inf_job.model_used, inf_job.prefilter_model) if n} if inf_job else set()
     models = {}
-    if names:
+    if names and not inf_job.model_info:
         rows = await db.execute(select(ModelRegistry).where(ModelRegistry.name.in_(names)))
         models = {m.name: m for m in rows.scalars()}
     ptid = inf_job.prompt_template_id if inf_job else None

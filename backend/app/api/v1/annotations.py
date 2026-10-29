@@ -101,6 +101,8 @@ def _prediction_payload(p: ArticlePrediction) -> dict:
         "article_id": str(p.article_id) if p.article_id else None,
         "prompt_template_id": str(p.prompt_template_id) if p.prompt_template_id else None,
         "model_used": p.model_used,
+        "model_identifier": p.model_identifier,
+        "model_version": p.model_version,
         "decision_json": p.decision_json,
         "confidence_score": p.confidence_score,
         "evidence_quotes": p.evidence_quotes,

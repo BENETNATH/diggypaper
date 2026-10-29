@@ -1,5 +1,7 @@
 {
   "common": {
+    "modelVersion": "Version",
+    "versionNotRecorded": "Version nicht erfasst",
     "appName": "Diggypaper",
     "loading": "Wird geladen…",
     "error": "Fehler",
@@ -457,6 +459,7 @@
     "pageOf": "Seite {page} / {pages} ({total} Artikel)"
   },
   "inference": {
+    "prefilterShort": "Vorfilter",
     "title": "Analysieren",
     "new": "Neue Analyse",
     "prompt": "Prompt",

@@ -501,8 +501,13 @@ def test_article_predictions_columns():
         "search_id",
         "status",
         "created_at",
+        # traçabilité (spec 2026-10-29-tracabilite-modele-version) : figés à la prédiction
+        "model_identifier",
+        "model_version",
     }
     assert c["id"].primary_key
+    for col in ("model_identifier", "model_version"):
+        assert isinstance(c[col].type, String) and c[col].nullable  # NULL = données anciennes
     assert fk(c["article_id"]).column is Article.__table__.c.id
     assert fk(c["article_id"]).ondelete == "CASCADE"
     assert fk(c["prompt_template_id"]).column is PromptTemplate.__table__.c.id
@@ -974,3 +979,51 @@ async def test_jsonb_roundtrip(session):
 
     r = (await session.execute(select(BenchmarkRun))).scalar_one()
     assert r.models_tested == ["Laya-400M", "Kev-0.8B"]
+
+
+# --- traçabilité modèle + version (spec 2026-10-29-tracabilite-modele-version §3) ---
+
+
+def test_inference_jobs_model_info_column():
+    """Instantané des modèles du job (principal + pré-filtre) : JSONB, NULL pour les anciens."""
+    from app.db.models import InferenceJob
+
+    c = InferenceJob.__table__.columns
+    assert isinstance(c["model_info"].type, JSON) and c["model_info"].nullable
+
+
+def test_migration_0029_adds_traceability_columns(monkeypatch):
+    """La migration 0029 (après 0028) ajoute les 3 colonnes ; le downgrade les retire."""
+    import importlib.util
+    from pathlib import Path
+
+    versions = Path(__file__).resolve().parents[1] / "alembic" / "versions"
+    found = sorted(versions.glob("0029_*.py"))
+    assert len(found) == 1, "migration 0029 attendue"
+    spec = importlib.util.spec_from_file_location("migration_0029", found[0])
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    assert mod.revision == "0029" and mod.down_revision == "0028"
+
+    added, dropped = [], []
+
+    class Op:
+        def add_column(self, table, column):
+            added.append((table, column.name, column.nullable))
+
+        def drop_column(self, table, name):
+            dropped.append((table, name))
+
+    monkeypatch.setattr(mod, "op", Op())
+    mod.upgrade()
+    assert sorted(added) == [
+        ("article_predictions", "model_identifier", True),
+        ("article_predictions", "model_version", True),
+        ("inference_jobs", "model_info", True),
+    ]
+    mod.downgrade()
+    assert sorted(dropped) == [
+        ("article_predictions", "model_identifier"),
+        ("article_predictions", "model_version"),
+        ("inference_jobs", "model_info"),
+    ]

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
+import { ModelRef } from "@/components/ModelRef";
 import {
   updateProject,
   triggerInference,
@@ -295,6 +296,26 @@ function InferenceContent() {
   }
 
   const r = job?.result ?? {};
+  // Modèles tracés de l'analyse (instantané figé) : principal + pré-filtre éventuel.
+  const jobModels = job && (
+    <>
+      <ModelRef
+        name={job.model_used}
+        identifier={job.model_info?.main?.identifier}
+        version={job.model_info?.main?.version}
+      />
+      {job.prefilter_model && (
+        <span className="block">
+          {t("prefilterShort")}:{" "}
+          <ModelRef
+            name={job.prefilter_model}
+            identifier={job.model_info?.prefilter?.identifier}
+            version={job.model_info?.prefilter?.version}
+          />
+        </span>
+      )}
+    </>
+  );
   const total = num(r.total);
   const busyElsewhere = !!busy && busy.id !== job?.id;
 
@@ -476,7 +497,7 @@ function InferenceContent() {
         <Card title={`3. ${t("progressTitle")}`}>
           {active ? (
             <JobProgress
-              title={<span className="font-mono text-xs text-muted">{job.model_used}</span>}
+              title={<span className="font-mono text-xs text-muted">{jobModels}</span>}
               done={num(r.done)}
               total={total}
               segments={{
@@ -493,7 +514,7 @@ function InferenceContent() {
             />
           ) : (
             <div className="mb-3 flex items-center justify-between gap-3 text-sm text-muted">
-              <span className="font-mono">{job.model_used}</span>
+              <span className="font-mono">{jobModels}</span>
               <Badge color={statusColor(job.status)}>{job.status}</Badge>
             </div>
           )}

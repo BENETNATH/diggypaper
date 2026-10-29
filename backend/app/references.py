@@ -57,7 +57,8 @@ _BIB_ESC = str.maketrans({"&": r"\&", "%": r"\%", "$": r"\$", "#": r"\#", "_": r
 
 
 def _bib(text: str | None) -> str:
-    return _clean(text).translate(_BIB_ESC).replace("{", "").replace("}", "")
+    # antislash retiré AVANT l'échappement : un « \ » final échapperait l'accolade fermante
+    return _clean(text).replace("\\", "").translate(_BIB_ESC).replace("{", "").replace("}", "")
 
 
 def to_bibtex(articles, notes: dict | None = None) -> str:

@@ -69,6 +69,7 @@ def _job_payload(job: InferenceJob) -> dict:
         "prompt_template_id": str(job.prompt_template_id) if job.prompt_template_id else None,
         "model_used": job.model_used,
         "prefilter_model": job.prefilter_model,
+        "model_info": job.model_info,  # instantané figé (sans secret par construction)
         "search_id": str(job.search_id) if job.search_id else None,
         "status": job.status,
         "result": job.result_json,

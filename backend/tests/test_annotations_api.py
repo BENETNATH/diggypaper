@@ -138,6 +138,24 @@ async def test_get_prediction_returns_prediction(client, session, researcher_use
     assert body["status"] == "NEEDS_HUMAN_REVIEW"
 
 
+async def test_get_prediction_exposes_model_identifier_and_version(
+    client, session, researcher_user, do_login
+):
+    """Traçabilité (spec 2026-10-29-tracabilite-modele-version §4) : identifiant et version du
+    modèle figés à la prédiction ; ancienne prédiction → clés présentes à null."""
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project, article = await _make_project_with_article(session, researcher_user)
+    p = await _make_prediction(session, article)
+    url = f"/api/v1/projects/{project.id}/articles/{article.id}/prediction"
+    body = (await client.get(url)).json()
+    assert body["model_identifier"] is None and body["model_version"] is None
+    p.model_identifier, p.model_version = "qwen3:8b", "2" * 64
+    await session.commit()
+    body = (await client.get(url)).json()
+    assert body["model_used"] == "qwen3.8"
+    assert (body["model_identifier"], body["model_version"]) == ("qwen3:8b", "2" * 64)
+
+
 async def test_get_prediction_returns_latest(client, session, researcher_user, do_login):
     """Plusieurs prédictions → la plus récente (created_at) est renvoyée."""
     from datetime import datetime

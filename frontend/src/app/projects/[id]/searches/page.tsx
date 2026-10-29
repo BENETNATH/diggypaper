@@ -19,6 +19,7 @@ import {
 import { SearchCreate } from "@/lib/api";
 import { cleanSelection, isUntouched, prefillStoreKey, withSearch } from "@/lib/search";
 import { notifySearchesChanged, storeSearchId, useSearchId, useSearches, useSelectSearch } from "@/lib/useSearch";
+import { ModelRef } from "@/components/ModelRef";
 import { ArticleSelector } from "@/components/ArticleSelector";
 import { QuestionEditor } from "@/components/QuestionEditor";
 import { useAuth } from "@/lib/auth";
@@ -117,7 +118,9 @@ function SearchCard({
             {s.last_job && (
               <span className="inline-flex items-center gap-1">
                 {t("lastJob")} <Badge color={statusColor(s.last_job.status)}>{s.last_job.status}</Badge>
-                <code>{s.last_job.model}</code>
+                <code>
+                  <ModelRef name={s.last_job.model} version={s.last_job.model_version} />
+                </code>
               </span>
             )}
             {s.created_by && (

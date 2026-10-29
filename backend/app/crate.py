@@ -17,6 +17,7 @@ import re
 from datetime import UTC, datetime
 
 from app.core.config import get_settings
+from app.inference import public_model_ref
 
 CRATE_CONTEXT = "https://w3id.org/ro/crate/1.1/context"
 CONFORMS = "https://w3id.org/ro/crate/1.1"
@@ -91,6 +92,8 @@ def article_record(a, key: str, pred, annos: list, fields: list[dict]) -> dict:
         if not pred
         else {
             "model": pred.model_used,
+            "model_identifier": pred.model_identifier,
+            "model_version": pred.model_version,
             "status": pred.status.value if pred.status else None,
             "relevance": pred.confidence_score,
             "answers": {f["key"]: dec.get(f["key"]) for f in fields},
@@ -114,7 +117,7 @@ def article_record(a, key: str, pred, annos: list, fields: list[dict]) -> dict:
 def extraction_csv(articles, keys: dict, preds: dict, annos: dict, fields: list[dict]) -> bytes:
     """Tableau d'extraction plat (une ligne par article), UTF-8 avec BOM pour Excel."""
     head = ["key", "pmid", "doi", "title", "pub_date", "journal", "first_author", "last_author"]
-    head += ["status", "relevance", "fulltext_source"]
+    head += ["status", "relevance", "fulltext_source", "model", "model_identifier", "model_version"]
     head += [f["key"] for f in fields] + [f"{f['key']}_certainty" for f in fields]
     head += [f"{f['key']}_human" for f in fields]
     buf = io.StringIO()
@@ -127,7 +130,8 @@ def extraction_csv(articles, keys: dict, preds: dict, annos: dict, fields: list[
             neutralize(c)
             for c in [r["key"], r["pmid"], r["doi"], r["title"], r["pub_date"], r["journal"]]
             + [r["first_author"], r["last_author"], r["final_status"], ai.get("relevance")]
-            + [r["fulltext_source"]]
+            + [r["fulltext_source"], ai.get("model"), ai.get("model_identifier")]
+            + [ai.get("model_version")]
             + [(ai.get("answers") or {}).get(f["key"]) for f in fields]
             + [(ai.get("certainty") or {}).get(f["key"]) for f in fields]
             + [(human.get("answers") or {}).get(f["key"]) for f in fields]
@@ -138,16 +142,26 @@ def extraction_csv(articles, keys: dict, preds: dict, annos: dict, fields: list[
 def project_info(project, fields, import_jobs, inf_job, models: dict, prompt) -> dict:
     """project.json : tout ce qu'il faut pour refaire l'analyse (requêtes, modèles, prompt)."""
 
-    def model_info(name):
-        m = models.get(name)
+    def model_info(name, stage):
+        snap = (inf_job.model_info or {}).get(stage)
+        if snap:  # instantané figé au démarrage du job (aucun secret par construction)
+            cfg = {k: snap.get(k) for k in ("name", "backend", "identifier")}
+            if snap.get("endpoint"):  # même modèle sur un autre serveur = autre empreinte
+                cfg["endpoint"] = snap["endpoint"]
+            return {**snap, "config_sha256": sha256_json(cfg)}
+        m = models.get(name)  # ancien job : repli sur le registre vivant, sans secret d'URL
         if not name or m is None:
             return {"name": name}
-        cfg = {
-            "name": m.name,
-            "backend": m.backend_type.value if m.backend_type else None,
-            "identifier": m.model_identifier,  # jamais la clé API
+        backend = str(m.backend_type) if m.backend_type else None
+        ident, endpoint = public_model_ref(backend, m.model_identifier)  # jamais la clé API
+        cfg = {"name": m.name, "backend": backend, "identifier": ident}
+        if endpoint:
+            cfg["endpoint"] = endpoint
+        return {
+            **cfg,
+            "version": None,
+            "config_sha256": sha256_json(cfg),
         }
-        return {**cfg, "config_sha256": sha256_json(cfg)}
 
     return {
         "title": project.title,
@@ -169,10 +183,10 @@ def project_info(project, fields, import_jobs, inf_job, models: dict, prompt) ->
         else {
             "date": inf_job.created_at.isoformat() if inf_job.created_at else None,
             "status": inf_job.status.value if inf_job.status else None,
-            "stage_1_model": model_info(inf_job.prefilter_model)
+            "stage_1_model": model_info(inf_job.prefilter_model, "prefilter")
             if inf_job.prefilter_model
             else None,
-            "stage_2_model": model_info(inf_job.model_used),
+            "stage_2_model": model_info(inf_job.model_used, "main"),
             "result": inf_job.result_json,
             "prompt": None
             if prompt is None
@@ -321,15 +335,15 @@ def build_graph(project, articles, keys: dict, files: dict, info: dict, now: str
             if m:
                 mid = f"#model-{_slug(m['name'])}"
                 apps.append({"@id": mid})
-                graph.append(
-                    {
-                        "@id": mid,
-                        "@type": "SoftwareApplication",
-                        "name": m["name"],
-                        "softwareVersion": m.get("identifier"),
-                        "identifier": m.get("config_sha256"),
-                    }
-                )
+                ent = {
+                    "@id": mid,
+                    "@type": "SoftwareApplication",
+                    "name": m["name"],
+                    "softwareVersion": m.get("version") or m.get("identifier"),
+                    "alternateName": m.get("identifier"),
+                    "identifier": m.get("config_sha256"),
+                }
+                graph.append({k: v for k, v in ent.items() if v is not None})
         graph.append(
             {
                 "@id": "#analysis",

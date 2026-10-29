@@ -214,7 +214,15 @@ async def _stats(db: AsyncSession, s: Search) -> dict:
         "reviewed": reviewed,
         "breakdown": breakdown,  # {AUTO_ACCEPTED, AUTO_REJECTED, NEEDS_HUMAN_REVIEW, NONE}
         "to_review": to_review,  # incertains pas encore relus
-        "last_job": {"status": job.status, "model": job.model_used} if job else None,
+        "last_job": (
+            {
+                "status": job.status,
+                "model": job.model_used,
+                "model_version": ((job.model_info or {}).get("main") or {}).get("version"),
+            }
+            if job
+            else None
+        ),
     }
 
 

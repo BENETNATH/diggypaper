@@ -101,6 +101,9 @@ export interface ArticlePrediction {
   article_id: string;
   prompt_template_id: string | null;
   model_used: string;
+  /** Identifiant et version du modèle figés à la prédiction (null : données anciennes). */
+  model_identifier?: string | null;
+  model_version?: string | null;
   decision_json: Record<string, unknown> | null;
   confidence_score: number | null;
   evidence_quotes: string[] | null;
@@ -170,7 +173,7 @@ export interface SearchInfo {
   breakdown: Partial<Record<"AUTO_ACCEPTED" | "AUTO_REJECTED" | "NEEDS_HUMAN_REVIEW" | "NONE", number>>;
   /** Incertains pas encore relus. */
   to_review: number;
-  last_job: { status: InferenceJob["status"]; model: string } | null;
+  last_job: { status: InferenceJob["status"]; model: string; model_version?: string | null } | null;
 }
 
 /** Vue d'ensemble d'un projet : chiffres globaux (articles distincts) + état de chaque recherche. */
@@ -316,6 +319,21 @@ export interface BenchmarkArticleRow {
   outputs: BenchmarkOutput[];
 }
 
+/** Instantané d'un modèle figé au démarrage d'une analyse (jamais de clé ni d'URL complète). */
+export interface ModelSnapshot {
+  name: string;
+  backend: string | null;
+  identifier: string;
+  version: string | null;
+  endpoint?: string;
+  parameter_size?: string;
+  quantization?: string;
+  family?: string;
+  format?: string;
+  size?: number;
+  modified_at?: string;
+}
+
 export interface InferenceJob {
   id: string;
   project_id: string | null;
@@ -323,6 +341,8 @@ export interface InferenceJob {
   model_used: string;
   search_id?: string | null;
   prefilter_model?: string | null;
+  /** Instantané des deux étages (null : analyse ancienne). */
+  model_info?: { main: ModelSnapshot | null; prefilter: ModelSnapshot | null } | null;
   status: "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
   result: Record<string, unknown> | null;
   error: string | null;

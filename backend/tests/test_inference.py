@@ -540,3 +540,227 @@ async def test_infer_unusable_200_raises_invalid_response(native, response):
     )
     with pytest.raises(InferenceError, match="^invalid_response$"):
         await svc.infer("m", "s", "u")
+
+
+# =====================================================================================
+# Traçabilité modèle + version (spec 2026-10-29-tracabilite-modele-version §1)
+# =====================================================================================
+
+DIGEST = "a1b2c3d4e5f6" + "0" * 52  # 64 hex, format de GET /api/tags
+TAGS = {
+    "models": [
+        {
+            "name": "qwen3:4b",
+            "model": "qwen3:4b",
+            "modified_at": "2026-10-01T08:06:48.6397-07:00",
+            "size": 2497293931,
+            "digest": DIGEST,
+            "details": {
+                "format": "gguf",
+                "family": "qwen3",
+                "parameter_size": "4.0B",
+                "quantization_level": "Q4_K_M",
+            },
+        },
+        {"name": "qwen3:latest", "model": "qwen3:latest", "digest": "f" * 64},
+    ]
+}
+
+
+def _tags_client(response=None, exc: Exception | None = None):
+    """MockTransport : GET /api/tags → ``response`` (ou lève ``exc``) ; journalise les chemins."""
+    paths: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        paths.append(request.url.path)
+        if exc is not None:
+            raise exc
+        return response if response is not None else httpx.Response(200, json=TAGS)
+
+    return paths, _client(handler)
+
+
+def _model(backend, identifier, name="Mdl"):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(
+        name=name,
+        backend_type=backend,
+        model_identifier=identifier,
+        api_key_enc=None,
+        owner_id=None,
+    )
+
+
+async def test_model_snapshot_ollama_reads_digest_and_details_from_api_tags():
+    """OLLAMA : version = digest des poids lu sur /api/tags (racine sans /v1), + détails."""
+    from app.inference import model_snapshot
+
+    paths, client = _tags_client()
+    svc = OpenAICompatibleService("http://llm.test/v1", http=client, native_ollama=True)
+    snap = await model_snapshot(_model("OLLAMA", "qwen3:4b", "Qwen"), svc)
+    assert paths == ["/api/tags"]
+    assert snap["name"] == "Qwen" and snap["backend"] == "OLLAMA"
+    assert snap["identifier"] == "qwen3:4b" and snap["version"] == DIGEST
+    assert snap["parameter_size"] == "4.0B" and snap["quantization"] == "Q4_K_M"
+    assert snap["family"] == "qwen3" and snap["format"] == "gguf"
+    assert snap["size"] == 2497293931 and snap["modified_at"].startswith("2026-10-01")
+
+
+async def test_model_snapshot_ollama_matches_implicit_latest_tag():
+    """« qwen3 » == « qwen3:latest » pour Ollama (même normalisation que DELETE /models)."""
+    from app.inference import model_snapshot
+
+    _, client = _tags_client()
+    svc = OpenAICompatibleService("http://llm.test/v1", http=client, native_ollama=True)
+    snap = await model_snapshot(_model("OLLAMA", "qwen3"), svc)
+    assert snap["version"] == "f" * 64
+
+
+@pytest.mark.parametrize(
+    "response, exc",
+    [
+        (httpx.Response(500, text="boom"), None),
+        (httpx.Response(200, text="<html>pas du json</html>"), None),
+        (None, httpx.ConnectError("refused")),
+        (httpx.Response(200, json={"models": [{"name": "autre:1b", "digest": "e" * 64}]}), None),
+        (httpx.Response(200, json={"models": [{"name": "qwen3:4b", "digest": "zz;rm -rf"}]}), None),
+    ],
+    ids=["http-500", "non-json", "connection-error", "tag-absent", "bad-digest"],
+)
+async def test_model_snapshot_never_raises(response, exc):
+    """Relevé best-effort : tout échec → version None, identifiant conservé, aucune exception."""
+    from app.inference import model_snapshot
+
+    _, client = _tags_client(response, exc)
+    svc = OpenAICompatibleService("http://llm.test/v1", http=client, native_ollama=True)
+    snap = await model_snapshot(_model("OLLAMA", "qwen3:4b"), svc)
+    assert snap["identifier"] == "qwen3:4b" and snap["version"] is None
+
+
+async def test_model_snapshot_without_http_service_is_best_effort():
+    """Service de test (sans base_url ni client HTTP) : pas d'appel, version None."""
+    from app.inference import model_snapshot
+
+    class Fake:
+        async def infer(self, model, system_prompt, user_prompt):
+            return {}
+
+    snap = await model_snapshot(_model("OLLAMA", "qwen3:4b"), Fake())
+    assert snap["identifier"] == "qwen3:4b" and snap["version"] is None
+    # modèle absent du registre : le nom du job sert d'identifiant (comme infer_with)
+    snap = await model_snapshot(None, Fake(), name="Kev-4B")
+    assert snap["name"] == "Kev-4B" and snap["identifier"] == "Kev-4B"
+    assert await model_snapshot(None, Fake()) is None
+
+
+async def test_model_snapshot_openai_api_hides_url_secrets_and_makes_no_call():
+    """OPENAI_API : partie modèle + endpoint scheme://hôte:port ; ni userinfo, ni chemin, ni
+    query, ni clé ; aucun appel réseau (l'écho de la réponse donnera la version)."""
+    from app.inference import model_snapshot
+
+    paths, client = _tags_client()
+    svc = OpenAICompatibleService("http://llm.test/v1", http=client, native_ollama=True)
+    ident = "https://alice:pw-SECRET@api.x.test:8443/v1/proxy?key=SECRET-Q#gpt-4o"
+    snap = await model_snapshot(_model("OPENAI_API", ident, "GPT"), svc)
+    assert paths == []
+    assert snap["backend"] == "OPENAI_API" and snap["identifier"] == "gpt-4o"
+    assert snap["endpoint"] == "https://api.x.test:8443" and snap["version"] is None
+    dumped = json.dumps(snap)
+    assert "SECRET" not in dumped and "alice" not in dumped and "/proxy" not in dumped
+
+
+def _echo_client(native: bool, model_field):
+    """Réponse 200 (format natif ou /v1) dont le champ ``model`` vaut ``model_field``."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = (
+            {"message": {"role": "assistant", "content": "{}"}}
+            if native
+            else {"choices": [{"message": {"content": "{}"}}]}
+        )
+        if model_field is not None:
+            body["model"] = model_field
+        return httpx.Response(200, json=body)
+
+    return _client(handler)
+
+
+@pytest.mark.parametrize(
+    "backend, native, echoed, expected",
+    [
+        ("LLAMA_CPP", False, "llama-big-Q4_K_M.gguf", "llama-big-Q4_K_M.gguf"),
+        ("OLLAMA", True, "qwen3:4b", "qwen3:4b"),
+        ("LLAMA_CPP", False, None, None),
+        ("LLAMA_CPP", False, "v1\x00\n\x1b-" + "x" * 300, "v1-" + "x" * 197),
+    ],
+    ids=["v1-echo", "native-echo", "no-model-field", "control-chars"],
+)
+async def test_infer_with_meta_reports_served_model(backend, native, echoed, expected):
+    """``meta["served_model"]`` = champ ``model`` de la réponse du service réellement appelé
+    (copie /v1 comprise), assaini (caractères de contrôle retirés, 200 caractères max)."""
+    from app.inference import infer_with
+
+    default = OpenAICompatibleService(
+        "http://llm.test/v1", http=_echo_client(native, echoed), native_ollama=True
+    )
+    meta: dict = {}
+    await infer_with(_model(backend, "m"), default, "S", "U", meta=meta)
+    assert meta["served_model"] == expected
+
+
+async def test_infer_with_meta_openai_api_served_model(monkeypatch):
+    """OPENAI_API (service propre au modèle) : l'alias résolu renvoyé par l'API est remonté."""
+    from app.inference import infer_with
+
+    real = httpx.AsyncClient
+    echo = _echo_client(False, "gpt-4o-2024-08-06")
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: real(transport=echo._transport, **kw))
+    default = OpenAICompatibleService("http://llm.test/v1", native_ollama=True)
+    meta: dict = {}
+    await infer_with(_model("OPENAI_API", "https://api.x/v1#gpt-4o"), default, "S", "U", meta=meta)
+    assert meta["served_model"] == "gpt-4o-2024-08-06"
+
+
+@pytest.mark.parametrize(
+    "identifier, expected",
+    [
+        ("https://api.x.test/v1#gpt-4o", ("gpt-4o", "https://api.x.test")),
+        ("https://bob:pw@api.x.test:8443/v1?key=K#gpt-4o", ("gpt-4o", "https://api.x.test:8443")),
+        ("https://api.x.test/v1", (None, "https://api.x.test")),  # sans « # » : pas de modèle
+        ("pas-une-url", (None, None)),  # ni « # » ni URL : jamais la chaîne entière
+        ("https://api.x.test:99999/v1#m", ("m", None)),  # port invalide
+        ("https://api.x.test:abc/v1#m", ("m", None)),
+        ("http://[::1]:8080/v1#m", ("m", "http://[::1]:8080")),  # IPv6 : crochets conservés
+        (
+            "https://api.x.test/v1#org/model#2",
+            ("org/model#2", "https://api.x.test"),
+        ),  # « # » du nom
+    ],
+)
+def test_public_model_ref_openai_api(identifier, expected):
+    from app.inference import public_model_ref
+
+    assert public_model_ref("OPENAI_API", identifier) == expected
+
+
+def test_public_model_ref_other_backends_keep_identifier():
+    from app.inference import public_model_ref
+
+    assert public_model_ref("OLLAMA", "qwen3:4b") == ("qwen3:4b", None)
+    assert public_model_ref(None, "qwen3:4b") == ("qwen3:4b", None)
+
+
+async def test_model_snapshot_failure_log_hides_url_and_secrets(caplog):
+    """Hygiène des logs : un relevé en échec ne journalise ni userinfo ni hôte du service."""
+    import logging
+
+    from app.inference import model_snapshot
+
+    _, client = _tags_client(exc=httpx.ConnectError("refused http://u:SECRET@llm.test/api/tags"))
+    svc = OpenAICompatibleService("http://u:SECRET@llm.test/v1", http=client, native_ollama=True)
+    with caplog.at_level(logging.DEBUG):
+        snap = await model_snapshot(_model("OLLAMA", "qwen3:4b"), svc)
+    assert snap["version"] is None
+    assert "model_snapshot" in caplog.text  # le warning est bien émis
+    assert "SECRET" not in caplog.text and "llm.test" not in caplog.text

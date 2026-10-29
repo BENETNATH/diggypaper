@@ -19,6 +19,7 @@ import { useAuth } from "@/lib/auth";
 import { isProjectLead } from "@/lib/role";
 import { isUntouched, withSearch } from "@/lib/search";
 import { RequireAuth } from "@/components/RequireAuth";
+import { ModelRef } from "@/components/ModelRef";
 import { Badge } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Spinner, ErrorBanner } from "@/components/ui/Feedback";
@@ -99,7 +100,7 @@ function SearchRow({ s, projectId, isLead, hasCorpus }: { s: SearchInfo; project
           <p className="mt-0.5 text-xs text-muted">
             {t("lotSize", { n: s.lot_size })}
             {s.parent && <> · {t("derivedFrom", { name: s.parent.name })}</>}
-            {s.last_job && <> · {s.last_job.model}</>}
+            {s.last_job && <> · <ModelRef name={s.last_job.model} version={s.last_job.model_version} /></>}
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2">

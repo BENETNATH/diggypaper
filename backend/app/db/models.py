@@ -630,6 +630,10 @@ class ArticlePrediction(Base):
         Uuid, ForeignKey("prompt_templates.id")
     )
     model_used: Mapped[str] = mapped_column(String, nullable=False)
+    # Figés au moment de la prédiction (registre renommable/supprimable, tag re-pullable) ;
+    # NULL = données anciennes ou version non relevée.
+    model_identifier: Mapped[str | None] = mapped_column(String)
+    model_version: Mapped[str | None] = mapped_column(String)
     decision_json: Mapped[dict | None] = mapped_column(JSONB)
     confidence_score: Mapped[float | None] = mapped_column(Float)
     evidence_quotes: Mapped[list[str] | None] = mapped_column(JSONB)
@@ -785,6 +789,9 @@ class InferenceJob(Base):
     model_used: Mapped[str] = mapped_column(String, nullable=False)
     # Étage 1 optionnel (encodeur ONNX sur abstracts) ; NULL = pas de pré-filtre.
     prefilter_model: Mapped[str | None] = mapped_column(String)
+    # Instantané figé au démarrage : {"main": snap, "prefilter": snap | None} avec
+    # snap = {name, backend, identifier, version, ...} ; NULL = job ancien.
+    model_info: Mapped[dict | None] = mapped_column(JSONB)
     search_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("searches.id", ondelete="CASCADE"), index=True
     )

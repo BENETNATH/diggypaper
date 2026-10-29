@@ -23,6 +23,7 @@ from app.db.models import (
     Project,
     ProjectStatus,
 )
+from app.inference import clean_meta
 from app.schema import project_fields
 from app.searches import default_search, definition_hash
 from app.tasks import _make_session_factory, _session_factory_override
@@ -163,7 +164,10 @@ async def _restore(
                     ArticlePrediction(
                         article_id=art.id,
                         search_id=search.id,
-                        model_used=str(ai.get("model") or "RO-Crate")[:200],
+                        # entrée non fiable : sans caractères de contrôle (injection RIS/CSV)
+                        model_used=clean_meta(ai.get("model")) or "RO-Crate",
+                        model_identifier=clean_meta(ai.get("model_identifier"), 500),
+                        model_version=clean_meta(ai.get("model_version"), 200),
                         decision_json=_decision(
                             answers,
                             {

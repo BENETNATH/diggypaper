@@ -14,6 +14,10 @@ automatique** selon le score de confiance (spec MODULE 4) :
 
 À l'achèvement, le job passe ``COMPLETED`` (statistiques dans ``result_json``) et
 une notification est envoyée (e-mail best-effort via ``notify_job_complete``).
+
+Traçabilité (spec 2026-10-29) : après le warm-up, ``job.model_info`` fige un instantané des
+modèles (principal + pré-filtre : identifiant, version/digest) ; chaque prédiction porte
+``model_identifier`` / ``model_version`` du modèle qui l'a produite (best-effort, jamais bloquant).
 """
 
 import asyncio
@@ -55,6 +59,7 @@ from app.inference import (
     infer_with,
     make_inference_service,
     model_lock_key,
+    model_snapshot,
     warmup,
 )
 from app.schema import project_fields
@@ -484,11 +489,21 @@ async def _do_inference(
             if heartbeat:
                 await heartbeat()
             await warmup(inference, ident, m)
+    # Traçabilité : instantané des modèles (digest Ollama relevé une fois ; best-effort).
+    job.model_info = {
+        "main": await model_snapshot(main, inference, job.model_used),
+        "prefilter": (
+            await model_snapshot(pre, inference, job.prefilter_model)
+            if job.prefilter_model
+            else None
+        ),
+    }
     # Visible tout de suite (0 / N) : le premier appel peut télécharger les poids du modèle.
     await _progress(session, job, 0, len(articles), 0, counts())
 
-    async def predict(model, article, *, light: bool) -> dict:
-        """Appel du modèle ; ``light`` = étage 1 (titre + abstract seulement)."""
+    async def predict(model, article, *, light: bool, meta: dict) -> dict:
+        """Appel du modèle ; ``light`` = étage 1 (titre + abstract seulement) ; ``meta``
+        reçoit ``served_model`` (version renvoyée par le serveur)."""
         kinds = ["abstract"] if light else project.text_sections
         user_prompt = fill_prompt(prompt.user_prompt_schema, article, kinds)
         system = prompt.system_prompt or ""
@@ -496,10 +511,21 @@ async def _do_inference(
             system = (system + "\n\n" + shots).strip()
         if heartbeat:
             await heartbeat()
-        out = await infer_with(model, inference, system, user_prompt, name=job.model_used)
+        out = await infer_with(
+            model, inference, system, user_prompt, name=job.model_used, meta=meta
+        )
         if not isinstance(out, dict):
             raise InferenceError("invalid_json")  # JSON valide mais pas un objet
         return out
+
+    def note_served(stage: str, meta: dict) -> None:
+        """Backend non Ollama : la première version servie de l'étage remplit l'instantané du
+        job, même si cet étage ne produit pas la prédiction (pré-filtre qui ne rejette jamais)."""
+        snap = job.model_info[stage] or {}
+        version = meta.get("served_model")
+        if version and not snap.get("version") and snap.get("backend") not in (None, "OLLAMA"):
+            # nouveau dict (pas de mutation en place) : sinon SQLAlchemy ne voit pas le changement
+            job.model_info = {**job.model_info, stage: {**snap, "version": version}}
 
     async def cancelled() -> bool:
         # Arrêt demandé depuis l'interface (POST …/inference/cancel : statut FAILED en base).
@@ -519,21 +545,26 @@ async def _do_inference(
             processed += 1
             continue
         model_name = job.model_used
+        stage = "main"  # étage producteur de la prédiction (traçabilité)
         prediction = None
         try:
             if pre is not None:
                 # Étage 1 : titre + abstract ; un rejet net écarte l'article sans étage 2.
                 try:
-                    p1 = await predict(pre, article, light=True)
+                    meta = {}
+                    p1 = await predict(pre, article, light=True, meta=meta)
+                    note_served("prefilter", meta)
                 except InferenceError as exc:
                     if str(exc) != "invalid_json":
                         raise
                     p1 = None  # étage 1 illisible : l'article passe à l'étage 2
                 if p1 is not None and _triage(p1.get("confidence_score")) == REJECTED:
-                    prediction, model_name = p1, pre.name
+                    prediction, model_name, stage = p1, pre.name, "prefilter"
                     prefiltered += 1
             if prediction is None:
-                prediction = await predict(main, article, light=False)
+                meta = {}
+                prediction = await predict(main, article, light=False, meta=meta)
+                note_served("main", meta)
         except InferenceError as exc:
             # Petits modèles : une sortie non-JSON ne doit pas tuer tout le job ;
             # timeout / connexion / HTTP restent fatals.
@@ -551,12 +582,19 @@ async def _do_inference(
         else:
             needs_review += 1
         processed += 1
+        snap = job.model_info[stage] or {}
+        if snap.get("backend") in (None, "OLLAMA"):
+            version = snap.get("version")
+        else:  # local /v1 ou OPENAI_API : version = modèle renvoyé par le serveur
+            version = meta.get("served_model")
         session.add(
             ArticlePrediction(
                 article_id=article.id,
                 search_id=search.id,
                 prompt_template_id=prompt.id,
                 model_used=model_name,
+                model_identifier=snap.get("identifier"),
+                model_version=version,
                 decision_json=prediction,
                 confidence_score=confidence,
                 evidence_quotes=prediction.get("evidence_quotes"),

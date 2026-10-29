@@ -44,6 +44,7 @@ from app.inference import (
     infer_with,
     make_inference_service,
     model_lock_key,
+    ollama_ref,
 )
 from app.model_access import access_filter, check_public_url
 from app.ollama_mode import COMPOSE_ROOT, MODE
@@ -468,11 +469,6 @@ async def _in_use(db: AsyncSession, name: str) -> bool:
     )
 
 
-def _ollama_ref(identifier: str) -> str:
-    """Référence Ollama normalisée : tag « :latest » implicite si le dernier segment n'en a pas."""
-    return identifier if ":" in identifier.rsplit("/", 1)[-1] else f"{identifier}:latest"
-
-
 @router.delete("/{model_id}", status_code=204)
 async def delete_model(model_id: uuid.UUID, db: DbDep, user: UserDep) -> None:
     m = await db.get(ModelRegistry, model_id)
@@ -499,7 +495,7 @@ async def delete_model(model_id: uuid.UUID, db: DbDep, user: UserDep) -> None:
                 )
             )
         ).scalars()
-        shared = any(_ollama_ref(o) == _ollama_ref(m.model_identifier) for o in others)
+        shared = any(ollama_ref(o) == ollama_ref(m.model_identifier) for o in others)
         if managed and not shared:
             await _ollama_delete(db, m.model_identifier)
     await db.delete(m)

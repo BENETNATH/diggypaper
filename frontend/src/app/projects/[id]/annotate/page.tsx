@@ -6,6 +6,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { ArticleLinks, biblioLine } from "@/components/Certainty";
 import { AnnotationForm, Annotation } from "@/components/AnnotationForm";
+import { ModelRef } from "@/components/ModelRef";
 import { EvidenceHighlighter } from "@/components/EvidenceHighlighter";
 import { SwipeableCard } from "@/components/SwipeableCard";
 import { Button } from "@/components/ui/Button";
@@ -325,7 +326,13 @@ export default function AnnotatePage() {
         <ArticleLinks article={article} className="mt-0.5" />
         {shownPrediction && (
           <p className="text-sm text-muted">
-            {t("model")}: {shownPrediction.model_used} · {t("status")}:{" "}
+            {t("model")}:{" "}
+            <ModelRef
+              name={shownPrediction.model_used}
+              identifier={shownPrediction.model_identifier}
+              version={shownPrediction.model_version}
+            />{" "}
+            · {t("status")}:{" "}
             {shownPrediction.status}
           </p>
         )}

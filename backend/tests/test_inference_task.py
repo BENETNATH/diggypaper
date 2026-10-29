@@ -1202,3 +1202,373 @@ async def test_prefilter_invalid_json_falls_through_to_main(engine, session, fak
     assert result["auto_accepted"] == 1 and result["prefiltered"] == 0
     pred = (await session.execute(select(ArticlePrediction))).scalars().one()
     assert pred.model_used == "Big"
+
+
+# =====================================================================================
+# Traçabilité modèle + version (spec 2026-10-29-tracabilite-modele-version §2)
+# =====================================================================================
+
+DIGEST_SMALL = "1" * 12 + "a" * 52
+DIGEST_BIG = "2" * 12 + "b" * 52
+
+
+def _tags(*entries: tuple[str, str]) -> dict:
+    return {
+        "models": [
+            {
+                "name": name,
+                "model": name,
+                "digest": digest,
+                "size": 1234,
+                "modified_at": "2026-10-01T08:00:00Z",
+                "details": {"parameter_size": "4.0B", "quantization_level": "Q4_K_M"},
+            }
+            for name, digest in entries
+        ]
+    }
+
+
+def _tags_transport(answers: dict, tags=None, tags_exc=None, served: dict | None = None):
+    """Comme ``_llm_transport`` + ``GET /api/tags`` (``tags`` : dict JSON ou httpx.Response ;
+    ``tags_exc`` : exception levée) ; ``served`` : champ ``model`` renvoyé par modèle demandé.
+    Journalise les chemins GET dans ``gets``."""
+    calls: list[tuple[str, dict]] = []
+    gets: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET":
+            gets.append(request.url.path)
+            if tags_exc is not None:
+                raise tags_exc
+            if isinstance(tags, httpx.Response):
+                return tags
+            return httpx.Response(200, json=tags if tags is not None else {"models": []})
+        body = json.loads(request.content)
+        calls.append((request.url.path, body))
+        content = json.dumps(answers.get(body["model"], {"ok": True}))
+        out = {
+            "message": {"role": "assistant", "content": content},
+            "choices": [{"message": {"content": content}}],
+        }
+        if served and body["model"] in served:
+            out["model"] = served[body["model"]]
+        return httpx.Response(200, json=out)
+
+    return calls, gets, httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+
+async def _ollama_job(session, project, prompt, main="Big", pre=None):
+    await set_setting(session, "llm_api_base_url", "http://llm.test/v1")
+    await _seed(session, project, prompt, None, n_articles=1)
+    return await _job(session, project, prompt, main, pre)
+
+
+async def test_job_snapshot_and_prediction_version_ollama_real_service(engine, session, fake_redis):
+    """OLLAMA : instantané du job (digest + détails, relevés sur /api/tags) et chaque prédiction
+    porte l'identifiant et le digest du modèle qui l'a produite."""
+    project, prompt = await _project_prompt(session)
+    session.add(ModelRegistry(name="Big", model_identifier="qwen3:8b", backend_type="OLLAMA"))
+    await session.commit()
+    job = await _ollama_job(session, project, prompt)
+    _, gets, client = _tags_transport(
+        {"qwen3:8b": {"confidence_score": 0.9}}, tags=_tags(("qwen3:8b", DIGEST_BIG))
+    )
+    result = await _run_inference(
+        str(job.id), session_factory=_factory(engine), http=client, redis=fake_redis
+    )
+    assert result["processed"] == 1
+    assert "/api/tags" in gets
+    await session.refresh(job)
+    main = job.model_info["main"]
+    assert (main["name"], main["backend"], main["identifier"]) == ("Big", "OLLAMA", "qwen3:8b")
+    assert main["version"] == DIGEST_BIG and main["quantization"] == "Q4_K_M"
+    assert job.model_info["prefilter"] is None
+    pred = (await session.execute(select(ArticlePrediction))).scalars().one()
+    assert (pred.model_used, pred.model_identifier, pred.model_version) == (
+        "Big",
+        "qwen3:8b",
+        DIGEST_BIG,
+    )
+
+
+async def test_prefilter_rejected_prediction_carries_prefilter_identifier_and_version(
+    engine, session, fake_redis
+):
+    """Rejet à l'étage 1 : la prédiction porte le modèle du pré-filtre (nom, identifiant,
+    digest) ; l'instantané du job couvre les deux étages."""
+    project, prompt = await _project_prompt(session)
+    session.add(ModelRegistry(name="Small", model_identifier="qwen3:1.7b", backend_type="OLLAMA"))
+    session.add(ModelRegistry(name="Big", model_identifier="qwen3:8b", backend_type="OLLAMA"))
+    await session.commit()
+    job = await _ollama_job(session, project, prompt, "Big", "Small")
+    _, _, client = _tags_transport(
+        {"qwen3:1.7b": {"confidence_score": 0.05}},
+        tags=_tags(("qwen3:1.7b", DIGEST_SMALL), ("qwen3:8b", DIGEST_BIG)),
+    )
+    result = await _run_inference(
+        str(job.id), session_factory=_factory(engine), http=client, redis=fake_redis
+    )
+    assert result["prefiltered"] == 1
+    await session.refresh(job)
+    assert job.model_info["prefilter"]["version"] == DIGEST_SMALL
+    assert job.model_info["main"]["version"] == DIGEST_BIG
+    pred = (await session.execute(select(ArticlePrediction))).scalars().one()
+    assert (pred.model_used, pred.model_identifier, pred.model_version) == (
+        "Small",
+        "qwen3:1.7b",
+        DIGEST_SMALL,
+    )
+
+
+@pytest.mark.parametrize(
+    "tags, exc",
+    [
+        (httpx.Response(500, text="boom"), None),
+        (httpx.Response(200, text="<html/>"), None),
+        (None, httpx.ConnectError("refused")),
+        ({"models": [{"name": "autre:1b", "digest": "e" * 64}]}, None),
+    ],
+    ids=["http-500", "non-json", "connection-error", "tag-absent"],
+)
+async def test_snapshot_failure_never_fails_job(engine, session, fake_redis, tags, exc):
+    """Relevé de version impossible : le job se termine, version None, identifiant conservé."""
+    project, prompt = await _project_prompt(session)
+    session.add(ModelRegistry(name="Big", model_identifier="qwen3:8b", backend_type="OLLAMA"))
+    await session.commit()
+    job = await _ollama_job(session, project, prompt)
+    _, _, client = _tags_transport({"qwen3:8b": {"confidence_score": 0.9}}, tags, exc)
+    result = await _run_inference(
+        str(job.id), session_factory=_factory(engine), http=client, redis=fake_redis
+    )
+    assert result["processed"] == 1
+    await session.refresh(job)
+    assert job.status == InferenceJobStatus.COMPLETED
+    assert job.model_info["main"]["identifier"] == "qwen3:8b"
+    assert job.model_info["main"]["version"] is None
+    pred = (await session.execute(select(ArticlePrediction))).scalars().one()
+    assert pred.model_identifier == "qwen3:8b" and pred.model_version is None
+
+
+async def test_local_v1_backend_version_is_served_model_echo(engine, session, fake_redis):
+    """LLAMA_CPP (/v1) : pas de /api/tags ; la version est le ``model`` renvoyé par le serveur,
+    sur la prédiction et dans l'instantané du job."""
+    project, prompt = await _project_prompt(session)
+    session.add(ModelRegistry(name="Big", model_identifier="llama-big", backend_type="LLAMA_CPP"))
+    await session.commit()
+    job = await _ollama_job(session, project, prompt)
+    _, gets, client = _tags_transport(
+        {"llama-big": {"confidence_score": 0.9}},
+        served={"llama-big": "models/llama-big-Q4_K_M.gguf"},
+    )
+    result = await _run_inference(
+        str(job.id), session_factory=_factory(engine), http=client, redis=fake_redis
+    )
+    assert result["processed"] == 1
+    assert gets == []
+    await session.refresh(job)
+    assert job.model_info["main"]["backend"] == "LLAMA_CPP"
+    assert job.model_info["main"]["version"] == "models/llama-big-Q4_K_M.gguf"
+    pred = (await session.execute(select(ArticlePrediction))).scalars().one()
+    assert pred.model_identifier == "llama-big"
+    assert pred.model_version == "models/llama-big-Q4_K_M.gguf"
+
+
+async def test_openai_api_job_traces_served_model_without_url_secrets(
+    engine, session, fake_redis, monkeypatch
+):
+    """OPENAI_API : identifiant = partie modèle, endpoint sans secret, version = alias résolu
+    renvoyé par l'API ; ni userinfo, ni query, ni clé dans l'instantané ou la prédiction."""
+    from app.core.crypto import encrypt_secret
+
+    project, prompt = await _project_prompt(session)
+    session.add(
+        ModelRegistry(
+            name="GPT",
+            model_identifier="https://bob:pw-SECRET@api.x.test/v1?key=SECRET-Q#gpt-4o",
+            backend_type="OPENAI_API",
+            api_key_enc=encrypt_secret("sk-SECRET-KEY"),
+        )
+    )
+    await session.commit()
+    job = await _ollama_job(session, project, prompt, "GPT")
+    _, _, client = _tags_transport(
+        {"gpt-4o": {"confidence_score": 0.9}}, served={"gpt-4o": "gpt-4o-2024-08-06"}
+    )
+    real = httpx.AsyncClient
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: real(transport=client._transport, **kw))
+    result = await _run_inference(
+        str(job.id), session_factory=_factory(engine), http=client, redis=fake_redis
+    )
+    assert result["processed"] == 1
+    await session.refresh(job)
+    main = job.model_info["main"]
+    assert (main["identifier"], main["endpoint"]) == ("gpt-4o", "https://api.x.test")
+    assert main["version"] == "gpt-4o-2024-08-06"
+    assert "SECRET" not in json.dumps(job.model_info) and "bob" not in json.dumps(job.model_info)
+    pred = (await session.execute(select(ArticlePrediction))).scalars().one()
+    assert (pred.model_identifier, pred.model_version) == ("gpt-4o", "gpt-4o-2024-08-06")
+
+
+async def test_injected_fake_service_records_identifier_without_version(
+    engine, session, fake_redis
+):
+    """Service injecté (tests, sans HTTP) : identifiant tracé, version None, job complet."""
+    project, prompt = await _project_prompt(session)
+    session.add(ModelRegistry(name="Kev-4B", model_identifier="kef/kev-4b", backend_type="OLLAMA"))
+    await session.commit()
+    await _seed(session, project, prompt, None, n_articles=1)
+    job = await _job(session, project, prompt, "Kev-4B")
+    result = await _run_inference(
+        str(job.id), session_factory=_factory(engine), inference=FakeInference(), redis=fake_redis
+    )
+    assert result["processed"] == 1
+    await session.refresh(job)
+    assert job.model_info["main"]["identifier"] == "kef/kev-4b"
+    assert job.model_info["main"]["version"] is None
+    pred = (await session.execute(select(ArticlePrediction))).scalars().one()
+    assert pred.model_identifier == "kef/kev-4b" and pred.model_version is None
+
+
+# --- Revue : versions par étage, job multi-articles (spec §2, D4) ---
+
+
+def _served_transport(contents: dict, served):
+    """Vrai service derrière MockTransport : ``contents`` = contenu BRUT renvoyé par modèle
+    (str, non encodé) ; ``served(n, model)`` = champ ``model`` renvoyé à l'appel n° ``n``
+    (0 = warm-up, puis un par appel réel) ou None (champ absent)."""
+    n = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal n
+        body = json.loads(request.content)
+        content = contents[body["model"]]
+        out = {
+            "message": {"role": "assistant", "content": content},
+            "choices": [{"message": {"content": content}}],
+        }
+        echo = served(n, body["model"])
+        n += 1
+        if echo is not None:
+            out["model"] = echo
+        return httpx.Response(200, json=out)
+
+    return httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+
+async def _pred_tuple(session):
+    p = (await session.execute(select(ArticlePrediction))).scalars().one()
+    return p.model_used, p.model_identifier, p.model_version
+
+
+async def test_prefilter_passes_prediction_carries_main_identifier_and_version(
+    engine, session, fake_redis
+):
+    """D4 : le pré-filtre ne rejette pas → la prédiction porte le modèle principal (identifiant
+    + digest), pas ceux du pré-filtre."""
+    project, prompt = await _project_prompt(session)
+    session.add(ModelRegistry(name="Small", model_identifier="qwen3:1.7b", backend_type="OLLAMA"))
+    session.add(ModelRegistry(name="Big", model_identifier="qwen3:8b", backend_type="OLLAMA"))
+    await session.commit()
+    job = await _ollama_job(session, project, prompt, "Big", "Small")
+    _, _, client = _tags_transport(
+        {"qwen3:1.7b": {"confidence_score": 0.9}, "qwen3:8b": {"confidence_score": 0.9}},
+        tags=_tags(("qwen3:1.7b", DIGEST_SMALL), ("qwen3:8b", DIGEST_BIG)),
+    )
+    result = await _run_inference(
+        str(job.id), session_factory=_factory(engine), http=client, redis=fake_redis
+    )
+    assert result["prefiltered"] == 0
+    assert await _pred_tuple(session) == ("Big", "qwen3:8b", DIGEST_BIG)
+
+
+async def test_prefilter_invalid_json_prediction_carries_main_served_echo(
+    engine, session, fake_redis
+):
+    """D4 : étage 1 illisible → étage 2 ; la version vient de l'écho de l'étage 2 (le ``meta``
+    de l'étage 1 n'est pas réutilisé)."""
+    project, prompt = await _project_prompt(session)
+    session.add(ModelRegistry(name="Small", model_identifier="small-id", backend_type="LLAMA_CPP"))
+    session.add(ModelRegistry(name="Big", model_identifier="big-id", backend_type="LLAMA_CPP"))
+    await session.commit()
+    job = await _ollama_job(session, project, prompt, "Big", "Small")
+    client = _served_transport(
+        {"small-id": "pas du json", "big-id": json.dumps({"confidence_score": 0.9})},
+        lambda n, model: {"small-id": "small-echo", "big-id": "big-echo"}[model],
+    )
+    result = await _run_inference(
+        str(job.id), session_factory=_factory(engine), http=client, redis=fake_redis
+    )
+    assert result["processed"] == 1 and result["prefiltered"] == 0
+    assert await _pred_tuple(session) == ("Big", "big-id", "big-echo")
+
+
+async def test_non_ollama_prefilter_rejecting_prediction_carries_prefilter_served_version(
+    engine, session, fake_redis
+):
+    """D4 : rejet par un pré-filtre non Ollama → identifiant du pré-filtre + son écho."""
+    project, prompt = await _project_prompt(session)
+    session.add(ModelRegistry(name="Small", model_identifier="small-id", backend_type="LLAMA_CPP"))
+    session.add(ModelRegistry(name="Big", model_identifier="big-id", backend_type="LLAMA_CPP"))
+    await session.commit()
+    job = await _ollama_job(session, project, prompt, "Big", "Small")
+    client = _served_transport(
+        {"small-id": json.dumps({"confidence_score": 0.05}), "big-id": "{}"},
+        lambda n, model: {"small-id": "small-echo", "big-id": "big-echo"}[model],
+    )
+    result = await _run_inference(
+        str(job.id), session_factory=_factory(engine), http=client, redis=fake_redis
+    )
+    assert result["prefiltered"] == 1
+    assert await _pred_tuple(session) == ("Small", "small-id", "small-echo")
+
+
+async def test_multi_article_non_ollama_versions_per_prediction_job_keeps_first(
+    engine, session, fake_redis
+):
+    """Job non Ollama de 3 articles : version PAR prédiction (None, v2, v3) ; l'instantané du
+    job garde la première version non nulle, et elle survit aux commits suivants."""
+    project, prompt = await _project_prompt(session)
+    session.add(ModelRegistry(name="Big", model_identifier="big-id", backend_type="LLAMA_CPP"))
+    await session.commit()
+    await set_setting(session, "llm_api_base_url", "http://llm.test/v1")
+    await _seed(session, project, prompt, None, n_articles=3)
+    job = await _job(session, project, prompt, "Big")
+    echoes = {0: "warm", 1: None, 2: "v2", 3: "v3"}  # 0 = warm-up
+    client = _served_transport(
+        {"big-id": json.dumps({"confidence_score": 0.9})}, lambda n, model: echoes[n]
+    )
+    result = await _run_inference(
+        str(job.id), session_factory=_factory(engine), http=client, redis=fake_redis
+    )
+    assert result["processed"] == 3
+    preds = (
+        (await session.execute(select(ArticlePrediction).order_by(ArticlePrediction.created_at)))
+        .scalars()
+        .all()
+    )
+    assert sorted(p.model_version or "" for p in preds) == ["", "v2", "v3"]
+    await session.refresh(job)
+    assert job.model_info["main"]["version"] == "v2"
+
+
+async def test_non_ollama_prefilter_never_rejecting_still_fills_job_snapshot_version(
+    engine, session, fake_redis
+):
+    """Pré-filtre non Ollama qui répond sur tous les articles sans jamais rejeter : sa version
+    servie remplit quand même l'instantané du job (il n'a produit aucune prédiction)."""
+    project, prompt = await _project_prompt(session)
+    session.add(ModelRegistry(name="Small", model_identifier="small-id", backend_type="LLAMA_CPP"))
+    session.add(ModelRegistry(name="Big", model_identifier="big-id", backend_type="LLAMA_CPP"))
+    await session.commit()
+    job = await _ollama_job(session, project, prompt, "Big", "Small")
+    client = _served_transport(
+        {"small-id": json.dumps({"confidence_score": 0.9}), "big-id": "{}"},
+        lambda n, model: {"small-id": "small-echo", "big-id": None}[model],
+    )
+    await _run_inference(
+        str(job.id), session_factory=_factory(engine), http=client, redis=fake_redis
+    )
+    await session.refresh(job)
+    assert job.model_info["prefilter"]["version"] == "small-echo"
+    assert job.model_info["main"]["version"] is None
+    assert (await _pred_tuple(session))[2] is None  # la prédiction (étage 2) : pas d'écho

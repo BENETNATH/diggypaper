@@ -575,3 +575,112 @@ async def test_quick_search_ignores_accents_and_case(client, session, corpus):
     assert await found("SMITH dupont") == ["Étude du sommeil chez la souris"]  # auteurs
     assert await found("epidemiologie francaise") == ["Ordinary title"]  # journal
     assert await found("100%") == []  # % et _ restent littéraux
+
+
+# --- traçabilité modèle + version (spec 2026-10-29-tracabilite-modele-version §4) ---
+
+
+async def test_blind_prediction_model_version_only_after_own_review(client, session, corpus):
+    """Aveugle : ni la prédiction ni son modèle/version avant SA relecture ; ensuite oui."""
+    project, arts = corpus
+    base = f"/api/v1/projects/{project.id}"
+    s = await _blind_search(client, project, n=1)
+    lot = await titles(client, project, search=s["id"])
+    art = next(a for a in arts if a.title in lot)
+    session.add(
+        ArticlePrediction(
+            article_id=art.id,
+            search_id=uuid.UUID(s["id"]),
+            model_used="m",
+            model_identifier="qwen3:8b",
+            model_version="2" * 64,
+            decision_json={"ai": True},
+            confidence_score=0.9,
+            status=PredictionStatus.AUTO_ACCEPTED,
+        )
+    )
+    await session.commit()
+    url = f"{base}/articles/{art.id}"
+    before = await client.get(f"{url}/prediction", params={"search": s["id"]})
+    assert before.json() is None and "2" * 64 not in before.text
+    await client.post(f"{url}/annotation", params={"search": s["id"]}, json={"ai": False})
+    after = (await client.get(f"{url}/prediction", params={"search": s["id"]})).json()
+    assert (after["model_identifier"], after["model_version"]) == ("qwen3:8b", "2" * 64)
+
+
+async def test_search_summary_last_job_model_version(client, session, corpus):
+    """Dernière analyse d'une recherche : modèle principal ET sa version (instantané du job)."""
+    project, _ = corpus
+    session.add(
+        InferenceJob(
+            project_id=project.id,
+            model_used="Big",
+            status=InferenceJobStatus.COMPLETED,
+            model_info={
+                "main": {
+                    "name": "Big",
+                    "backend": "OLLAMA",
+                    "identifier": "qwen3:8b",
+                    "version": "2" * 64,
+                },
+                "prefilter": None,
+            },
+        )
+    )
+    await session.commit()
+    items = (await client.get(f"/api/v1/projects/{project.id}/searches")).json()["items"]
+    assert items[0]["last_job"]["model"] == "Big"
+    assert items[0]["last_job"]["model_version"] == "2" * 64
+
+
+async def test_blind_search_export_hides_model_identifier_and_version(
+    client, session, corpus, tmp_path
+):
+    """Export d'une recherche aveugle (XLSX + extraction.csv du RO-Crate) : colonnes modèle,
+    identifiant et version vides — la traçabilité ne contourne pas l'aveugle."""
+    import csv
+    import io
+    import zipfile
+
+    from openpyxl import load_workbook
+
+    from app.api.v1.export import write_crate
+    from app.db.models import Search
+
+    project, arts = corpus
+    s = await _blind_search(client, project)
+    sid = __import__("uuid").UUID(s["id"])
+    for a in arts:
+        session.add(
+            ArticlePrediction(
+                article_id=a.id,
+                search_id=sid,
+                model_used="Big",
+                model_identifier="qwen3:8b",
+                model_version="2" * 64,
+                decision_json={"ai": True},
+                confidence_score=0.9,
+                status=PredictionStatus.AUTO_ACCEPTED,
+            )
+        )
+    await session.commit()
+
+    resp = await client.get(
+        f"/api/v1/projects/{project.id}/export.xlsx", params={"search": s["id"]}
+    )
+    assert resp.status_code == 200
+    head, *rows = list(load_workbook(io.BytesIO(resp.content))["Résultats"].values)
+    assert rows
+    for col in ("Modèle", "Identifiant du modèle", "Version du modèle"):
+        assert all(r[head.index(col)] is None for r in rows)
+
+    out = tmp_path / "blind.zip"
+    with open(out, "wb") as fh:
+        await write_crate(
+            session, project, "lead@lab.fr", fh, search=await session.get(Search, sid)
+        )
+    with zipfile.ZipFile(out) as z:
+        csv_rows = list(csv.DictReader(io.StringIO(z.read("extraction.csv").decode("utf-8-sig"))))
+    assert csv_rows
+    for r in csv_rows:
+        assert not (r["model"] or r["model_identifier"] or r["model_version"])

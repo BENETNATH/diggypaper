@@ -378,3 +378,51 @@ async def test_extra_instructions_extend_the_generated_prompt(
     assert job.prompt_template_id != ids[0]  # sans consigne : le prompt généré tout court
     count = (await session.execute(select(PromptTemplate))).scalars().all()
     assert len(count) == 3  # le prompt de départ, avec consigne, sans consigne
+
+
+async def test_get_inference_status_exposes_model_info_snapshot(
+    client, session, researcher_user, do_login
+):
+    """Traçabilité (spec 2026-10-29-tracabilite-modele-version §4) : le job renvoie l'instantané
+    des modèles (principal + pré-filtre) ; ancien job → model_info null."""
+    from datetime import UTC, datetime
+
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project_id, _ = await _create_frozen_project(client, session, researcher_user)
+    old = InferenceJob(
+        project_id=uuid.UUID(project_id),
+        model_used="Kev-4B",
+        status=InferenceJobStatus.FAILED,
+        created_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    session.add(old)
+    await session.commit()
+    job = (await client.get(f"/api/v1/projects/{project_id}/inference")).json()["job"]
+    assert job["model_info"] is None
+    info = {
+        "main": {
+            "name": "Kev-4B",
+            "backend": "OLLAMA",
+            "identifier": "kef/kev-4b",
+            "version": "2" * 64,
+        },
+        "prefilter": {
+            "name": "Small",
+            "backend": "OLLAMA",
+            "identifier": "qwen3:1.7b",
+            "version": None,
+        },
+    }
+    session.add(
+        InferenceJob(
+            project_id=uuid.UUID(project_id),
+            model_used="Kev-4B",
+            prefilter_model="Small",
+            status=InferenceJobStatus.COMPLETED,
+            model_info=info,
+            created_at=datetime(2026, 6, 1, tzinfo=UTC),
+        )
+    )
+    await session.commit()
+    job = (await client.get(f"/api/v1/projects/{project_id}/inference")).json()["job"]
+    assert job["model_info"] == info

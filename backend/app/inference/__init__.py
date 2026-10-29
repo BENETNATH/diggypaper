@@ -15,6 +15,8 @@ import copy
 import json
 import logging
 import math
+import re
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -22,6 +24,9 @@ from app.core.crypto import decrypt_secret
 from app.settings.service import get_setting
 
 logger = logging.getLogger(__name__)
+
+_CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
+_DIGEST = re.compile(r"^(sha256:)?[0-9a-f]{64}$")
 
 
 class InferenceError(Exception):
@@ -50,6 +55,8 @@ class OpenAICompatibleService:
         self._extra_body = extra_body or {}  # backends locaux ; les clés fixes priment
         # Ollama local : endpoint natif /api/chat (l'endpoint /v1 ignore options, ex. num_ctx).
         self._native_ollama = native_ollama
+        # Modèle renvoyé par la dernière réponse lue (traçabilité de la version servie).
+        self.served_model: str | None = None
 
     async def infer(self, model: str, system_prompt: str, user_prompt: str) -> dict:
         """Appelle le modèle et renvoie l'objet JSON parsé (spec §5).
@@ -119,6 +126,7 @@ class OpenAICompatibleService:
                     content = data["choices"][0]["message"]["content"]
             except (ValueError, KeyError, IndexError, TypeError) as exc:
                 raise InferenceError("invalid_response") from exc
+            self.served_model = clean_meta(data.get("model"))
             try:
                 return json.loads(content)
             except (json.JSONDecodeError, TypeError) as exc:
@@ -126,6 +134,93 @@ class OpenAICompatibleService:
         finally:
             if owned:
                 await client.aclose()
+
+
+def clean_meta(v, limit: int = 200) -> str | None:
+    """Chaîne relevée chez un tiers : ``str`` seulement, sans caractères de contrôle, tronquée."""
+    if not isinstance(v, str):
+        return None
+    return _CONTROL_CHARS.sub("", v).strip()[:limit] or None
+
+
+def ollama_ref(identifier: str) -> str:
+    """Référence Ollama normalisée : tag « :latest » implicite si le dernier segment n'en a pas."""
+    return identifier if ":" in identifier.rsplit("/", 1)[-1] else f"{identifier}:latest"
+
+
+def public_model_ref(backend: str | None, identifier: str) -> tuple[str | None, str | None]:
+    """(identifiant, endpoint) publiables. ``OPENAI_API`` : ``<url>#<modèle>`` → partie modèle +
+    ``scheme://hôte[:port]`` (jamais userinfo, chemin, query ni fragment) ; sinon l'identifiant."""
+    if backend != "OPENAI_API":
+        return identifier, None
+    url, _, name = identifier.partition("#")
+    try:
+        parts = urlsplit(url)
+        scheme, host, port = parts.scheme, parts.hostname, parts.port
+    except ValueError:
+        scheme = host = port = None
+    if not scheme or not host:
+        return name or None, None
+    host = f"[{host}]" if ":" in host else host
+    return name or None, f"{scheme}://{host}" + (f":{port}" if port else "")
+
+
+async def model_snapshot(model, service, name: str | None = None) -> dict | None:
+    """Instantané d'un modèle du registre pour la traçabilité : ``{name, backend, identifier,
+    version}`` (+ ``endpoint`` pour OPENAI_API, détails Ollama).
+
+    Version : digest des poids pour Ollama (``GET /api/tags``, relevé une fois), sinon ``None``
+    (la version servie est lue sur les réponses). Best-effort : n'échoue jamais.
+    # ponytail: digest relevé au démarrage du job ; un re-pull en cours de job n'est pas détecté.
+    """
+    if model is None and not name:
+        return None
+    backend = model.backend_type if model is not None else None
+    ident = model.model_identifier if model is not None else (name or "")
+    snap: dict = {
+        "name": model.name if model is not None else name,
+        "backend": backend,
+        "identifier": ident,
+        "version": None,
+    }
+    if backend == "OPENAI_API":
+        snap["identifier"], snap["endpoint"] = public_model_ref(backend, ident)
+        return snap
+    if backend not in (None, "OLLAMA"):
+        return snap
+    try:
+        base_url = getattr(service, "base_url", None)
+        http = getattr(service, "_http", None)
+        if not base_url:
+            return snap
+        owned = http is None
+        client = http or httpx.AsyncClient(timeout=10)
+        try:
+            resp = await client.get(f"{base_url.rstrip('/').removesuffix('/v1')}/api/tags")
+        finally:
+            if owned:
+                await client.aclose()
+        resp.raise_for_status()
+        want = ollama_ref(ident)
+        for entry in resp.json()["models"]:
+            if want != ollama_ref(entry.get("name") or entry.get("model") or ""):
+                continue
+            digest = clean_meta(entry.get("digest"), 80)
+            snap["version"] = digest if digest and _DIGEST.match(digest) else None
+            details = entry.get("details") or {}
+            extra = {
+                "size": entry.get("size") if isinstance(entry.get("size"), int) else None,
+                "modified_at": clean_meta(entry.get("modified_at"), 40),
+                "parameter_size": clean_meta(details.get("parameter_size"), 40),
+                "quantization": clean_meta(details.get("quantization_level"), 40),
+                "family": clean_meta(details.get("family"), 40),
+                "format": clean_meta(details.get("format"), 40),
+            }
+            snap.update({k: v for k, v in extra.items() if v is not None})
+            break
+    except Exception as exc:  # noqa: BLE001 - la traçabilité ne doit jamais faire échouer un job
+        logger.warning("model_snapshot %s : %s", ident, type(exc).__name__)
+    return snap
 
 
 async def unload_ollama(base_url: str, model: str, http: httpx.AsyncClient | None = None) -> None:
@@ -230,13 +325,18 @@ async def infer_with(
     system_prompt: str,
     user_prompt: str,
     name: str | None = None,
+    meta: dict | None = None,
 ):
     """Appelle un modèle génératif du registre.
 
+    ``meta`` (optionnel) reçoit, après un appel réussi, ``served_model`` : le champ ``model``
+    renvoyé par le service réellement appelé (traçabilité de la version).
+
     ``OPENAI_API`` : identifiant ``<url>#<modèle>`` + clé chiffrée propres au modèle ;
     sinon le service par défaut (réglage ``llm_api_base_url``) : natif ``/api/chat`` pour
-    Ollama (ou sans modèle), ``/v1`` pour les autres backends locaux (copie du service, le
-    service partagé n'est jamais muté).
+    Ollama (ou sans modèle), ``/v1`` pour les autres backends locaux (copie du service).
+    ``served_model`` est écrit sur le service par défaut (Ollama / sans modèle) : sans danger,
+    car ce service est construit par job / requête / run de banc d'essai et utilisé en séquence.
     """
     if model is not None and model.backend_type == "OPENAI_API":
         url, _, name = model.model_identifier.partition("#")
@@ -244,11 +344,20 @@ async def infer_with(
         svc = OpenAICompatibleService(
             url, key, timeout=default._timeout, public_only=model.owner_id is not None
         )
-        return await svc.infer(name, system_prompt, user_prompt)
+        out = await svc.infer(name, system_prompt, user_prompt)
+        _report_served(svc, meta)
+        return out
     if model is None or model.backend_type == "OLLAMA":
         svc = default
     else:  # LLAMA_CPP, TRANSFORMERS, … : pas d'/api/chat
         svc = copy.copy(default)
         svc._native_ollama = False
     ident = model.model_identifier if model is not None else (name or "")
-    return await svc.infer(ident, system_prompt, user_prompt)
+    out = await svc.infer(ident, system_prompt, user_prompt)
+    _report_served(svc, meta)
+    return out
+
+
+def _report_served(svc, meta: dict | None) -> None:
+    if meta is not None:
+        meta["served_model"] = clean_meta(getattr(svc, "served_model", None))

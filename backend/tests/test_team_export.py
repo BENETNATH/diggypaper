@@ -570,3 +570,220 @@ async def test_review_status_reviewer_and_prefill(client, session, lead_project)
     row = [c.value for c in ws[2]]
     assert row[head.index("Statut de relecture")] == "CORRECTED"
     assert row[head.index("Relu par")]
+
+
+# --- traçabilité modèle + version (spec 2026-10-29-tracabilite-modele-version §5) ---
+
+DIGEST_BIG = "2" * 12 + "b" * 52
+DIGEST_SMALL = "1" * 12 + "a" * 52
+SNAPSHOT = {
+    "main": {
+        "name": "Big",
+        "backend": "OLLAMA",
+        "identifier": "qwen3:8b",
+        "version": DIGEST_BIG,
+        "parameter_size": "8.2B",
+        "quantization": "Q4_K_M",
+    },
+    "prefilter": {
+        "name": "Small",
+        "backend": "OLLAMA",
+        "identifier": "qwen3:1.7b",
+        "version": DIGEST_SMALL,
+    },
+}
+
+
+def _projet_rows(wb) -> dict:
+    return {r[0]: r[1] for r in wb["Projet"].values if r and r[0]}
+
+
+async def test_export_xlsx_traces_model_identifier_and_version(client, session, lead_project):
+    """Résultats : identifiant + version du modèle par article ; Projet : modèle, identifiant,
+    version et détails des deux étages, lus dans l'instantané du job (registre non requis)."""
+    from app.db.models import InferenceJob, InferenceJobStatus
+
+    art = Article(project_id=lead_project.id, pmid="42", title="Mice")
+    session.add(art)
+    await session.commit()
+    session.add_all(
+        [
+            ArticlePrediction(
+                article_id=art.id,
+                model_used="Big",
+                model_identifier="qwen3:8b",
+                model_version=DIGEST_BIG,
+                decision_json={"use_ai_behavior": True},
+                confidence_score=0.93,
+                status=PredictionStatus.AUTO_ACCEPTED,
+            ),
+            InferenceJob(
+                project_id=lead_project.id,
+                model_used="Big",
+                prefilter_model="Small",
+                status=InferenceJobStatus.COMPLETED,
+                model_info=SNAPSHOT,
+            ),
+        ]
+    )
+    await session.commit()
+    resp = await client.get(f"/api/v1/projects/{lead_project.id}/export.xlsx")
+    wb = load_workbook(io.BytesIO(resp.content))
+    head, first = list(wb["Résultats"].values)[:2]
+    i = head.index("Modèle")
+    assert head[i + 1 : i + 3] == ("Identifiant du modèle", "Version du modèle")
+    assert first[i : i + 3] == ("Big", "qwen3:8b", DIGEST_BIG)
+    info = _projet_rows(wb)
+    assert info["Modèle (étage 2)"] == "Big"
+    assert info["Modèle (étage 2) · identifiant"] == "qwen3:8b"
+    assert info["Modèle (étage 2) · version"] == DIGEST_BIG
+    assert "Q4_K_M" in info["Modèle (étage 2) · détails"]
+    assert "8.2B" in info["Modèle (étage 2) · détails"]
+    assert info["Pré-filtre (étage 1)"] == "Small"
+    assert info["Pré-filtre (étage 1) · identifiant"] == "qwen3:1.7b"
+    assert info["Pré-filtre (étage 1) · version"] == DIGEST_SMALL
+
+
+async def test_export_xlsx_without_recorded_version_says_so(client, session, lead_project):
+    """Données anciennes (ni version par prédiction, ni instantané) : cellules vides et mention
+    explicite « non enregistrée » dans Projet — pas d'erreur."""
+    from app.db.models import InferenceJob, InferenceJobStatus
+
+    art = Article(project_id=lead_project.id, pmid="42", title="Mice")
+    session.add(art)
+    await session.commit()
+    session.add_all(
+        [
+            ArticlePrediction(
+                article_id=art.id,
+                model_used="coder",
+                confidence_score=0.93,
+                status=PredictionStatus.AUTO_ACCEPTED,
+            ),
+            InferenceJob(
+                project_id=lead_project.id, model_used="coder", status=InferenceJobStatus.COMPLETED
+            ),
+        ]
+    )
+    await session.commit()
+    resp = await client.get(f"/api/v1/projects/{lead_project.id}/export.xlsx")
+    assert resp.status_code == 200
+    wb = load_workbook(io.BytesIO(resp.content))
+    head, first = list(wb["Résultats"].values)[:2]
+    assert first[head.index("Modèle")] == "coder"
+    assert first[head.index("Identifiant du modèle")] is None
+    assert first[head.index("Version du modèle")] is None
+    info = _projet_rows(wb)
+    assert info["Modèle (étage 2)"] == "coder"
+    assert info["Modèle (étage 2) · version"] == "non enregistrée"
+    assert "Pré-filtre (étage 1) · version" not in info  # pas de pré-filtre
+
+
+async def test_export_ris_bib_notes_mention_model_and_version(client, session, lead_project):
+    """La note RIS / BibTeX de chaque article cite le modèle, son identifiant et sa version."""
+    rows = (("1", "qwen3:8b", DIGEST_BIG), ("2", None, None))
+    for pmid, ident, version in rows:
+        a = Article(project_id=lead_project.id, pmid=pmid, title=f"T{pmid}", doi=f"10.1/{pmid}")
+        session.add(a)
+        await session.flush()
+        session.add(
+            ArticlePrediction(
+                article_id=a.id,
+                model_used="Big",
+                model_identifier=ident,
+                model_version=version,
+                confidence_score=0.9,
+                status=PredictionStatus.AUTO_ACCEPTED,
+            )
+        )
+    await session.commit()
+    base = f"/api/v1/projects/{lead_project.id}"
+    ris = (await client.get(f"{base}/export.ris")).text
+    n1 = [line for line in ris.splitlines() if line.startswith("N1  - ")]
+    assert len(n1) == 2
+    assert any("Big (qwen3:8b)" in n and DIGEST_BIG in n for n in n1)
+    assert any("version non enregistrée" in n for n in n1)
+    bib = (await client.get(f"{base}/export.bib")).text
+    assert DIGEST_BIG in bib and "qwen3:8b" in bib
+
+
+async def test_export_neutralizes_formula_in_model_version_columns(client, session, lead_project):
+    """Valeur « version » tierce (crate importé) commençant par « = » : préfixée d'une
+    apostrophe dans les nouvelles colonnes XLSX (Résultats) et dans l'instantané (Projet)."""
+    from app.db.models import InferenceJob, InferenceJobStatus
+
+    evil = '=HYPERLINK("http://evil.test","x")'
+    art = Article(project_id=lead_project.id, pmid="42", title="Mice")
+    session.add(art)
+    await session.commit()
+    session.add_all(
+        [
+            ArticlePrediction(
+                article_id=art.id,
+                model_used="Big",
+                model_identifier="=cmd|' /C calc'!A0",
+                model_version=evil,
+                confidence_score=0.9,
+                status=PredictionStatus.AUTO_ACCEPTED,
+            ),
+            InferenceJob(
+                project_id=lead_project.id,
+                model_used="Big",
+                status=InferenceJobStatus.COMPLETED,
+                model_info={"main": {"name": "Big", "identifier": "x", "version": evil}},
+            ),
+        ]
+    )
+    await session.commit()
+    resp = await client.get(f"/api/v1/projects/{lead_project.id}/export.xlsx")
+    wb = load_workbook(io.BytesIO(resp.content))
+    head, first = list(wb["Résultats"].values)[:2]
+    assert first[head.index("Version du modèle")] == "'" + evil
+    assert first[head.index("Identifiant du modèle")].startswith("'=")
+    assert _projet_rows(wb)["Modèle (étage 2) · version"] == "'" + evil
+
+
+async def test_export_ris_bib_model_version_cannot_inject_fields(client, session, lead_project):
+    """Version tierce `}\\r\\nTY  - JOUR` (crate importé) : une seule ligne N1 en RIS (pas de
+    faux enregistrement), accolades BibTeX équilibrées ; idem avec un `\\` final."""
+    evil = "}\r\nTY  - JOUR"
+    for pmid, model, version in (("1", "Big", evil), ("2", "Big\\", "v\\")):
+        a = Article(project_id=lead_project.id, pmid=pmid, title=f"T{pmid}", doi=f"10.1/{pmid}")
+        session.add(a)
+        await session.flush()
+        session.add(
+            ArticlePrediction(
+                article_id=a.id,
+                model_used=model,
+                model_identifier=version,
+                model_version=version,
+                confidence_score=0.9,
+                status=PredictionStatus.AUTO_ACCEPTED,
+            )
+        )
+    await session.commit()
+    base = f"/api/v1/projects/{lead_project.id}"
+    ris = (await client.get(f"{base}/export.ris")).text
+    lines = ris.split("\r\n")
+    assert sum(line.startswith("TY  - ") for line in lines) == 2
+    assert sum(line.startswith("N1  - ") for line in lines) == 2
+    assert sum(line.startswith("ER  -") for line in lines) == 2
+    bib = (await client.get(f"{base}/export.bib")).text
+    assert bib.count("{") == bib.count("}")
+    assert "\\}" not in bib and "\\\n" not in bib
+
+
+def test_bibtex_note_ending_with_backslash_stays_balanced():
+    """Un `\\` final de note échapperait l'accolade fermante : les antislashs sont retirés."""
+    import uuid
+    from types import SimpleNamespace
+
+    from app.references import to_bibtex
+
+    a = SimpleNamespace(
+        id=uuid.uuid4(), pmid="1", doi=None, pmcid=None, title="T", authors=[], journal=None,
+        pub_date="2024", abstract=None, original_language=None, pub_types=[], fulltext_url=None,
+    )  # fmt: skip
+    bib = to_bibtex([a], {a.id: "Modèle : m\\"})
+    assert "\\" not in bib.split("note", 1)[1]
+    assert bib.count("{") == bib.count("}")
