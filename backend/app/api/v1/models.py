@@ -45,8 +45,9 @@ from app.inference import (
     make_inference_service,
     model_lock_key,
     ollama_ref,
+    public_model_ref,
 )
-from app.model_access import access_filter, check_public_url
+from app.model_access import access_filter, check_public_url, check_url_secrets
 from app.ollama_mode import COMPOSE_ROOT, MODE
 from app.settings.service import get_setting
 
@@ -115,14 +116,36 @@ def _check_url(url: str, user: User) -> None:
         raise HTTPException(status_code=422, detail=str(exc)) from None
 
 
+def _check_url_secrets(url: str) -> None:
+    """422 route-level (détail fixe) : la 422 de pydantic renverrait l'URL (le secret)."""
+    try:
+        check_url_secrets(url)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+
+
+def _check_openai_identifier(ident: str) -> None:
+    """OPENAI_API = ``<base_url>#<modèle>`` : un « # », deux parties non vides, base sans secret."""
+    url, sep, name = ident.partition("#")
+    if not sep or "#" in name or not url.strip() or not name.strip():
+        raise HTTPException(status_code=422, detail="model_identifier must be <base_url>#<model>")
+    _check_url_secrets(url)
+
+
 def _payload(m: ModelRegistry, user: User | None = None) -> dict:
+    """Même vue pour tous : un OPENAI_API ne sort jamais tel quel (nom du modèle + endpoint)."""
+    if m.backend_type == "OPENAI_API":
+        ident, endpoint = public_model_ref("OPENAI_API", m.model_identifier)
+    else:
+        ident, endpoint = m.model_identifier, None
     return {
         "mine": user is not None and m.owner_id == user.id,
         "platform": m.owner_id is None,
         "id": str(m.id),
         "name": m.name,
         "backend_type": m.backend_type,
-        "model_identifier": m.model_identifier,
+        "model_identifier": ident or "" if m.backend_type == "OPENAI_API" else m.model_identifier,
+        "endpoint": endpoint,
         "ram_usage_mb": m.ram_usage_mb,
         "is_active": m.is_active,
     }
@@ -327,6 +350,8 @@ async def create_model(payload: ModelCreate, db: DbDep, user: UserDep) -> dict:
     await _require_admin(user)
     if payload.backend_type == "OLLAMA":
         await _require_ollama(db)
+    if payload.backend_type == "OPENAI_API":
+        _check_openai_identifier(payload.model_identifier)
     existing = (
         await db.execute(select(ModelRegistry).where(ModelRegistry.name == payload.name))
     ).scalar_one_or_none()
@@ -347,6 +372,9 @@ async def create_model(payload: ModelCreate, db: DbDep, user: UserDep) -> dict:
 @router.post("/external/test", dependencies=[Depends(rate_limit_user("model_test", 10))])
 async def test_external(payload: ExternalModel, user: UserDep) -> dict:
     """Un appel minimal pour vérifier URL + clé + nom du modèle (erreur assainie)."""
+    _check_url_secrets(payload.base_url)
+    if "#" in payload.model:
+        raise HTTPException(status_code=422, detail="model must not contain '#'")
     _check_url(payload.base_url, user)
     svc = OpenAICompatibleService(
         payload.base_url, payload.api_key, timeout=30, public_only=user.role != UserRole.ADMIN
@@ -361,6 +389,9 @@ async def test_external(payload: ExternalModel, user: UserDep) -> dict:
 @router.post("/external", status_code=201)
 async def register_external(payload: ExternalModel, db: DbDep, user: UserDep) -> dict:
     """Modèle externe : propriété de son créateur (un admin crée un modèle de la plateforme)."""
+    _check_url_secrets(payload.base_url)
+    if "#" in payload.model:
+        raise HTTPException(status_code=422, detail="model must not contain '#'")
     _check_url(payload.base_url, user)
     name = payload.name.strip()
     if (await db.execute(select(ModelRegistry).where(ModelRegistry.name == name))).first():
@@ -391,6 +422,8 @@ async def update_model(model_id: uuid.UUID, payload: ModelUpdate, db: DbDep, use
     if payload.ram_usage_mb is not None:
         m.ram_usage_mb = payload.ram_usage_mb
     if payload.model_identifier is not None:
+        if m.backend_type == "OPENAI_API":
+            _check_openai_identifier(payload.model_identifier)
         m.model_identifier = payload.model_identifier
     await db.commit()
     await db.refresh(m)

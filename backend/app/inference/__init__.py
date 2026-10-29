@@ -153,7 +153,12 @@ def public_model_ref(backend: str | None, identifier: str) -> tuple[str | None, 
     ``scheme://hôte[:port]`` (jamais userinfo, chemin, query ni fragment) ; sinon l'identifiant."""
     if backend != "OPENAI_API":
         return identifier, None
-    url, _, name = identifier.partition("#")
+    # Ligne héritée à plusieurs « # » : URL = avant le PREMIER, modèle = après le DERNIER
+    # (un fragment ne doit jamais devenir le nom du modèle).
+    if "#" in identifier:
+        url, name = identifier.split("#", 1)[0], identifier.rsplit("#", 1)[1]
+    else:
+        url, name = identifier, None
     try:
         parts = urlsplit(url)
         scheme, host, port = parts.scheme, parts.hostname, parts.port

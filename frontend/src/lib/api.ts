@@ -221,7 +221,10 @@ export interface ModelInfo {
   id: string;
   name: string;
   backend_type: string | null;
+  /** OPENAI_API : nom du modèle seul (l'URL ne sort jamais du serveur). */
   model_identifier: string;
+  /** OPENAI_API : `scheme://hôte[:port]` ; null pour les autres backends. */
+  endpoint?: string | null;
   ram_usage_mb: number | null;
   is_active: boolean | null;
   /** Modèle défini par l'utilisateur courant. */

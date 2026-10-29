@@ -399,7 +399,7 @@ async def test_register_external_encrypts_key(client, session, admin_user, do_lo
     assert resp.status_code == 201
     body = resp.json()
     assert body["backend_type"] == "OPENAI_API"
-    assert body["model_identifier"] == "https://api.x/v1#gpt-4o"
+    assert (body["model_identifier"], body["endpoint"]) == ("gpt-4o", "https://api.x")
     assert "sk-secret" not in resp.text
     row = (
         await session.execute(select(ModelRegistry).where(ModelRegistry.name == "GPT"))

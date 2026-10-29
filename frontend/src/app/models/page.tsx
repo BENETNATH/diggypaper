@@ -164,6 +164,7 @@ function ModelsContent() {
                   </div>
                   <div className="truncate font-mono text-xs text-muted">
                     {m.model_identifier}
+                    {m.endpoint ? ` · ${m.endpoint}` : ""}
                     {m.ram_usage_mb ? ` · ${m.ram_usage_mb} MB` : ""}
                   </div>
                   {typeof modelTests[m.id] === "object" && (

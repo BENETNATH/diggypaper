@@ -676,7 +676,7 @@
     "extTitle": "Add an external model (OpenAI-compatible API)",
     "extHint": "OpenAI, OpenRouter, Mistral, your own vLLM…: give the API URL, key and model name. It quotes passages and explains its decision, usable at stage 1 or 2. Article text is sent to that service.",
     "extUrl": "API URL",
-    "extUrlHint": "Often ends with /v1",
+    "extUrlHint": "Often ends with /v1 The key goes in the API key field, never in the URL.",
     "extModel": "Model name",
     "extKey": "API key",
     "extKeyHint": "Stored encrypted, never shown again.",

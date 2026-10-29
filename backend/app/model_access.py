@@ -59,3 +59,17 @@ def check_public_url(url: str) -> None:
         ip = ipaddress.ip_address(info[4][0])
         if not ip.is_global:
             raise ValueError("base_url must be a public address")
+
+
+def check_url_secrets(url: str) -> None:
+    """Une base URL ne porte jamais de secret : le jeton va dans ``api_key`` (chiffré).
+
+    Userinfo (``user:pw@``, même user seul), query (même vide) et fragment (notre séparateur
+    URL/modèle) sont refusés. Messages fixes : l'URL n'est jamais échoée.
+    """
+    try:
+        parts = urlsplit(url.strip())
+    except ValueError:
+        raise ValueError("base_url is not a valid URL") from None
+    if "@" in parts.netloc or "?" in url or "#" in url:
+        raise ValueError("base_url must not contain credentials, query or fragment")

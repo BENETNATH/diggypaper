@@ -733,9 +733,9 @@ async def test_infer_with_meta_openai_api_served_model(monkeypatch):
         ("https://api.x.test:abc/v1#m", ("m", None)),
         ("http://[::1]:8080/v1#m", ("m", "http://[::1]:8080")),  # IPv6 : crochets conservés
         (
-            "https://api.x.test/v1#org/model#2",
-            ("org/model#2", "https://api.x.test"),
-        ),  # « # » du nom
+            "https://api.x.test/v1#FRAG#gpt-4o",
+            ("gpt-4o", "https://api.x.test"),
+        ),  # « # » hérités : le modèle est après le DERNIER
     ],
 )
 def test_public_model_ref_openai_api(identifier, expected):
