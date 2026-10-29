@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { Article } from "@/lib/api";
 import { ArticleLinks, biblioLine } from "@/components/Certainty";
+import { sourceLabel } from "@/lib/source";
 
 const STATUS_DOT: Record<string, string> = {
   AUTO_ACCEPTED: "bg-success",
@@ -89,7 +90,7 @@ export function ResultRow({ a, href }: { a: Article; href: string }) {
   const t = useTranslations("articles");
   const meta = [
     biblioLine(a),
-    a.pmid ? `PMID ${a.pmid}` : (a.doi ?? ""),
+    sourceLabel(a.source, a.native_id, t("sourceFile")) ?? a.doi ?? "",
     a.has_fulltext ? t("fulltext") : t("abstractOnly"),
     a.origin === "citation" ? t("originCitation", { n: a.origin_seeds ?? 0 }) : "",
   ].filter(Boolean);

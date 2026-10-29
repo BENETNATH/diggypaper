@@ -224,6 +224,8 @@ def test_articles_columns():
     assert set(c.keys()) == {
         "id",
         "project_id",
+        "source",
+        "native_id",
         "pmid",
         "pmcid",
         "doi",
@@ -299,6 +301,7 @@ def test_import_job_columns():
         "query",
         "job_id",
         "kind",
+        "source",
         "status",
         "result_json",
         "error",

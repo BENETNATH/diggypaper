@@ -34,7 +34,7 @@ from datetime import UTC, date, datetime
 
 import httpx
 from celery import current_task
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as _pg_insert
 from sqlalchemy.dialects.sqlite import insert as _sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -62,6 +62,7 @@ from app.pubmed import (
 )
 from app.refimport import (
     _entry,
+    clean_doi,
     crossref,
     dedupe,
     epmc_pmid_by_title,
@@ -84,6 +85,9 @@ _LANGUAGE_MAP = {
     "german": "de",
     "spanish": "es",
 }
+
+#: Registre des sources de recherche : code → fabrique ``(client, api_key) -> SourceAdapter``.
+ADAPTERS = {"pubmed": PubMedAdapter}
 
 #: Taille des lots efetch (pmids par requête).
 _EFETCH_BATCH = 100
@@ -157,6 +161,7 @@ def import_pubmed_task(
     options: dict | None = None,
     date_from: date | None = None,
     date_to: date | None = None,
+    source: str = "pubmed",
 ) -> dict:
     """Wrapper sync Celery : exécute le core async dans un thread dédié (C1/C2).
 
@@ -184,6 +189,7 @@ def import_pubmed_task(
                     options=options,
                     date_from=date_from,
                     date_to=date_to,
+                    source=source,
                 )
             )
         except BaseException as exc:  # propagée au thread principal
@@ -211,6 +217,7 @@ async def _import_pubmed(
     date_from: date | None = None,
     date_to: date | None = None,
     adapter: SourceAdapter | None = None,
+    source: str = "pubmed",
 ) -> dict:
     """Core async de l'import PubMed (ou, avec ``refs``, d'une liste de références).
 
@@ -218,8 +225,8 @@ async def _import_pubmed(
       engine par run (DATABASE_URL) et le dispose en fin (C2).
     - ``http`` injectable (tests) ; sinon ``httpx.AsyncClient(timeout=60.0)``
       (m4), fermé en ``finally``.
-    - ``adapter`` (Phase 1) : contrat ``SourceAdapter`` ; ``None`` → ``PubMedAdapter``
-      construit dans ``_do_import``. Non utilisé par les chemins refs/citations.
+    - ``adapter`` (Phase 1) : contrat ``SourceAdapter`` ; ``None`` → celui de ``source`` dans
+      ``ADAPTERS`` (construit dans ``_do_import``). Non utilisé par les chemins refs/citations.
     - ``job_id`` : id Celery du task (persisté dans import_jobs, M3).
     - Sémantique des statuts projet (m10) : démarrage → PROCESSING ; succès
       (y compris corpus vide) → FROZEN ; échec → DRAFT.
@@ -256,6 +263,7 @@ async def _import_pubmed(
             job = ImportJob(
                 project_id=project.id,
                 query=query,
+                source=None if refs is not None else source,
                 job_id=job_id,
                 kind=(options or {}).get("kind")
                 or ("references" if refs is not None else "import"),
@@ -275,7 +283,7 @@ async def _import_pubmed(
                 if refs is not None:
                     return await _do_import_refs(session, project, job, refs, client)
                 return await _do_import(
-                    session, project, job, query, client, date_from, date_to, adapter
+                    session, project, job, query, client, date_from, date_to, adapter, source
                 )
             except Exception as exc:
                 await _record_failure(session, project, job, exc, restore=previous)
@@ -296,11 +304,14 @@ async def _do_import(
     date_from: date | None = None,
     date_to: date | None = None,
     adapter: SourceAdapter | None = None,
+    source: str = "pubmed",
 ) -> dict:
     """Corps de l'import : esearch → efetch par lots → insertion (m6 : commit par batch)."""
     api_key = await get_setting(session, "ncbi_api_key")
     if adapter is None:
-        adapter = PubMedAdapter(client, api_key)
+        if source not in ADAPTERS:
+            raise LookupError("unknown source")
+        adapter = ADAPTERS[source](client, api_key)
     bounds = DateBounds(date_from, date_to)
     # m11 : TOCTOU entre les deux esearch (count puis idlist) — acceptable,
     # l'import est un instantané ; ``total_count`` est le count réel.
@@ -329,7 +340,20 @@ async def _do_import(
     imported = 0
     failed = 0
     fulltext = 0
+    duplicates_doi = 0
     done = 0
+    # DOI normalisé → identités (source, native_id) du projet : un DOI déjà porté par une autre
+    # identité (même import compris) n'est pas inséré (un seul import à la fois par projet).
+    doi_owners: dict[str, set] = {}
+    for doi, src, nid in (
+        await session.execute(
+            select(Article.doi, Article.source, Article.native_id).where(
+                Article.project_id == project.id, Article.doi.is_not(None)
+            )
+        )
+    ).all():
+        if key := clean_doi(doi):
+            doi_owners.setdefault(key, set()).add((src, nid))
 
     async def progress() -> None:
         # Lisible par GET /jobs pendant le RUNNING (barre de l'écran d'import).
@@ -353,23 +377,34 @@ async def _do_import(
             done += len(batch)
             await progress()
             continue
-        by_pmid = {m["pmid"]: m for m in metas if m.get("pmid")}
-        for pmid in batch:
-            meta = by_pmid.get(pmid)
+        by_id = {m["native_id"]: m for m in metas if m.get("native_id")}
+        for native_id in batch:
+            meta = by_id.get(native_id)
             if meta is None:
                 failed += 1
             else:
                 try:
-                    meta |= {"origin": "pubmed", "origin_ref": str(job.id)}
-                    inserted, has_text = await _insert_article(
-                        session, project.id, meta, client, adapter
-                    )
-                    if inserted:
-                        imported += 1
-                        fulltext += has_text
-                    # sinon : doublon (re-import) → ni importé ni échec (M2)
+                    meta |= {
+                        "source": source,
+                        "native_id": native_id,
+                        "origin": source,
+                        "origin_ref": str(job.id),
+                    }
+                    identity, doi = (source, native_id), clean_doi(meta.get("doi"))
+                    if doi and doi_owners.get(doi, set()) - {identity}:
+                        duplicates_doi += 1  # avant l'insertion : pas de plein texte pour rien
+                    else:
+                        inserted, has_text = await _insert_article(
+                            session, project.id, meta, client, adapter
+                        )
+                        if inserted:
+                            imported += 1
+                            fulltext += has_text
+                            if doi:
+                                doi_owners.setdefault(doi, set()).add(identity)
+                        # sinon : doublon (re-import) → ni importé ni échec (M2)
                 except Exception:
-                    logger.exception("article insert failed for pmid %s", pmid)
+                    logger.exception("article insert failed for %s %s", source, native_id)
                     failed += 1
             done += 1
             await progress()  # à chaque article : le full text PMC prend ~0,3 s/article
@@ -383,7 +418,8 @@ async def _do_import(
             "fulltext": fulltext,
             "total_count": count,
             "truncated": truncated,
-        },
+        }
+        | ({"duplicates_doi": duplicates_doi} if duplicates_doi else {}),
     )
 
 
@@ -421,7 +457,7 @@ async def _do_import_refs(
     ).all()
 
     def keys(pmid, doi, title) -> set:
-        return {k for k in (pmid, doi and doi.lower(), norm_title(title)) if k}
+        return {k for k in (pmid, clean_doi(doi), norm_title(title)) if k}
 
     known = {k for row in rows for k in keys(*row)}
     done = imported = failed = fulltext = duplicates = 0
@@ -474,7 +510,11 @@ async def _do_import_refs(
                 else:
                     if not meta.get("doi"):
                         meta["doi"] = e["doi"]
+                    # identifiant natif : PMID (pubmed), DOI normalisé (crossref), rien (file)
+                    native_ids = {"pubmed": meta.get("pmid"), "crossref": clean_doi(meta["doi"])}
                     meta |= {
+                        "source": source,
+                        "native_id": native_ids.get(source),
                         "origin": e.get("origin") or "references",
                         "origin_seeds": e.get("seeds"),
                         "origin_ref": str(job.id),
@@ -609,17 +649,19 @@ async def _insert_article(
     client: httpx.AsyncClient,
     adapter: SourceAdapter | None = None,
 ) -> tuple[bool, bool]:
-    """INSERT ... ON CONFLICT (project_id, pmid) DO NOTHING (M2) → (inséré, full text présent).
+    """INSERT ... ON CONFLICT DO NOTHING (M2) → (inséré, full text présent).
 
-    ``index_where`` est requis pour que la cible de conflit corresponde à
-    l'index unique partiel (``pmid IS NOT NULL``) — sur SQLite comme sur PG.
-    Phase 1 : le plein texte passe par ``adapter`` s'il est injecté, sinon la
+    Sans cible de conflit : toute violation d'unicité (PMID ou triplet source/native_id) est
+    ignorée. Phase 1 : le plein texte passe par ``adapter`` s'il est injecté, sinon la
     fonction module-level ``fetch_fulltext`` (chemin défaut : refs, citations,
     tests existants).
     """
+    source = meta.get("source") or ("pubmed" if meta.get("pmid") else None)
     values = {
         "project_id": project_id,
-        "pmid": meta["pmid"],
+        "source": source,
+        "native_id": meta.get("native_id") or (meta.get("pmid") if source == "pubmed" else None),
+        "pmid": meta.get("pmid"),
         "pmcid": meta.get("pmcid"),
         "doi": meta.get("doi"),
         "title": meta.get("title"),
@@ -650,13 +692,7 @@ async def _insert_article(
         except Exception:
             logger.exception("fetch_fulltext failed for pmcid %s", meta["pmcid"])
     insert = _pg_insert if session.get_bind().dialect.name == "postgresql" else _sqlite_insert
-    stmt = (
-        insert(Article)
-        .values(**values)
-        .on_conflict_do_nothing(
-            index_elements=["project_id", "pmid"], index_where=text("pmid IS NOT NULL")
-        )
-    )
+    stmt = insert(Article).values(**values).on_conflict_do_nothing()
     result = await session.execute(stmt)
     return (result.rowcount or 0) > 0, bool(values.get("sections"))
 

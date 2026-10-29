@@ -52,3 +52,23 @@ class SourceAdapter(Protocol):
     async def fetch_metadata(self, ids: list[str]) -> list[dict]: ...
 
     async def fetch_fulltext(self, id: str) -> tuple[str, list[dict]] | None: ...
+
+
+#: Nom lisible de chaque source (exports, UI) ; une source inconnue garde son code brut.
+SOURCE_NAMES = {"pubmed": "PubMed", "crossref": "Crossref", "file": "Fichier importé"}
+#: Nature de l'identifiant natif, quand elle a un nom usuel.
+_ID_KINDS = {"pubmed": "PMID", "crossref": "DOI"}
+
+
+def source_name(code: str | None) -> str | None:
+    """« pubmed » → « PubMed » ; code inconnu → le code ; ``None`` → ``None``."""
+    return SOURCE_NAMES.get(code, code) if code else None
+
+
+def source_label(code: str | None, native_id: str | None) -> str | None:
+    """« PubMed PMID 123 », « Crossref DOI 10.1/x », « Fichier importé » ; ``None`` sans source."""
+    name = source_name(code)
+    if not name or not native_id:
+        return name
+    kind = _ID_KINDS.get(code)
+    return f"{name} {kind} {native_id}" if kind else f"{name} {native_id}"

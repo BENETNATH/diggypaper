@@ -43,6 +43,7 @@ from app.db.models import (
 )
 from app.schema import project_fields
 from app.searches import ScopedProject, default_search, get_search, in_search, lot_condition
+from app.sources import source_label, source_name
 
 router = APIRouter(prefix="/projects", tags=["export"])
 
@@ -101,6 +102,13 @@ def _model_rows(label: str, name: str | None, snap: dict | None) -> list[list]:
     return rows
 
 
+def _import_source(job) -> str:
+    """Base interrogée par un import ; références / crate : sources mêlées (colonne Source)."""
+    if job.source:
+        return source_name(job.source)
+    return "sources par article" if job.kind in ("references", "crate") else "non enregistrée"
+
+
 def build_workbook(project, articles, preds, annos, import_jobs, inf_job, user_email) -> bytes:
     fields = project_fields(project)
     wb = Workbook()
@@ -108,7 +116,7 @@ def build_workbook(project, articles, preds, annos, import_jobs, inf_job, user_e
     # --- Résultats : une ligne par article -----------------------------------
     header = ["PMID", "PMCID", "DOI", "Titre", "Date de publication", "Journal"]
     header += ["Premier auteur", "Dernier auteur", "Auteurs", "Types de publication", "Langue"]
-    header += ["Lien DOI", "Lien texte intégral / PDF"]
+    header += ["Lien DOI", "Lien texte intégral / PDF", "Source", "Identifiant source"]
     header += ["Texte analysé", "Statut IA", "Pertinence IA", "Modèle"]
     header += ["Identifiant du modèle", "Version du modèle", "Décision IA"]
     header += [f"IA · {f['label']}" for f in fields]
@@ -128,6 +136,7 @@ def build_workbook(project, articles, preds, annos, import_jobs, inf_job, user_e
         row += [au[0] if au else None, au[-1] if len(au) > 1 else None, "; ".join(au)]
         row += ["; ".join(a.pub_types or []), a.original_language]
         row += [f"https://doi.org/{a.doi}" if a.doi else None, a.fulltext_url]
+        row += [source_label(a.source, a.native_id), a.native_id]
         row += [a.fulltext_source or ("abstract" if a.abstract else "—")]
         row += [p.status.value if p and p.status else None, p.confidence_score if p else None]
         row += [p.model_used if p else None]
@@ -183,9 +192,13 @@ def build_workbook(project, articles, preds, annos, import_jobs, inf_job, user_e
     info += [
         [f["label"], f"{f['type']} {', '.join(f.get('options') or [])}".strip()] for f in fields
     ]
-    info += [[], ["Requêtes PubMed", "Date · articles importés"]]
+    info += [[], ["Imports", "Date · source · articles importés"]]
     info += [
-        [j.query, f"{j.created_at:%Y-%m-%d} · {(j.result_json or {}).get('imported', '')}"]
+        [
+            j.query,
+            f"{j.created_at:%Y-%m-%d} · {_import_source(j)} · "
+            f"{(j.result_json or {}).get('imported', '')}",
+        ]
         for j in import_jobs
     ]
     if inf_job is not None:

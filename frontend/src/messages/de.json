@@ -326,6 +326,8 @@
     "textFull": "Volltext",
     "textAbstract": "Nur Abstract",
     "originCitation": "über Zitat (mit {n} verknüpft)",
+    "sourceFile": "importierte Datei",
+    "sourceNotRecorded": "Quelle nicht erfasst",
     "emptyFiltered": "Kein Artikel entspricht diesen Filtern."
   },
   "gold": {

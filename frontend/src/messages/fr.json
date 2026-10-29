@@ -326,6 +326,8 @@
     "textFull": "Texte intégral",
     "textAbstract": "Résumé seul",
     "originCitation": "par citation (liée à {n})",
+    "sourceFile": "fichier importé",
+    "sourceNotRecorded": "source non enregistrée",
     "emptyFiltered": "Aucun article ne correspond à ces filtres."
   },
   "gold": {

@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import re
 
+from app.sources import source_label, source_name
+
 RIS_MIME = "application/x-research-info-systems"
 BIBTEX_MIME = "application/x-bibtex"
 
@@ -41,6 +43,7 @@ def to_ris(articles, notes: dict | None = None) -> str:
         rec.append(("AB", _clean(a.abstract)))
         rec.append(("DO", a.doi))
         rec.append(("AN", f"PMID:{a.pmid}" if a.pmid else None))
+        rec.append(("DB", source_name(getattr(a, "source", None))))  # tag RIS « base de données »
         rec.append(("C2", a.pmcid))  # Zotero lit le PMCID dans C2
         url = f"https://doi.org/{a.doi}" if a.doi else None
         url = url or (f"https://pubmed.ncbi.nlm.nih.gov/{a.pmid}/" if a.pmid else None)
@@ -81,6 +84,7 @@ def to_bibtex(articles, notes: dict | None = None) -> str:
             "doi": a.doi or "",
             "pmid": a.pmid or "",
             "pmcid": a.pmcid or "",
+            "source": _bib(source_label(getattr(a, "source", None), getattr(a, "native_id", None))),
             "url": f"https://doi.org/{a.doi}" if a.doi else "",
             "abstract": _bib(a.abstract),
             "language": a.original_language or "",

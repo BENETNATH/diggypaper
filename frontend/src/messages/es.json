@@ -326,6 +326,8 @@
     "textFull": "Texto completo",
     "textAbstract": "Solo resumen",
     "originCitation": "por cita (vinculada a {n})",
+    "sourceFile": "archivo importado",
+    "sourceNotRecorded": "fuente no registrada",
     "emptyFiltered": "Ningún artículo coincide con estos filtros."
   },
   "gold": {

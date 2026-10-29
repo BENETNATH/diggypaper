@@ -137,8 +137,15 @@ def read_article(zf: zipfile.ZipFile, key: str) -> dict:
     except CrateError:
         pass
     date = _clean(meta.get("pub_date"), 20)
+    pmid = _clean(meta.get("pmid"), 20)
+    source = _clean(meta.get("source"), 50)
+    native_id = _clean(meta.get("native_id"), 200)
+    if source is None and pmid:  # crate ancien : seule la recherche PubMed avait un PMID
+        source, native_id = "pubmed", pmid
     return {
-        "pmid": _clean(meta.get("pmid"), 20),
+        "source": source,
+        "native_id": native_id,
+        "pmid": pmid,
         "pmcid": _clean(meta.get("pmcid"), 20),
         "doi": _clean(meta.get("doi"), 200),
         "title": _clean(meta.get("title"), 2000),

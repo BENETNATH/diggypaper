@@ -191,7 +191,11 @@ def prisma_counts(
         for j in import_jobs:
             r = j.result_json or {}
             if j.status is not None and j.status.value == "COMPLETED":
-                identified += int(r.get("imported", 0)) + int(r.get("failed", 0))
+                identified += (
+                    int(r.get("imported", 0))
+                    + int(r.get("failed", 0))
+                    + int(r.get("duplicates_doi", 0))  # doublons DOI écartés à l'import
+                )
                 failed += int(r.get("failed", 0))
         identified = max(identified, total + failed)
     dups = identified - failed - total  # références déjà présentes (ré-imports)

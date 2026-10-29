@@ -18,6 +18,7 @@ from datetime import UTC, datetime
 
 from app.core.config import get_settings
 from app.inference import public_model_ref
+from app.sources import source_name
 
 CRATE_CONTEXT = "https://w3id.org/ro/crate/1.1/context"
 CONFORMS = "https://w3id.org/ro/crate/1.1"
@@ -77,6 +78,8 @@ def article_record(a, key: str, pred, annos: list, fields: list[dict]) -> dict:
         "pmid": a.pmid,
         "pmcid": a.pmcid,
         "doi": a.doi,
+        "source": a.source,
+        "native_id": a.native_id,
         "title": a.title,
         "journal": a.journal,
         "pub_date": a.pub_date,
@@ -116,7 +119,18 @@ def article_record(a, key: str, pred, annos: list, fields: list[dict]) -> dict:
 
 def extraction_csv(articles, keys: dict, preds: dict, annos: dict, fields: list[dict]) -> bytes:
     """Tableau d'extraction plat (une ligne par article), UTF-8 avec BOM pour Excel."""
-    head = ["key", "pmid", "doi", "title", "pub_date", "journal", "first_author", "last_author"]
+    head = [
+        "key",
+        "pmid",
+        "doi",
+        "source",
+        "native_id",
+        "title",
+        "pub_date",
+        "journal",
+        "first_author",
+        "last_author",
+    ]
     head += ["status", "relevance", "fulltext_source", "model", "model_identifier", "model_version"]
     head += [f["key"] for f in fields] + [f"{f['key']}_certainty" for f in fields]
     head += [f"{f['key']}_human" for f in fields]
@@ -128,7 +142,8 @@ def extraction_csv(articles, keys: dict, preds: dict, annos: dict, fields: list[
         ai, human = r["ai"] or {}, (r["human"] or [{}])[-1]
         w.writerow(
             neutralize(c)
-            for c in [r["key"], r["pmid"], r["doi"], r["title"], r["pub_date"], r["journal"]]
+            for c in [r["key"], r["pmid"], r["doi"], r["source"], r["native_id"], r["title"]]
+            + [r["pub_date"], r["journal"]]
             + [r["first_author"], r["last_author"], r["final_status"], ai.get("relevance")]
             + [r["fulltext_source"], ai.get("model"), ai.get("model_identifier")]
             + [ai.get("model_version")]
@@ -173,6 +188,7 @@ def project_info(project, fields, import_jobs, inf_job, models: dict, prompt) ->
         "pubmed_queries": [
             {
                 "query": j.query,
+                "source": j.source,  # clé « pubmed_queries » gardée pour compat (phase 4 : imports)
                 "date": j.created_at.isoformat() if j.created_at else None,
                 "imported": (j.result_json or {}).get("imported"),
             }
@@ -321,7 +337,7 @@ def build_graph(project, articles, keys: dict, files: dict, info: dict, now: str
             {
                 "@id": f"#import-{i}",
                 "@type": "SearchAction",
-                "name": "Import PubMed",
+                "name": " ".join(filter(None, ["Import", source_name(q.get("source"))])),
                 "query": q["query"],
                 "startTime": q["date"],
                 "result": {"@id": "extraction.csv"},

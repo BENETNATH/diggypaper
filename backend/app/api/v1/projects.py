@@ -47,7 +47,7 @@ from app.refimport import dedupe, parse_references
 from app.schema import DEFAULT_QUESTION, check_fields, project_fields
 from app.searches import default_search, definition_hash, get_search, in_search, lot_condition
 from app.settings.service import get_setting
-from app.tasks import complete_fulltext_task, import_pubmed_task
+from app.tasks import ADAPTERS, complete_fulltext_task, import_pubmed_task
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +116,13 @@ class ImportRequest(BaseModel):
     # NCBI ([dp]) et bornes de la bissection des gros jeux (moins d'appels esearch).
     date_from: date | None = None
     date_to: date | None = None
+    source: str = "pubmed"  # base interrogée (registre des adapters)
+
+    @model_validator(mode="after")
+    def _check_source(self) -> "ImportRequest":
+        if self.source not in ADAPTERS:
+            raise ValueError(f"unknown source: {self.source}")
+        return self
 
     @model_validator(mode="after")
     def _check_date_bounds(self) -> "ImportRequest":
@@ -187,6 +194,8 @@ def biblio_payload(a: Article) -> dict:
     """Date, journal, auteurs d'un article (premier / dernier auteur dérivés de la liste)."""
     authors = a.authors or []
     return {
+        "source": a.source,
+        "native_id": a.native_id,
         "journal": a.journal,
         "pub_date": a.pub_date,
         "authors": authors,
@@ -486,7 +495,11 @@ async def trigger_import(
         raise HTTPException(status_code=409, detail="import already in progress")
     await _require_no_active_job(db, project.id)
     job = import_pubmed_task.delay(
-        str(project.id), payload.query, date_from=payload.date_from, date_to=payload.date_to
+        str(project.id),
+        payload.query,
+        date_from=payload.date_from,
+        date_to=payload.date_to,
+        source=payload.source,
     )
     if celery_app.conf.task_always_eager:
         status = job.state  # SUCCESS / FAILURE (le job est déjà terminé)
@@ -880,6 +893,7 @@ async def list_jobs(project_id: uuid.UUID, db: DbDep, user: UserDep) -> dict:
                 "id": str(j.id),
                 "task": "import_pubmed",
                 "kind": j.kind or "import",
+                "source": j.source,
                 "status": j.status,
                 "query": j.query,
                 "result": j.result_json,

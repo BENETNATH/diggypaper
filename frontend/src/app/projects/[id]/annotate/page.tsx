@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { ArticleLinks, biblioLine } from "@/components/Certainty";
+import { sourceLabel } from "@/lib/source";
 import { AnnotationForm, Annotation } from "@/components/AnnotationForm";
 import { ModelRef } from "@/components/ModelRef";
 import { EvidenceHighlighter } from "@/components/EvidenceHighlighter";
@@ -42,6 +43,7 @@ export default function AnnotatePage() {
   const t = useTranslations("annotate");
   const ti = useTranslations("import"); // libellés des parties du texte
   const tc = useTranslations("common");
+  const ta = useTranslations("articles"); // libellés de la source
   const locale = useLocale();
   const params = useParams<{ id: string }>();
   const searchParams = useSearchParams();
@@ -323,6 +325,9 @@ export default function AnnotatePage() {
           {article.title ?? `Article ${article.pmid ?? article.id}`}
         </h1>
         {biblioLine(article) && <p className="text-sm text-foreground/80">{biblioLine(article)}</p>}
+        <p className="text-xs text-muted">
+          {sourceLabel(article.source, article.native_id, ta("sourceFile")) ?? ta("sourceNotRecorded")}
+        </p>
         <ArticleLinks article={article} className="mt-0.5" />
         {shownPrediction && (
           <p className="text-sm text-muted">

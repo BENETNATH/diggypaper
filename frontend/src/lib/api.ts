@@ -56,6 +56,8 @@ export interface Project {
 export interface Article {
   id: string;
   pmid: string | null;
+  source?: string | null; // pubmed | crossref | file… ; null : donnée ancienne
+  native_id?: string | null; // identifiant dans cette source (PMID, DOI…)
   pmcid: string | null;
   doi: string | null;
   title: string | null;
@@ -118,6 +120,7 @@ export interface ImportJob {
   id: string;
   task: string;
   kind?: "import" | "fulltext" | "references" | "citations" | "crate";
+  source?: string | null; // base interrogée ; null : références, crate, plein texte
   status: "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
   query: string | null;
   result: Record<string, unknown> | null;

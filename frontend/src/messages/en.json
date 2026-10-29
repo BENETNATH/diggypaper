@@ -326,6 +326,8 @@
     "textFull": "Full text",
     "textAbstract": "Abstract only",
     "originCitation": "via citation (linked to {n})",
+    "sourceFile": "imported file",
+    "sourceNotRecorded": "source not recorded",
     "emptyFiltered": "No article matches these filters."
   },
   "gold": {

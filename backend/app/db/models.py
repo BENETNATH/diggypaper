@@ -269,12 +269,27 @@ class Article(Base):
             postgresql_where=text("pmid IS NOT NULL"),
             sqlite_where=text("pmid IS NOT NULL"),
         ),
+        # Phase 2 multi-sources : identité générale (project_id, source, native_id) ; on garde
+        # l'unicité du PMID (identifiant universel que d'autres sources fournissent).
+        Index(
+            "uq_articles_project_source_native",
+            "project_id",
+            "source",
+            "native_id",
+            unique=True,
+            postgresql_where=text("native_id IS NOT NULL"),
+            sqlite_where=text("native_id IS NOT NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, **_uuid_pk())
     project_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("projects.id", ondelete="CASCADE")
     )
+    # Base qui a fourni la notice (pubmed | crossref | file…) et son identifiant natif (PMID, DOI
+    # normalisé…). NULL : donnée ancienne sans PMID dont la base n'a jamais été notée.
+    source: Mapped[str | None] = mapped_column(String)
+    native_id: Mapped[str | None] = mapped_column(String)
     pmid: Mapped[str | None] = mapped_column(String)
     pmcid: Mapped[str | None] = mapped_column(String)
     doi: Mapped[str | None] = mapped_column(String)
@@ -298,7 +313,7 @@ class Article(Base):
     # m3 : VARCHAR libre (pas un enum) — les langues hors en/fr/de/es gardent leur
     # libellé PubMed brut (ex. "Italian") ; pas de forçage 'en' (spec §3 : VARCHAR).
     original_language: Mapped[str | None] = mapped_column(String, server_default="en")
-    # D'où vient l'article : pubmed (recherche) | references (liste importée) | citation
+    # D'où vient l'article : <source> (recherche : pubmed…) | references (liste importée) | citation
     # (chaînage de citations). NULL : import antérieur. ``origin_seeds`` : nombre d'articles de
     # départ qui le citent ou qu'il cite ; ``origin_ref`` : identifiant du job d'import.
     origin: Mapped[str | None] = mapped_column(String)
@@ -748,6 +763,8 @@ class ImportJob(Base):
     )
     query: Mapped[str] = mapped_column(Text, nullable=False)
     kind: Mapped[str | None] = mapped_column(String, server_default="import")  # import | fulltext
+    # Base interrogée (pubmed…) ; NULL : références (sources mêlées), crate, plein texte.
+    source: Mapped[str | None] = mapped_column(String)
     job_id: Mapped[str | None] = mapped_column(String)  # id Celery du task
     status: Mapped[ImportJobStatus | None] = mapped_column(
         _enum(ImportJobStatus), server_default="PENDING"
