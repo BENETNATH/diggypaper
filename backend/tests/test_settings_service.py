@@ -98,3 +98,17 @@ async def test_unknown_key_rejected(session):
     """Clé inconnue → refusée (pas de stockage arbitraire)."""
     with pytest.raises(ValueError):
         await set_setting(session, "totally_unknown_key", "x")
+
+
+async def test_openalex_api_key_secret(session):
+    """Phase 4a : ``openalex_api_key`` est une clé connue, sécrète (chiffrée, masquée)."""
+    await set_setting(session, "openalex_api_key", "ok-123")
+    assert await get_setting(session, "openalex_api_key") == "ok-123"
+    row = (
+        await session.execute(
+            select(SystemSettings).where(SystemSettings.key_name == "openalex_api_key")
+        )
+    ).scalar_one()
+    assert row.is_secret is True
+    assert b"ok-123" not in row.value_encrypted
+    assert (await get_all(session))["openalex_api_key"] == MASK

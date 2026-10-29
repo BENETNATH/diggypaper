@@ -200,7 +200,6 @@ def project_info(project, fields, import_jobs, inf_job, models: dict, prompt) ->
         "fields": fields,
         "text_sections": project.text_sections,
         "read_windows": project.read_windows,
-        "pubmed_queries": imports,  # clé gardée pour compat lecture ; « imports » est le nom réel
         "imports": imports,
         "analysis": None
         if inf_job is None
@@ -340,7 +339,7 @@ def build_graph(project, articles, keys: dict, files: dict, info: dict, now: str
     graph += [{"@id": i, "@type": "Periodical", "name": n} for n, i in journals.items()]
 
     analysis = info.get("analysis")
-    for i, q in enumerate(info["pubmed_queries"], 1):
+    for i, q in enumerate(info["imports"], 1):
         graph.append(
             {
                 "@id": f"#import-{i}",

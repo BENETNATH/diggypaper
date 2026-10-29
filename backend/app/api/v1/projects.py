@@ -43,13 +43,14 @@ from app.db.models import (
     UserRole,
 )
 from app.europepmc import EpmcError
+from app.openalex import OpenAlexError
 from app.pubmed import NCBIError, _esearch_max
 from app.refimport import dedupe, parse_references
 from app.schema import DEFAULT_QUESTION, check_fields, project_fields
 from app.searches import default_search, definition_hash, get_search, in_search, lot_condition
 from app.settings.service import get_setting
 from app.sources import DateBounds
-from app.tasks import ADAPTERS, complete_fulltext_task, import_pubmed_task
+from app.tasks import ADAPTERS, _source_key_setting, complete_fulltext_task, import_pubmed_task
 
 logger = logging.getLogger(__name__)
 
@@ -596,7 +597,7 @@ async def query_volume(
     await _require_project_member(db, project_id, user)
     if not payload.query.strip():
         raise HTTPException(status_code=422, detail="query must not be empty")
-    api_key = await get_setting(db, "ncbi_api_key")
+    api_key = await get_setting(db, _source_key_setting(payload.source))
     try:
         async with _make_http_client() as client:
             adapter = ADAPTERS[payload.source](client, api_key)
@@ -610,6 +611,9 @@ async def query_volume(
     except EpmcError as exc:
         logger.error("query-volume Europe PMC error: %s", exc)
         return JSONResponse(status_code=502, content={"error": "europepmc_unavailable"})
+    except OpenAlexError as exc:
+        logger.error("query-volume OpenAlex error: %s", exc)
+        return JSONResponse(status_code=502, content={"error": "openalex_unavailable"})
     return {"count": count, "max": _esearch_max()}
 
 

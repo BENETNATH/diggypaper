@@ -83,7 +83,7 @@
     "addModels": "Añadir un modelo",
     "askAdmin": "Pida a un administrador que añada uno.",
     "howTitle": "¿Cómo funciona?",
-    "howBody": "1) Importe artículos: consulta de PubMed, lista de referencias o citas vinculadas. 2) Cree una o varias búsquedas (una pregunta sobre un lote de artículos, quizá los resultados de otra búsqueda) y lance el análisis con un modelo. 3) Consulte los resultados: los casos seguros se aceptan o descartan automáticamente, revise solo los dudosos. Gold y benchmark son opcionales; una búsqueda puede programarse para empezar cuando otra termine.",
+    "howBody": "1) Importe artículos: consulta (PubMed, Europe PMC u OpenAlex), lista de referencias o citas vinculadas. 2) Cree una o varias búsquedas (una pregunta sobre un lote de artículos, quizá los resultados de otra búsqueda) y lance el análisis con un modelo. 3) Consulte los resultados: los casos seguros se aceptan o descartan automáticamente, revise solo los dudosos. Gold y benchmark son opcionales; una búsqueda puede programarse para empezar cuando otra termine.",
     "question": "Pregunta",
     "questionHint": "Definir la pregunta a los artículos y los campos de respuesta.",
     "needsCorpus": "Disponible en cuanto el corpus contenga artículos.",
@@ -150,7 +150,7 @@
   "import": {
     "title": "Importación del corpus",
     "queryTitle": "Consulta de importación",
-    "queryLabel": "Consulta de PubMed",
+    "queryLabel": "Consulta",
     "checkVolume": "Comprobar volumen",
     "volumeResult": "Resultado del volumen",
     "import": "Iniciar importación",
@@ -160,7 +160,7 @@
     "imported": "importados",
     "failed": "fallidos",
     "total": "total",
-    "intro": "Tres formas de crear o enriquecer el corpus: una consulta de PubMed, una lista de referencias (DOI, PMID, exportación de Zotero…) o las citas vinculadas a los artículos ya presentes. Se obtienen metadatos y textos completos abiertos; puede completar en cualquier momento.",
+    "intro": "Tres formas de crear o enriquecer el corpus: una consulta (PubMed, Europe PMC u OpenAlex), una lista de referencias (DOI, PMID, exportación de Zotero…) o las citas vinculadas a los artículos ya presentes. Se obtienen metadatos y textos completos abiertos; puede completar en cualquier momento.",
     "queryHint": "Sintaxis PubMed (operadores AND/OR, campos [tiab], [MeSH]…).",
     "checkFirst": "Compruebe primero el volumen para poder importar.",
     "capNote": "solo se importarán los primeros {max} (los más recientes) — IMPORT_MAX_ARTICLES",
@@ -253,7 +253,9 @@
     "qaRefused": "Este asistente solo crea consultas de PubMed: reformule su búsqueda.",
     "qaNcbiDown": "PubMed no pudo verificar la consulta (servicio no disponible).",
     "qaNoModel": "Ningún modelo utilizable: añada uno en la página Modelos.",
-    "qaHint": "Su texto se envía al modelo elegido (un servicio externo si es un modelo externo). No introduzca datos personales."
+    "qaHint": "Su texto se envía al modelo elegido (un servicio externo si es un modelo externo). No introduzca datos personales.",
+    "queryHintGeneric": "Texto libre (operadores AND/OR).",
+    "sourceLabel": "Fuente"
   },
   "articles": {
     "title": "Resultados y revisión",
@@ -578,7 +580,10 @@
     "contactEmail": "Correo de contacto",
     "fromEnvSecret": "definida en el entorno del servidor",
     "fromEnvValue": "Entorno: {value}",
-    "envNote": "Los campos vacíos usan el valor del archivo .env del servidor (en gris). Introduzca un valor aquí para sustituirlo: se guarda en la base de datos y tiene prioridad; vacíe el campo para volver al entorno."
+    "envNote": "Los campos vacíos usan el valor del archivo .env del servidor (en gris). Introduzca un valor aquí para sustituirlo: se guarda en la base de datos y tiene prioridad; vacíe el campo para volver al entorno.",
+    "openalex": "OpenAlex",
+    "openalexKey": "Clave API de OpenAlex (opcional)",
+    "openalexHelp": "Sin clave: presupuesto IP compartido gratuito; con clave gratuita, presupuesto dedicado más amplio."
   },
   "annotate": {
     "title": "Revisión",
@@ -632,7 +637,8 @@
     "addSelection": "Añadir la selección como cita de evidencia",
     "previousArticle": "Anterior",
     "navArticles": "Navegación entre artículos",
-    "nextShort": "Siguiente"
+    "nextShort": "Siguiente",
+    "metadataOnlyNote": "Solo metadatos (OpenAlex): esta fuente no proporciona texto completo. Si tienes acceso al artículo, sube su PDF."
   },
   "sex": {
     "MALE_ONLY": "Solo machos",

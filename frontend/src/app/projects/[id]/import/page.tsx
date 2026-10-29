@@ -19,6 +19,7 @@ import { RequireAuth } from "@/components/RequireAuth";
 import { ReferencesImport } from "@/components/ReferencesImport";
 import { CitationExpand } from "@/components/CitationExpand";
 import { QueryAssistant } from "@/components/QueryAssistant";
+import { sourceLabel } from "@/lib/source";
 import { Button } from "@/components/ui/Button";
 import { Field, Input } from "@/components/ui/Field";
 import { Card, Badge, statusColor } from "@/components/ui/Card";
@@ -158,6 +159,7 @@ function ImportContent() {
   const [project, setProject] = useState<Project | null>(null);
   const [jobs, setJobs] = useState<ImportJob[] | null>(null);
   const [mode, setMode] = useState<"pubmed" | "refs" | "cites">("pubmed");
+  const [source, setSource] = useState<"pubmed" | "europepmc" | "openalex">("pubmed");
   const [query, setQuery] = useState("");
   const [volume, setVolume] = useState<number | null>(null);
   const [cap, setCap] = useState(Infinity); // plafond d'import de l'instance (illimité : au-delà de 1e9)
@@ -227,7 +229,7 @@ function ImportContent() {
     setChecking(true);
     setError(null);
     try {
-      const r = await queryVolume(projectId, query);
+      const r = await queryVolume(projectId, query, source);
       setVolume(r.count);
       setCap(r.max >= 1e9 ? Infinity : r.max);
     } catch (err) {
@@ -248,14 +250,15 @@ function ImportContent() {
     }
   }
 
-  /** Relance un job échoué (requête identique : les articles déjà importés sont ignorés). */
+  /** Relance un job échoué (requête + source identiques : les articles déjà importés
+   *  sont ignorés). */
   async function handleRetry(failed: ImportJob) {
     if (failed.kind === "fulltext") return handleFulltext();
     if (failed.kind === "references" || failed.kind === "citations" || failed.kind === "crate") return;
     setError(null);
     try {
       jobsBefore.current = jobs?.length ?? 0;
-      await triggerImport(projectId, failed.query ?? "");
+      await triggerImport(projectId, failed.query ?? "", failed.source ?? "pubmed");
       setWatching(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "error");
@@ -268,7 +271,7 @@ function ImportContent() {
     setError(null);
     try {
       jobsBefore.current = jobs?.length ?? 0;
-      await triggerImport(projectId, query);
+      await triggerImport(projectId, query, source);
       setWatching(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "error");
@@ -364,21 +367,41 @@ function ImportContent() {
               />
             ) : (
             <div className="flex flex-col gap-4">
-            <details className="rounded-lg border border-border p-3">
-              <summary className="cursor-pointer text-sm font-medium text-foreground">{t("qaTitle")}</summary>
-              <div className="mt-3">
-                <QueryAssistant
-                  projectId={projectId}
-                  onUse={(q) => {
-                    setQuery(q);
-                    setVolume(null);
-                  }}
-                />
-              </div>
-            </details>
+            {source === "pubmed" && (
+              <details className="rounded-lg border border-border p-3">
+                <summary className="cursor-pointer text-sm font-medium text-foreground">{t("qaTitle")}</summary>
+                <div className="mt-3">
+                  <QueryAssistant
+                    projectId={projectId}
+                    onUse={(q) => {
+                      setQuery(q);
+                      setVolume(null);
+                    }}
+                  />
+                </div>
+              </details>
+            )}
           <form onSubmit={handleCheckVolume} className="flex flex-col gap-4">
             {hasCorpus && <p className="text-sm text-muted">{t("addHint", { n: project?.article_count ?? 0 })}</p>}
-            <Field label={t("queryLabel")} hint={t("queryHint")}>
+            <fieldset className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
+              <legend className="mb-1 font-medium text-foreground">{t("sourceLabel")}</legend>
+              {(["pubmed", "europepmc", "openalex"] as const).map((s) => (
+                <label key={s} className="flex items-center gap-1.5">
+                  <input
+                    type="radio"
+                    name="import-source"
+                    value={s}
+                    checked={source === s}
+                    onChange={() => {
+                      setSource(s);
+                      setVolume(null);
+                    }}
+                  />
+                  {sourceLabel(s, null, "")}
+                </label>
+              ))}
+            </fieldset>
+            <Field label={t("queryLabel")} hint={source === "pubmed" ? t("queryHint") : t("queryHintGeneric")}>
               <Input
                 value={query}
                 onChange={(e) => {

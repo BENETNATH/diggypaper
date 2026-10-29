@@ -45,6 +45,11 @@ const GROUPS: { titleKey: string; helpKey?: string; fields: FieldDef[] }[] = [
     fields: [{ key: "ncbi_api_key", labelKey: "ncbiKey", secret: true, type: "text" }],
   },
   {
+    titleKey: "openalex",
+    helpKey: "openalexHelp",
+    fields: [{ key: "openalex_api_key", labelKey: "openalexKey", secret: true, type: "text" }],
+  },
+  {
     titleKey: "contact",
     helpKey: "contactHelp",
     fields: [{ key: "contact_email", labelKey: "contactEmail", type: "text" }],

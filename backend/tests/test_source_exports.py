@@ -153,7 +153,7 @@ async def test_crate_exports_source_and_job_source(session, tmp_path):
         "From Crossref": ("crossref", "10.1/y"),
         "Legacy": ("", ""),
     }
-    assert info["pubmed_queries"][0]["source"] == "pubmed"
+    assert info["imports"][0]["source"] == "pubmed"
     actions = [e for e in graph if e.get("@type") == "SearchAction"]
     assert [a["name"] for a in actions] == ["Import PubMed"]
 
@@ -201,11 +201,13 @@ def test_source_label_and_name():
 
     assert source_name("pubmed") == "PubMed" and source_name("crossref") == "Crossref"
     assert source_name("europepmc") == "Europe PMC"  # phase 3 : source connue
-    assert source_name("openalex") == "openalex"  # inconnu : code brut
+    assert source_name("openalex") == "OpenAlex"  # phase 4a : source connue
+    assert source_name("hal") == "hal"  # inconnu : code brut (phase 4b)
     assert source_name(None) is None
     assert source_label("pubmed", "123") == "PubMed PMID 123"
     assert source_label("crossref", "10.1/x") == "Crossref DOI 10.1/x"
     assert source_label("file", None) == "Fichier importé"
     assert source_label("europepmc", "W1") == "Europe PMC W1"
-    assert source_label("openalex", "A1") == "openalex A1"
+    assert source_label("openalex", "W123") == "OpenAlex W123"
+    assert source_label("hal", "t-0000") == "hal t-0000"
     assert source_label(None, "123") is None

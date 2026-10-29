@@ -493,21 +493,23 @@ export async function deleteProject(projectId: string): Promise<void> {
 
 export async function queryVolume(
   projectId: string,
-  query: string
+  query: string,
+  source = "pubmed"
 ): Promise<{ count: number; max: number }> {
   return request<{ count: number; max: number }>(`/projects/${projectId}/query-volume`, {
     method: "POST",
-    body: JSON.stringify({ query }),
+    body: JSON.stringify({ query, source }),
   });
 }
 
 export async function triggerImport(
   projectId: string,
-  query: string
+  query: string,
+  source = "pubmed"
 ): Promise<{ job_id: string; status: string }> {
   return request<{ job_id: string; status: string }>(
     `/projects/${projectId}/import`,
-    { method: "POST", body: JSON.stringify({ query }) }
+    { method: "POST", body: JSON.stringify({ query, source }) }
   );
 }
 

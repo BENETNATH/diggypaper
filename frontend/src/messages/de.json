@@ -83,7 +83,7 @@
     "addModels": "Modell hinzufügen",
     "askAdmin": "Bitten Sie einen Administrator, eines hinzuzufügen.",
     "howTitle": "Wie funktioniert es?",
-    "howBody": "1) Artikel importieren: PubMed-Abfrage, Literaturliste oder verknüpfte Zitate. 2) Eine oder mehrere Suchen anlegen (eine Frage an eine Artikelmenge, ggf. die Ergebnisse einer anderen Suche), dann die Analyse mit einem Modell starten. 3) Ergebnisse prüfen: sichere Fälle werden automatisch übernommen oder verworfen, nur unsichere prüfen. Gold und Benchmark sind optional; eine Suche kann so geplant werden, dass sie startet, wenn eine andere fertig ist.",
+    "howBody": "1) Artikel importieren: Abfrage (PubMed, Europe PMC oder OpenAlex), Literaturliste oder verknüpfte Zitate. 2) Eine oder mehrere Suchen anlegen (eine Frage an eine Artikelmenge, ggf. die Ergebnisse einer anderen Suche), dann die Analyse mit einem Modell starten. 3) Ergebnisse prüfen: sichere Fälle werden automatisch übernommen oder verworfen, nur unsichere prüfen. Gold und Benchmark sind optional; eine Suche kann so geplant werden, dass sie startet, wenn eine andere fertig ist.",
     "question": "Frage",
     "questionHint": "Frage an die Artikel und Antwortfelder festlegen.",
     "needsCorpus": "Verfügbar, sobald der Korpus Artikel enthält.",
@@ -150,7 +150,7 @@
   "import": {
     "title": "Korpus-Import",
     "queryTitle": "Importabfrage",
-    "queryLabel": "PubMed-Abfrage",
+    "queryLabel": "Abfrage",
     "checkVolume": "Umfang prüfen",
     "volumeResult": "Umfangsergebnis",
     "import": "Import starten",
@@ -160,7 +160,7 @@
     "imported": "importiert",
     "failed": "fehlgeschlagen",
     "total": "Gesamt",
-    "intro": "Drei Wege, den Korpus aufzubauen oder zu erweitern: eine PubMed-Abfrage, eine Literaturliste (DOI, PMID, Zotero-Export…) oder die mit den vorhandenen Artikeln verknüpften Zitate. Metadaten und offene Volltexte werden abgerufen; Sie können jederzeit ergänzen.",
+    "intro": "Drei Wege, den Korpus aufzubauen oder zu erweitern: eine Abfrage (PubMed, Europe PMC oder OpenAlex), eine Literaturliste (DOI, PMID, Zotero-Export…) oder die mit den vorhandenen Artikeln verknüpften Zitate. Metadaten und offene Volltexte werden abgerufen; Sie können jederzeit ergänzen.",
     "queryHint": "PubMed-Syntax (AND/OR, [tiab], [MeSH]…).",
     "checkFirst": "Prüfen Sie zuerst das Volumen, um zu importieren.",
     "capNote": "nur die ersten {max} (die neuesten) werden importiert — IMPORT_MAX_ARTICLES",
@@ -253,7 +253,9 @@
     "qaRefused": "Dieser Assistent erstellt nur PubMed-Abfragen: Formulieren Sie Ihre Suche um.",
     "qaNcbiDown": "PubMed konnte die Abfrage nicht prüfen (Dienst nicht erreichbar).",
     "qaNoModel": "Kein nutzbares Modell: Fügen Sie auf der Seite Modelle eines hinzu.",
-    "qaHint": "Ihr Text wird an das gewählte Modell gesendet (bei einem externen Modell an einen externen Dienst). Geben Sie keine personenbezogenen Daten ein."
+    "qaHint": "Ihr Text wird an das gewählte Modell gesendet (bei einem externen Modell an einen externen Dienst). Geben Sie keine personenbezogenen Daten ein.",
+    "queryHintGeneric": "Freitext (Operatoren AND/OR).",
+    "sourceLabel": "Quelle"
   },
   "articles": {
     "title": "Ergebnisse und Prüfung",
@@ -578,7 +580,10 @@
     "contactEmail": "Kontakt-E-Mail",
     "fromEnvSecret": "in der Serverumgebung gesetzt",
     "fromEnvValue": "Umgebung: {value}",
-    "envNote": "Leere Felder verwenden den Wert aus der .env-Datei des Servers (grau angezeigt). Geben Sie hier einen Wert ein, um ihn zu überschreiben: er wird in der Datenbank gespeichert und hat Vorrang; leeren Sie das Feld, um auf die Umgebung zurückzufallen."
+    "envNote": "Leere Felder verwenden den Wert aus der .env-Datei des Servers (grau angezeigt). Geben Sie hier einen Wert ein, um ihn zu überschreiben: er wird in der Datenbank gespeichert und hat Vorrang; leeren Sie das Feld, um auf die Umgebung zurückzufallen.",
+    "openalex": "OpenAlex",
+    "openalexKey": "OpenAlex-API-Schlüssel (optional)",
+    "openalexHelp": "Ohne Schlüssel: gemeinsames Gratis-IP-Budget; mit kostenlosem Schlüssel: eigenes, großzügigeres Budget."
   },
   "annotate": {
     "title": "Prüfung",
@@ -632,7 +637,8 @@
     "addSelection": "Auswahl als Beleg hinzufügen",
     "previousArticle": "Zurück",
     "navArticles": "Artikelnavigation",
-    "nextShort": "Weiter"
+    "nextShort": "Weiter",
+    "metadataOnlyNote": "Nur Metadaten (OpenAlex): Diese Quelle liefert keinen Volltext. Wenn Sie Zugriff auf den Artikel haben, laden Sie das PDF hoch."
   },
   "sex": {
     "MALE_ONLY": "Nur Männchen",

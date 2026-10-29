@@ -65,8 +65,8 @@ def test_crate_article_key_native_id():
     assert crate.article_key(_art()).startswith("art-")
 
 
-def test_crate_exports_imports_alias():
-    """project.json : ``pubmed_queries`` (compat) ET ``imports``, mêmes valeurs."""
+def test_crate_exports_imports():
+    """project.json : clé ``imports`` (renommage propre, phase 4a) — plus de ``pubmed_queries``."""
     job = SimpleNamespace(
         query="q", source="europepmc", created_at=None, result_json={"imported": 3}
     )
@@ -79,8 +79,8 @@ def test_crate_exports_imports_alias():
         read_windows=None,
     )
     info = crate.project_info(project, [], [job], None, {}, None)
-    assert info["imports"] == info["pubmed_queries"]
-    assert info["imports"][0] == {"query": "q", "source": "europepmc", "date": None, "imported": 3}
+    assert "pubmed_queries" not in info
+    assert info["imports"] == [{"query": "q", "source": "europepmc", "date": None, "imported": 3}]
 
 
 # --- PRISMA -------------------------------------------------------------------

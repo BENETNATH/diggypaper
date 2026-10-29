@@ -58,6 +58,7 @@ class SourceAdapter(Protocol):
 SOURCE_NAMES = {
     "pubmed": "PubMed",
     "europepmc": "Europe PMC",
+    "openalex": "OpenAlex",
     "crossref": "Crossref",
     "file": "Fichier importé",
 }

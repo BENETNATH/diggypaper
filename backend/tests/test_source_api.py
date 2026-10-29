@@ -122,6 +122,16 @@ def _no_epmc_sleep(monkeypatch):
     monkeypatch.setattr("app.europepmc._sleep", _noop)
 
 
+@pytest.fixture(autouse=True)
+def _no_openalex_sleep(monkeypatch):
+    """Pas de vrai sleep en tests (throttle OpenAlex sur query-volume)."""
+
+    async def _noop(_delay: float) -> None:
+        return None
+
+    monkeypatch.setattr("app.openalex._sleep", _noop)
+
+
 async def test_query_volume_europepmc(client, researcher_user, do_login, monkeypatch):
     """source='europepmc' → /search EPMC (aucun appel NCBI), bornes dates portées."""
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
@@ -175,3 +185,56 @@ async def test_query_volume_europepmc_error_502(client, researcher_user, do_logi
     assert resp.status_code == 502
     assert resp.json() == {"error": "europepmc_unavailable"}
     assert "ebi.ac.uk" not in resp.text
+
+
+# --- query-volume OpenAlex (spec 2026-10-29-sources-phase4a D1) ----------------
+
+
+async def test_query_volume_openalex(client, researcher_user, do_login, monkeypatch):
+    """source='openalex' → /works OpenAlex (aucun appel NCBI/EPMC), count dans ``meta``."""
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    pid = await _project(client, do_login)
+    import app.api.v1.projects as projects_api
+
+    seen: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.host == "api.openalex.org"
+        assert request.url.path == "/works"
+        seen.append(dict(request.url.params))
+        return httpx.Response(200, json={"meta": {"count": 17}, "results": []})
+
+    real = httpx.AsyncClient
+    monkeypatch.setattr(
+        projects_api, "_make_http_client", lambda: real(transport=httpx.MockTransport(handler))
+    )
+    resp = await client.post(
+        f"/api/v1/projects/{pid}/query-volume",
+        json={"query": "p53", "source": "openalex", "date_from": "2024-01-15"},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["count"] == 17
+    p = seen[0]
+    assert p["search"] == "p53" and p["per_page"] == "1"
+    assert p["filter"] == "from_publication_date:2024-01-15"
+
+
+async def test_query_volume_openalex_error_502(client, researcher_user, do_login, monkeypatch):
+    """429 OpenAlex persistant (retries inclus) → 502 {error: openalex_unavailable}, sans URL."""
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    pid = await _project(client, do_login)
+    import app.api.v1.projects as projects_api
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(429, text="rate limit")
+
+    real = httpx.AsyncClient
+    monkeypatch.setattr(
+        projects_api, "_make_http_client", lambda: real(transport=httpx.MockTransport(handler))
+    )
+    resp = await client.post(
+        f"/api/v1/projects/{pid}/query-volume", json={"query": "p53", "source": "openalex"}
+    )
+    assert resp.status_code == 502
+    assert resp.json() == {"error": "openalex_unavailable"}
+    assert "openalex.org" not in resp.text

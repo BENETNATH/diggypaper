@@ -384,7 +384,11 @@ export default function AnnotatePage() {
             >
               {!article.has_fulltext && (
                 <p className="text-foreground">
-                  {article.fulltext_note === "preprint_not_archived" ? t("preprintNote") : t("abstractOnlyNote")}
+                  {article.fulltext_note === "preprint_not_archived"
+                    ? t("preprintNote")
+                    : article.fulltext_note === "metadata_only"
+                      ? t("metadataOnlyNote")
+                      : t("abstractOnlyNote")}
                 </p>
               )}
               <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1">

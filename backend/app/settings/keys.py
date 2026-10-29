@@ -8,7 +8,7 @@ import os
 
 #: Clés chiffrées (jamais renvoyées en clair à l'API).
 SECRET_KEYS: frozenset[str] = frozenset(
-    {"ncbi_api_key", "llm_api_key", "smtp_password", "zotero_api_key"}
+    {"ncbi_api_key", "llm_api_key", "smtp_password", "zotero_api_key", "openalex_api_key"}
 )
 
 #: Clés stockées en clair (non sensibles).

@@ -4,6 +4,7 @@
 const NAMES: Record<string, string> = {
   pubmed: "PubMed",
   europepmc: "Europe PMC",
+  openalex: "OpenAlex",
   crossref: "Crossref",
 };
 const ID_KINDS: Record<string, string> = { pubmed: "PMID", crossref: "DOI" };

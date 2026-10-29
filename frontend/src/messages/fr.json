@@ -83,7 +83,7 @@
     "addModels": "Ajouter un modèle",
     "askAdmin": "Demandez à un administrateur d'en ajouter.",
     "howTitle": "Comment ça marche ?",
-    "howBody": "1) Importez des articles : requête PubMed, liste de références ou citations liées. 2) Créez une ou plusieurs recherches (une question posée à un lot d'articles, éventuellement les résultats d'une autre recherche), puis lancez l'analyse avec un modèle. 3) Consultez les résultats : les cas sûrs sont validés ou écartés automatiquement, relisez seulement les incertains. Gold et benchmark sont facultatifs ; une recherche peut être programmée pour démarrer quand une autre a fini.",
+    "howBody": "1) Importez des articles : requête (PubMed, Europe PMC ou OpenAlex), liste de références ou citations liées. 2) Créez une ou plusieurs recherches (une question posée à un lot d'articles, éventuellement les résultats d'une autre recherche), puis lancez l'analyse avec un modèle. 3) Consultez les résultats : les cas sûrs sont validés ou écartés automatiquement, relisez seulement les incertains. Gold et benchmark sont facultatifs ; une recherche peut être programmée pour démarrer quand une autre a fini.",
     "question": "Question",
     "questionHint": "Définir la question posée aux articles et les champs de réponse.",
     "needsCorpus": "Disponible dès que le corpus contient des articles.",
@@ -150,7 +150,7 @@
   "import": {
     "title": "Import du corpus",
     "queryTitle": "Requête d'import",
-    "queryLabel": "Requête PubMed",
+    "queryLabel": "Requête",
     "checkVolume": "Vérifier le volume",
     "volumeResult": "Résultat du volume",
     "import": "Lancer l'import",
@@ -160,7 +160,7 @@
     "imported": "importés",
     "failed": "échecs",
     "total": "total",
-    "intro": "Trois façons de constituer ou d'enrichir le corpus : une requête PubMed, une liste de références (DOI, PMID, export Zotero…) ou les citations liées aux articles déjà présents. Les métadonnées et les textes intégraux ouverts sont récupérés ; vous pouvez compléter à tout moment.",
+    "intro": "Trois façons de constituer ou d'enrichir le corpus : une requête (PubMed, Europe PMC ou OpenAlex), une liste de références (DOI, PMID, export Zotero…) ou les citations liées aux articles déjà présents. Les métadonnées et les textes intégraux ouverts sont récupérés ; vous pouvez compléter à tout moment.",
     "queryHint": "Syntaxe PubMed (opérateurs AND/OR, champs [tiab], [MeSH]…).",
     "checkFirst": "Vérifiez d'abord le volume pour pouvoir importer.",
     "capNote": "seuls les {max} premiers (les plus récents) seront importés — IMPORT_MAX_ARTICLES",
@@ -253,7 +253,9 @@
     "qaRefused": "Cet assistant ne sert qu'à construire une requête PubMed : reformulez votre recherche.",
     "qaNcbiDown": "PubMed n'a pas pu vérifier la requête (service indisponible).",
     "qaNoModel": "Aucun modèle utilisable : ajoutez-en un dans la page Modèles pour disposer de l'assistant.",
-    "qaHint": "Votre texte est envoyé au modèle choisi (un service externe s'il s'agit d'un modèle externe). Ne saisissez pas de données personnelles."
+    "qaHint": "Votre texte est envoyé au modèle choisi (un service externe s'il s'agit d'un modèle externe). Ne saisissez pas de données personnelles.",
+    "queryHintGeneric": "Texte libre (opérateurs AND/OR).",
+    "sourceLabel": "Source"
   },
   "articles": {
     "title": "Résultats et relecture",
@@ -578,7 +580,10 @@
     "contactEmail": "E-mail de contact",
     "fromEnvSecret": "définie dans l'environnement du serveur",
     "fromEnvValue": "Environnement : {value}",
-    "envNote": "Les champs vides utilisent la valeur du fichier .env du serveur (affichée en grisé). Saisissez une valeur ici pour la remplacer : elle sera enregistrée en base et prendra le dessus ; videz le champ pour revenir à l'environnement."
+    "envNote": "Les champs vides utilisent la valeur du fichier .env du serveur (affichée en grisé). Saisissez une valeur ici pour la remplacer : elle sera enregistrée en base et prendra le dessus ; videz le champ pour revenir à l'environnement.",
+    "openalex": "OpenAlex",
+    "openalexKey": "Clé API OpenAlex (facultatif)",
+    "openalexHelp": "Sans clé : budget IP partagé gratuit ; avec une clé gratuite : budget dédié plus généreux."
   },
   "annotate": {
     "title": "Relecture",
@@ -632,7 +637,8 @@
     "addSelection": "Ajouter la sélection comme extrait de preuve",
     "previousArticle": "Précédent",
     "navArticles": "Navigation entre articles",
-    "nextShort": "Suivant"
+    "nextShort": "Suivant",
+    "metadataOnlyNote": "Métadonnées seulement (OpenAlex) : cette source ne fournit pas de texte intégral. Si vous avez accès à l'article, déposez son PDF."
   },
   "sex": {
     "MALE_ONLY": "Mâles uniquement",

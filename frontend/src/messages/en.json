@@ -83,7 +83,7 @@
     "addModels": "Add a model",
     "askAdmin": "Ask an administrator to add one.",
     "howTitle": "How does it work?",
-    "howBody": "1) Import articles: PubMed query, reference list or linked citations. 2) Create one or more searches (a question put to a set of articles, possibly another search's results), then run the analysis with a model. 3) Check the results: confident cases are accepted or dropped automatically, review only the uncertain ones. Gold and benchmark are optional; a search can be scheduled to start when another one has finished.",
+    "howBody": "1) Import articles: a query (PubMed, Europe PMC or OpenAlex), reference list or linked citations. 2) Create one or more searches (a question put to a set of articles, possibly another search's results), then run the analysis with a model. 3) Check the results: confident cases are accepted or dropped automatically, review only the uncertain ones. Gold and benchmark are optional; a search can be scheduled to start when another one has finished.",
     "question": "Question",
     "questionHint": "Define the question asked to articles and the answer fields.",
     "needsCorpus": "Available once the corpus contains articles.",
@@ -150,7 +150,7 @@
   "import": {
     "title": "Corpus import",
     "queryTitle": "Import query",
-    "queryLabel": "PubMed query",
+    "queryLabel": "Query",
     "checkVolume": "Check volume",
     "volumeResult": "Volume result",
     "import": "Start import",
@@ -160,7 +160,7 @@
     "imported": "imported",
     "failed": "failed",
     "total": "total",
-    "intro": "Three ways to build or enrich the corpus: a PubMed query, a reference list (DOIs, PMIDs, Zotero export…) or the citations linked to the articles already there. Metadata and open full texts are fetched; you can add more at any time.",
+    "intro": "Three ways to build or enrich the corpus: a query (PubMed, Europe PMC or OpenAlex), a reference list (DOIs, PMIDs, Zotero export…) or the citations linked to the articles already there. Metadata and open full texts are fetched; you can add more at any time.",
     "queryHint": "PubMed syntax (AND/OR operators, [tiab], [MeSH] fields…).",
     "checkFirst": "Check the volume first to enable import.",
     "capNote": "only the first {max} (the most recent) will be imported — IMPORT_MAX_ARTICLES",
@@ -253,7 +253,9 @@
     "qaRefused": "This assistant only builds PubMed queries: rephrase your search.",
     "qaNcbiDown": "PubMed could not check the query (service unavailable).",
     "qaNoModel": "No usable model: add one on the Models page to use the assistant.",
-    "qaHint": "Your text is sent to the chosen model (an external service for an external model). Do not enter personal data."
+    "qaHint": "Your text is sent to the chosen model (an external service for an external model). Do not enter personal data.",
+    "queryHintGeneric": "Free text (AND/OR operators).",
+    "sourceLabel": "Source"
   },
   "articles": {
     "title": "Results and review",
@@ -578,7 +580,10 @@
     "contactEmail": "Contact e-mail",
     "fromEnvSecret": "set in the server environment",
     "fromEnvValue": "Environment: {value}",
-    "envNote": "Empty fields use the value from the server's .env file (shown greyed out). Enter a value here to override it: it is stored in the database and takes precedence; clear the field to fall back to the environment."
+    "envNote": "Empty fields use the value from the server's .env file (shown greyed out). Enter a value here to override it: it is stored in the database and takes precedence; clear the field to fall back to the environment.",
+    "openalex": "OpenAlex",
+    "openalexKey": "OpenAlex API key (optional)",
+    "openalexHelp": "Without a key: shared free IP budget; with a free key: a larger dedicated budget."
   },
   "annotate": {
     "title": "Review",
@@ -632,7 +637,8 @@
     "addSelection": "Add the selection as an evidence quote",
     "previousArticle": "Previous",
     "navArticles": "Article navigation",
-    "nextShort": "Next"
+    "nextShort": "Next",
+    "metadataOnlyNote": "Metadata only (OpenAlex): this source provides no full text. If you have access to the article, upload its PDF."
   },
   "sex": {
     "MALE_ONLY": "Males only",

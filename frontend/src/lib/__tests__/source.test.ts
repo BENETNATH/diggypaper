@@ -23,8 +23,12 @@ describe("sourceLabel", () => {
     expect(sourceLabel("europepmc", "W123", "x")).toBe("Europe PMC W123");
   });
 
+  it("OpenAlex (phase 4a) : nom propre + identifiant", () => {
+    expect(sourceLabel("openalex", "W190488077", "x")).toBe("OpenAlex W190488077");
+  });
+
   it("source inconnue (phases suivantes) : code brut + identifiant", () => {
-    expect(sourceLabel("openalex", "A1", "x")).toBe("openalex A1");
+    expect(sourceLabel("hal", "t-0000", "x")).toBe("hal t-0000");
     expect(sourceLabel("hal", null, "x")).toBe("hal");
   });
 
@@ -71,4 +75,52 @@ describe("i18n source", () => {
       expect(messages.articles.sourceNotRecorded).not.toBe(base.sourceNotRecorded);
     }
   });
+});
+
+/** Phase 4a : sélecteur de source + OpenAlex — les chaînes nouvelles existent dans les
+ * 4 langues (contrainte utilisateur : tout est multilingue). */
+describe("i18n phase 4a", () => {
+  it.each(LOCALES)("clés import/annotate/settings présentes et non vides (%s)", (_, m) => {
+    for (const [ns, key] of [
+      ["import", "sourceLabel"],
+      ["import", "queryHintGeneric"],
+      ["annotate", "metadataOnlyNote"],
+      ["settings", "openalex"],
+      ["settings", "openalexKey"],
+      ["settings", "openalexHelp"],
+    ] as const) {
+      expect(typeof m[ns]?.[key]).toBe("string");
+      expect((m[ns]?.[key] ?? "").trim().length).toBeGreaterThan(0);
+    }
+  });
+
+  it.each(LOCALES)("queryLabel générique : plus « PubMed » en dur (%s)", (_, m) => {
+    expect(m.import.queryLabel).not.toContain("PubMed");
+  });
+
+  it.each(LOCALES)(
+    "intro + howBody citent les 3 sources sélectionnables (%s)",
+    (_, m) => {
+      for (const text of [m.import.intro, m.project.howBody]) {
+        expect(text).toContain("PubMed");
+        expect(text).toContain("Europe PMC");
+        expect(text).toContain("OpenAlex");
+      }
+    },
+  );
+
+  it.each(LOCALES)(
+    "réellement traduites (phase 4a ; « Source » est identique en fr/en) (%s)",
+    (_, m) => {
+      const base = en as unknown as Messages;
+      if (m === en) return;
+      for (const [ns, key] of [
+        ["import", "queryHintGeneric"],
+        ["annotate", "metadataOnlyNote"],
+        ["settings", "openalexHelp"],
+      ] as const) {
+        expect(m[ns][key]).not.toBe(base[ns][key]);
+      }
+    },
+  );
 });

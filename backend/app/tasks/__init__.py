@@ -54,6 +54,7 @@ from app.db.models import (
 )
 from app.europepmc import EuropePMCAdapter
 from app.fulltext import complete_article, long_enough, pmc_not_archived
+from app.openalex import OpenAlexAdapter
 from app.pubmed import (
     NCBIError,
     PubMedAdapter,
@@ -88,7 +89,15 @@ _LANGUAGE_MAP = {
 }
 
 #: Registre des sources de recherche : code → fabrique ``(client, api_key) -> SourceAdapter``.
-ADAPTERS = {"pubmed": PubMedAdapter, "europepmc": EuropePMCAdapter}
+ADAPTERS = {"pubmed": PubMedAdapter, "europepmc": EuropePMCAdapter, "openalex": OpenAlexAdapter}
+
+#: Setting de clé API par source (les autres sources n'en utilisent pas).
+_SOURCE_KEY_SETTING = {"openalex": "openalex_api_key"}
+
+
+def _source_key_setting(source: str) -> str:
+    return _SOURCE_KEY_SETTING.get(source, "ncbi_api_key")
+
 
 #: Taille des lots efetch (pmids par requête).
 _EFETCH_BATCH = 100
@@ -308,7 +317,7 @@ async def _do_import(
     source: str = "pubmed",
 ) -> dict:
     """Corps de l'import : esearch → efetch par lots → insertion (m6 : commit par batch)."""
-    api_key = await get_setting(session, "ncbi_api_key")
+    api_key = await get_setting(session, _source_key_setting(source))
     if adapter is None:
         if source not in ADAPTERS:
             raise LookupError("unknown source")
@@ -743,6 +752,9 @@ async def _insert_article(
     }
     if ft := await _fulltext_for(meta, adapter, client):
         _apply_fulltext(values, ft)
+    elif note := meta.get("fulltext_note"):
+        # source métadonnées seulement (OpenAlex) : note explicite, pas de plein texte
+        values["fulltext_note"] = note
     insert = _pg_insert if session.get_bind().dialect.name == "postgresql" else _sqlite_insert
     stmt = insert(Article).values(**values).on_conflict_do_nothing()
     result = await session.execute(stmt)
@@ -783,6 +795,7 @@ async def _link_doi_article(
         "abstract": meta.get("abstract"),
         **bib,
         "original_language": _map_language(meta.get("language")),
+        "fulltext_note": meta.get("fulltext_note"),  # D2 : posé si vide, jamais écrasé
     }
     for col, val in fills.items():
         if val and not getattr(row, col):
