@@ -424,7 +424,8 @@ async def get_prisma_svg(
     counts = prisma.prisma_counts(
         articles, preds, annos, import_jobs, await _prisma_origin(db, project, scope)
     )
-    svg = prisma.render_svg(counts, lang or project.default_language or "fr")
+    parts = prisma.identified_parts(articles, import_jobs)
+    svg = prisma.render_svg(counts, lang or project.default_language or "fr", *parts)
     return Response(
         svg,
         media_type="image/svg+xml",
@@ -447,7 +448,10 @@ async def get_prisma_pdf(
     counts = prisma.prisma_counts(
         articles, preds, annos, import_jobs, await _prisma_origin(db, project, scope)
     )
-    pdf = prisma.svg_to_pdf(prisma.render_svg(counts, lang or project.default_language or "fr"))
+    parts = prisma.identified_parts(articles, import_jobs)
+    pdf = prisma.svg_to_pdf(
+        prisma.render_svg(counts, lang or project.default_language or "fr", *parts)
+    )
     return Response(
         pdf,
         media_type="application/pdf",
@@ -547,7 +551,14 @@ async def write_crate(
             articles, preds, annos, import_jobs, await _prisma_origin(db, project, search)
         )
         info["prisma"] = counts
-        put("prisma.svg", prisma.render_svg(counts, project.default_language or "fr"))
+        put(
+            "prisma.svg",
+            prisma.render_svg(
+                counts,
+                project.default_language or "fr",
+                *prisma.identified_parts(articles, import_jobs),
+            ),
+        )
         put("README.md", crate.readme(project, len(articles), n_pdf, n_text))
         put("project.json", json.dumps(info, ensure_ascii=False, indent=2))
         notes = _notes(articles, preds, fields)

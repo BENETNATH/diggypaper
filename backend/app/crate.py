@@ -2,7 +2,7 @@
 
 Structure du zip :
   ro-crate-metadata.json   graphe JSON-LD (projet, articles, auteurs, modèles, actions)
-  README.md · project.json (question, champs, requêtes PubMed, modèles + empreintes, prompt)
+  README.md · project.json (question, champs, requêtes d'import, modèles + empreintes, prompt)
   extraction.csv · results.xlsx   tableau d'extraction final
   articles/<clé>/metadata.json · fulltext.md (ou abstract.md) · fulltext.pdf (si conservé)
 """
@@ -34,11 +34,17 @@ def neutralize(v):
 
 
 def article_key(a) -> str:
-    """Nom de dossier stable : pmid-123, sinon doi, sinon début de l'UUID."""
+    """Nom de dossier stable : pmid-123, sinon doi, sinon identifiant natif, sinon UUID.
+
+    Le DOI est préféré à l'identifiant natif : c'est l'identité inter-sources la plus stable
+    (le même papier pubmed + europepmc retombe sur la même clé)."""
     if a.pmid:
         return f"pmid-{re.sub(r'[^0-9A-Za-z]', '', a.pmid)}"
     if a.doi:
         return "doi-" + re.sub(r"[^0-9A-Za-z]+", "-", a.doi).strip("-")[:60]
+    if getattr(a, "native_id", None):
+        prefix = getattr(a, "source", None) or "art"
+        return f"{prefix}-{re.sub(r'[^0-9A-Za-z]+', '-', a.native_id).strip('-')}"[:60]
     return f"art-{str(a.id)[:8]}"
 
 
@@ -178,6 +184,15 @@ def project_info(project, fields, import_jobs, inf_job, models: dict, prompt) ->
             "config_sha256": sha256_json(cfg),
         }
 
+    imports = [
+        {
+            "query": j.query,
+            "source": j.source,
+            "date": j.created_at.isoformat() if j.created_at else None,
+            "imported": (j.result_json or {}).get("imported"),
+        }
+        for j in import_jobs
+    ]
     return {
         "title": project.title,
         "description": project.description,
@@ -185,15 +200,8 @@ def project_info(project, fields, import_jobs, inf_job, models: dict, prompt) ->
         "fields": fields,
         "text_sections": project.text_sections,
         "read_windows": project.read_windows,
-        "pubmed_queries": [
-            {
-                "query": j.query,
-                "source": j.source,  # clé « pubmed_queries » gardée pour compat (phase 4 : imports)
-                "date": j.created_at.isoformat() if j.created_at else None,
-                "imported": (j.result_json or {}).get("imported"),
-            }
-            for j in import_jobs
-        ],
+        "pubmed_queries": imports,  # clé gardée pour compat lecture ; « imports » est le nom réel
+        "imports": imports,
         "analysis": None
         if inf_job is None
         else {
@@ -386,7 +394,8 @@ Export RO-Crate (Diggypaper) — {datetime.now(UTC):%Y-%m-%d}.
 {project.question or ""}
 
 - `ro-crate-metadata.json` : description JSON-LD de tout le contenu
-- `project.json` : question, champs, requêtes PubMed exactes, modèles (empreintes), prompt
+- `project.json` : question, champs, requêtes d'import (source, requête, bornes), modèles
+  (empreintes), prompt
 - `prisma.svg` : diagramme de flux PRISMA 2020 (effectifs aussi dans `project.json`)
 - `references.ris` / `references.bib` : références à importer dans Zotero, EndNote, JabRef…
 - `extraction.csv` / `results.xlsx` : tableau d'extraction (réponses IA, certitudes, relecture)

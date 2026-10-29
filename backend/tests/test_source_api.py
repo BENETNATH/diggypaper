@@ -4,6 +4,9 @@
 import uuid
 from unittest.mock import MagicMock
 
+import httpx
+import pytest
+
 from app.db.models import Article, ImportJob, ImportJobStatus
 
 
@@ -104,3 +107,71 @@ async def test_article_payloads_expose_source_and_native_id(
     }
     detail = (await client.get(f"/api/v1/projects/{pid}/articles/{art.id}")).json()
     assert (detail["source"], detail["native_id"]) == ("pubmed", "42")
+
+
+# --- query-volume par source (spec 2026-10-29-sources-phase3 D4) --------------
+
+
+@pytest.fixture(autouse=True)
+def _no_epmc_sleep(monkeypatch):
+    """Pas de vrai sleep en tests (throttle EPMC sur query-volume)."""
+
+    async def _noop(_delay: float) -> None:
+        return None
+
+    monkeypatch.setattr("app.europepmc._sleep", _noop)
+
+
+async def test_query_volume_europepmc(client, researcher_user, do_login, monkeypatch):
+    """source='europepmc' → /search EPMC (aucun appel NCBI), bornes dates portées."""
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    pid = await _project(client, do_login)
+    import app.api.v1.projects as projects_api
+
+    seen: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.host == "www.ebi.ac.uk"
+        assert request.url.path == "/europepmc/webservices/rest/search"
+        seen.append(dict(request.url.params))
+        return httpx.Response(200, json={"hitCount": 42})
+
+    real = httpx.AsyncClient
+    monkeypatch.setattr(
+        projects_api, "_make_http_client", lambda: real(transport=httpx.MockTransport(handler))
+    )
+    resp = await client.post(
+        f"/api/v1/projects/{pid}/query-volume",
+        json={
+            "query": "p53",
+            "source": "europepmc",
+            "date_from": "2024-01-15",
+            "date_to": "2024-06-30",
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["count"] == 42
+    p = seen[0]
+    assert (p["resultType"], p["pageSize"]) == ("lite", "1")
+    assert p["query"] == "(p53) AND FIRST_PDATE:[2024-01-15 TO 2024-06-30]"
+
+
+async def test_query_volume_europepmc_error_502(client, researcher_user, do_login, monkeypatch):
+    """503 EPMC persistant (retries inclus) → 502 {error: europepmc_unavailable}, sans URL."""
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    pid = await _project(client, do_login)
+    import app.api.v1.projects as projects_api
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(503, text="rate limited")
+
+    real = httpx.AsyncClient
+    monkeypatch.setattr(
+        projects_api, "_make_http_client", lambda: real(transport=httpx.MockTransport(handler))
+    )
+    resp = await client.post(
+        f"/api/v1/projects/{pid}/query-volume", json={"query": "p53", "source": "europepmc"}
+    )
+    assert resp.status_code == 502
+    assert resp.json() == {"error": "europepmc_unavailable"}
+    assert "ebi.ac.uk" not in resp.text

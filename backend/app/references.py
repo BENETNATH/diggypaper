@@ -42,7 +42,14 @@ def to_ris(articles, notes: dict | None = None) -> str:
             rec.append(("DA", f"{y}/{m}/{d}" if m else y))
         rec.append(("AB", _clean(a.abstract)))
         rec.append(("DO", a.doi))
-        rec.append(("AN", f"PMID:{a.pmid}" if a.pmid else None))
+        rec.append(
+            (
+                "AN",
+                f"PMID:{a.pmid}"
+                if a.pmid
+                else source_label(getattr(a, "source", None), getattr(a, "native_id", None)),
+            )
+        )
         rec.append(("DB", source_name(getattr(a, "source", None))))  # tag RIS « base de données »
         rec.append(("C2", a.pmcid))  # Zotero lit le PMCID dans C2
         url = f"https://doi.org/{a.doi}" if a.doi else None

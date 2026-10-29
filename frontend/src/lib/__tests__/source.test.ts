@@ -19,9 +19,13 @@ describe("sourceLabel", () => {
     expect(sourceLabel("file", null, "imported file")).toBe("imported file");
   });
 
+  it("Europe PMC (phase 3) : nom propre, même dans les 4 langues + identifiant", () => {
+    expect(sourceLabel("europepmc", "W123", "x")).toBe("Europe PMC W123");
+  });
+
   it("source inconnue (phases suivantes) : code brut + identifiant", () => {
-    expect(sourceLabel("europepmc", "PMC9", "x")).toBe("europepmc PMC9");
-    expect(sourceLabel("openalex", null, "x")).toBe("openalex");
+    expect(sourceLabel("openalex", "A1", "x")).toBe("openalex A1");
+    expect(sourceLabel("hal", null, "x")).toBe("hal");
   });
 
   it("sans source (donnée ancienne) → null : l'appelant affiche son repli", () => {
@@ -43,6 +47,19 @@ describe("i18n source", () => {
     for (const key of ["sourceFile", "sourceNotRecorded"]) {
       expect(typeof messages.articles?.[key]).toBe("string");
       expect(messages.articles[key].trim().length).toBeGreaterThan(0);
+    }
+  });
+
+  it("searchPlaceholder : l'identifiant générique, plus « PMID » seule (phase 3)", () => {
+    const words: Record<string, string> = {
+      en: "identifier",
+      fr: "identifiant",
+      de: "Identifikator",
+      es: "identificador",
+    };
+    for (const [lang, messages] of LOCALES) {
+      expect(messages.articles.searchPlaceholder).toContain(words[lang]);
+      expect(messages.articles.searchPlaceholder).not.toContain("PMID");
     }
   });
 

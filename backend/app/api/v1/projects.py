@@ -42,11 +42,13 @@ from app.db.models import (
     User,
     UserRole,
 )
-from app.pubmed import NCBIError, _esearch_max, search_volume
+from app.europepmc import EpmcError
+from app.pubmed import NCBIError, _esearch_max
 from app.refimport import dedupe, parse_references
 from app.schema import DEFAULT_QUESTION, check_fields, project_fields
 from app.searches import default_search, definition_hash, get_search, in_search, lot_condition
 from app.settings.service import get_setting
+from app.sources import DateBounds
 from app.tasks import ADAPTERS, complete_fulltext_task, import_pubmed_task
 
 logger = logging.getLogger(__name__)
@@ -586,11 +588,10 @@ async def complete_fulltext(project_id: uuid.UUID, db: DbDep, user: UserDep) -> 
 async def query_volume(
     project_id: uuid.UUID, payload: ImportRequest, db: DbDep, user: UserDep
 ) -> dict:
-    """Volume de résultats PubMed pour la requête (MODULE 2 : calcul en temps
-    réel du volume d'articles). Autorisation membre. Renvoie {count}.
+    """Volume de résultats de la source demandée (défaut PubMed) pour la requête.
 
-    m-1 : erreur NCBI → 502 {error: ncbi_unavailable} (pas de 500, pas de
-    clé/URL dans la réponse ; le détail propre est loggé côté serveur).
+    m-1 : erreur assainie de la source → 502 {error: <source>_unavailable} (pas de
+    500, pas de clé/URL dans la réponse ; le détail propre est loggé côté serveur).
     """
     await _require_project_member(db, project_id, user)
     if not payload.query.strip():
@@ -598,11 +599,17 @@ async def query_volume(
     api_key = await get_setting(db, "ncbi_api_key")
     try:
         async with _make_http_client() as client:
-            count = await search_volume(payload.query, api_key, client)
+            adapter = ADAPTERS[payload.source](client, api_key)
+            count = await adapter.search_volume(
+                payload.query, DateBounds(payload.date_from, payload.date_to)
+            )
     except NCBIError as exc:
         # m-1 : le message NCBIError est propre (sans l'URL ni la clé) → loggé tel quel.
         logger.error("query-volume NCBI error: %s", exc)
         return JSONResponse(status_code=502, content={"error": "ncbi_unavailable"})
+    except EpmcError as exc:
+        logger.error("query-volume Europe PMC error: %s", exc)
+        return JSONResponse(status_code=502, content={"error": "europepmc_unavailable"})
     return {"count": count, "max": _esearch_max()}
 
 
@@ -637,17 +644,20 @@ def _answer_filters(search: Search, raw: str | None, pdec, hdec) -> list:
 
 
 def search_blob():
-    """Titre, journal, PMID, DOI et auteurs en un seul texte sans accents ni majuscules.
+    """Titre, journal, PMID, identifiant natif, DOI et auteurs en un seul texte sans accents
+    ni majuscules.
 
-    Même expression que l'index trigramme ``ix_articles_search_trgm`` (migration 0028) : PostgreSQL
-    s'en sert pour la recherche rapide, quel que soit le nombre d'articles. Les ``''`` sont inlinés
-    (``literal_column``), pas des paramètres, sinon l'expression ne correspond plus à l'index.
+    Même expression que l'index trigramme ``ix_articles_search_trgm`` (migrations 0028/0032) :
+    PostgreSQL s'en sert pour la recherche rapide, quel que soit le nombre d'articles. Les ``''``
+    sont inlinés (``literal_column``), pas des paramètres, sinon l'expression ne correspond plus
+    à l'index.
     """
     empty, space = literal_column("''"), literal_column("' '")
     parts = [
         func.coalesce(Article.title, empty),
         func.coalesce(Article.journal, empty),
         func.coalesce(Article.pmid, empty),
+        func.coalesce(Article.native_id, empty),
         func.coalesce(Article.doi, empty),
         func.coalesce(cast(Article.authors, Text), empty),
     ]
@@ -659,7 +669,8 @@ def search_blob():
 
 def text_conditions(q: str | None) -> list:
     """Recherche rapide : chaque mot saisi doit figurer dans le titre, les auteurs, le journal,
-    le PMID ou le DOI, sans tenir compte de la casse ni des accents ; les mots se cumulent (ET)."""
+    un identifiant (PMID, identifiant natif) ou le DOI, sans tenir compte de la casse ni des
+    accents ; les mots se cumulent (ET)."""
     conds = []
     blob = search_blob()
     for word in (q or "").split()[:8]:

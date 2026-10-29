@@ -175,7 +175,7 @@ def test_migration_0030_chain_after_0029():
     mod = _migration("0030")
     assert mod.revision == "0030" and mod.down_revision == "0029"
     script = ScriptDirectory.from_config(Config(str(BACKEND / "alembic.ini")))
-    assert script.get_heads() == ["0031"]  # 0031 (secrets URL modèles) suit 0030
+    assert script.get_heads() == ["0032"]  # 0032 (recherche native_id) est la tête courante
 
 
 def test_migration_0030_backfill_and_downgrade_on_sqlite(tmp_path, monkeypatch):

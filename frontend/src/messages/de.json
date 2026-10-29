@@ -318,7 +318,7 @@
     "newSearchOnThese": "Neue Suche zu diesen {n} Artikeln",
     "tools": "Werkzeuge",
     "exportMenu": "Exportieren",
-    "searchPlaceholder": "Artikel suchen: Titel, Autor, Journal, PMID, DOI…",
+    "searchPlaceholder": "Artikel suchen: Titel, Autor, Journal, Identifikator, DOI…",
     "searchLabel": "In der Liste suchen",
     "searchClear": "Suche löschen",
     "textFilter": "Text",

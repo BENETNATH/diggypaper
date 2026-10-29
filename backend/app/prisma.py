@@ -8,12 +8,15 @@ from __future__ import annotations
 
 from html import escape
 
+from app.sources import source_name
+
 HUMAN_INCLUDE_AT = 0.5
 
 LABELS = {
     "fr": {
         "via_citations": "dont par chaînage de citations",
-        "identified": "Références identifiées (PubMed, listes importées)",
+        "identified_base": "Références identifiées",
+        "identified_lists": "listes importées",
         "from_search": "Références de la recherche « {name} »",
         "criteria": "Hors critères de sélection",
         "c_status": "statut IA : {v}",
@@ -53,7 +56,8 @@ LABELS = {
     },
     "en": {
         "via_citations": "of which via citation chaining",
-        "identified": "Records identified (PubMed, imported lists)",
+        "identified_base": "Records identified",
+        "identified_lists": "imported lists",
         "from_search": "Records of search “{name}”",
         "criteria": "Not meeting selection criteria",
         "c_status": "AI status: {v}",
@@ -93,7 +97,8 @@ LABELS = {
     },
     "de": {
         "via_citations": "davon über Zitationsketten",
-        "identified": "Identifizierte Datensätze (PubMed, importierte Listen)",
+        "identified_base": "Identifizierte Datensätze",
+        "identified_lists": "importierte Listen",
         "from_search": "Datensätze der Suche „{name}“",
         "criteria": "Auswahlkriterien nicht erfüllt",
         "c_status": "KI-Status: {v}",
@@ -133,7 +138,8 @@ LABELS = {
     },
     "es": {
         "via_citations": "de ellos por encadenamiento de citas",
-        "identified": "Registros identificados (PubMed, listas importadas)",
+        "identified_base": "Registros identificados",
+        "identified_lists": "listas importadas",
         "from_search": "Registros de la búsqueda «{name}»",
         "criteria": "Fuera de los criterios de selección",
         "c_status": "estado IA: {v}",
@@ -296,8 +302,34 @@ def _arrow(x1, y1, x2, y2) -> str:
     )
 
 
-def render_svg(c: dict, lang: str = "fr") -> str:
-    """Diagramme PRISMA 2020 (colonne principale à gauche, exclusions à droite)."""
+def identified_parts(articles, import_jobs) -> tuple[list[str], bool]:
+    """Sources réellement présentes (libellés lisibles) + la partie « listes importées ».
+
+    Job sans ``source`` (ligne antérieure à la migration 0030) = PubMed, comme le
+    backfill : ``kind`` NULL/« import »/« citations ». « listes importées » : jobs
+    références/crate ou articles sans source."""
+    sources: list[str] = []
+    for j in import_jobs:
+        s = j.source or ("pubmed" if j.kind in (None, "import", "citations") else None)
+        if s and s not in sources:
+            sources.append(s)
+    if "pubmed" in sources:
+        sources.remove("pubmed")
+        sources.insert(0, "pubmed")
+    lists = any(j.kind in ("references", "crate") for j in import_jobs) or any(
+        a.source is None for a in articles
+    )
+    return [source_name(s) for s in sources], lists
+
+
+def render_svg(
+    c: dict, lang: str = "fr", sources: list[str] | None = None, lists: bool | None = None
+) -> str:
+    """Diagramme PRISMA 2020 (colonne principale à gauche, exclusions à droite).
+
+    ``sources``/``lists`` (``identified_parts``) : les sources réellement présentes dans le
+    libellé « identifiées » ; ``None``/``None`` (appelant historique) → libellé statique
+    (PubMed, listes importées)."""
     L = LABELS.get(lang, LABELS["en"])
 
     def n(k: str) -> str:
@@ -341,7 +373,16 @@ def render_svg(c: dict, lang: str = "fr") -> str:
             f'font-size="12" font-weight="700">{escape(name)}</text>'
         )
 
-    first = L["from_search"].format(name=origin["name"]) if origin else L["identified"]
+    if origin:
+        first = L["from_search"].format(name=origin["name"])
+    elif sources is None and lists is None:  # appelant historique : libellé statique
+        ident_parts = [source_name("pubmed"), L["identified_lists"]]
+    else:
+        ident_parts = list(sources or [])
+        if lists:
+            ident_parts.append(L["identified_lists"])
+    if not origin:
+        first = f"{L['identified_base']} ({', '.join(ident_parts)})"
     first_lines = [n("identified")]
     if c.get("via_citations"):  # PRISMA 2020 : identification par d'autres méthodes
         first_lines.append(f"{L['via_citations']} ({n('via_citations')})")

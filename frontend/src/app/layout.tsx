@@ -22,7 +22,7 @@ const geistMono = localFont({
 
 export const metadata: Metadata = {
   title: "Diggypaper",
-  description: "SaaS souverain de revue systématique de littérature (PubMed/PMC)",
+  description: "SaaS souverain de revue systématique de littérature (PubMed, Europe PMC et al.)",
 };
 
 export default async function RootLayout({

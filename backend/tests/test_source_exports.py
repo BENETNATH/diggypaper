@@ -200,10 +200,12 @@ def test_source_label_and_name():
     from app.sources import source_label, source_name
 
     assert source_name("pubmed") == "PubMed" and source_name("crossref") == "Crossref"
-    assert source_name("europepmc") == "europepmc"  # inconnu : code brut
+    assert source_name("europepmc") == "Europe PMC"  # phase 3 : source connue
+    assert source_name("openalex") == "openalex"  # inconnu : code brut
     assert source_name(None) is None
     assert source_label("pubmed", "123") == "PubMed PMID 123"
     assert source_label("crossref", "10.1/x") == "Crossref DOI 10.1/x"
     assert source_label("file", None) == "Fichier importé"
-    assert source_label("europepmc", "W1") == "europepmc W1"
+    assert source_label("europepmc", "W1") == "Europe PMC W1"
+    assert source_label("openalex", "A1") == "openalex A1"
     assert source_label(None, "123") is None

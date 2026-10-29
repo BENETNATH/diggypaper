@@ -55,7 +55,12 @@ class SourceAdapter(Protocol):
 
 
 #: Nom lisible de chaque source (exports, UI) ; une source inconnue garde son code brut.
-SOURCE_NAMES = {"pubmed": "PubMed", "crossref": "Crossref", "file": "Fichier importé"}
+SOURCE_NAMES = {
+    "pubmed": "PubMed",
+    "europepmc": "Europe PMC",
+    "crossref": "Crossref",
+    "file": "Fichier importé",
+}
 #: Nature de l'identifiant natif, quand elle a un nom usuel.
 _ID_KINDS = {"pubmed": "PMID", "crossref": "DOI"}
 

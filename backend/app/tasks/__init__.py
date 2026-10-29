@@ -34,7 +34,7 @@ from datetime import UTC, date, datetime
 
 import httpx
 from celery import current_task
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.dialects.postgresql import insert as _pg_insert
 from sqlalchemy.dialects.sqlite import insert as _sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -52,6 +52,7 @@ from app.db.models import (
     Search,
     SearchArticle,
 )
+from app.europepmc import EuropePMCAdapter
 from app.fulltext import complete_article, long_enough, pmc_not_archived
 from app.pubmed import (
     NCBIError,
@@ -87,7 +88,7 @@ _LANGUAGE_MAP = {
 }
 
 #: Registre des sources de recherche : code → fabrique ``(client, api_key) -> SourceAdapter``.
-ADAPTERS = {"pubmed": PubMedAdapter}
+ADAPTERS = {"pubmed": PubMedAdapter, "europepmc": EuropePMCAdapter}
 
 #: Taille des lots efetch (pmids par requête).
 _EFETCH_BATCH = 100
@@ -342,8 +343,11 @@ async def _do_import(
     fulltext = 0
     duplicates_doi = 0
     done = 0
-    # DOI normalisé → identités (source, native_id) du projet : un DOI déjà porté par une autre
-    # identité (même import compris) n'est pas inséré (un seul import à la fois par projet).
+    # DOIs portés par des notices de CE import : un second DOI identique est sauté (pas
+    # rattaché — le rattachement n'a de cible que des lignes existantes).
+    import_dois: set[str] = set()
+    # DOI normalisé → identités (source, native_id) déjà dans le projet : un DOI porté par
+    # une autre identité EXISTANTE est rattaché (archi § 3), pas ré-inséré.
     doi_owners: dict[str, set] = {}
     for doi, src, nid in (
         await session.execute(
@@ -391,8 +395,16 @@ async def _do_import(
                         "origin_ref": str(job.id),
                     }
                     identity, doi = (source, native_id), clean_doi(meta.get("doi"))
-                    if doi and doi_owners.get(doi, set()) - {identity}:
-                        duplicates_doi += 1  # avant l'insertion : pas de plein texte pour rien
+                    others = doi_owners.get(doi, set()) - {identity} if doi else set()
+                    if others:
+                        # DOI porté par une autre identité existante (archi § 3) : rattachement à
+                        # la ligne (champs vides + plein texte si absent) — pas de doublon.
+                        await _link_doi_article(session, project.id, meta, others, client, adapter)
+                        duplicates_doi += 1
+                    elif doi and doi in import_dois:
+                        # Une notice de ce même import porte déjà le DOI : saut (pas de
+                        # plein texte pour rien) — comportement phase 2.
+                        duplicates_doi += 1
                     else:
                         inserted, has_text = await _insert_article(
                             session, project.id, meta, client, adapter
@@ -401,7 +413,7 @@ async def _do_import(
                             imported += 1
                             fulltext += has_text
                             if doi:
-                                doi_owners.setdefault(doi, set()).add(identity)
+                                import_dois.add(doi)
                         # sinon : doublon (re-import) → ni importé ni échec (M2)
                 except Exception:
                     logger.exception("article insert failed for %s %s", source, native_id)
@@ -642,6 +654,63 @@ async def _file_meta(e: dict, email: str, client: httpx.AsyncClient) -> tuple[di
     }, "crossref" if cr else "file"
 
 
+async def _fulltext_for(
+    meta: dict, adapter: SourceAdapter | None, client: httpx.AsyncClient
+) -> tuple[str | None, list[dict], str, str | None, str | None] | None:
+    """Plein texte de la notice → ``(methods, sections, source, url, note)`` ou ``None``.
+
+    Id du plein texte : ``fulltext_id`` (source non-PubMed, ex. Europe PMC : JATS, label et
+    URL de la notice, pas d'heuristique) sinon ``pmcid`` (PubMed : heuristique préprint non
+    archivable + URL PMC). ``adapter=None`` (chemin défaut refs/citations) : seul le chemin
+    ``pmcid`` fonctionne (fonction module-level ``fetch_fulltext``)."""
+    fulltext_id = meta.get("fulltext_id") or meta.get("pmcid")
+    if not fulltext_id:
+        return None
+    try:
+        if meta.get("fulltext_id"):
+            result = await adapter.fetch_fulltext(fulltext_id) if adapter is not None else None
+            if result is None:
+                return None  # non disponible (pas de fulltext_id utilisable)
+            methods, sections = result
+            return methods, sections, meta.get("fulltext_source"), meta.get("fulltext_url"), None
+        if adapter is not None:
+            result = await adapter.fetch_fulltext(fulltext_id)
+            methods, sections = (None, []) if result is None else result
+        else:
+            methods, sections = await fetch_fulltext(fulltext_id, client)
+        # Préprint non archivable dans PMC : le « corps » n'est qu'un avis de 2 lignes.
+        # Trop court pour être un article : on le laisse à la complétion (autres sources).
+        pmc_url = f"https://pmc.ncbi.nlm.nih.gov/articles/{fulltext_id}/"
+        if long_enough(sections):
+            return methods, sections, "pmc", pmc_url, None
+        if pmc_not_archived(sections):
+            return None, [], "pmc", pmc_url, "preprint_not_archived"
+    except Exception:
+        logger.exception("fetch_fulltext failed for %s", fulltext_id)
+    return None
+
+
+def _apply_fulltext(target: dict | Article, ft: tuple) -> None:
+    """Pose le plein texte ``(methods, sections, source, url, note)`` sur une notice
+    (``values``, dict) ou une ligne existante (``Article``, rattachement DOI)."""
+    methods, sections, source, url, note = ft
+
+    def set_(key: str, value) -> None:
+        if isinstance(target, dict):
+            target[key] = value
+        else:
+            setattr(target, key, value)
+
+    if sections:
+        set_("methods_text", methods)
+        set_("sections", sections)
+    set_("fulltext_source", source)
+    if url:
+        set_("fulltext_url", url)
+    if note:
+        set_("fulltext_note", note)
+
+
 async def _insert_article(
     session: AsyncSession,
     project_id: uuid.UUID,
@@ -672,29 +741,54 @@ async def _insert_article(
         "origin_seeds": meta.get("origin_seeds"),
         "origin_ref": meta.get("origin_ref"),
     }
-    if meta.get("pmcid"):
-        try:
-            if adapter is not None:
-                result = await adapter.fetch_fulltext(meta["pmcid"])
-                methods, sections = (None, []) if result is None else result
-            else:
-                methods, sections = await fetch_fulltext(meta["pmcid"], client)
-            # Préprint non archivable dans PMC : le « corps » n'est qu'un avis de 2 lignes.
-            # Trop court pour être un article : on le laisse à la complétion (autres sources).
-            if long_enough(sections):
-                values["methods_text"], values["sections"] = methods, sections
-                values["fulltext_source"] = "pmc"
-                values["fulltext_url"] = f"https://pmc.ncbi.nlm.nih.gov/articles/{meta['pmcid']}/"
-            elif pmc_not_archived(sections):
-                values["fulltext_note"] = "preprint_not_archived"
-                values["fulltext_source"] = "pmc"
-                values["fulltext_url"] = f"https://pmc.ncbi.nlm.nih.gov/articles/{meta['pmcid']}/"
-        except Exception:
-            logger.exception("fetch_fulltext failed for pmcid %s", meta["pmcid"])
+    if ft := await _fulltext_for(meta, adapter, client):
+        _apply_fulltext(values, ft)
     insert = _pg_insert if session.get_bind().dialect.name == "postgresql" else _sqlite_insert
     stmt = insert(Article).values(**values).on_conflict_do_nothing()
     result = await session.execute(stmt)
     return (result.rowcount or 0) > 0, bool(values.get("sections"))
+
+
+async def _link_doi_article(
+    session: AsyncSession,
+    project_id: uuid.UUID,
+    meta: dict,
+    owners: set,
+    client: httpx.AsyncClient,
+    adapter: SourceAdapter | None,
+) -> None:
+    """Rattachement DOI (archi § 3) : la notice entrante complète les champs VIDES de la
+    ligne existante (première en ``Article.id`` parmi les identités porteuses du DOI).
+
+    Une valeur existante non vide n'est jamais écrasée ; l'identité de la ligne existante
+    (``source``/``native_id``/``origin``/``origin_ref``/``origin_seeds``) est intacte ;
+    le plein texte est cherché seulement si la ligne n'en a pas."""
+    conds = [and_(Article.source == s, Article.native_id == n) for s, n in owners]
+    row = (
+        await session.execute(
+            select(Article)
+            .where(Article.project_id == project_id, or_(*conds))
+            .order_by(Article.id)
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        return
+    bib = _biblio(meta)
+    bib.pop("pub_types")  # spec D3 : champs complétés, pas pub_types
+    fills = {
+        "pmid": meta.get("pmid"),
+        "pmcid": meta.get("pmcid"),
+        "title": meta.get("title"),
+        "abstract": meta.get("abstract"),
+        **bib,
+        "original_language": _map_language(meta.get("language")),
+    }
+    for col, val in fills.items():
+        if val and not getattr(row, col):
+            setattr(row, col, val)
+    if not row.sections and (ft := await _fulltext_for(meta, adapter, client)):
+        _apply_fulltext(row, ft)
 
 
 async def _finish_success(

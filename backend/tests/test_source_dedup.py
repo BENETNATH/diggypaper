@@ -96,27 +96,60 @@ async def _redraft(engine, project_id) -> None:
         await session.commit()
 
 
-async def test_doi_duplicate_other_identity_skipped_counted_no_fulltext(engine):
+async def test_doi_duplicate_other_identity_linked_fills_and_fulltext(engine):
     """Un article du projet (autre identité : référence importée) porte déjà ce DOI : la notice
-    PubMed n'est pas insérée, ``duplicates_doi`` = 1, l'existant garde son origine, et le plein
-    texte du doublon n'est même pas demandé."""
+    PubMed est RATTACHÉE (spec phase 3 D3, plus de saut) — champs vides remplis, plein texte
+    demandé pour la ligne, identité et origine de l'existant intactes."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path, params = request.url.path, request.url.params
+        if path.endswith("esearch.fcgi"):
+            if params.get("retmax") == "0":
+                return httpx.Response(200, json={"esearchresult": {"count": "2"}})
+            return httpx.Response(200, json={"esearchresult": {"idlist": ["111", "222"]}})
+        if path.endswith("efetch.fcgi"):
+            if params.get("db") == "pmc":
+                assert params.get("id") == "PMC111"
+                # JATS suffisamment long pour passer ``long_enough``.
+                return httpx.Response(
+                    200,
+                    text=(
+                        "<article><body>"
+                        "<sec><title>Methods</title><p>" + "M" * 1500 + "</p></sec>"
+                        "<sec><title>Results</title><p>" + "R" * 100 + "</p></sec>"
+                        "</body></article>"
+                    ),
+                )
+            return httpx.Response(
+                200,
+                text=_efetch_xml(
+                    [("111", "https://doi.org/10.1000/abc", "PMC111"), ("222", None, None)]
+                ),
+            )
+        raise AssertionError(f"appel inattendu : {request.url}")
+
     project = await _make_project(
         engine, {"doi": "10.1000/ABC", "title": "Existing", "origin": "references"}
     )
-    result, pmc_calls = await _import(
-        engine, project, [("111", "https://doi.org/10.1000/abc", "PMC111"), ("222", None, None)]
-    )
+    http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    async with http:
+        result = await _import_pubmed(
+            str(project.id), "q", session_factory=_factory(engine), http=http
+        )
     assert result["imported"] == 1 and result["failed"] == 0
     assert result["duplicates_doi"] == 1
-    assert pmc_calls == []
     arts = await _articles(engine, project.id)
-    assert sorted(a.pmid or "-" for a in arts) == ["-", "222"]
-    existing = next(a for a in arts if a.pmid is None)
+    assert sorted(a.pmid for a in arts) == ["111", "222"]
+    existing = next(a for a in arts if a.pmid == "111")
     assert (existing.title, existing.origin, existing.doi) == (
         "Existing",
         "references",
         "10.1000/ABC",
     )
+    assert existing.source is None and existing.native_id is None  # identité intacte
+    assert existing.pmcid == "PMC111"  # champ vide complété
+    assert existing.sections and existing.fulltext_source == "pmc"
+    assert existing.fulltext_url == "https://pmc.ncbi.nlm.nih.gov/articles/PMC111/"
 
 
 async def test_doi_duplicate_within_same_import(engine):
