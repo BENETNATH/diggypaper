@@ -132,9 +132,11 @@ def _check_xml_size(resp: httpx.Response) -> None:
 
 
 def _term_bounded(query: str, date_from: date | None, date_to: date | None) -> str:
-    """Terme NCBI borné par date de publication ([dp]) ; query brute si aucune borne
-    ou si la query contient déjà ``[dp]`` (pas de doublon du champ)."""
-    if (date_from is None and date_to is None) or re.search(r"\[dp\]", query, re.IGNORECASE):
+    """Terme NCBI borné par date de publication ([dp]) ; query brute si aucune borne.
+
+    Les bornes sont toujours ANDées, même si la query contient déjà ``[dp]`` (intersection,
+    comme les feuillets de la bissection : résultat indépendant du volume)."""
+    if date_from is None and date_to is None:
         return query
     lo = date_from or date(1800, 1, 1)
     hi = date_to or date.today() + timedelta(days=366)

@@ -200,9 +200,7 @@ async def test_contract_fake_error_sanitized_job_failure(engine):
     error_message sans URL ni clé API (C-1)."""
     project = await _make_project(engine)
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-    fake = FakeSourceAdapter(
-        volume=3, fail_search_volume=ValueError("source indisponible (boom)")
-    )
+    fake = FakeSourceAdapter(volume=3, fail_search_volume=ValueError("source indisponible (boom)"))
     with pytest.raises(ValueError):
         await _import_pubmed(str(project.id), "q", session_factory=factory, adapter=fake)
     jobs = await _jobs_for(engine, project.id)
@@ -228,9 +226,7 @@ def _date_range_handler(records: dict[str, int]):
         dates = re.findall(r'"(\d{4}/\d\d/\d\d)"', term)
         if not dates:
             return list(records)
-        lo, hi = (
-            date.fromisoformat(x.replace("/", "-")).toordinal() for x in dates
-        )
+        lo, hi = (date.fromisoformat(x.replace("/", "-")).toordinal() for x in dates)
         return [p for p, day in records.items() if lo <= day <= hi]
 
     def handler(request: httpx.Request) -> httpx.Response:

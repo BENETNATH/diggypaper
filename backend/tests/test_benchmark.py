@@ -90,6 +90,42 @@ async def test_run_benchmark_completes(engine, session):
     assert run.status == BenchmarkStatus.COMPLETED
 
 
+@pytest.mark.parametrize(("raw", "stored"), [("high", None), ("0.9", 0.9), (85, None)])
+async def test_run_benchmark_non_numeric_confidence_completes(engine, session, raw, stored):
+    """confidence_score textuel / hors [0, 1] : le run se termine, colonne Float = None / float."""
+    project = Project(title="P", created_by=None)
+    session.add(project)
+    await session.commit()
+    prompt = PromptTemplate(
+        project_id=project.id,
+        version_number="v1.0",
+        system_prompt="SYS",
+        user_prompt_schema="Article Text:\n{methods_text}",
+    )
+    session.add(prompt)
+    model = ModelRegistry(name="Kev-4B", model_identifier="kef/kev-4b")
+    session.add(model)
+    await session.commit()
+    await _seed(session, project, prompt, model, _gt())
+    run = BenchmarkRun(
+        project_id=project.id,
+        prompt_template_id=prompt.id,
+        models_tested=["Kev-4B"],
+        options={"use_gold": True},
+        status=BenchmarkStatus.PENDING,
+    )
+    session.add(run)
+    await session.commit()
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    await _run_benchmark(
+        str(run.id), session_factory=factory, inference=FakeInference(_gt(conf=raw))
+    )
+    await session.refresh(run)
+    assert run.status == BenchmarkStatus.COMPLETED
+    pred = (await session.execute(select(BenchmarkPrediction))).scalars().one()
+    assert pred.confidence_score == stored
+
+
 async def test_run_benchmark_no_gold_raises(engine, session):
     project = Project(title="P", created_by=None)
     session.add(project)

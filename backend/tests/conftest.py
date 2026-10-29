@@ -72,15 +72,22 @@ def mock_mailer() -> MockMailer:
 
 
 class FakeRedis:
-    """Redis en mémoire pour les tests du lock par modèle : SET NX / GET / DEL.
+    """Redis en mémoire pour les tests du lock par modèle : SET NX / GET / DEL / EXPIRE.
 
-    ``set_calls`` : [(key, value, nx, ex)] ; ``events`` : journal d'ordonnancement.
+    ``set_calls`` : [(key, value, nx, ex)] ; ``expire_calls`` : [(key, seconds)] ;
+    ``events`` : journal d'ordonnancement.
     """
 
     def __init__(self) -> None:
         self.store: dict = {}
         self.set_calls: list[tuple] = []
+        self.expire_calls: list[tuple] = []
         self.events: list[str] = []
+
+    async def expire(self, key, seconds):
+        self.expire_calls.append((key, seconds))
+        self.events.append("expire")
+        return key in self.store
 
     async def set(self, key, value, nx=False, ex=None):
         self.set_calls.append((key, value, nx, ex))

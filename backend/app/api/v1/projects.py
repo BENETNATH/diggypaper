@@ -119,7 +119,11 @@ class ImportRequest(BaseModel):
 
     @model_validator(mode="after")
     def _check_date_bounds(self) -> "ImportRequest":
-        if self.date_from is not None and self.date_to is not None and self.date_from > self.date_to:
+        if (
+            self.date_from is not None
+            and self.date_to is not None
+            and self.date_from > self.date_to
+        ):
             raise ValueError("date_from must be before or equal to date_to")
         return self
 

@@ -17,7 +17,7 @@ COMPOSE_ROOT: str = "http://ollama:11434"
 
 
 def resolve_mode() -> str:
-    """Valeur normalisée de OLLAMA_MODE ; absente/empty/invalid → 'docker' (+ warning si invalide)."""
+    """Valeur normalisée de OLLAMA_MODE ; absente/vide/invalide → 'docker' (warning si invalide)."""
     raw = os.environ.get("OLLAMA_MODE", "").strip().lower()
     if raw in MODES:
         return raw

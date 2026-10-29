@@ -252,7 +252,7 @@ async def _do_benchmark(
                         model_name=model.name,
                         variant=vname,
                         decision_json=prediction,
-                        confidence_score=prediction.get("confidence_score"),
+                        confidence_score=metrics.confidence(prediction.get("confidence_score")),
                         error=error,
                         seconds=took,
                     )

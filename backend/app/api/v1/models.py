@@ -15,15 +15,32 @@ from typing import Annotated
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import hardware
 from app.api.deps import get_current_user, get_db, rate_limit_user
 from app.core.crypto import encrypt_secret
 from app.db.base import SessionLocal
-from app.db.models import ModelRegistry, ModelShare, Project, ProjectMember, User, UserRole
-from app.inference import InferenceError, OpenAICompatibleService, infer_with, make_inference_service
+from app.db.models import (
+    BenchmarkRun,
+    BenchmarkStatus,
+    InferenceJob,
+    InferenceJobStatus,
+    ModelRegistry,
+    ModelShare,
+    Project,
+    ProjectMember,
+    Search,
+    User,
+    UserRole,
+)
+from app.inference import (
+    InferenceError,
+    OpenAICompatibleService,
+    infer_with,
+    make_inference_service,
+)
 from app.model_access import access_filter, check_public_url
 from app.ollama_mode import COMPOSE_ROOT, MODE
 from app.settings.service import get_setting
@@ -182,7 +199,8 @@ async def capabilities(db: DbDep, user: UserDep) -> dict:
         if MODE == "host" and base == COMPOSE_ROOT:
             logger.warning(
                 "OLLAMA_MODE=host mais llm_api_base_url pointe encore sur le conteneur du "
-                "compose (%s) : définir LLM_API_BASE_URL sur l'Ollama de la machine hôte", base
+                "compose (%s) : définir LLM_API_BASE_URL sur l'Ollama de la machine hôte",
+                base,
             )
         configured = bool(base) and not (MODE == "host" and base == COMPOSE_ROOT)
         reachable = await _reachable(base, "/api/tags") if configured else False
@@ -386,6 +404,8 @@ async def test_installed(model_id: uuid.UUID, db: DbDep, user: UserDep) -> dict:
     if m is None:
         raise HTTPException(status_code=404, detail="model not found")
     _require_owner_or_admin(m, user)
+    if m.backend_type == "OLLAMA":
+        await _require_ollama(db)  # mode off / host + base compose : pas d'appel (409)
     default = await make_inference_service(db)
     try:
         await infer_with(m, default, 'Reply with the JSON {"ok": true}.', "ping")
@@ -394,15 +414,69 @@ async def test_installed(model_id: uuid.UUID, db: DbDep, user: UserDep) -> dict:
     return {"ok": True}
 
 
+async def _in_use(db: AsyncSession, name: str) -> bool:
+    """Le modèle est référencé par une analyse ou un benchmark PENDING/RUNNING, ou une analyse
+    programmée en attente."""
+    active = (InferenceJobStatus.PENDING, InferenceJobStatus.RUNNING)
+    job = await db.execute(
+        select(InferenceJob.id)
+        .where(
+            InferenceJob.status.in_(active),
+            or_(InferenceJob.model_used == name, InferenceJob.prefilter_model == name),
+        )
+        .limit(1)
+    )
+    if job.first() is not None:
+        return True
+    # Filtre Python : pas de containment JSONB portable SQLite/PG.
+    runs = await db.execute(
+        select(BenchmarkRun.models_tested).where(
+            BenchmarkRun.status.in_((BenchmarkStatus.PENDING, BenchmarkStatus.RUNNING))
+        )
+    )
+    if any(name in (tested or []) for tested in runs.scalars()):
+        return True
+    # Analyse programmée en attente : elle démarrera avec ce modèle (JSON : filtre Python).
+    waiting = await db.execute(select(Search.schedule).where(Search.schedule_state == "waiting"))
+    return any(
+        name in (cfg.get("model"), cfg.get("prefilter_model")) for cfg in waiting.scalars() if cfg
+    )
+
+
+def _ollama_ref(identifier: str) -> str:
+    """Référence Ollama normalisée : tag « :latest » implicite si le dernier segment n'en a pas."""
+    return identifier if ":" in identifier.rsplit("/", 1)[-1] else f"{identifier}:latest"
+
+
 @router.delete("/{model_id}", status_code=204)
 async def delete_model(model_id: uuid.UUID, db: DbDep, user: UserDep) -> None:
     m = await db.get(ModelRegistry, model_id)
     if m is None:
         raise HTTPException(status_code=404, detail="model not found")
     _require_owner_or_admin(m, user)
-    if m.backend_type == "OLLAMA":  # retirer les poids AVANT la ligne registre (502 → ligne conservée)
-        await _require_ollama(db)  # refus du mode de déploiement AVANT tout appel Ollama
-        await _ollama_delete(db, m.model_identifier)
+    if m.backend_type == "OLLAMA":
+        await _require_admin(user)  # poids serveur : jamais sur le seul invariant owner_id NULL
+    if await _in_use(db, m.name):
+        raise HTTPException(status_code=409, detail="model_in_use")
+    if m.backend_type == "OLLAMA":
+        # Poids retirés AVANT la ligne registre (502 → ligne conservée), seulement si Ollama
+        # est géré par l'instance et qu'aucune autre ligne ne pointe les mêmes poids.
+        try:
+            await _require_ollama(db)
+            managed = True
+        except HTTPException:
+            managed = False
+        # « qwen3 » == « qwen3:latest » pour Ollama : on compare les identifiants normalisés.
+        others = (
+            await db.execute(
+                select(ModelRegistry.model_identifier).where(
+                    ModelRegistry.backend_type == "OLLAMA", ModelRegistry.id != m.id
+                )
+            )
+        ).scalars()
+        shared = any(_ollama_ref(o) == _ollama_ref(m.model_identifier) for o in others)
+        if managed and not shared:
+            await _ollama_delete(db, m.model_identifier)
     await db.delete(m)
     await db.commit()
 

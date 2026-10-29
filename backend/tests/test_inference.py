@@ -207,46 +207,47 @@ async def test_infer_extra_body_cannot_override_fixed_keys():
     assert captured["body"]["model"] == "Kev-4B"
 
 
-async def test_make_service_ollama_applies_extra_body_from_setting(session):
-    from types import SimpleNamespace
-
+async def test_make_service_applies_extra_body_from_setting(session):
+    """Service par défaut (backends locaux) : corps additionnel toujours chargé (§2)."""
     from app.settings.service import set_setting
 
-    await set_setting(
-        session, "llm_extra_body", '{"think": false, "options": {"num_ctx": 8192}}'
-    )
-    model = SimpleNamespace(backend_type="OLLAMA")
-    svc = await make_inference_service(session, model=model)
+    await set_setting(session, "llm_extra_body", '{"think": false, "options": {"num_ctx": 8192}}')
+    svc = await make_inference_service(session)
     assert svc._extra_body == {"think": False, "options": {"num_ctx": 8192}}
 
 
-async def test_make_service_openai_api_never_applies_extra_body(session):
+async def test_infer_with_openai_api_never_sends_extra_body(session, monkeypatch):
+    """OPENAI_API : service propre au modèle, jamais le corps additionnel des backends locaux."""
     from types import SimpleNamespace
 
+    from app.inference import infer_with
     from app.settings.service import set_setting
 
-    await set_setting(
-        session, "llm_extra_body", '{"think": false, "options": {"num_ctx": 8192}}'
+    await set_setting(session, "llm_extra_body", '{"think": false, "options": {"num_ctx": 8192}}')
+    captured, client = _capture_client()
+    real = httpx.AsyncClient
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: real(transport=client._transport, **kw))
+    default = await make_inference_service(session)
+    model = SimpleNamespace(
+        backend_type="OPENAI_API",
+        model_identifier="https://api.x/v1#gpt-4o",
+        api_key_enc=None,
+        owner_id=None,
     )
-    model = SimpleNamespace(backend_type="OPENAI_API")
-    svc = await make_inference_service(session, model=model)
-    assert svc._extra_body == {}
+    await infer_with(model, default, "SYS", "USR")
+    assert "options" not in captured["body"] and "think" not in captured["body"]
 
 
 async def test_make_service_invalid_extra_body_is_empty(session):
-    from types import SimpleNamespace
-
     from app.settings.service import set_setting
 
     await set_setting(session, "llm_extra_body", "pas-un-json")
-    svc = await make_inference_service(session, model=SimpleNamespace(backend_type="OLLAMA"))
+    svc = await make_inference_service(session)
     assert svc._extra_body == {}
 
 
 async def test_make_service_null_extra_body_is_empty(session):
-    from types import SimpleNamespace
-
-    svc = await make_inference_service(session, model=SimpleNamespace(backend_type="OLLAMA"))
+    svc = await make_inference_service(session)
     assert svc._extra_body == {}
 
 
@@ -303,8 +304,9 @@ async def test_infer_native_body_exact_without_extra_body():
             {"role": "user", "content": "USR"},
         ],
         "stream": False,
-        "temperature": 0.0,
         "format": "json",
+        # natif Ollama : temperature lue dans options (ignorée en racine) — spec 2026-10-29 §N1
+        "options": {"temperature": 0.0},
     }
     assert "response_format" not in captured["body"]
 
@@ -319,9 +321,20 @@ async def test_infer_native_body_merges_extra_body_options_think():
     )
     await svc.infer("Kev-4B", "SYS", "USR")
     body = captured["body"]
-    assert body["options"] == {"num_ctx": 16384}
+    assert body["options"] == {"num_ctx": 16384, "temperature": 0.0}  # options fusionnées
     assert body["think"] is False
     assert body["format"] == "json"
+
+
+@pytest.mark.parametrize("bad", [None, 5, [1], "x"])
+async def test_infer_native_non_dict_options_ignored(bad):
+    """``options`` non-dict dans le corps additionnel : ignoré, pas de TypeError."""
+    captured, client = _capture_client_native()
+    svc = OpenAICompatibleService(
+        "http://llm.test/v1", native_ollama=True, http=client, extra_body={"options": bad}
+    )
+    await svc.infer("Kev-4B", "SYS", "USR")
+    assert captured["body"]["options"] == {"temperature": 0.0}
 
 
 async def test_infer_native_extra_body_cannot_override_fixed_keys():
@@ -330,11 +343,16 @@ async def test_infer_native_extra_body_cannot_override_fixed_keys():
         "http://llm.test/v1",
         native_ollama=True,
         http=client,
-        extra_body={"temperature": 1.0, "stream": True, "format": "text", "model": "autre"},
+        extra_body={
+            "options": {"temperature": 1.0, "num_ctx": 4096},
+            "stream": True,
+            "format": "text",
+            "model": "autre",
+        },
     )
     await svc.infer("Kev-4B", "SYS", "USR")
     body = captured["body"]
-    assert body["temperature"] == 0.0
+    assert body["options"] == {"temperature": 0.0, "num_ctx": 4096}  # temperature fixe
     assert body["stream"] is False
     assert body["format"] == "json"
     assert body["model"] == "Kev-4B"
@@ -360,6 +378,7 @@ async def test_infer_native_invalid_json_raises():
 
 async def test_infer_native_missing_message_raises_invalid_response():
     for bad in ({"done": True}, {"message": {}}):
+
         def handler(request: httpx.Request, _bad=bad) -> httpx.Response:
             return httpx.Response(200, json=_bad)
 
@@ -441,36 +460,83 @@ async def test_warmup_native_ollama_uses_api_chat():
 # --- Fabrique : flag natif (OLLAMA local → /api/chat) ---
 
 
-async def test_make_service_ollama_model_sets_native_flag(session):
-    from types import SimpleNamespace
-
-    from app.settings.service import set_setting
-
-    await set_setting(session, "llm_extra_body", '{"think": false, "options": {"num_ctx": 8192}}')
-    svc = await make_inference_service(session, model=SimpleNamespace(backend_type="OLLAMA"))
-    assert svc._native_ollama is True
-    assert svc._extra_body == {"think": False, "options": {"num_ctx": 8192}}
-
-
-async def test_make_service_openai_api_model_native_flag_false_and_no_extra_body(session):
-    from types import SimpleNamespace
-
-    from app.settings.service import set_setting
-
-    await set_setting(session, "llm_extra_body", '{"think": false, "options": {"num_ctx": 8192}}')
-    svc = await make_inference_service(session, model=SimpleNamespace(backend_type="OPENAI_API"))
-    assert svc._native_ollama is False
-    assert svc._extra_body == {}
-
-
-async def test_make_service_no_model_defaults_native_flag_true(session):
-    """Service par défaut (fabrique sans modèle) = Ollama local → mode natif."""
+async def test_make_service_default_native_flag_true(session):
+    """Service par défaut (fabrique, sans modèle) = Ollama local → mode natif ; la décision
+    par backend se fait par appel dans ``infer_with`` (spec 2026-10-29 §2)."""
     svc = await make_inference_service(session)
     assert svc._native_ollama is True
 
 
-async def test_make_service_non_ollama_local_backend_native_flag_false(session):
+# --- Décision endpoint natif / /v1 PAR APPEL dans infer_with (spec 2026-10-29 §2) ---
+
+
+def _capture_both():
+    """Journalise (chemin, corps) de chaque appel ; répond aux deux formats (/api/chat et /v1)."""
+    calls: list[tuple[str, dict]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append((request.url.path, json.loads(request.content)))
+        return httpx.Response(
+            200,
+            json={
+                "message": {"role": "assistant", "content": "{}"},
+                "choices": [{"message": {"content": "{}"}}],
+            },
+        )
+
+    return calls, _client(handler)
+
+
+async def test_infer_with_decides_endpoint_per_model_on_shared_default(session):
+    """Même service par défaut : LLAMA_CPP → /v1/chat/completions (+ corps additionnel),
+    OLLAMA → /api/chat ; le premier appel ne modifie pas le service partagé."""
     from types import SimpleNamespace
 
-    svc = await make_inference_service(session, model=SimpleNamespace(backend_type="LLAMA_CPP"))
-    assert svc._native_ollama is False
+    from app.inference import infer_with
+    from app.settings.service import set_setting
+
+    await set_setting(session, "llm_api_base_url", "http://llm.test/v1")
+    await set_setting(session, "llm_extra_body", '{"think": false, "options": {"num_ctx": 8192}}')
+    calls, client = _capture_both()
+    default = await make_inference_service(session, http=client)
+    llama = SimpleNamespace(backend_type="LLAMA_CPP", model_identifier="llama-big", owner_id=None)
+    ollama = SimpleNamespace(backend_type="OLLAMA", model_identifier="qwen3:4b", owner_id=None)
+    await infer_with(llama, default, "S", "U")
+    await infer_with(ollama, default, "S", "U")
+    assert [p for p, _ in calls] == ["/v1/chat/completions", "/api/chat"]
+    v1_body = calls[0][1]
+    assert v1_body["model"] == "llama-big"
+    assert v1_body["options"] == {"num_ctx": 8192}  # backend local : corps additionnel appliqué
+    assert v1_body["response_format"] == {"type": "json_object"}
+
+
+# --- Timeout : valeur finie et > 0, sinon défaut 120 s (spec 2026-10-29 §3) ---
+
+
+@pytest.mark.parametrize("raw", ["inf", "-inf", "nan", "0", "-5"])
+async def test_make_inference_service_timeout_non_finite_or_non_positive_falls_back(session, raw):
+    from app.settings.service import set_setting
+
+    await set_setting(session, "inference_timeout", raw)
+    svc = await make_inference_service(session)
+    assert svc._timeout == 120.0
+
+
+# --- Réponse 200 inexploitable → InferenceError("invalid_response") (spec 2026-10-29 §N2) ---
+
+
+@pytest.mark.parametrize(
+    "native, response",
+    [
+        (False, httpx.Response(200, text="<html>proxy</html>")),
+        (False, httpx.Response(200, json={"object": "error", "message": "boom"})),
+        (True, httpx.Response(200, text="<html>proxy</html>")),
+    ],
+    ids=["v1-html", "v1-sans-choices", "natif-html"],
+)
+async def test_infer_unusable_200_raises_invalid_response(native, response):
+    svc = OpenAICompatibleService(
+        "http://llm.test/v1", native_ollama=native, http=_client(lambda request: response)
+    )
+    with pytest.raises(InferenceError, match="^invalid_response$"):
+        await svc.infer("m", "s", "u")

@@ -24,6 +24,7 @@ import { HfSearch } from "@/components/HfSearch";
 import { Button } from "@/components/ui/Button";
 import { Field, Input } from "@/components/ui/Field";
 import { Card, Badge } from "@/components/ui/Card";
+import { modelErrorMessage } from "@/lib/modelError";
 import { ErrorBanner, EmptyState, Skeleton, ProgressBar } from "@/components/ui/Feedback";
 
 type Pull = PullState & { name?: string };
@@ -46,7 +47,7 @@ function ModelsContent() {
     try {
       setModels(await listModels());
     } catch (e) {
-      setError(e instanceof Error ? e.message : "error");
+      setError(e instanceof Error ? modelErrorMessage(e.message, t) : "error");
     }
     getModelCapabilities().then(setCaps).catch(() => undefined);
     if (!isAdmin) return;
@@ -57,7 +58,7 @@ function ModelsContent() {
     } catch {
       /* Ollama injoignable : la liste des modèles installés reste utilisable */
     }
-  }, [isAdmin]);
+  }, [isAdmin, t]);
 
   useEffect(() => {
     void load();
@@ -78,7 +79,7 @@ function ModelsContent() {
       await fn();
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "error");
+      setError(e instanceof Error ? modelErrorMessage(e.message, t) : "error");
     }
   }
 
@@ -86,9 +87,9 @@ function ModelsContent() {
     setExtMsg(null);
     try {
       const r = await testExternalModel(ext);
-      setExtMsg({ ok: r.ok, text: r.ok ? t("extOk") : t("extFail", { error: r.error ?? "?" }) });
+      setExtMsg({ ok: r.ok, text: r.ok ? t("extOk") : t("extFail", { error: modelErrorMessage(r.error ?? "?", t) }) });
     } catch (e) {
-      setExtMsg({ ok: false, text: e instanceof Error ? e.message : "error" });
+      setExtMsg({ ok: false, text: e instanceof Error ? modelErrorMessage(e.message, t) : "error" });
     }
   }
 
@@ -172,7 +173,7 @@ function ModelsContent() {
                       </div>
                     ) : (
                       <div className="mt-1 text-xs font-medium text-red-500">
-                        ✗ {t("testError")} {(modelTests[m.id] as { error?: string }).error}
+                        ✗ {t("testError")} {modelErrorMessage((modelTests[m.id] as { error?: string }).error ?? "?", t)}
                       </div>
                     )
                   )}

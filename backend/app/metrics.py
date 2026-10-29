@@ -7,11 +7,28 @@ Une « décision » = dict ``{item: valeur, confidence_score: pertinence, …}``
 
 from __future__ import annotations
 
+import math
 import re
 from collections import Counter
 
 RELEVANT_AT = 0.5  # pertinence >= 0.5 : article « à inclure »
 METRICS = ("accuracy", "recall", "precision", "f1")
+
+
+def confidence(value) -> float | None:
+    """Score de confiance d'une sortie de modèle, coercé en float dans [0, 1] ; sinon ``None``.
+
+    Les petits modèles renvoient parfois ``"0.9"``, ``"high"``, ``85`` (échelle 0-100) ou une
+    liste : ``bool``, types non numériques, non finis ou hors [0, 1] → ``None`` ;
+    ``int`` / ``float`` / ``str`` numérique valide → ``float``.
+    """
+    if isinstance(value, bool) or not isinstance(value, int | float | str):
+        return None
+    try:
+        score = float(value.strip() if isinstance(value, str) else value)
+    except (ValueError, OverflowError):
+        return None
+    return score if math.isfinite(score) and 0.0 <= score <= 1.0 else None
 
 
 def _norm(v):

@@ -11,8 +11,10 @@ Les erreurs sont assainies (pas d'URL ni de secret dans le message), comme
 from __future__ import annotations
 
 import asyncio
+import copy
 import json
 import logging
+import math
 
 import httpx
 
@@ -59,9 +61,12 @@ class OpenAICompatibleService:
         if self._api_key:
             headers["Authorization"] = f"Bearer {self._api_key}"
         if self._native_ollama:
-            # Endpoint natif : root sans le suffixe /v1 ; options/think lues en racine,
+            # Endpoint natif : root sans le suffixe /v1 ; think en racine, paramètres
+            # d'échantillonnage dans ``options`` (la température en racine est ignorée),
             # format "json" (pas response_format, inconnu du natif).
             url = f"{self._base_url.removesuffix('/v1')}/api/chat"
+            opts = self._extra_body.get("options")
+            opts = opts if isinstance(opts, dict) else {}  # réglage libre : pas de TypeError
             body = {
                 "model": model,
                 "messages": [
@@ -69,8 +74,9 @@ class OpenAICompatibleService:
                     {"role": "user", "content": user_prompt},
                 ],
                 "stream": False,
-                "temperature": 0.0,
                 "format": "json",
+                # température fixe : prime sur le réglage ; num_ctx & co. conservés
+                "options": {**opts, "temperature": 0.0},
             }
         else:
             url = f"{self._base_url}/chat/completions"
@@ -105,14 +111,14 @@ class OpenAICompatibleService:
                 raise InferenceError("connection_error") from exc
             if resp.status_code >= 400:
                 raise InferenceError(f"HTTP {resp.status_code}")
-            data = resp.json()
-            if self._native_ollama:
-                try:
+            try:
+                data = resp.json()
+                if self._native_ollama:
                     content = data["message"]["content"]
-                except (KeyError, TypeError) as exc:
-                    raise InferenceError("invalid_response") from exc
-            else:
-                content = data["choices"][0]["message"]["content"]
+                else:
+                    content = data["choices"][0]["message"]["content"]
+            except (ValueError, KeyError, IndexError, TypeError) as exc:
+                raise InferenceError("invalid_response") from exc
             try:
                 return json.loads(content)
             except (json.JSONDecodeError, TypeError) as exc:
@@ -136,35 +142,41 @@ async def unload_ollama(base_url: str, model: str, http: httpx.AsyncClient | Non
             await client.aclose()
 
 
-async def make_inference_service(
-    db,
-    http: httpx.AsyncClient | None = None,
-    model=None,
-) -> OpenAICompatibleService:
-    """Fabrique le service depuis system_settings (DB > env, secrets chiffrés).
-
-    ``llm_api_base_url`` (défaut ``http://localhost:11434/v1`` via ``DEFAULTS``),
-    ``llm_api_key`` (secret, optionnel), ``inference_timeout`` (défaut
-    ``LLM_TIMEOUT_SECONDS`` env ou 120 s) et ``llm_extra_body`` (corps JSON
-    additionnel, appliqué uniquement aux backends locaux — jamais à un modèle
-    ``OPENAI_API`` ; None ou invalide → corps vide).
-
-    Mode natif Ollama (endpoint ``/api/chat``) : ``model is None`` (service par
-    défaut = Ollama local) ou ``model.backend_type == "OLLAMA"`` ; les autres
-    backends restent sur ``/v1/chat/completions``.
-    """
-    base_url = await get_setting(db, "llm_api_base_url")
-    api_key = await get_setting(db, "llm_api_key")
-    timeout = 120.0
+async def get_inference_timeout(db) -> float:
+    """``inference_timeout`` (DB > env) : valeur finie et > 0, sinon 120 s (+ warning)."""
     raw = await get_setting(db, "inference_timeout")
     if raw:
         try:
             timeout = float(raw)
-        except ValueError:
-            logger.warning("inference_timeout invalide (%r) : 120 s", raw)
+        except (TypeError, ValueError):
+            timeout = 0.0
+        if math.isfinite(timeout) and timeout > 0:
+            return timeout
+        logger.warning("inference_timeout invalide (%r) : 120 s", raw)
+    return 120.0
+
+
+async def make_inference_service(
+    db,
+    http: httpx.AsyncClient | None = None,
+) -> OpenAICompatibleService:
+    """Fabrique le service par défaut depuis system_settings (DB > env, secrets chiffrés).
+
+    ``llm_api_base_url`` (défaut ``http://localhost:11434/v1`` via ``DEFAULTS``),
+    ``llm_api_key`` (secret, optionnel), ``inference_timeout`` (cf.
+    ``get_inference_timeout``) et ``llm_extra_body`` (corps JSON additionnel ; None ou
+    invalide → corps vide).
+
+    Ce service ne sert qu'aux backends locaux (jamais à un modèle ``OPENAI_API``, qui a son
+    propre service) : Ollama natif (``/api/chat``) par défaut ; ``infer_with`` décide PAR
+    APPEL (copie en ``/v1`` pour llama.cpp, vLLM, …).
+    """
+    base_url = await get_setting(db, "llm_api_base_url")
+    api_key = await get_setting(db, "llm_api_key")
+    timeout = await get_inference_timeout(db)
     extra_body: dict = {}
     raw_body = await get_setting(db, "llm_extra_body")
-    if raw_body and (model is None or model.backend_type != "OPENAI_API"):
+    if raw_body:
         try:
             parsed = json.loads(raw_body)
         except (json.JSONDecodeError, TypeError):
@@ -173,22 +185,20 @@ async def make_inference_service(
             extra_body = parsed
         else:
             logger.warning("llm_extra_body invalide (%r) : corps vide", raw_body)
-    # Ollama local (modèle OLLAMA, ou service par défaut sans modèle = Ollama) : endpoint natif
-    # /api/chat. Les autres backends locaux (llama.cpp, vLLM, …) n'exposent pas /api/chat → /v1.
-    native_ollama = model is None or model.backend_type == "OLLAMA"
     return OpenAICompatibleService(
         base_url=base_url,
         api_key=api_key,
         http=http,
         timeout=timeout,
         extra_body=extra_body,
-        native_ollama=native_ollama,
+        native_ollama=True,
     )
 
 
 async def warmup(
     service: OpenAICompatibleService,
     model_identifier: str,
+    model=None,
 ) -> None:
     """Absorbe le cold start (chargement des poids) avant la boucle d'inférence.
 
@@ -198,10 +208,12 @@ async def warmup(
     réel relèvera l'erreur, assainie).
     """
     try:
-        await service.infer(
-            model_identifier,
+        await infer_with(
+            model,
+            service,
             "Tu es un service d'inférence.",
             'Réponds uniquement {"ok": true}',
+            name=model_identifier,
         )
     except InferenceError as exc:
         logger.warning("warmup %s : %s", model_identifier, exc)
@@ -217,7 +229,9 @@ async def infer_with(
     """Appelle un modèle génératif du registre.
 
     ``OPENAI_API`` : identifiant ``<url>#<modèle>`` + clé chiffrée propres au modèle ;
-    sinon le service par défaut (Ollama / réglage ``llm_api_base_url``).
+    sinon le service par défaut (réglage ``llm_api_base_url``) : natif ``/api/chat`` pour
+    Ollama (ou sans modèle), ``/v1`` pour les autres backends locaux (copie du service, le
+    service partagé n'est jamais muté).
     """
     if model is not None and model.backend_type == "OPENAI_API":
         url, _, name = model.model_identifier.partition("#")
@@ -226,5 +240,10 @@ async def infer_with(
             url, key, timeout=default._timeout, public_only=model.owner_id is not None
         )
         return await svc.infer(name, system_prompt, user_prompt)
+    if model is None or model.backend_type == "OLLAMA":
+        svc = default
+    else:  # LLAMA_CPP, TRANSFORMERS, … : pas d'/api/chat
+        svc = copy.copy(default)
+        svc._native_ollama = False
     ident = model.model_identifier if model is not None else (name or "")
-    return await default.infer(ident, system_prompt, user_prompt)
+    return await svc.infer(ident, system_prompt, user_prompt)

@@ -215,6 +215,7 @@ def test_import_request_dates_optional_and_reversed_rejected():
     from datetime import date
 
     from pydantic import ValidationError
+
     from app.api.v1.projects import ImportRequest
 
     req = ImportRequest(query="q")
@@ -243,9 +244,7 @@ async def test_import_triggers_task(client, session, researcher_user, do_login, 
     data = resp.json()
     assert data["job_id"] == "job-123"
     assert data["status"] == "PENDING"
-    mock_delay.assert_called_once_with(
-        project_id, "cancer AND mice", date_from=None, date_to=None
-    )
+    mock_delay.assert_called_once_with(project_id, "cancer AND mice", date_from=None, date_to=None)
 
 
 async def test_import_empty_query_422(client, researcher_user, do_login):

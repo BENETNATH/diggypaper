@@ -474,17 +474,25 @@ async def test_fetch_all_pmids_bisection_uses_user_date_bounds(monkeypatch):
     monkeypatch.setattr(pubmed, "search_volume", volume)
     monkeypatch.setattr(pubmed, "fetch_pmids", pmids)
     got = await fetch_all_pmids(
-        "q", None, None, count=10, limit=10**9, date_from=date(2021, 1, 5), date_to=date(2021, 1, 20)
+        "q",
+        None,
+        None,
+        count=10,
+        limit=10**9,
+        date_from=date(2021, 1, 5),
+        date_to=date(2021, 1, 20),
     )
     assert sorted(got) == sorted(records) and len(set(got)) == 10
     assert got[0] == "1009"  # le plus récent
     for term in terms:  # chaque feuillet reste dans [2021/01/05, 2021/01/20]
         lo, hi = (
-            date.fromisoformat(x.replace("/", "-")) for x in re.findall(r'"(\d{4}/\d\d/\d\d)"', term)
+            date.fromisoformat(x.replace("/", "-"))
+            for x in re.findall(r'"(\d{4}/\d\d/\d\d)"', term)
         )
         assert date(2021, 1, 5) <= lo <= hi <= date(2021, 1, 20)
     lo0, hi0 = (
-        date.fromisoformat(x.replace("/", "-")) for x in re.findall(r'"(\d{4}/\d\d/\d\d)"', terms[0])
+        date.fromisoformat(x.replace("/", "-"))
+        for x in re.findall(r'"(\d{4}/\d\d/\d\d)"', terms[0])
     )
     assert (lo0, hi0) == (date(2021, 1, 5), date(2021, 1, 20))  # racine : bornes utilisateur
 
@@ -521,7 +529,8 @@ async def test_fetch_all_pmids_only_date_from_keeps_default_hi(monkeypatch):
     assert len(got) == 6
     assert '"2021/01/05"[dp]' in terms[0]
     lo, hi = (
-        date.fromisoformat(x.replace("/", "-")) for x in re.findall(r'"(\d{4}/\d\d/\d\d)"', terms[0])
+        date.fromisoformat(x.replace("/", "-"))
+        for x in re.findall(r'"(\d{4}/\d\d/\d\d)"', terms[0])
     )
     assert hi == date.today() + timedelta(days=366) and hi >= date.today()
 
@@ -557,7 +566,8 @@ async def test_fetch_all_pmids_only_date_to_keeps_default_lo(monkeypatch):
     got = await fetch_all_pmids("q", None, None, count=6, limit=10**9, date_to=date(2021, 1, 20))
     assert len(got) == 6
     lo, hi = (
-        date.fromisoformat(x.replace("/", "-")) for x in re.findall(r'"(\d{4}/\d\d/\d\d)"', terms[0])
+        date.fromisoformat(x.replace("/", "-"))
+        for x in re.findall(r'"(\d{4}/\d\d/\d\d)"', terms[0])
     )
     assert (lo, hi) == (date(1800, 1, 1), date(2021, 1, 20))  # borne basse par défaut inchangée
 
@@ -589,7 +599,13 @@ async def test_fetch_all_pmids_user_dates_cap_keeps_most_recent(monkeypatch):
     monkeypatch.setattr(pubmed, "search_volume", volume)
     monkeypatch.setattr(pubmed, "fetch_pmids", pmids)
     got = await fetch_all_pmids(
-        "sleep", None, None, count=30, limit=12, date_from=date(2021, 1, 1), date_to=date(2021, 1, 30)
+        "sleep",
+        None,
+        None,
+        count=30,
+        limit=12,
+        date_from=date(2021, 1, 1),
+        date_to=date(2021, 1, 30),
     )
     assert len(got) == 12 and got[0] == "1029"  # les plus récents de la plage
 
@@ -625,7 +641,8 @@ async def test_fetch_all_pmids_no_dates_unchanged_bounds(monkeypatch):
     got = await fetch_all_pmids("sleep", None, None, count=40, limit=10**9)
     assert sorted(got) == sorted(records) and len(set(got)) == 40  # tout est récupéré
     lo, hi = (
-        date.fromisoformat(x.replace("/", "-")) for x in re.findall(r'"(\d{4}/\d\d/\d\d)"', terms[0])
+        date.fromisoformat(x.replace("/", "-"))
+        for x in re.findall(r'"(\d{4}/\d\d/\d\d)"', terms[0])
     )
     assert lo == date(1800, 1, 1) and hi == date.today() + timedelta(days=366)
 
@@ -646,7 +663,13 @@ async def test_fetch_all_pmids_shortcut_with_dates_single_bounded_esearch(monkey
 
     monkeypatch.setattr(pubmed, "fetch_pmids", pmids)
     got = await fetch_all_pmids(
-        "q", None, None, count=40, limit=10**9, date_from=date(2024, 3, 1), date_to=date(2024, 3, 31)
+        "q",
+        None,
+        None,
+        count=40,
+        limit=10**9,
+        date_from=date(2024, 3, 1),
+        date_to=date(2024, 3, 31),
     )
     assert len(calls) == 1
     term, retmax = calls[0]
@@ -655,14 +678,15 @@ async def test_fetch_all_pmids_shortcut_with_dates_single_bounded_esearch(monkey
     assert got == ["a", "b", "c"]  # ordre NCBI, pas d'inversion
 
 
-async def test_fetch_all_pmids_shortcut_with_dates_no_dp_doubling_when_query_has_dp(monkeypatch):
-    """Query auto-bornée ([dp] déjà présent) : terme brut sur le chemin direct, pas de doublon."""
+async def test_fetch_all_pmids_shortcut_query_with_dp_still_bounded(monkeypatch):
+    """Query contenant déjà [dp] + bornes : le chemin direct ANDe aussi les bornes utilisateur
+    (intersection, comme les feuillets de la bissection) — spec 2026-10-29 §7."""
     from datetime import date
 
     from app import pubmed
     from app.pubmed import fetch_all_pmids
 
-    query = "cancer AND 2020/01/01[dp] : 2020/12/31[dp]"
+    query = "cancer AND 2020[dp]"
     calls: list[str] = []
 
     async def pmids(term, key, http, retmax=None):
@@ -676,11 +700,21 @@ async def test_fetch_all_pmids_shortcut_with_dates_no_dp_doubling_when_query_has
         None,
         count=5,
         limit=10**9,
-        date_from=date(2020, 1, 1),
-        date_to=date(2020, 12, 31),
+        date_from=date(2020, 3, 1),
+        date_to=date(2020, 6, 30),
     )
-    assert calls == [query]  # brute, aucun [dp] ajouté
+    assert calls == ['(cancer AND 2020[dp]) AND ("2020/03/01"[dp] : "2020/06/30"[dp])']
     assert got == ["1"]
+
+
+def test_term_bounded_ands_user_bounds_even_if_query_has_dp():
+    """Racine commune (compte esearch + chemin direct) : bornes toujours ANDées."""
+    from datetime import date
+
+    from app.pubmed import _term_bounded
+
+    term = _term_bounded("cancer AND 2020[DP]", date(2020, 3, 1), None)
+    assert term.startswith('(cancer AND 2020[DP]) AND ("2020/03/01"[dp] : "')
 
 
 async def test_fetch_all_pmids_bisection_query_with_dp_keeps_leaf_subrange(monkeypatch):
@@ -714,13 +748,20 @@ async def test_fetch_all_pmids_bisection_query_with_dp_keeps_leaf_subrange(monke
     monkeypatch.setattr(pubmed, "search_volume", volume)
     monkeypatch.setattr(pubmed, "fetch_pmids", pmids)
     got = await fetch_all_pmids(
-        query, None, None, count=8, limit=10**9, date_from=date(2021, 1, 5), date_to=date(2021, 1, 20)
+        query,
+        None,
+        None,
+        count=8,
+        limit=10**9,
+        date_from=date(2021, 1, 5),
+        date_to=date(2021, 1, 20),
     )
     assert sorted(got) == sorted(records) and len(got) == 8  # tout l'intersection
     for term in terms:  # feuillet : (query) AND ("sous-intervalle"[dp] : "sous-intervalle"[dp])
         assert term.startswith(f"({query}) AND (")
         lo, hi = (
-            date.fromisoformat(x.replace("/", "-")) for x in re.findall(r'"(\d{4}/\d\d/\d\d)"', term)
+            date.fromisoformat(x.replace("/", "-"))
+            for x in re.findall(r'"(\d{4}/\d\d/\d\d)"', term)
         )
         assert date(2021, 1, 5) <= lo <= hi <= date(2021, 1, 20)
     assert len(terms) < 100  # convergence bornée

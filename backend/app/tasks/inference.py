@@ -24,6 +24,7 @@ import time
 import uuid
 from datetime import UTC, datetime
 
+from redis.exceptions import RedisError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -50,6 +51,7 @@ from app.gold_examples import examples_block, pick_examples
 from app.inference import (
     InferenceError,
     OpenAICompatibleService,
+    get_inference_timeout,
     infer_with,
     make_inference_service,
     warmup,
@@ -78,10 +80,11 @@ _session_factory_override: async_sessionmaker[AsyncSession] | None = None
 _AUTO_ACCEPT_THRESHOLD = 0.85
 _AUTO_REJECT_THRESHOLD = 0.15
 
-#: Lock par modèle (backends locaux) : requeue 30 s, ~20 min max ; TTL = timeout + marge
-#: anti-fuite (crash du worker → le lock expire, le job passe FAILED au redémarrage).
+#: Lock par modèle (backends locaux) : requeue 30 s ; horizon d'attente = 24 h (aligné sur
+#: le ``visibility_timeout`` Celery, un job CPU dure des heures) ; TTL = timeout + marge
+#: anti-fuite, renouvelé avant chaque appel modèle (crash du worker → le lock expire).
 _MODEL_BUSY_RETRY_SECONDS = 30
-_MODEL_BUSY_MAX_RETRIES = 40
+_MODEL_BUSY_MAX_RETRIES = 24 * 3600 // _MODEL_BUSY_RETRY_SECONDS
 _MODEL_BUSY_TTL_GRACE_SECONDS = 300
 
 
@@ -100,13 +103,14 @@ def _make_session_factory():
 REJECTED = PredictionStatus.AUTO_REJECTED
 
 
-def _triage(confidence_score: float | None) -> PredictionStatus:
+def _triage(confidence_score) -> PredictionStatus:
     """Triage automatique selon le score de confiance (spec MODULE 4).
 
     - ``> 0.85`` → ``AUTO_ACCEPTED``
     - ``< 0.15`` → ``AUTO_REJECTED``
-    - sinon (bornes incluses, ou score absent) → ``NEEDS_HUMAN_REVIEW``
+    - sinon (bornes incluses, score absent ou non numérique) → ``NEEDS_HUMAN_REVIEW``
     """
+    confidence_score = metrics.confidence(confidence_score)
     if confidence_score is None:
         return PredictionStatus.NEEDS_HUMAN_REVIEW
     if confidence_score > _AUTO_ACCEPT_THRESHOLD:
@@ -160,8 +164,10 @@ async def _run_inference(
     - ``session_factory`` injectable (tests) ; sinon engine par run (C2).
     - ``inference`` injectable (tests) ; sinon ``make_inference_service``.
     - ``redis`` injectable (tests) ; sinon client à la demande pour le lock par modèle.
-    - Lock par modèle (backends locaux, pas le pré-filtre) : si le modèle est
-      occupé → ``ModelBusy`` (job PENDING, phase ``waiting_model``), requeue au wrapper.
+    - Lock par modèle (backends locaux : principal + pré-filtre, clés triées, tout-ou-rien) : si un
+      modèle est occupé → ``ModelBusy`` (job PENDING, phase ``waiting_model``), requeue au
+      wrapper. Les locks sont renouvelés avant chaque appel modèle (``heartbeat``).
+    - Toute autre exception avant la fin du job (acquisition Redis incluse) → FAILED.
     - Séquentiel par article (CPU-friendly, spec).
     - Renvoie les statistiques clés (``processed``, ``auto_accepted``,
       ``auto_rejected``, ``needs_review``, ``duration_seconds``).
@@ -173,7 +179,7 @@ async def _run_inference(
     else:
         engine, factory = _make_session_factory()
     client = http if http is not None else None
-    lock = None  # (key, token) si le lock par modèle a été acquis
+    locks: list[tuple[str, str]] = []  # (key, token) des locks par modèle acquis
     redis_client = redis
     own_redis = False
     try:
@@ -194,41 +200,67 @@ async def _run_inference(
                 # Redélivrance : job déjà clos, ou déjà en cours dans un autre processus
                 # (un redémarrage du worker passe d'abord RUNNING → FAILED).
                 return {}
-            main_model = (
-                await session.execute(
-                    select(ModelRegistry).where(ModelRegistry.name == job.model_used)
-                )
-            ).scalars().first()
-            # Lock par modèle (backends locaux seulement) : rend visible l'attente
-            # sérialisée dans Ollama ; le pré-filtre n'est pas locké (limitation
-            # documentée). L'acquisition est avant RUNNING : un job en attente
-            # reste PENDING en base (garde « un job par projet » conservée).
-            if main_model is not None and main_model.backend_type != "OPENAI_API":
-                if redis_client is None:
-                    from redis import asyncio as redis_asyncio
-
-                    redis_client = redis_asyncio.from_url(
-                        os.environ.get("REDIS_URL", "redis://localhost:6379/0")
-                    )
-                    own_redis = True
-                token = uuid.uuid4().hex
-                key = f"inference:lock:{main_model.backend_type}:{main_model.model_identifier}"
-                if not await redis_client.set(key, token, nx=True, ex=await _lock_ttl(session)):
-                    job.result_json = {"phase": "waiting_model"}
-                    await session.commit()
-                    raise ModelBusy(key)
-                lock = (key, token)
-            job.status = InferenceJobStatus.RUNNING
-            await session.commit()
-
             try:
+                registry = {
+                    m.name: m
+                    for m in (
+                        await session.execute(
+                            select(ModelRegistry).where(
+                                ModelRegistry.name.in_(
+                                    [n for n in (job.model_used, job.prefilter_model) if n]
+                                )
+                            )
+                        )
+                    ).scalars()
+                }
+                # Lock par modèle (backends locaux : principal + pré-filtre) : rend visible
+                # l'attente sérialisée dans Ollama. Tout-ou-rien : un lock refusé → ceux déjà
+                # pris sont relâchés (finally) et le job attend. L'acquisition est avant
+                # RUNNING : un job en attente reste PENDING en base (garde « un job par
+                # projet » conservée).
+                keys: list[str] = []
+                for name in (job.model_used, job.prefilter_model):
+                    m = registry.get(name) if name else None
+                    if m is None or m.backend_type == "OPENAI_API":
+                        continue
+                    key = f"inference:lock:{m.backend_type}:{m.model_identifier}"
+                    if key not in keys:  # même modèle des deux côtés : une seule clé
+                        keys.append(key)
+                ttl = 0
+                if keys:
+                    if redis_client is None:
+                        from redis import asyncio as redis_asyncio
+
+                        redis_client = redis_asyncio.from_url(
+                            os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+                        )
+                        own_redis = True
+                    ttl = await _lock_ttl(session)
+                # ordre fixe : pas de livelock entre jobs aux rôles principal/pré-filtre inversés
+                for key in sorted(keys):
+                    token = uuid.uuid4().hex
+                    try:
+                        acquired = await redis_client.set(key, token, nx=True, ex=ttl)
+                    except RedisError as exc:
+                        # host:port interne : au log seulement, jamais dans job.error
+                        logger.warning("inference: lock %s indisponible (Redis) : %s", key, exc)
+                        raise RuntimeError("model_lock_unavailable") from exc
+                    if not acquired:
+                        job.result_json = {"phase": "waiting_model"}
+                        await session.commit()
+                        raise ModelBusy(key)
+                    locks.append((key, token))
+                job.status = InferenceJobStatus.RUNNING
+                await session.commit()
+
+                async def heartbeat() -> None:
+                    await _renew_locks(redis_client, locks, ttl)
+
                 if inference is None:
-                    # Le modèle du job (registre) détermine l'application du corps
-                    # additionnel : jamais à un backend OPENAI_API (spec corps requête).
-                    inference = await make_inference_service(
-                        session, http=client, model=main_model
-                    )
-                stats = await _do_inference(session, job, inference)
+                    inference = await make_inference_service(session, http=client)
+                stats = await _do_inference(session, job, inference, heartbeat)
+            except ModelBusy:
+                raise
             except Exception as exc:
                 await _record_failure(session, job, exc)
                 raise
@@ -247,8 +279,8 @@ async def _run_inference(
             await _start_scheduled(session, job.project_id)
             return stats
     finally:
-        if lock is not None:
-            await _release_lock(redis_client, lock[0], lock[1])
+        for key, token in locks:
+            await _release_lock(redis_client, key, token)
         if own_redis:
             try:
                 await redis_client.aclose()
@@ -259,13 +291,27 @@ async def _run_inference(
 
 
 async def _lock_ttl(session: AsyncSession) -> int:
-    """TTL du lock = ``inference_timeout`` (même lecture que make_inference_service,
+    """TTL du lock = ``inference_timeout`` (même parseur que make_inference_service,
     défaut 120 s) + marge anti-fuite : crash du worker → le lock expirera au TTL."""
-    try:
-        timeout = float(await get_setting(session, "inference_timeout"))
-    except (TypeError, ValueError):
-        timeout = 120.0
-    return int(timeout) + _MODEL_BUSY_TTL_GRACE_SECONDS
+    return int(await get_inference_timeout(session)) + _MODEL_BUSY_TTL_GRACE_SECONDS
+
+
+async def _renew_locks(redis_client, locks: list[tuple[str, str]], ttl: int) -> None:
+    """Renouvelle le TTL de chaque lock détenu (GET == token → EXPIRE, même TTL qu'à
+    l'acquisition). Best-effort comme la release : token différent ou Redis en erreur →
+    warning, le job continue."""
+    # ponytail: GET puis EXPIRE non atomique, Lua compare-and-set si la contention le justifie
+    for key, token in locks:
+        try:
+            current = await redis_client.get(key)
+            if isinstance(current, bytes):
+                current = current.decode()
+            if current == token:
+                await redis_client.expire(key, ttl)
+            else:
+                logger.warning("inference: lock %s perdu (token différent), non renouvelé", key)
+        except Exception:  # noqa: BLE001
+            logger.warning("inference: renouvellement du lock %s en échec", key)
 
 
 async def _release_lock(redis_client, key: str, token: str) -> None:
@@ -300,7 +346,10 @@ async def _mark_model_busy_failed(inference_job_id: str) -> None:
             if job is None:
                 return
             job.status = InferenceJobStatus.FAILED
-            job.error = f"modèle occupé : abandonné après {_MODEL_BUSY_MAX_RETRIES} tentatives (waiting_model)"
+            job.error = (
+                f"modèle occupé : abandonné après {_MODEL_BUSY_MAX_RETRIES} tentatives "
+                "(waiting_model)"
+            )
             job.completed_at = datetime.now(UTC)
             await session.commit()
     except Exception:  # noqa: BLE001
@@ -323,9 +372,15 @@ async def _start_scheduled(session: AsyncSession, project_id) -> None:
 
 
 async def _do_inference(
-    session: AsyncSession, job: InferenceJob, inference: OpenAICompatibleService
+    session: AsyncSession,
+    job: InferenceJob,
+    inference: OpenAICompatibleService,
+    heartbeat=None,
 ) -> dict:
-    """Corps de l'inférence : pour chaque article, inférence + triage + persistance."""
+    """Corps de l'inférence : pour chaque article, inférence + triage + persistance.
+
+    ``heartbeat`` (async, optionnel) : renouvelle les locks par modèle ; appelé juste avant
+    chaque appel modèle (warm-ups et ``predict``)."""
     prompt = await session.get(PromptTemplate, job.prompt_template_id)
     if prompt is None:
         raise LookupError(f"prompt template not found: {job.prompt_template_id}")
@@ -425,7 +480,9 @@ async def _do_inference(
             continue  # backend distant : pas de chargement local
         ident = m.model_identifier if m is not None else (name or "")
         if ident:
-            await warmup(inference, ident)
+            if heartbeat:
+                await heartbeat()
+            await warmup(inference, ident, m)
     # Visible tout de suite (0 / N) : le premier appel peut télécharger les poids du modèle.
     await _progress(session, job, 0, len(articles), 0, counts())
 
@@ -436,6 +493,8 @@ async def _do_inference(
         system = prompt.system_prompt or ""
         if shots and not light:
             system = (system + "\n\n" + shots).strip()
+        if heartbeat:
+            await heartbeat()
         out = await infer_with(model, inference, system, user_prompt, name=job.model_used)
         if not isinstance(out, dict):
             raise InferenceError("invalid_json")  # JSON valide mais pas un objet
@@ -463,8 +522,13 @@ async def _do_inference(
         try:
             if pre is not None:
                 # Étage 1 : titre + abstract ; un rejet net écarte l'article sans étage 2.
-                p1 = await predict(pre, article, light=True)
-                if _triage(p1.get("confidence_score")) == REJECTED:
+                try:
+                    p1 = await predict(pre, article, light=True)
+                except InferenceError as exc:
+                    if str(exc) != "invalid_json":
+                        raise
+                    p1 = None  # étage 1 illisible : l'article passe à l'étage 2
+                if p1 is not None and _triage(p1.get("confidence_score")) == REJECTED:
                     prediction, model_name = p1, pre.name
                     prefiltered += 1
             if prediction is None:
@@ -477,7 +541,7 @@ async def _do_inference(
             invalid += 1
             await _progress(session, job, processed, len(articles), invalid, counts())
             continue
-        confidence = prediction.get("confidence_score")
+        confidence = metrics.confidence(prediction.get("confidence_score"))
         status = _triage(confidence)
         if status == PredictionStatus.AUTO_ACCEPTED:
             auto_accepted += 1

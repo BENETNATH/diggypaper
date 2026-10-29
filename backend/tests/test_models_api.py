@@ -4,8 +4,20 @@ import json
 from contextlib import contextmanager
 
 import httpx
+import pytest
+from sqlalchemy import select
 
-from app.db.models import ModelRegistry, Project, ProjectMember, ProjectMemberRole
+from app.db.models import (
+    BenchmarkRun,
+    BenchmarkStatus,
+    InferenceJob,
+    InferenceJobStatus,
+    ModelRegistry,
+    Project,
+    ProjectMember,
+    ProjectMemberRole,
+    Search,
+)
 
 
 @contextmanager
@@ -122,6 +134,7 @@ async def test_update_model_404(client, session, admin_user, do_login):
 
 async def test_delete_model_admin(client, session, admin_user, do_login):
     """Mock Ollama requis : sans lui, DELETE pointerait vers localhost:11434 et ferait 502."""
+
     def handler(req: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"deleted": True})
 
@@ -153,9 +166,7 @@ async def test_delete_ollama_model_calls_ollama_delete_then_removes_row(
 
     await do_login("admin@lab.fr", "admin-pass-123")
     mid = (
-        await client.post(
-            "/api/v1/models", json={"name": "Q", "model_identifier": "qwen3:4b"}
-        )
+        await client.post("/api/v1/models", json={"name": "Q", "model_identifier": "qwen3:4b"})
     ).json()["id"]
     real = httpx.AsyncClient
     httpx.AsyncClient = lambda **kw: real(transport=httpx.MockTransport(handler), **kw)
@@ -172,14 +183,13 @@ async def test_delete_ollama_model_missing_on_ollama_still_removes_row(
     client, session, admin_user, do_login
 ):
     """Idempotence : modèle déjà absent d'Ollama (404) → la ligne registre part quand même."""
+
     def handler(req: httpx.Request) -> httpx.Response:
         return httpx.Response(404, json={"error": "model 'qwen3:4b' not found"})
 
     await do_login("admin@lab.fr", "admin-pass-123")
     mid = (
-        await client.post(
-            "/api/v1/models", json={"name": "Q", "model_identifier": "qwen3:4b"}
-        )
+        await client.post("/api/v1/models", json={"name": "Q", "model_identifier": "qwen3:4b"})
     ).json()["id"]
     real = httpx.AsyncClient
     httpx.AsyncClient = lambda **kw: real(transport=httpx.MockTransport(handler), **kw)
@@ -199,9 +209,7 @@ async def test_delete_ollama_model_ollama_http_error_502_keeps_row(
 
     await do_login("admin@lab.fr", "admin-pass-123")
     mid = (
-        await client.post(
-            "/api/v1/models", json={"name": "Q", "model_identifier": "qwen3:4b"}
-        )
+        await client.post("/api/v1/models", json={"name": "Q", "model_identifier": "qwen3:4b"})
     ).json()["id"]
     real = httpx.AsyncClient
     httpx.AsyncClient = lambda **kw: real(transport=httpx.MockTransport(handler), **kw)
@@ -223,9 +231,7 @@ async def test_delete_ollama_model_network_error_502_keeps_row(
 
     await do_login("admin@lab.fr", "admin-pass-123")
     mid = (
-        await client.post(
-            "/api/v1/models", json={"name": "Q", "model_identifier": "qwen3:4b"}
-        )
+        await client.post("/api/v1/models", json={"name": "Q", "model_identifier": "qwen3:4b"})
     ).json()["id"]
     real = httpx.AsyncClient
     httpx.AsyncClient = lambda **kw: real(transport=httpx.MockTransport(handler), **kw)
@@ -276,8 +282,10 @@ async def test_delete_ollama_model_forbidden_before_ollama_call(
     await session.commit()
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     row = (
-        await session.execute(select(ModelRegistry).where(ModelRegistry.name == "Q"))
-    ).scalar_one().id
+        (await session.execute(select(ModelRegistry).where(ModelRegistry.name == "Q")))
+        .scalar_one()
+        .id
+    )
     real = httpx.AsyncClient
     httpx.AsyncClient = lambda **kw: real(transport=httpx.MockTransport(handler), **kw)
     try:
@@ -590,32 +598,6 @@ async def test_off_create_ollama_409_but_openai_api_still_201(
     assert resp.status_code == 201
 
 
-async def test_off_delete_ollama_model_409_keeps_row(
-    client, session, admin_user, do_login, monkeypatch
-):
-    """Suppression refusée AVANT tout appel Ollama : la ligne est conservée."""
-    from sqlalchemy import select
-
-    from app.api.v1 import models as m
-
-    def handler(req: httpx.Request) -> httpx.Response:
-        raise AssertionError("Ollama ne doit pas être appelé")
-
-    session.add(ModelRegistry(name="Q", backend_type="OLLAMA", model_identifier="qwen3:4b"))
-    await session.commit()
-    monkeypatch.setattr(m, "MODE", "off")
-    await do_login("admin@lab.fr", "admin-pass-123")
-    row = (
-        await session.execute(select(ModelRegistry).where(ModelRegistry.name == "Q"))
-    ).scalar_one().id
-    with _http(handler):
-        resp = await client.delete(f"/api/v1/models/{row}")
-    assert resp.status_code == 409
-    assert resp.json()["detail"] == "ollama_disabled_by_deployment"
-    names = [m2["name"] for m2 in (await client.get("/api/v1/models")).json()["items"]]
-    assert "Q" in names
-
-
 async def test_off_hf_install_409_before_hf_call(client, admin_user, do_login, monkeypatch):
     from app.api.v1 import models as m
 
@@ -733,9 +715,7 @@ async def test_test_installed_openai_uses_model_url_and_key(client, admin_user, 
 
     def handler(req: httpx.Request) -> httpx.Response:
         seen["url"], seen["auth"] = str(req.url), req.headers.get("authorization")
-        return httpx.Response(
-            200, json={"choices": [{"message": {"content": '{"ok": true}'}}]}
-        )
+        return httpx.Response(200, json={"choices": [{"message": {"content": '{"ok": true}'}}]})
 
     with _http(handler):
         t = await client.post(f"/api/v1/models/{mid}/test")
@@ -770,9 +750,7 @@ async def test_test_installed_unknown_404(client, admin_user, do_login):
     assert t.status_code == 404
 
 
-async def test_test_installed_forbidden_other_user(
-    client, admin_user, researcher_user, do_login
-):
+async def test_test_installed_forbidden_other_user(client, admin_user, researcher_user, do_login):
     await do_login("admin@lab.fr", "admin-pass-123")
     resp = await client.post(
         "/api/v1/models",
@@ -782,3 +760,303 @@ async def test_test_installed_forbidden_other_user(
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     t = await client.post(f"/api/v1/models/{mid}/test")
     assert t.status_code == 403
+
+
+# =====================================================================================
+# Correctifs revue OLLAMA (spec 2026-10-29-correctifs-revue-ollama)
+# =====================================================================================
+
+
+def _recorder():
+    """Handler Ollama qui journalise les appels (200)."""
+    seen: list[httpx.Request] = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        seen.append(req)
+        return httpx.Response(
+            200,
+            json={
+                "deleted": True,
+                "message": {"role": "assistant", "content": '{"ok": true}'},
+                "choices": [{"message": {"content": '{"ok": true}'}}],
+            },
+        )
+
+    return seen, handler
+
+
+async def _row_id(session, name: str):
+    return (
+        await session.execute(select(ModelRegistry.id).where(ModelRegistry.name == name))
+    ).scalar_one()
+
+
+async def _names(client) -> list[str]:
+    return [m["name"] for m in (await client.get("/api/v1/models")).json()["items"]]
+
+
+# --- §1 DELETE /models/{id} ---
+
+
+async def test_delete_ollama_model_shared_identifier_keeps_weights(
+    client, session, admin_user, do_login
+):
+    """Une autre ligne du registre utilise les mêmes poids : la ligne part, Ollama n'est PAS
+    appelé (sinon l'autre modèle serait cassé)."""
+    session.add(ModelRegistry(name="Q", backend_type="OLLAMA", model_identifier="qwen3:4b"))
+    session.add(ModelRegistry(name="Q-bis", backend_type="OLLAMA", model_identifier="qwen3:4b"))
+    await session.commit()
+    await do_login("admin@lab.fr", "admin-pass-123")
+    seen, handler = _recorder()
+    with _http(handler):
+        resp = await client.delete(f"/api/v1/models/{await _row_id(session, 'Q')}")
+    assert resp.status_code == 204
+    assert seen == []
+    assert await _names(client) == ["Q-bis"]
+
+
+@pytest.mark.parametrize(
+    "main, pre, status",
+    [
+        ("Q", None, InferenceJobStatus.PENDING),
+        ("Autre", "Q", InferenceJobStatus.RUNNING),
+    ],
+    ids=["principal-pending", "prefiltre-running"],
+)
+async def test_delete_model_in_use_by_active_inference_job_409(
+    client, session, admin_user, do_login, main, pre, status
+):
+    session.add(ModelRegistry(name="Q", backend_type="OLLAMA", model_identifier="qwen3:4b"))
+    session.add(InferenceJob(model_used=main, prefilter_model=pre, status=status))
+    await session.commit()
+    await do_login("admin@lab.fr", "admin-pass-123")
+    seen, handler = _recorder()
+    with _http(handler):
+        resp = await client.delete(f"/api/v1/models/{await _row_id(session, 'Q')}")
+    assert resp.status_code == 409
+    assert resp.json()["detail"] == "model_in_use"
+    assert seen == []  # refus AVANT tout appel Ollama
+    assert "Q" in await _names(client)
+
+
+async def test_delete_model_in_use_by_active_benchmark_409(client, session, admin_user, do_login):
+    session.add(ModelRegistry(name="Q", backend_type="OLLAMA", model_identifier="qwen3:4b"))
+    session.add(BenchmarkRun(models_tested=["Autre", "Q"], status=BenchmarkStatus.RUNNING))
+    await session.commit()
+    await do_login("admin@lab.fr", "admin-pass-123")
+    seen, handler = _recorder()
+    with _http(handler):
+        resp = await client.delete(f"/api/v1/models/{await _row_id(session, 'Q')}")
+    assert resp.status_code == 409
+    assert resp.json()["detail"] == "model_in_use"
+    assert seen == []
+
+
+async def test_delete_model_after_finished_jobs_ok(client, session, admin_user, do_login):
+    """Garde : seuls les jobs PENDING/RUNNING bloquent (un job terminé n'empêche rien)."""
+    session.add(ModelRegistry(name="Q", backend_type="OLLAMA", model_identifier="qwen3:4b"))
+    session.add(InferenceJob(model_used="Q", status=InferenceJobStatus.COMPLETED))
+    session.add(BenchmarkRun(models_tested=["Q"], status=BenchmarkStatus.FAILED))
+    await session.commit()
+    await do_login("admin@lab.fr", "admin-pass-123")
+    seen, handler = _recorder()
+    with _http(handler):
+        resp = await client.delete(f"/api/v1/models/{await _row_id(session, 'Q')}")
+    assert resp.status_code == 204
+    assert len(seen) == 1
+
+
+async def test_delete_ollama_model_owned_by_non_admin_403_before_ollama(
+    client, session, researcher_user, do_login
+):
+    """Défense en profondeur : supprimer des poids Ollama exige ADMIN, même pour le
+    « propriétaire » d'une ligne OLLAMA (invariant owner_id NULL non garanti en base)."""
+    session.add(
+        ModelRegistry(
+            name="Q",
+            backend_type="OLLAMA",
+            model_identifier="qwen3:4b",
+            owner_id=researcher_user.id,
+        )
+    )
+    await session.commit()
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    seen, handler = _recorder()
+    with _http(handler):
+        resp = await client.delete(f"/api/v1/models/{await _row_id(session, 'Q')}")
+    assert resp.status_code == 403
+    assert seen == []
+
+
+async def test_delete_ollama_model_shared_identifier_latest_alias_keeps_weights(
+    client, session, admin_user, do_login
+):
+    """« qwen3 » et « qwen3:latest » désignent les mêmes poids Ollama : Ollama non appelé."""
+    session.add(ModelRegistry(name="Q", backend_type="OLLAMA", model_identifier="qwen3"))
+    session.add(ModelRegistry(name="Q-lat", backend_type="OLLAMA", model_identifier="qwen3:latest"))
+    await session.commit()
+    await do_login("admin@lab.fr", "admin-pass-123")
+    seen, handler = _recorder()
+    with _http(handler):
+        resp = await client.delete(f"/api/v1/models/{await _row_id(session, 'Q')}")
+    assert resp.status_code == 204
+    assert seen == []
+    assert await _names(client) == ["Q-lat"]
+
+
+async def test_delete_ollama_model_same_identifier_other_backend_still_deletes_weights(
+    client, session, admin_user, do_login
+):
+    """Une ligne d'un autre backend au même identifiant ne partage pas les poids Ollama."""
+    session.add(ModelRegistry(name="Q", backend_type="OLLAMA", model_identifier="qwen3:4b"))
+    session.add(ModelRegistry(name="Q-gguf", backend_type="LLAMA_CPP", model_identifier="qwen3:4b"))
+    await session.commit()
+    await do_login("admin@lab.fr", "admin-pass-123")
+    seen, handler = _recorder()
+    with _http(handler):
+        resp = await client.delete(f"/api/v1/models/{await _row_id(session, 'Q')}")
+    assert resp.status_code == 204
+    assert len(seen) == 1
+
+
+@pytest.mark.parametrize("field", ["model", "prefilter_model"])
+async def test_delete_model_in_use_by_waiting_scheduled_search_409(
+    client, session, admin_user, do_login, field
+):
+    """Analyse programmée en attente : elle démarrera avec ce modèle, la suppression est refusée."""
+    project = Project(title="P", created_by=None)
+    session.add(project)
+    await session.commit()
+    schedule = {"model": "Autre", "prefilter_model": None, "selection": {}}
+    schedule[field] = "Q"
+    session.add(ModelRegistry(name="Q", backend_type="OLLAMA", model_identifier="qwen3:4b"))
+    session.add(
+        Search(project_id=project.id, name="S", schedule=schedule, schedule_state="waiting")
+    )
+    await session.commit()
+    await do_login("admin@lab.fr", "admin-pass-123")
+    seen, handler = _recorder()
+    with _http(handler):
+        resp = await client.delete(f"/api/v1/models/{await _row_id(session, 'Q')}")
+    assert resp.status_code == 409
+    assert resp.json()["detail"] == "model_in_use"
+    assert seen == []
+
+
+async def test_delete_model_started_scheduled_search_does_not_block(
+    client, session, admin_user, do_login
+):
+    """Garde : seule une programmation « waiting » bloque (started/failed : plus d'attente)."""
+    project = Project(title="P", created_by=None)
+    session.add(project)
+    await session.commit()
+    session.add(ModelRegistry(name="Q", backend_type="OLLAMA", model_identifier="qwen3:4b"))
+    session.add(
+        Search(project_id=project.id, name="S", schedule={"model": "Q"}, schedule_state="started")
+    )
+    await session.commit()
+    await do_login("admin@lab.fr", "admin-pass-123")
+    seen, handler = _recorder()
+    with _http(handler):
+        resp = await client.delete(f"/api/v1/models/{await _row_id(session, 'Q')}")
+    assert resp.status_code == 204
+
+
+async def test_delete_model_in_use_non_owner_gets_403_not_409(
+    client, session, admin_user, researcher_user, do_login
+):
+    """La permission précède le contrôle d'usage : pas de fuite d'activité d'autrui."""
+    session.add(
+        ModelRegistry(
+            name="Ext",
+            backend_type="OPENAI_API",
+            model_identifier="gpt",
+            owner_id=admin_user.id,
+        )
+    )
+    session.add(InferenceJob(model_used="Ext", status=InferenceJobStatus.RUNNING))
+    await session.commit()
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    resp = await client.delete(f"/api/v1/models/{await _row_id(session, 'Ext')}")
+    assert resp.status_code == 403
+
+
+async def test_delete_openai_api_model_in_use_409(client, session, admin_user, do_login):
+    session.add(ModelRegistry(name="Ext", backend_type="OPENAI_API", model_identifier="gpt"))
+    session.add(InferenceJob(model_used="Ext", status=InferenceJobStatus.PENDING))
+    await session.commit()
+    await do_login("admin@lab.fr", "admin-pass-123")
+    resp = await client.delete(f"/api/v1/models/{await _row_id(session, 'Ext')}")
+    assert resp.status_code == 409
+    assert resp.json()["detail"] == "model_in_use"
+
+
+async def test_delete_model_missing_404(client, session, admin_user, do_login):
+    import uuid
+
+    await do_login("admin@lab.fr", "admin-pass-123")
+    resp = await client.delete(f"/api/v1/models/{uuid.uuid4()}")
+    assert resp.status_code == 404
+
+
+@pytest.mark.parametrize(
+    "mode, base_url",
+    [("off", None), ("host", "http://ollama:11434/v1")],
+    ids=["off", "host-base-compose"],
+)
+async def test_off_or_host_default_delete_ollama_model_removes_row_only(
+    client, session, admin_user, do_login, monkeypatch, mode, base_url
+):
+    """Ollama non géré par l'instance : la ligne registre est supprimée (204), Ollama n'est
+    PAS appelé (les poids ne sont pas les nôtres) — plus de ligne indélébile."""
+    from app.api.v1 import models as m
+    from app.settings.service import set_setting
+
+    session.add(ModelRegistry(name="Q", backend_type="OLLAMA", model_identifier="qwen3:4b"))
+    await session.commit()
+    if base_url:
+        await set_setting(session, "llm_api_base_url", base_url)
+    monkeypatch.setattr(m, "MODE", mode)
+    await do_login("admin@lab.fr", "admin-pass-123")
+    seen, handler = _recorder()
+    with _http(handler):
+        resp = await client.delete(f"/api/v1/models/{await _row_id(session, 'Q')}")
+    assert resp.status_code == 204
+    assert seen == []
+    assert "Q" not in await _names(client)
+
+
+# --- §5 POST /models/{id}/test ---
+
+
+async def test_off_test_installed_ollama_409(client, session, admin_user, do_login, monkeypatch):
+    """Mode off : le bouton Test d'un modèle OLLAMA est refusé (409) sans contacter Ollama."""
+    from app.api.v1 import models as m
+
+    session.add(ModelRegistry(name="Q", backend_type="OLLAMA", model_identifier="qwen3:4b"))
+    await session.commit()
+    monkeypatch.setattr(m, "MODE", "off")
+    await do_login("admin@lab.fr", "admin-pass-123")
+    seen, handler = _recorder()
+    with _http(handler):
+        resp = await client.post(f"/api/v1/models/{await _row_id(session, 'Q')}/test")
+    assert resp.status_code == 409
+    assert resp.json()["detail"] == "ollama_disabled_by_deployment"
+    assert seen == []
+
+
+# --- §2 POST /models/{id}/test : endpoint décidé par le backend du modèle testé ---
+
+
+async def test_test_installed_llama_cpp_uses_v1(client, session, admin_user, do_login):
+    from app.settings.service import set_setting
+
+    await set_setting(session, "llm_api_base_url", "http://llm.test/v1")
+    session.add(ModelRegistry(name="L", backend_type="LLAMA_CPP", model_identifier="llama-big"))
+    await session.commit()
+    await do_login("admin@lab.fr", "admin-pass-123")
+    seen, handler = _recorder()
+    with _http(handler):
+        resp = await client.post(f"/api/v1/models/{await _row_id(session, 'L')}/test")
+    assert resp.json() == {"ok": True}
+    assert [str(r.url) for r in seen] == ["http://llm.test/v1/chat/completions"]
