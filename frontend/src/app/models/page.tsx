@@ -227,7 +227,8 @@ function ModelsContent() {
       </Card>
 
       <Card title={t("addTitle")}>
-        {caps && (
+        {/* La partie interne (Ollama) n'a de sens que pour l'admin : le reste des utilisateurs ne voit que l'ajout externe. */}
+        {isAdmin && caps && (
           <section>
             <h3 className="mb-2 text-sm font-semibold text-foreground">{t("addInternal")}</h3>
             <ul className="flex flex-col gap-2 text-sm">
@@ -277,7 +278,7 @@ function ModelsContent() {
             )}
           </section>
         )}
-        <section className={caps ? "mt-6 border-t border-border pt-4" : ""}>
+        <section className={isAdmin && caps ? "mt-6 border-t border-border pt-4" : ""}>
           <h3 className="mb-2 text-sm font-semibold text-foreground">{t("addExternal")}</h3>
           <ul className="flex flex-col gap-2 text-sm">
             <li className="flex flex-wrap items-center gap-2">
