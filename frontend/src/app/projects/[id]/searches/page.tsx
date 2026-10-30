@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import {
   createSearch,
@@ -172,8 +172,13 @@ function SearchesContent() {
   const [isLead, setIsLead] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Formulaire « Nouvelle recherche » (éventuellement prérempli depuis la page Articles).
+  // Formulaire « Nouvelle recherche » (éventuellement prérempli depuis la page Articles,
+  // ou ouvert d'office via ?new=1 depuis le bouton « Nouvelle recherche » de l'overview).
   const [showForm, setShowForm] = useState(false);
+  const openNew = useSearchParams()?.get("new") === "1";
+  useEffect(() => {
+    if (openNew) setShowForm(true);
+  }, [openNew]);
   const [name, setName] = useState("");
   const [selection, setSelection] = useState<Selection>({});
   const [count, setCount] = useState<number | null>(null);
@@ -311,6 +316,88 @@ function SearchesContent() {
 
       {error && <ErrorBanner message={error} />}
 
+      {isLead && !none && !showForm && (
+        <Button variant="secondary" onClick={() => setShowForm(true)}>
+          + {t("newTitle")}
+        </Button>
+      )}
+      {isLead && !none && showForm && (
+        <Card title={t("newTitle")}>
+          <form onSubmit={handleCreate} className="flex flex-col gap-4">
+            <Field label={t("nameLabel")}>
+              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={t("namePlaceholder")} />
+            </Field>
+            <ArticleSelector
+              projectId={projectId}
+              searches={searches}
+              value={selection}
+              onChange={setSelection}
+              onCount={setCount}
+            />
+            <details className="rounded-lg border border-border p-3">
+              <summary className="cursor-pointer text-sm font-medium text-foreground">{t("questionTitle")}</summary>
+              <p className="my-2 text-xs text-muted">{t("questionHint")}</p>
+              {edit ?? originDef ? (
+                <QuestionEditor {...(edit ?? originDef)!} onChange={setEdit} />
+              ) : (
+                <p className="text-sm text-muted">…</p>
+              )}
+            </details>
+            {models.length > 0 && (
+              <div className="rounded-lg border border-border p-3">
+                <label className="flex items-center gap-2 text-sm font-medium text-foreground">
+                  <input type="checkbox" checked={sched} onChange={(e) => setSched(e.target.checked)} />
+                  {t("scheduleLabel", { origin: (searches?.find((s) => s.id === (selection.from_search_id ?? searches.find((x) => x.is_default)?.id)) ?? current)?.name ?? "…" })}
+                </label>
+                <p className="mt-1 text-xs text-muted">{t("scheduleHint")}</p>
+                {sched && (
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    <Field label={t("scheduleStage2")}>
+                      <select value={m2} onChange={(e) => setM2(e.target.value)} className="w-full rounded border border-border bg-surface p-2 text-sm text-foreground">
+                        <option value="">—</option>
+                        {models.map((m) => (
+                          <option key={m.id} value={m.name}>
+                            {m.name}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                    <Field label={t("scheduleStage1")}>
+                      <select value={m1} onChange={(e) => setM1(e.target.value)} className="w-full rounded border border-border bg-surface p-2 text-sm text-foreground">
+                        <option value="">—</option>
+                        {models.map((m) => (
+                          <option key={m.id} value={m.name}>
+                            {m.name}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                    <div className="sm:col-span-2">
+                      <Field label={t("scheduleInstructions")}>
+                        <Input value={instr} onChange={(e) => setInstr(e.target.value)} maxLength={2000} />
+                      </Field>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="submit"
+                loading={creating}
+                disabled={(sched ? !(m2 || m1) : !count) || (edit?.sections.length === 0)}
+              >
+                {sched ? t("createScheduled") : t("create")}
+              </Button>
+              <Button type="button" variant="secondary" onClick={() => setShowForm(false)}>
+                {t("cancel")}
+              </Button>
+              {!sched && count === 0 && <span className="text-sm text-warning">{t("emptySelection")}</span>}
+            </div>
+          </form>
+        </Card>
+      )}
+
       {none ? (
         <EmptyState
           title={t("empty")}
@@ -349,108 +436,23 @@ function SearchesContent() {
       )}
 
       {isLead ? (
-        <>
-          <Card title={t("blindTitle")}>
-            <p className="text-sm text-muted">{t("blindIntro")}</p>
-            <div className="mt-3 flex flex-wrap items-end gap-3">
-              <Field label={t("blindN")}>
-                <Input
-                  type="number"
-                  min={1}
-                  value={blindN}
-                  onChange={(e) => setBlindN(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                  className="w-28"
-                />
-              </Field>
-              <Button loading={blindBusy} onClick={() => void handleBlind()}>
-                {t("blindCreate")}
-              </Button>
-            </div>
-          </Card>
-
-          {none ? null : !showForm ? (
-            <div>
-              <Button variant="secondary" onClick={() => setShowForm(true)}>
-                + {t("newTitle")}
-              </Button>
-            </div>
-          ) : (
-            <Card title={t("newTitle")}>
-              <form onSubmit={handleCreate} className="flex flex-col gap-4">
-                <Field label={t("nameLabel")}>
-                  <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={t("namePlaceholder")} />
-                </Field>
-                <ArticleSelector
-                  projectId={projectId}
-                  searches={searches}
-                  value={selection}
-                  onChange={setSelection}
-                  onCount={setCount}
-                />
-                <details className="rounded-lg border border-border p-3">
-                  <summary className="cursor-pointer text-sm font-medium text-foreground">{t("questionTitle")}</summary>
-                  <p className="my-2 text-xs text-muted">{t("questionHint")}</p>
-                  {edit ?? originDef ? (
-                    <QuestionEditor {...(edit ?? originDef)!} onChange={setEdit} />
-                  ) : (
-                    <p className="text-sm text-muted">…</p>
-                  )}
-                </details>
-                {models.length > 0 && (
-                  <div className="rounded-lg border border-border p-3">
-                    <label className="flex items-center gap-2 text-sm font-medium text-foreground">
-                      <input type="checkbox" checked={sched} onChange={(e) => setSched(e.target.checked)} />
-                      {t("scheduleLabel", { origin: (searches?.find((s) => s.id === (selection.from_search_id ?? searches.find((x) => x.is_default)?.id)) ?? current)?.name ?? "…" })}
-                    </label>
-                    <p className="mt-1 text-xs text-muted">{t("scheduleHint")}</p>
-                    {sched && (
-                      <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                        <Field label={t("scheduleStage2")}>
-                          <select value={m2} onChange={(e) => setM2(e.target.value)} className="w-full rounded border border-border bg-surface p-2 text-sm text-foreground">
-                            <option value="">—</option>
-                            {models.map((m) => (
-                              <option key={m.id} value={m.name}>
-                                {m.name}
-                              </option>
-                            ))}
-                          </select>
-                        </Field>
-                        <Field label={t("scheduleStage1")}>
-                          <select value={m1} onChange={(e) => setM1(e.target.value)} className="w-full rounded border border-border bg-surface p-2 text-sm text-foreground">
-                            <option value="">—</option>
-                            {models.map((m) => (
-                              <option key={m.id} value={m.name}>
-                                {m.name}
-                              </option>
-                            ))}
-                          </select>
-                        </Field>
-                        <div className="sm:col-span-2">
-                          <Field label={t("scheduleInstructions")}>
-                            <Input value={instr} onChange={(e) => setInstr(e.target.value)} maxLength={2000} />
-                          </Field>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button
-                    type="submit"
-                    loading={creating}
-                    disabled={(sched ? !(m2 || m1) : !count) || (edit?.sections.length === 0)}
-                  >
-                    {sched ? t("createScheduled") : t("create")}
-                  </Button>
-                  <Button type="button" variant="secondary" onClick={() => setShowForm(false)}>
-                    {t("cancel")}
-                  </Button>
-                  {!sched && count === 0 && <span className="text-sm text-warning">{t("emptySelection")}</span>}
-                </div>
-              </form>
-            </Card>
-          )}
-        </>
+        <Card title={t("blindTitle")}>
+          <p className="text-sm text-muted">{t("blindIntro")}</p>
+          <div className="mt-3 flex flex-wrap items-end gap-3">
+            <Field label={t("blindN")}>
+              <Input
+                type="number"
+                min={1}
+                value={blindN}
+                onChange={(e) => setBlindN(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                className="w-28"
+              />
+            </Field>
+            <Button loading={blindBusy} onClick={() => void handleBlind()}>
+              {t("blindCreate")}
+            </Button>
+          </div>
+        </Card>
       ) : (
         <p className="text-sm text-muted">{t("leadOnly")}</p>
       )}
