@@ -28,8 +28,8 @@ describe("sourceLabel", () => {
   });
 
   it("source inconnue (phases suivantes) : code brut + identifiant", () => {
-    expect(sourceLabel("hal", "t-0000", "x")).toBe("hal t-0000");
-    expect(sourceLabel("hal", null, "x")).toBe("hal");
+    expect(sourceLabel("medline", "t-0000", "x")).toBe("medline t-0000");
+    expect(sourceLabel("medline", null, "x")).toBe("medline");
   });
 
   it("sans source (donnée ancienne) → null : l'appelant affiche son repli", () => {
