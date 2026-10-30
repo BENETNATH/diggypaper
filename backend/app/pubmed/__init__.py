@@ -20,9 +20,12 @@ Erreurs (C-1) : les erreurs HTTP NCBI (>= 400) et les timeouts lèvent
 ``oa.fcgi`` (``fetch_methods``) n'est pas un E-utility : le throttle 1/3 s est
 conservé par prudence (m12).
 
-Retry (m5) : 2 retries avec backoff simple sur erreur transitoire (503 / timeout)
-pour esearch/efetch. Pas de retry sur erreur de parsing (le parsing est fait par
-l'appelant, après la réponse).
+Retry (m5) : 2 retries avec backoff simple sur erreur transitoire (429 / 5xx /
+timeout) pour esearch/efetch, en respectant ``Retry-After`` sur un 429 (NCBI le
+renvoie quand le débit dépasse le plafond : 3 req/s sans clé, 10 avec). Sans ce
+retry, une rafale (plusieurs process) faisait échouer le lot au lieu de ralentir.
+Pas de retry sur erreur de parsing (le parsing est fait par l'appelant, après la
+réponse).
 
 Limite de taille (I5) : les payloads XML NCBI > 10 Mo sont refusés (défense en
 profondeur — l'entrée est NCBI via HTTPS, pas contrôlée par l'utilisateur ; la
@@ -66,9 +69,15 @@ def _esearch_max() -> int:
 PUBMED_WINDOW = 9999
 
 
-#: m5 : retry sur erreur transitoire (503 / timeout), backoff simple (s).
+#: m5 : retry sur erreur transitoire (429 / 5xx / timeout), backoff simple (s).
 _RETRIES = 2
 _RETRY_BACKOFF_SECONDS = 1.0
+
+#: Codes HTTP retentés (429 = débit dépassé : c'est le cas « trop vite », pas une erreur fatale).
+_RETRY_STATUS = frozenset({429, 500, 502, 503, 504})
+
+#: Plafond d'attente d'un ``Retry-After`` (s) : un worker ne dort pas une heure sur un en-tête.
+_RETRY_AFTER_MAX = 30.0
 
 #: I5 : limite de taille des payloads XML NCBI (défense en profondeur) : 10 Mo.
 _MAX_XML_BYTES = 10 * 1024 * 1024
@@ -103,9 +112,10 @@ async def _throttle(api_key: str | None) -> None:
 async def _get_with_retry(
     http: httpx.AsyncClient, url: str, params: dict, *, retries: int = _RETRIES
 ) -> httpx.Response:
-    """GET NCBI avec retry sur erreur transitoire (m5) : 503 / timeout.
+    """GET NCBI avec retry sur erreur transitoire (m5) : 429 / 5xx / timeout.
 
-    ``retries`` retries avec backoff simple (``_sleep``, mocké en tests).
+    ``retries`` retries avec backoff simple (``_sleep``, mocké en tests) ; sur 429,
+    ``Retry-After`` (en secondes) est respecté, borné à ``_RETRY_AFTER_MAX``.
     Pas de retry sur erreur de parsing (le parsing est fait par l'appelant).
     C-1 : timeout persistant → NCBIError('timeout') ; erreur HTTP persistante →
     NCBIError('HTTP <code>') (SANS l'URL ni la clé).
@@ -118,8 +128,11 @@ async def _get_with_retry(
                 raise NCBIError("timeout") from None
             await _sleep(_RETRY_BACKOFF_SECONDS * (attempt + 1))
             continue
-        if resp.status_code == 503 and attempt < retries:
-            await _sleep(_RETRY_BACKOFF_SECONDS * (attempt + 1))
+        if resp.status_code in _RETRY_STATUS and attempt < retries:
+            wait = _RETRY_BACKOFF_SECONDS * (attempt + 1)
+            if (after := resp.headers.get("Retry-After", "")).isdigit():
+                wait = min(float(after), _RETRY_AFTER_MAX)
+            await _sleep(wait)
             continue
         _raise_for_status(resp)
         return resp

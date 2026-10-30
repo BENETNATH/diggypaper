@@ -127,9 +127,27 @@ def _recover_interrupted_jobs(**_kwargs) -> None:
     import asyncio
     import logging
 
+    from app.core.config import get_settings, validate_settings
+
+    log = logging.getLogger(__name__)
+
+    # F5 : même contrôle qu'au démarrage de l'API. Le worker chiffre/déchiffre les clés en
+    # base : il ne doit pas tourner avec les secrets de dev. Jamais bloquant (l'API, qui
+    # refuse de démarrer, reste la référence) — un log explicite vaut mieux qu'une trace
+    # au premier déchiffrement.
+    try:
+        validate_settings(get_settings())
+    except Exception as exc:  # noqa: BLE001
+        log.error("secrets invalides côté worker : %s", exc)
+
+    # Un seul worker exécute la récupération : avec deux workers (principal + ingestion),
+    # celui qui démarre marquerait FAILED les jobs RUNNING de l'autre.
+    if os.environ.get("RECOVER_INTERRUPTED", "1").strip().lower() in {"0", "false", "no"}:
+        log.info("récupération des jobs interrompus désactivée (RECOVER_INTERRUPTED=0)")
+        return
     try:
         n = asyncio.run(_mark_interrupted())
         if n:
-            logging.getLogger(__name__).warning("%d job(s) interrompu(s) marqués FAILED", n)
+            log.warning("%d job(s) interrompu(s) marqués FAILED", n)
     except Exception:  # noqa: BLE001 - ne doit jamais empêcher le worker de démarrer
-        logging.getLogger(__name__).exception("récupération des jobs interrompus en échec")
+        log.exception("récupération des jobs interrompus en échec")

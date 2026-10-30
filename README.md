@@ -231,15 +231,17 @@ reverse proxy TLS (établissement)            ← HTTPS, certificat, HSTS
         ├── /api/v1/*  ──►  backend (FastAPI/uvicorn, :8000)
         └── /*         ──►  frontend (Next.js, :3000)
 
-backend ──►  postgres (16)  ·  redis (7)  ◄──  worker (Celery)
+backend ──►  postgres (16)  ·  redis (7)  ◄──  worker (Celery, tâches générales)
+                                                    └──  worker-ingest (imports, 1 process)
 backend / worker ──►  ollama (optionnel)  ·  API externe de votre choix
 ```
 
 ### Quick-start
 
 ```bash
-# 1. Configurer l'environnement
-cp .env.example .env          # puis éditer (secrets, APP_BASE_URL, SMTP_*, ADMIN_*, …)
+# 1. Générer l'environnement : secrets aléatoires (JWT, ANON, chiffrement AES), port, admin
+python3 scripts/setup_env.py --yes   # ou sans --yes : interactif (recommandé)
+#    puis éditer .env si besoin (APP_BASE_URL, SMTP_*, ADMIN_*, …) — chmod 600 déjà posé
 
 # 2. Démarrer la stack (build + up)
 make up                       # ou : docker compose up -d --build
@@ -248,6 +250,10 @@ make up                       # ou : docker compose up -d --build
 make ps                       # état des services
 make logs                     # logs en temps réel
 ```
+
+Ne recopiez pas `.env.example` tel quel : ses valeurs sont celles de développement et le
+backend **refuse de démarrer** avec elles (fail-fast sur `JWT_SECRET`, `ANON_SALT`,
+`ENCRYPTION_KEY` — voir `backend/app/core/config.py`).
 
 Les migrations Alembic sont appliquées au démarrage du backend ; le worker attend qu'il
 soit prêt. Les services redémarrent seuls après un reboot (`restart: unless-stopped`) et
@@ -328,10 +334,10 @@ Après `git pull`, avant `docker compose up -d --build` :
 
 | Variable | Rôle |
 |----------|------|
-| `WORKER_CONCURRENCY` | tâches de fond en parallèle (imports, analyses, exports) — défaut `3` |
+| `WORKER_CONCURRENCY` | tâches de fond en parallèle (analyses, exports, benchmarks) — défaut `3` ; les imports tournent sur `worker-ingest` (1 process, file `ingest`) pour rester sous le plafond NCBI |
 | `IMPORT_MAX_ARTICLES` | plafond d'articles par import — défaut `5000` ; `0` = illimité (au-delà de 10 000 résultats, la requête est découpée par date de publication, les plus récents d'abord) |
 | `TASK_SOFT_TIME_LIMIT` | durée max d'une tâche en secondes — `0` = aucune |
-| `*_MEM_LIMIT` | `OLLAMA_`, `WORKER_`, `BACKEND_`, `FRONTEND_` : plafonds mémoire (défauts 24g, 8g, 2g, 1g) |
+| `*_MEM_LIMIT` | `OLLAMA_`, `WORKER_`, `INGEST_`, `BACKEND_`, `FRONTEND_` : plafonds mémoire (défauts 24g, 8g, 2g, 2g, 1g) |
 | `DISK_ALERT_PERCENT` / `DISK_ALERT_FREE_GB` | alerte disque (e-mail aux admins, bandeau) — défauts `85` % / `5` Go |
 | `PROJECT_RETENTION_DAYS` | jours d'inactivité avant d'avertir les responsables d'un projet — `0` (défaut) = jamais de suppression automatique |
 | `PROJECT_RETENTION_GRACE_DAYS` | délai de grâce avant suppression, après l'avertissement — défaut `14` |

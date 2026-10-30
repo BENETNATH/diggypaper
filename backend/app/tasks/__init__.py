@@ -163,7 +163,13 @@ def _make_session_factory():
     return engine, async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
-@celery_app.task(name="diggypaper.import_pubmed")
+#: File Celery des tâches qui parlent à NCBI : un seul worker la consomme, avec
+#: ``--concurrency=1`` — le throttle de ``app.pubmed`` est par process (3 req/s sans clé,
+#: 10 avec), donc plusieurs process le multiplieraient au-delà du plafond NCBI.
+INGEST_QUEUE = "ingest"
+
+
+@celery_app.task(name="diggypaper.import_pubmed", queue=INGEST_QUEUE)
 def import_pubmed_task(
     project_id: str,
     query: str,
@@ -872,7 +878,7 @@ async def backfill_metadata(session: AsyncSession, project_id: uuid.UUID, client
     return done
 
 
-@celery_app.task(name="diggypaper.complete_fulltext")
+@celery_app.task(name="diggypaper.complete_fulltext", queue=INGEST_QUEUE)
 def complete_fulltext_task(project_id: str) -> dict:
     """Wrapper sync Celery (même schéma que l'import) : thread dédié + asyncio.run."""
     job_id = current_task.request.id

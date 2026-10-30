@@ -125,6 +125,48 @@ async def test_esearch_retry_exhausted_raises():
     assert "my-key" not in str(exc_info.value)
 
 
+async def test_esearch_retry_on_429_honours_retry_after(monkeypatch):
+    """429 (plafond de débit NCBI dépassé) → retry après « Retry-After », pas un échec de lot."""
+    waits: list[float] = []
+
+    async def _record(delay: float) -> None:
+        waits.append(delay)
+
+    monkeypatch.setattr("app.pubmed._sleep", _record)
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return httpx.Response(429, headers={"Retry-After": "7"}, text="Too Many Requests")
+        return httpx.Response(200, json={"esearchresult": {"count": "3"}})
+
+    async with _client(handler) as http:
+        assert await search_volume("cancer", None, http) == 3
+    assert calls["n"] == 2
+    assert waits[-1] == 7.0  # Retry-After respecté (pas le backoff par défaut)
+
+
+async def test_retry_after_is_capped(monkeypatch):
+    """Un Retry-After absurde ne parque pas le worker : attente plafonnée, puis NCBIError."""
+    waits: list[float] = []
+
+    async def _record(delay: float) -> None:
+        waits.append(delay)
+
+    monkeypatch.setattr("app.pubmed._sleep", _record)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(429, headers={"Retry-After": "3600"})
+
+    async with _client(handler) as http:
+        with pytest.raises(NCBIError) as exc_info:
+            await search_volume("cancer", "my-key", http)
+    assert str(exc_info.value) == "HTTP 429"
+    assert max(waits) == 30.0  # _RETRY_AFTER_MAX
+    assert "my-key" not in str(exc_info.value)
+
+
 async def test_timeout_raises_ncbi_error():
     """C-1 : timeout persistant → NCBIError('timeout') (pas d'exception httpx brute)."""
     calls = {"n": 0}
