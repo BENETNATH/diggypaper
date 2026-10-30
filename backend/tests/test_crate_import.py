@@ -1,7 +1,9 @@
 """Import d'un RO-Crate : aller-retour avec l'export réel, et refus des zips douteux."""
 
 import json
+import struct
 import zipfile
+from pathlib import Path
 
 import pytest
 from sqlalchemy import select
@@ -169,6 +171,26 @@ def _zip(tmp_path, files: dict[str, bytes | str], name="x.zip") -> str:
 GRAPH = json.dumps({"@graph": [{"conformsTo": {"@id": "https://w3id.org/ro/crate/1.1"}}]})
 
 
+def _patch_zip_headers(
+    path: str, local_off: int, central_off: int, value: int, *, flag: bool = False
+) -> None:
+    """Réécrit un champ des deux en-têtes (local ``PK\\x03\\x04`` + central ``PK\\x01\\x02``).
+
+    Sert à forger un zip malhonnête : taille annoncée mensongère (offset 22/24) ou bit
+    « chiffré » du general purpose flag (offset 6/8).
+    """
+    data = bytearray(Path(path).read_bytes())
+    for sig, off in ((b"PK\x03\x04", local_off), (b"PK\x01\x02", central_off)):
+        i = 0
+        while (i := data.find(sig, i)) >= 0:
+            if flag:
+                struct.pack_into("<H", data, i + off, value)
+            else:
+                struct.pack_into("<I", data, i + off, value)
+            i += 4
+    Path(path).write_bytes(data)
+
+
 def test_open_crate_rejects_what_is_not_a_diggypaper_crate(tmp_path):
     notzip = tmp_path / "a.zip"
     notzip.write_bytes(b"hello")
@@ -194,6 +216,56 @@ def test_open_crate_rejects_what_is_not_a_diggypaper_crate(tmp_path):
     )
     assert info["title"] == "T"
     zf.close()
+
+
+# --- Zip bomb : bornes sur ce qui est réellement décompressé, pas sur les en-têtes ---
+
+_VALID = {"ro-crate-metadata.json": GRAPH, "project.json": '{"title": "T"}'}
+
+
+def test_declared_total_over_max_total_is_rejected(tmp_path, monkeypatch):
+    """Somme des tailles ANNONCÉES > MAX_TOTAL → refus à l'ouverture (garde rapide)."""
+    monkeypatch.setattr(ci, "MAX_TOTAL", 16)  # les 2 fichiers déclarent plus que ça
+    with pytest.raises(ci.CrateError, match="too_large"):
+        ci.open_crate(_zip(tmp_path, _VALID))
+
+
+def test_read_budget_counts_bytes_actually_decompressed(tmp_path):
+    """Le plafond porte sur les octets réellement lus (compteur partagé par le crate)."""
+    zf, _ = ci.open_crate(_zip(tmp_path, _VALID))
+    try:
+        ci._budget(zf).left = 5  # budget d'un crate déjà presque épuisé
+        with pytest.raises(ci.CrateError, match="too_large"):
+            ci._json(zf, "project.json")
+        left = ci._budget(zf).left
+        assert left < 0  # la lecture a bien été imputée
+        # Budget épuisé : la lecture suivante est refusée AVANT toute décompression
+        with pytest.raises(ci.CrateError, match="too_large"):
+            ci._json(zf, "ro-crate-metadata.json")
+        assert ci._budget(zf).left == left  # rien n'a été décompressé (compteur inchangé)
+    finally:
+        zf.close()
+
+
+def test_lying_header_cannot_expand_an_entry(tmp_path):
+    """Taille annoncée mensongèrement petite : zipfile s'arrête au CRC → CrateError, pas 500.
+
+    Preuve que rien ne se « décompresse au-delà » de la taille déclarée : la lecture d'une
+    entrée menteuse échoue (CRC) avant d'avoir produit les octets, et l'erreur est convertie
+    en CrateError (sinon BadZipFile brut = 500 sur POST /import-crate, tâche cassée).
+    """
+    path = _zip(tmp_path, _VALID)
+    _patch_zip_headers(path, 22, 24, 10)  # taille décompressée annoncée : 10 octets
+    with pytest.raises(ci.CrateError, match="invalid_zip"):
+        ci.open_crate(path)
+
+
+def test_encrypted_entry_is_rejected(tmp_path):
+    """Zip « chiffré » (bit 0 du general purpose flag) → CrateError, pas RuntimeError brut."""
+    path = _zip(tmp_path, _VALID)
+    _patch_zip_headers(path, 6, 8, 1, flag=True)
+    with pytest.raises(ci.CrateError, match="invalid_zip"):
+        ci.open_crate(path)
 
 
 def test_markdown_sections_and_bad_fields():

@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import re
 import zipfile
+import zlib
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
@@ -34,17 +35,59 @@ class CrateError(ValueError):
     """Crate illisible ou non conforme (message court, affichable)."""
 
 
+class _ReadBudget:
+    """Octets réellement décompressés pour un crate (compteur, pas la taille annoncée).
+
+    ``open_crate`` refuse déjà une somme de tailles déclarées > ``MAX_TOTAL`` ; ce compteur
+    est la ceinture : il porte sur ce que ``zipfile`` produit vraiment, donc il ne dépend
+    ni des en-têtes ni du comportement de ``zipfile`` (défense en profondeur, entrée non
+    fiable). ``BadZipFile``/CRC : voir ``_read``.
+    """
+
+    __slots__ = ("left",)
+
+    def __init__(self, limit: int) -> None:
+        self.left = limit
+
+    def check(self) -> None:
+        """Refus avant toute nouvelle décompression quand le budget est épuisé."""
+        if self.left <= 0:
+            raise CrateError("too_large")
+
+    def charge(self, size: int) -> None:
+        self.left -= size
+        if self.left < 0:
+            raise CrateError("too_large")
+
+
+def _budget(zf: zipfile.ZipFile) -> _ReadBudget:
+    """Budget d'un crate, porté par l'objet ``ZipFile`` (créé par ``open_crate``)."""
+    budget = getattr(zf, "_crate_budget", None)
+    if budget is None:
+        budget = _ReadBudget(MAX_TOTAL)
+        zf._crate_budget = budget  # attribut privé : aucune signature publique à changer
+    return budget
+
+
 def _read(zf: zipfile.ZipFile, name: str, limit: int) -> bytes:
+    budget = _budget(zf)
+    budget.check()  # budget épuisé : refus immédiat, sans rien décompresser de plus
     try:
         info = zf.getinfo(name)
     except KeyError:
         raise CrateError(f"missing:{name}") from None
     if info.file_size > limit:
         raise CrateError(f"too_large:{name}")
-    with zf.open(info) as fh:
-        data = fh.read(limit + 1)
+    try:
+        with zf.open(info) as fh:
+            data = fh.read(limit + 1)
+    except (zipfile.BadZipFile, zlib.error, EOFError, RuntimeError, NotImplementedError) as exc:
+        # en-tête menteur (CRC faux), zip chiffré, compression exotique : entrée illisible.
+        # Sans ça, une archive forgée remontait un BadZipFile brut (500 sur l'API, tâche cassée).
+        raise CrateError(f"invalid_zip:{name}") from exc
     if len(data) > limit:
         raise CrateError(f"too_large:{name}")
+    budget.charge(len(data))  # octets réellement décompressés, tous fichiers confondus
     return data
 
 
@@ -62,18 +105,26 @@ def open_crate(path: str | Path) -> tuple[zipfile.ZipFile, dict]:
     """Ouvre le zip et renvoie ``project.json`` après les contrôles de conformité."""
     if not zipfile.is_zipfile(path):
         raise CrateError("not_a_zip")
-    zf = zipfile.ZipFile(path)
-    names = zf.namelist()
-    if len(names) > MAX_ARTICLES * 5 or sum(i.file_size for i in zf.infolist()) > MAX_TOTAL:
-        raise CrateError("too_large")
-    if any(n.startswith(("/", "\\")) or ".." in n.split("/") for n in names):
-        raise CrateError("unsafe_path")
-    meta = _json(zf, "ro-crate-metadata.json")
-    if "ro/crate" not in json.dumps(meta.get("@graph", [])[:1]):
-        raise CrateError("not_an_ro_crate")
-    info = _json(zf, "project.json")
-    if not str(info.get("title") or "").strip():
-        raise CrateError("no_title")
+    try:
+        zf = zipfile.ZipFile(path)
+    except (zipfile.BadZipFile, OSError, RuntimeError, NotImplementedError) as exc:
+        # central directory corrompue / zip64 exotique : refus propre, pas de 500
+        raise CrateError("not_a_zip") from exc
+    try:
+        names = zf.namelist()
+        if len(names) > MAX_ARTICLES * 5 or sum(i.file_size for i in zf.infolist()) > MAX_TOTAL:
+            raise CrateError("too_large")
+        if any(n.startswith(("/", "\\")) or ".." in n.split("/") for n in names):
+            raise CrateError("unsafe_path")
+        meta = _json(zf, "ro-crate-metadata.json")
+        if "ro/crate" not in json.dumps(meta.get("@graph", [])[:1]):
+            raise CrateError("not_an_ro_crate")
+        info = _json(zf, "project.json")
+        if not str(info.get("title") or "").strip():
+            raise CrateError("no_title")
+    except BaseException:
+        zf.close()  # refus d'un crate : pas de descripteur laissé ouvert (uploads répétés)
+        raise
     return zf, info
 
 
