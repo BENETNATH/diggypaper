@@ -59,6 +59,7 @@ SOURCE_NAMES = {
     "pubmed": "PubMed",
     "europepmc": "Europe PMC",
     "openalex": "OpenAlex",
+    "hal": "HAL",
     "crossref": "Crossref",
     "file": "Fichier importé",
 }

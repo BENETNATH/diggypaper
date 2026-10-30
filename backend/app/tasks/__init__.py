@@ -54,6 +54,7 @@ from app.db.models import (
 )
 from app.europepmc import EuropePMCAdapter
 from app.fulltext import complete_article, long_enough, pmc_not_archived
+from app.hal import HalAdapter
 from app.openalex import OpenAlexAdapter
 from app.pubmed import (
     NCBIError,
@@ -89,7 +90,12 @@ _LANGUAGE_MAP = {
 }
 
 #: Registre des sources de recherche : code → fabrique ``(client, api_key) -> SourceAdapter``.
-ADAPTERS = {"pubmed": PubMedAdapter, "europepmc": EuropePMCAdapter, "openalex": OpenAlexAdapter}
+ADAPTERS = {
+    "pubmed": PubMedAdapter,
+    "europepmc": EuropePMCAdapter,
+    "openalex": OpenAlexAdapter,
+    "hal": HalAdapter,
+}
 
 #: Setting de clé API par source (les autres sources n'en utilisent pas).
 _SOURCE_KEY_SETTING = {"openalex": "openalex_api_key"}

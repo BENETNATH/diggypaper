@@ -159,7 +159,7 @@ function ImportContent() {
   const [project, setProject] = useState<Project | null>(null);
   const [jobs, setJobs] = useState<ImportJob[] | null>(null);
   const [mode, setMode] = useState<"pubmed" | "refs" | "cites">("pubmed");
-  const [source, setSource] = useState<"pubmed" | "europepmc" | "openalex">("pubmed");
+  const [source, setSource] = useState<"pubmed" | "europepmc" | "openalex" | "hal">("pubmed");
   const [query, setQuery] = useState("");
   const [volume, setVolume] = useState<number | null>(null);
   const [cap, setCap] = useState(Infinity); // plafond d'import de l'instance (illimité : au-delà de 1e9)
@@ -385,7 +385,7 @@ function ImportContent() {
             {hasCorpus && <p className="text-sm text-muted">{t("addHint", { n: project?.article_count ?? 0 })}</p>}
             <fieldset className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
               <legend className="mb-1 font-medium text-foreground">{t("sourceLabel")}</legend>
-              {(["pubmed", "europepmc", "openalex"] as const).map((s) => (
+              {(["pubmed", "europepmc", "openalex", "hal"] as const).map((s) => (
                 <label key={s} className="flex items-center gap-1.5">
                   <input
                     type="radio"

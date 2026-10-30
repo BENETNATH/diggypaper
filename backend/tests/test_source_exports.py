@@ -202,12 +202,13 @@ def test_source_label_and_name():
     assert source_name("pubmed") == "PubMed" and source_name("crossref") == "Crossref"
     assert source_name("europepmc") == "Europe PMC"  # phase 3 : source connue
     assert source_name("openalex") == "OpenAlex"  # phase 4a : source connue
-    assert source_name("hal") == "hal"  # inconnu : code brut (phase 4b)
+    assert source_name("hal") == "HAL"  # phase 4b : source connue
+    assert source_name("arxiv") == "arxiv"  # inconnu : code brut
     assert source_name(None) is None
     assert source_label("pubmed", "123") == "PubMed PMID 123"
     assert source_label("crossref", "10.1/x") == "Crossref DOI 10.1/x"
     assert source_label("file", None) == "Fichier importé"
     assert source_label("europepmc", "W1") == "Europe PMC W1"
     assert source_label("openalex", "W123") == "OpenAlex W123"
-    assert source_label("hal", "t-0000") == "hal t-0000"
+    assert source_label("hal", "hal-00478278") == "HAL hal-00478278"
     assert source_label(None, "123") is None

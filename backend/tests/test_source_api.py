@@ -43,7 +43,7 @@ async def test_import_unknown_source_422(client, researcher_user, do_login, monk
     pid = await _project(client, do_login)
     delay = _mock_delay(monkeypatch)
     resp = await client.post(
-        f"/api/v1/projects/{pid}/import", json={"query": "cancer", "source": "hal"}
+        f"/api/v1/projects/{pid}/import", json={"query": "cancer", "source": "arxiv"}
     )
     assert resp.status_code == 422
     delay.assert_not_called()
@@ -60,7 +60,7 @@ async def test_query_volume_unknown_source_422(client, researcher_user, do_login
 
     monkeypatch.setattr(projects_api, "_make_http_client", no_network)
     resp = await client.post(
-        f"/api/v1/projects/{pid}/query-volume", json={"query": "cancer", "source": "hal"}
+        f"/api/v1/projects/{pid}/query-volume", json={"query": "cancer", "source": "arxiv"}
     )
     assert resp.status_code == 422
 

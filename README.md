@@ -1,7 +1,7 @@
 # Diggypaper
 
 Plateforme **souveraine et collaborative de revue systématique de littérature**.
-On importe un corpus depuis PubMed/PMC, on récupère les textes intégraux ouverts, on pose
+On importe un corpus depuis PubMed, Europe PMC, OpenAlex ou HAL, on récupère les textes intégraux ouverts, on pose
 une ou plusieurs questions au corpus, des modèles (qui tournent sur CPU, sans cloud) trient
 et extraient les réponses, puis des relecteurs humains valident ou corrigent. Les résultats
 s'exportent en tableur, en RO-Crate et en diagramme PRISMA.
@@ -13,8 +13,10 @@ s'exportent en tableur, en RO-Crate et en diagramme PRISMA.
 ## Fonctionnalités
 
 ### Constituer le corpus
-- **Import PubMed/PMC** par requête, avec le volume attendu avant import, un plafond réglable
-  (`IMPORT_MAX_ARTICLES`), le dédoublonnage et les métadonnées (journal, date, auteurs, DOI).
+- **Import multi-sources** : PubMed, Europe PMC, OpenAlex (métadonnées) ou HAL
+  (thèses, HDR, dépôts français), par requête, avec le volume attendu avant import, un plafond
+  réglable (`IMPORT_MAX_ARTICLES`), le dédoublonnage — par DOI, entre sources — et les
+  métadonnées (journal, date, auteurs, DOI).
 - **Import d'un RO-Crate** : un zip exporté par Diggypaper (Projets → « Importer un RO-Crate »,
   jusqu'à 1 Go) recrée un projet : question et items, articles, textes intégraux, PDF, réponses du
   modèle (certitudes, extraits de preuve) et réponses humaines finales. Le crate ne contient qu'une
@@ -102,7 +104,7 @@ une seconde question aux seuls articles retenus par la première, sans rien réa
 ### Travailler à plusieurs
 - **Comptes** : l'administrateur invite des **créateurs** de projets ; ceux-ci invitent des
   collègues, simples **invités** dont le compte disparaît quand ils n'ont plus de projet.
-- **Rôles par projet** : responsable (LEAD) et annotateur. Invitations par e-mail dans la
+- **Rôles par projet** : responsable de projet (LEAD) et annotateur. Invitations par e-mail dans la
   langue de la personne invitée.
 - **Modèles** : registre des modèles, **partage** d'un modèle ou d'une clé avec des personnes
   ou un projet, modèles externes **personnels** ; les clés sont chiffrées (AES-256-GCM). Un
@@ -326,7 +328,7 @@ Après `git pull`, avant `docker compose up -d --build` :
 - **Admin** : créé au premier démarrage (`ADMIN_EMAIL`/`ADMIN_PASSWORD`). Il invite des
   **créateurs** (page *Administration → Utilisateurs*) : ils peuvent créer des projets et
   y inviter des collègues.
-- **Invités** (invités à un projet par un créateur) : ne peuvent pas créer de projet ;
+- **Invités** (invités à un projet par un créateur de projets) : ne peuvent pas créer de projet ;
   leur compte est supprimé automatiquement quand ils n'ont plus aucun projet. Un
   créateur ou un admin n'est jamais supprimé automatiquement.
 
@@ -348,7 +350,7 @@ fichier). La page *Paramètres* (admin) montre l'espace disque, le poids des PDF
 (taille, inactivité) ; le worker (celery beat, toutes les 6 h) envoie une alerte aux admins quand
 le disque dépasse le seuil. Avec `PROJECT_RETENTION_DAYS`, les responsables d'un projet inactif
 sont prévenus par e-mail, puis le projet est supprimé à l'issue du délai de grâce sauf activité ou
-clic sur « Conserver ce projet ». Seuls les membres LEAD peuvent lancer un import, un export RO-Crate ou remplacer le
+clic sur « Conserver ce projet ». Seuls les responsables de projet peuvent lancer un import, un export RO-Crate ou remplacer le
 texte intégral d'un article (les exports tableur, références et PRISMA sont ouverts à tout membre).
 
 ### Sauvegarde et restauration
