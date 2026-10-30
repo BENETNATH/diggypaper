@@ -179,6 +179,32 @@ async def test_get_project_as_member(client, session, researcher_user, do_login)
     assert data["status"] == "DRAFT"
     assert data["article_count"] == 2
     assert data["created_by"] == str(researcher_user.id)
+    assert data["role_in_project"] == "LEAD"  # créateur → LEAD dans project_members
+
+
+async def test_get_project_invited_lead_role_in_payload(client, session, researcher_user, do_login):
+    """LEAD invité (ni créateur, ni admin) : GET /projects/{id} porte son rôle.
+
+    Bug 2026-10-30 : le champ manquait (seul ``list_projects`` l'ajoutait) →
+    ``isProjectLead()`` faux dans l'UI et la page Recherches affichait
+    « Seul un chef de projet peut créer des recherches » à un vrai LEAD."""
+    owner = await _make_user(session, "owner@lab.fr", UserRole.RESEARCHER, "owner-pass-123")
+    owner.can_create_projects = True  # le helper local crée des invités par défaut
+    await session.commit()
+    await do_login("owner@lab.fr", "owner-pass-123", consent=True)
+    project_id = await _create_project(client)
+    session.add(
+        ProjectMember(
+            project_id=uuid.UUID(project_id),
+            user_id=researcher_user.id,
+            role_in_project=ProjectMemberRole.LEAD,
+        )
+    )
+    await session.commit()
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    resp = await client.get(f"/api/v1/projects/{project_id}")
+    assert resp.status_code == 200
+    assert resp.json()["role_in_project"] == "LEAD"
 
 
 async def test_get_project_non_member_403(client, session, researcher_user, do_login):
@@ -198,6 +224,7 @@ async def test_get_project_admin_200(client, session, admin_user, do_login):
     resp = await client.get(f"/api/v1/projects/{project.id}")
     assert resp.status_code == 200
     assert resp.json()["title"] == "Foreign"
+    assert resp.json()["role_in_project"] is None  # admin non membre
 
 
 async def test_get_project_not_found_404(client, researcher_user, do_login):

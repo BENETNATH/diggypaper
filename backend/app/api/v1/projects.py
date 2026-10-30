@@ -357,7 +357,12 @@ async def get_project(
     project_id: uuid.UUID, db: DbDep, user: UserDep, search: uuid.UUID | None = None
 ) -> dict:
     """Détails du projet (status, nb articles, created_by) ; question de la recherche ``search``
-    (par défaut : la recherche initiale)."""
+    (par défaut : la recherche initiale).
+
+    ``role_in_project`` = le rôle de l'utilisateur courant (comme ``list_projects``) :
+    l'UI s'en sert pour les permissions (créer une recherche, inviter, retirer) —
+    sans lui, tout non-admin apparaît annotateur (bug 2026-10-30 : un LEAD invité
+    voyait « seul un chef de projet peut créer des recherches »)."""
     project = await _require_project_member(db, project_id, user)
     scope = await get_search(db, project, search)
     article_count = (
@@ -372,9 +377,12 @@ async def get_project(
             .where(Article.project_id == project.id, Article.fulltext_source.is_not(None))
         )
     ).scalar_one()
-    return _project_payload(
+    member = await db.get(ProjectMember, (project_id, user.id))  # None : ADMIN non membre
+    payload = _project_payload(
         project, article_count=article_count, fulltext_count=fulltext_count, search=scope
     )
+    payload["role_in_project"] = member.role_in_project.value if member is not None else None
+    return payload
 
 
 async def _has_results(db: AsyncSession, scope: Search) -> bool:
