@@ -1,6 +1,12 @@
 """Fixtures partagées : engine SQLite async in-memory + session + client API."""
 
 import os
+from pathlib import Path
+
+# Settings lit "./.env" relatif au CWD : lancé depuis la racine du repo, pytest
+# chargerait le .env de production (secrets réels, IMPORT_MAX_ARTICLES, …) et
+# ferait échouer ~12 tests. On se place dans backend/ — le CWD documenté du README.
+os.chdir(Path(__file__).resolve().parents[1])
 
 # F5 : secrets de test AVANT tout import de app (create_app() fait fail-fast sur les
 # valeurs de dev par défaut). JWT_SECRET ≥ 32 octets (HS256).
