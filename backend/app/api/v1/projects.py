@@ -174,17 +174,22 @@ def review_payload(ann: HumanAnnotation | None, user: User | None) -> dict | Non
     }
 
 
-async def latest_reviews(db: AsyncSession, article_ids: list, search: Search) -> dict:
-    """{article_id: (most recent annotation, re-reader)} of this search."""
+async def latest_reviews(
+    db: AsyncSession, article_ids: list, search: Search, reviewer_id: uuid.UUID | None = None
+) -> dict:
+    """{article_id: (most recent annotation, re-reader)} of this search; with
+    ``reviewer_id``, only that reviewer's re-reads (blind)."""
     out: dict = {}
     if not article_ids:
         return out
+    own = [HumanAnnotation.user_id == reviewer_id] if reviewer_id else []
     rows = await db.execute(
         select(HumanAnnotation, User)
         .join(User, User.id == HumanAnnotation.user_id, isouter=True)
         .where(
             HumanAnnotation.article_id.in_(article_ids),
             in_search(HumanAnnotation.search_id, search),
+            *own,
         )
         .order_by(HumanAnnotation.created_at.nulls_first(), HumanAnnotation.id)
     )
@@ -827,20 +832,17 @@ async def list_articles(
         )
     ).all()
     stats = {(k or "NONE"): n for k, n in stats_rows}
-    reviews = await latest_reviews(db, [r[0].id for r in rows], scope)
+    # Blind: only HER OWN review is projected (review / answers / confidence); the latest
+    # re-read by another member must never appear, even after her own.
+    reviews = await latest_reviews(
+        db,
+        [r[0].id for r in rows],
+        scope,
+        reviewer_id=user.id if scope.kind == "blind" else None,
+    )
     mine: set | None = None
-    if scope.kind == "blind":  # ne montrer l'IA et les autres relecteurs qu'après SA relecture
-        mine = set(
-            (
-                await db.execute(
-                    select(HumanAnnotation.article_id).where(
-                        HumanAnnotation.user_id == user.id,
-                        HumanAnnotation.article_id.in_([r[0].id for r in rows]),
-                        in_search(HumanAnnotation.search_id, scope),
-                    )
-                )
-            ).scalars()
-        )
+    if scope.kind == "blind":  # show the AI only after HER OWN review
+        mine = set(reviews)
     stats["TO_REVIEW"] = (
         await db.execute(
             select(func.count())
