@@ -267,3 +267,22 @@ async def test_benchmark_gold_examples_in_prompt_and_excluded_from_scoring(engin
 
     (r,) = (await session.execute(select(BenchmarkResult))).scalars().all()
     assert r.n_scored == 2 and res["results"][0]["f1_score"] == 1.0  # 4 gold − 2 exemples
+
+
+def test_benchmark_imports_without_resource(monkeypatch):
+    """Le module Unix ``resource`` est absent sous Windows : la task doit s'importer quand même
+    et renvoyer ``None`` pour la RAM."""
+    import importlib
+    import sys
+
+    import app.tasks.benchmark as benchmark
+
+    # ``None`` dans sys.modules fait lever ImportError à ``import resource``.
+    monkeypatch.setitem(sys.modules, "resource", None)
+    try:
+        importlib.reload(benchmark)
+        assert benchmark.resource is None
+        assert benchmark._peak_ram_mb() is None
+    finally:
+        monkeypatch.undo()
+        importlib.reload(benchmark)  # restaure le comportement natif de la plateforme
