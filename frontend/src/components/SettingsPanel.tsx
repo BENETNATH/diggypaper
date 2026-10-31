@@ -76,31 +76,39 @@ export function SettingsPanel({ projectId }: { projectId?: string }) {
   const [llmMsg, setLlmMsg] = useState<string | null>(null);
   const [env, setEnv] = useState<EnvSettings>({});
 
-  const load = useCallback(async () => {
+  // Switching scope/project: show the skeleton again while the new values load.
+  const scopeKey = `${scope}:${projectId ?? ""}`;
+  const [prevScopeKey, setPrevScopeKey] = useState(scopeKey);
+  if (prevScopeKey !== scopeKey) {
+    setPrevScopeKey(scopeKey);
     setLoading(true);
-    setError(null);
-    try {
-      const data = await getSettings({
-        scope,
-        project_id: scope === "PROJECT" ? projectId : undefined,
-      });
-      const next: Record<string, string> = {};
-      for (const g of GROUPS) {
-        for (const f of g.fields) {
-          const raw = data[scope]?.[f.key] ?? null;
-          next[f.key] = raw === null ? "" : raw;
+  }
+
+  const load = useCallback(() => {
+    return getSettings({
+      scope,
+      project_id: scope === "PROJECT" ? projectId : undefined,
+    })
+      .then((data) => {
+        const next: Record<string, string> = {};
+        for (const g of GROUPS) {
+          for (const f of g.fields) {
+            const raw = data[scope]?.[f.key] ?? null;
+            next[f.key] = raw === null ? "" : raw;
+          }
         }
-      }
-      setValues(next);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "error");
-    } finally {
-      setLoading(false);
-    }
+        setValues(next);
+        setError(null);
+        setLoading(false);
+      })
+      .catch((e) => {
+        setError(e instanceof Error ? e.message : "error");
+        setLoading(false);
+      });
   }, [scope, projectId]);
 
   useEffect(() => {
-    void load();
+    load();
   }, [load]);
   // Environment values (admin, global scope): show what applies when a field is empty.
   useEffect(() => {

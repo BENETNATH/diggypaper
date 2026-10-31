@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useTranslations } from "next-intl";
@@ -170,33 +170,32 @@ function ImportContent() {
   const [submitting, setSubmitting] = useState(false);
   const [watching, setWatching] = useState(false); // active tracking (import launched or running)
   const [error, setError] = useState<string | null>(null);
-  const jobsBefore = useRef(0);
+  const [jobsBefore, setJobsBefore] = useState(0);
 
-  const load = useCallback(async () => {
-    try {
-      const [p, js] = await Promise.all([getProject(projectId), listJobs(projectId)]);
-      setProject(p);
-      setJobs(js);
-      // the layout (tabs) does not reload in place: we give it the updated state
-      window.dispatchEvent(new CustomEvent("diggy:project", { detail: p }));
-      return js;
-    } catch (e) {
-      setError(toError(e));
-      return null;
-    }
+  const load = useCallback(() => {
+    return Promise.all([getProject(projectId), listJobs(projectId)])
+      .then(([p, js]) => {
+        setProject(p);
+        setJobs(js);
+        // the layout (tabs) does not reload in place: we give it the updated state
+        window.dispatchEvent(new CustomEvent("diggy:project", { detail: p }));
+        return js;
+      })
+      .catch((e) => {
+        setError(toError(e));
+        return null;
+      });
   }, [projectId, toError]);
 
   useEffect(() => {
-    void load();
+    load();
   }, [load]);
 
   const activeJob = jobs?.find((j) => j.status === "PENDING" || j.status === "RUNNING") ?? null;
   const polling = watching;
 
   // Resumes tracking if an import is already running (page reloaded / revisited).
-  useEffect(() => {
-    if (activeJob && !watching) setWatching(true);
-  }, [activeJob, watching]);
+  if (activeJob && !watching) setWatching(true);
 
   // Tracking: self-rescheduling loop, independent of React state. It stops only
   // when no import is active AND the launched job has appeared (or after 30 s).
@@ -209,7 +208,7 @@ function ImportContent() {
       const js = await load();
       if (stopped) return;
       const active = js?.some((j) => j.status === "PENDING" || j.status === "RUNNING") ?? true;
-      const appeared = (js?.length ?? 0) > jobsBefore.current;
+      const appeared = (js?.length ?? 0) > jobsBefore;
       if (!active && (appeared || Date.now() - started > 30000)) {
         setWatching(false);
         return;
@@ -221,7 +220,7 @@ function ImportContent() {
       stopped = true;
       clearTimeout(timer);
     };
-  }, [watching, load]);
+  }, [watching, load, jobsBefore]);
 
   const lastJob = jobs && jobs.length > 0 ? jobs[jobs.length - 1] : null;
   const locked = project?.status === "PROCESSING";
@@ -247,7 +246,7 @@ function ImportContent() {
   async function handleFulltext() {
     setError(null);
     try {
-      jobsBefore.current = jobs?.length ?? 0;
+      setJobsBefore(jobs?.length ?? 0);
       await completeFulltext(projectId);
       setWatching(true);
     } catch (err) {
@@ -262,7 +261,7 @@ function ImportContent() {
     if (failed.kind === "references" || failed.kind === "citations" || failed.kind === "crate") return;
     setError(null);
     try {
-      jobsBefore.current = jobs?.length ?? 0;
+      setJobsBefore(jobs?.length ?? 0);
       await triggerImport(projectId, failed.query ?? "", failed.source ?? "pubmed");
       setWatching(true);
     } catch (err) {
@@ -275,7 +274,7 @@ function ImportContent() {
     setSubmitting(true);
     setError(null);
     try {
-      jobsBefore.current = jobs?.length ?? 0;
+      setJobsBefore(jobs?.length ?? 0);
       await triggerImport(projectId, query, source);
       setWatching(true);
     } catch (err) {
@@ -298,7 +297,7 @@ function ImportContent() {
       {/* Import en cours / dernier import */}
       {(watching || lastJob) && (
         <Card title={t("jobTitle")}>
-          {watching && !activeJob && jobs?.length === jobsBefore.current ? (
+          {watching && !activeJob && jobs?.length === jobsBefore ? (
             <ProgressBar value={null} label={t("phasePending")} />
           ) : lastJob ? (
             <JobProgress job={lastJob} onRetry={!activeJob && !watching ? handleRetry : undefined} />
@@ -357,7 +356,7 @@ function ImportContent() {
               <CitationExpand
                 projectId={projectId}
                 onStarted={() => {
-                  jobsBefore.current = jobs?.length ?? 0;
+                  setJobsBefore(jobs?.length ?? 0);
                   setWatching(true);
                 }}
               />
@@ -365,7 +364,7 @@ function ImportContent() {
               <ReferencesImport
                 projectId={projectId}
                 onStarted={() => {
-                  jobsBefore.current = jobs?.length ?? 0;
+                  setJobsBefore(jobs?.length ?? 0);
                   setWatching(true);
                 }}
               />

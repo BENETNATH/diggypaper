@@ -27,17 +27,17 @@ function BenchmarksContent() {
 
   const hasActive = (runs ?? []).some((r) => r.status === "PENDING" || r.status === "RUNNING");
 
-  const load = useCallback(async () => {
-    setError(null);
-    try {
-      setRuns(await listBenchmarks(projectId));
-    } catch (e) {
-      setError(toError(e));
-    }
+  const load = useCallback(() => {
+    return listBenchmarks(projectId)
+      .then((runs) => {
+        setRuns(runs);
+        setError(null);
+      })
+      .catch((e) => setError(toError(e)));
   }, [projectId, toError]);
 
   useEffect(() => {
-    void load();
+    load();
     listModels(projectId).then(setModels).catch(() => {});
   }, [load, projectId]);
 

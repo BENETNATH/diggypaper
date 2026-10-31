@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { useAuth } from "@/lib/auth";
 import { updateProfile, changePassword, exportMyData, anonymizeMe } from "@/lib/api";
@@ -21,12 +21,16 @@ function ProfileContent() {
   const [msg, setMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  // Seed the form from the logged-in user when they (or the displayed locale) change.
+  const seedKey = user ? `${user.id}:${locale}` : "";
+  const [prevSeed, setPrevSeed] = useState(seedKey);
+  if (prevSeed !== seedKey) {
+    setPrevSeed(seedKey);
     if (user) {
       setName(user.full_name ?? "");
       setLang(locale); // language actually displayed (not the one stored at invitation)
     }
-  }, [user, locale]);
+  }
 
   async function run(fn: () => Promise<unknown>, okMsg: string) {
     setError(null);

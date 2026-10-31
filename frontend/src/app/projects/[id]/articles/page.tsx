@@ -20,6 +20,7 @@ import { articlesStoreKey, prefillStoreKey, selectionFromFilters, withSearch } f
 import { useSearchId } from "@/lib/useSearch";
 import { useAuth } from "@/lib/auth";
 import { isProjectLead } from "@/lib/role";
+import { useHasMounted } from "@/lib/useHasMounted";
 
 type Filter = PredictionFilter | "ALL";
 const FILTERS: Filter[] = ["ALL", "TO_REVIEW", "AUTO_ACCEPTED", "AUTO_REJECTED", "NONE"];
@@ -64,12 +65,14 @@ function ResultsContent() {
   const [isLead, setIsLead] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout>>();
-  const restoredFor = useRef(""); // storage key from which filters are restored (avoids clobbering another search)
 
-  // Restores remembered filters / sort / page (specific to the search), then loads its items.
-  useEffect(() => {
-    const key = articlesStoreKey(projectId, searchId);
-    restoredFor.current = "";
+  // Restores the remembered filters / sort / page of this search (client only: reads
+  // sessionStorage, so it must not run during the server render / hydration).
+  const mounted = useHasMounted();
+  const storeKey = articlesStoreKey(projectId, searchId);
+  const [prevStoreKey, setPrevStoreKey] = useState<string | null>(null);
+  if (mounted && prevStoreKey !== storeKey) {
+    setPrevStoreKey(storeKey);
     setReady(false);
     const saved = loadSaved(projectId, searchId);
     setFilter(saved.filter ?? "ALL");
@@ -80,20 +83,23 @@ function ResultsContent() {
     setText(saved.q ?? "");
     setTextDraft(saved.q ?? "");
     setFulltext(saved.fulltext);
+  }
+
+  // Loads the fields / lead of the search, then marks the restore complete (so the
+  // remembered filters can be applied to the first fetch).
+  useEffect(() => {
+    if (!mounted) return;
     getProject(projectId, searchId)
       .then((p) => {
         setFields(p.fields ?? []);
         setIsLead(isProjectLead(p, user));
       })
       .catch(() => setFields([]))
-      .finally(() => {
-        restoredFor.current = key;
-        setReady(true);
-      });
-  }, [projectId, searchId]);
+      .finally(() => setReady(true));
+  }, [projectId, searchId, user, mounted]);
 
   useEffect(() => {
-    if (!ready || restoredFor.current !== articlesStoreKey(projectId, searchId)) return;
+    if (!ready) return;
     try {
       sessionStorage.setItem(
         articlesStoreKey(projectId, searchId),
@@ -133,20 +139,19 @@ function ResultsContent() {
     setPage(1);
   }
 
-  const load = useCallback(async () => {
-    setError(null);
-    try {
-      const res = await listArticles(projectId, page, PER_PAGE, filter === "ALL" ? undefined : filter, sort, answers, searchId, text, fulltext);
-      setArticles(res.items);
-      setTotal(res.total);
-      setStats(res.stats);
-    } catch (e) {
-      setError(errText(e));
-    }
+  const load = useCallback(() => {
+    return listArticles(projectId, page, PER_PAGE, filter === "ALL" ? undefined : filter, sort, answers, searchId, text, fulltext)
+      .then((res) => {
+        setArticles(res.items);
+        setTotal(res.total);
+        setStats(res.stats);
+        setError(null);
+      })
+      .catch((e) => setError(errText(e)));
   }, [projectId, page, filter, sort, answers, searchId, text, fulltext, errText]);
 
   useEffect(() => {
-    if (ready && restoredFor.current === articlesStoreKey(projectId, searchId)) void load();
+    if (ready) void load();
   }, [ready, load, projectId, searchId]);
 
   const count = (f: Filter) =>

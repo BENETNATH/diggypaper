@@ -31,15 +31,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const refresh = useCallback(async () => {
-    try {
-      const u = await api.me();
-      setUser(u);
-    } catch {
-      setUser(null);
-    } finally {
-      setLoading(false);
-    }
+  const refresh = useCallback(() => {
+    return api
+      .me()
+      .then((u) => {
+        setUser(u);
+        setLoading(false);
+      })
+      .catch(() => {
+        setUser(null);
+        setLoading(false);
+      });
   }, []);
 
   useEffect(() => {

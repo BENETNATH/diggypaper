@@ -58,10 +58,10 @@ export function ArticleSelector({
   const key = JSON.stringify(cleanSelection(value));
   useEffect(() => {
     let stale = false;
-    setCount(null);
-    setError(null);
-    onCount?.(null);
     const timer = setTimeout(() => {
+      setCount(null);
+      setError(null);
+      onCount?.(null);
       previewSelection(projectId, JSON.parse(key) as Selection)
         .then((n) => {
           if (stale) return;

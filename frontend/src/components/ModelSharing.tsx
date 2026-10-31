@@ -18,16 +18,14 @@ export function ModelSharing({ modelId }: { modelId: string }) {
   const [projectId, setProjectId] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    try {
-      setShares(await listModelShares(modelId));
-    } catch (e) {
-      setError(toError(e));
-    }
+  const load = useCallback(() => {
+    return listModelShares(modelId)
+      .then(setShares)
+      .catch((e) => setError(toError(e)));
   }, [modelId, toError]);
 
   useEffect(() => {
-    void load();
+    load();
     listProjects().then(setProjects).catch(() => {});
   }, [load]);
 

@@ -185,16 +185,15 @@ function AdminContent() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ text: string; link?: string | null } | null>(null);
 
-  const load = useCallback(async () => {
-    try {
-      const [u, i, p] = await Promise.all([listAdminUsers(), listAdminInvitations(), listAdminProjects()]);
-      setUsers(u);
-      setInvites(i);
-      setProjects(p);
-      setError(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "error");
-    }
+  const load = useCallback(() => {
+    Promise.all([listAdminUsers(), listAdminInvitations(), listAdminProjects()])
+      .then(([u, i, p]) => {
+        setUsers(u);
+        setInvites(i);
+        setProjects(p);
+        setError(null);
+      })
+      .catch((e) => setError(e instanceof Error ? e.message : "error"));
   }, []);
 
   useEffect(() => {

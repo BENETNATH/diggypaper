@@ -26,16 +26,14 @@ function TeamContent() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ text: string; link?: string | null } | null>(null);
 
-  const load = useCallback(async () => {
-    try {
-      setMembers(await listMembers(projectId));
-    } catch (e) {
-      setError(toError(e));
-    }
+  const load = useCallback(() => {
+    return listMembers(projectId)
+      .then(setMembers)
+      .catch((e) => setError(toError(e)));
   }, [projectId, toError]);
 
   useEffect(() => {
-    void load();
+    load();
   }, [load]);
 
   const isLead =

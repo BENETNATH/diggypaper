@@ -125,9 +125,16 @@ export default function AnnotatePage() {
       });
   }, [projectId, articleId, router, queueMode, searchId]);
 
+  // Spinner while the article loads (reset when the article or search changes).
+  const loadKey = `${projectId}:${articleId}:${searchId}`;
+  const [prevLoadKey, setPrevLoadKey] = useState(loadKey);
+  if (prevLoadKey !== loadKey) {
+    setPrevLoadKey(loadKey);
+    setLoading(true);
+  }
+
   useEffect(() => {
     if (!projectId || !articleId) return;
-    setLoading(true);
     getProject(projectId, searchId)
       .then((p) => {
         setFields(p.fields ?? []);
@@ -167,18 +174,21 @@ export default function AnnotatePage() {
     }
   }, [projectId, articleId, prediction, searchId, isBlind]);
 
-  // Starts from the re-review's excerpts, otherwise from the model's (nothing in blind mode before re-review).
-  useEffect(() => {
-    const locked = isBlind && !review;
-    const own = review?.decision_json?.evidence_quotes;
-    setQuotes(
-      Array.isArray(own)
-        ? (own as string[])
-        : review || locked
-          ? []
-          : prediction?.evidence_quotes ?? []
-    );
-  }, [articleId, review, prediction, isBlind]);
+  // Starts from the re-review's excerpts, otherwise from the model's (nothing in blind mode
+  // before re-review). Re-seeded when the seed changes; the user can then add/remove quotes.
+  const locked = isBlind && !review;
+  const own = review?.decision_json?.evidence_quotes;
+  const seedQuotes = Array.isArray(own)
+    ? (own as string[])
+    : review || locked
+      ? []
+      : prediction?.evidence_quotes ?? [];
+  const seedKey = `${articleId}|${JSON.stringify(seedQuotes)}`;
+  const [prevSeedKey, setPrevSeedKey] = useState(seedKey);
+  if (prevSeedKey !== seedKey) {
+    setPrevSeedKey(seedKey);
+    setQuotes(seedQuotes);
+  }
 
   const [pdfBusy, setPdfBusy] = useState(false);
   const [pdfError, setPdfError] = useState<string | null>(null);

@@ -69,13 +69,24 @@ export function BenchmarkDisagreements({
   const [data, setData] = useState<{ total: number; items: BenchmarkArticleRow[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let stale = false;
+  // Reset the result when the query (run / filter / page) changes.
+  const queryKey = `${projectId}:${runId}:${onlyDisagree}:${page}`;
+  const [prevQueryKey, setPrevQueryKey] = useState(queryKey);
+  if (prevQueryKey !== queryKey) {
+    setPrevQueryKey(queryKey);
     setData(null);
     setError(null);
+  }
+
+  useEffect(() => {
+    let stale = false;
     listBenchmarkArticles(projectId, runId, { disagree: onlyDisagree, page, perPage: PER_PAGE })
-      .then((r) => !stale && setData(r))
-      .catch((e) => !stale && setError(e instanceof Error ? e.message : "error"));
+      .then((r) => {
+        if (!stale) setData(r);
+      })
+      .catch((e) => {
+        if (!stale) setError(e instanceof Error ? e.message : "error");
+      });
     return () => {
       stale = true;
     };

@@ -1,6 +1,6 @@
 "use client";
 
-import { ReactNode, useEffect, useRef, useState } from "react";
+import { ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { etaSeconds, formatDuration, pushSample, ratePerSecond, Sample } from "@/lib/progress";
 
@@ -34,9 +34,9 @@ export function JobProgress({
   const [samples, setSamples] = useState<Sample[]>([]);
   const last = useRef(done);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     last.current = done;
-    setSamples((s) => pushSample(s, Date.now(), done));
+    setSamples((s) => pushSample(s, Date.now(), last.current));
   }, [done]);
   // Time passes even without new data: we refresh the estimate every 5 s.
   useEffect(() => {

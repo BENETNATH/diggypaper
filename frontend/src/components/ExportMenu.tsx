@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import {
   crateDownloadUrl,
@@ -42,36 +42,42 @@ export function ExportMenu({
   }, [projectId, user]);
   const [job, setJob] = useState<CrateExport | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const timer = useRef<ReturnType<typeof setTimeout>>();
   const filtered = Boolean(status) || fulltext != null || Boolean(text?.trim()) || Object.values(answers ?? {}).some((v) => v !== "");
 
-  const poll = useCallback(async () => {
-    try {
-      const j = await getCrateExport(projectId, searchId);
-      setJob(j);
-      if (j && (j.status === "PENDING" || j.status === "RUNNING")) timer.current = setTimeout(poll, 3000);
-    } catch {
-      /* retries on the next visit */
-    }
+  // On visit: fetch the current export state.
+  useEffect(() => {
+    let active = true;
+    getCrateExport(projectId, searchId)
+      .then((j) => {
+        if (active) setJob(j);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
   }, [projectId, searchId]);
 
+  const busy = job?.status === "PENDING" || job?.status === "RUNNING";
+
+  // While the job is in flight: re-poll every 3 s (a failed fetch stops the loop, like before).
   useEffect(() => {
-    void poll();
-    return () => clearTimeout(timer.current);
-  }, [poll]);
+    if (!busy) return;
+    const id = setTimeout(() => {
+      getCrateExport(projectId, searchId)
+        .then(setJob)
+        .catch(() => {});
+    }, 3000);
+    return () => clearTimeout(id);
+  }, [busy, projectId, searchId, job]);
 
   async function start() {
     setError(null);
     try {
       setJob(await startCrateExport(projectId, searchId));
-      clearTimeout(timer.current);
-      timer.current = setTimeout(poll, 3000);
     } catch (e) {
       setError(e instanceof Error ? e.message : "error");
     }
   }
-
-  const busy = job?.status === "PENDING" || job?.status === "RUNNING";
   const r = job?.result ?? {};
   const mb = r.size ? (r.size / 1048576).toFixed(1) : "?";
 

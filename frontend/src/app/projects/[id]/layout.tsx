@@ -12,6 +12,7 @@ import { isProjectLead } from "@/lib/role";
 import { withSearch } from "@/lib/search";
 import { useAuth } from "@/lib/auth";
 import { useSearchId, useSearches, useSelectSearch } from "@/lib/useSearch";
+import { useHasMounted } from "@/lib/useHasMounted";
 
 const STEPS = [
   { key: "overview", href: "", needsCorpus: false, leadOnly: false, optional: false },
@@ -35,8 +36,7 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
   // Current search. The layout is rendered on the server: until the client has mounted, we
   // do not read sessionStorage (otherwise the tab links differ between server and client).
   const hookSearchId = useSearchId(id);
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  const mounted = useHasMounted();
   const searchId = mounted ? hookSearchId : undefined;
   // The searches change (creation, rename, deletion, analyses): we re-read on every page.
   const { searches, current } = useSearches(id, searchId, pathname);
@@ -60,9 +60,14 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
   // Import in progress: progress banner visible on every project page.
   const [job, setJob] = useState<ImportJob | null>(null);
   const importing = project?.status === "PROCESSING";
+  // When the import ends, drop the banner job (kept until the status is no longer PROCESSING).
+  const [prevImporting, setPrevImporting] = useState(importing);
+  if (prevImporting !== importing) {
+    setPrevImporting(importing);
+    if (!importing) setJob(null);
+  }
   useEffect(() => {
     if (!importing) {
-      setJob(null);
       return;
     }
     let stopped = false;

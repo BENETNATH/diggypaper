@@ -85,25 +85,33 @@ export function BenchmarkForm({
   const [error, setError] = useState<string | null>(null);
 
   // Gold references of the chosen search (only the batch's count, the server filters).
+  const goldKey = `${projectId}:${searchId}`;
+  const [prevGoldKey, setPrevGoldKey] = useState(goldKey);
+  if (prevGoldKey !== goldKey) {
+    setPrevGoldKey(goldKey);
+    setGoldCount(null);
+  }
   useEffect(() => {
     if (!searchId) return;
     let stale = false;
-    setGoldCount(null);
     listGold(projectId, searchId)
-      .then((g) => !stale && setGoldCount(g.length))
-      .catch(() => !stale && setGoldCount(null));
+      .then((g) => {
+        if (!stale) setGoldCount(g.length);
+      })
+      .catch(() => {
+        if (!stale) setGoldCount(null);
+      });
     return () => {
       stale = true;
     };
   }, [projectId, searchId]);
 
   const noGold = goldCount === 0;
-  useEffect(() => {
-    if (noGold) {
-      setUseGold(false);
-      setExamples(false);
-    }
-  }, [noGold]);
+  // Without gold references, the gold/example toggles are unavailable.
+  if (noGold && (useGold || examples)) {
+    setUseGold(false);
+    setExamples(false);
+  }
 
   const calls = estimateCalls(lot, selected.length, drafts.length);
   const problem = variantsProblem(drafts);

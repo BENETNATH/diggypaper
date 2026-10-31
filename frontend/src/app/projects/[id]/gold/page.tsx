@@ -45,21 +45,27 @@ function GoldContent() {
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null); // "all" or the id of the current row
 
-  const load = useCallback(async () => {
-    setError(null);
-    try {
-      const [g, p] = await Promise.all([listGold(projectId, searchId), getProject(projectId, searchId)]);
-      setFields(p.fields ?? []);
-      setLead(isProjectLead(p, { role }));
-      setGold(g);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "error");
-    }
+  const load = useCallback(() => {
+    return Promise.all([listGold(projectId, searchId), getProject(projectId, searchId)])
+      .then(([g, p]) => {
+        setFields(p.fields ?? []);
+        setLead(isProjectLead(p, { role }));
+        setGold(g);
+        setError(null);
+      })
+      .catch((e) => setError(e instanceof Error ? e.message : "error"));
   }, [projectId, searchId, role]);
 
-  useEffect(() => {
+  // Reset the dataset when the search changes (kept null while it reloads).
+  const searchKey = `${projectId}:${searchId}`;
+  const [prevSearchKey, setPrevSearchKey] = useState(searchKey);
+  if (prevSearchKey !== searchKey) {
+    setPrevSearchKey(searchKey);
     setGold(null);
-    void load();
+  }
+
+  useEffect(() => {
+    load();
   }, [load]);
 
   async function act(key: string, fn: () => Promise<unknown>) {

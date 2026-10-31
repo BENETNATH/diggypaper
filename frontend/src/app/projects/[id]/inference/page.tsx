@@ -99,28 +99,33 @@ function InferenceContent() {
   const label = (m: ModelInfo) =>
     `${m.name}${m.ram_usage_mb ? ` · ~${m.ram_usage_mb} MB` : ""}`;
 
-  const load = useCallback(async () => {
-    try {
-      const [j, b] = await Promise.all([
-        getInference(projectId, searchId),
-        getInference(projectId, undefined, true),
-      ]);
-      setJob(j);
-      setBusy(b);
-      setError(null);
-    } catch (e) {
-      if (e instanceof Error && /404/.test(e.message)) setJob(null);
-      else setError(errText(e));
-    }
+  const load = useCallback(() => {
+    return Promise.all([getInference(projectId, searchId), getInference(projectId, undefined, true)])
+      .then(([j, b]) => {
+        setJob(j);
+        setBusy(b);
+        setError(null);
+      })
+      .catch((e) => {
+        if (e instanceof Error && /404/.test(e.message)) setJob(null);
+        else setError(errText(e));
+      });
   }, [projectId, searchId, errText]);
 
-  // Changing the search reloads its question, its items and its analysis state.
-  useEffect(() => {
+  // Changing the search resets the analysis state (kept empty while it reloads).
+  const searchKey = `${projectId}:${searchId}`;
+  const [prevSearchKey, setPrevSearchKey] = useState(searchKey);
+  if (prevSearchKey !== searchKey) {
+    setPrevSearchKey(searchKey);
     setJob(null);
     setQ(null);
     setNotice(null);
     setLaunched(false);
-    void load();
+  }
+
+  // Changing the search reloads its question, its items and its analysis state.
+  useEffect(() => {
+    load();
     getProject(projectId, searchId)
       .then((p) => {
         const set = p.question_set !== false; // otherwise: no question, only a suggestion
@@ -133,15 +138,19 @@ function InferenceContent() {
         setIsLead(isProjectLead(p, user));
       })
       .catch(() => {});
-  }, [load, projectId, searchId]);
+  }, [load, projectId, searchId, user]);
 
   useEffect(() => {
     listModels(projectId).then(setModels).catch(() => {});
   }, [projectId]);
 
   // Prompt from a benchmark: we show its title so the choice is visible.
-  useEffect(() => {
+  const [prevPromptId, setPrevPromptId] = useState(promptId);
+  if (prevPromptId !== promptId) {
+    setPrevPromptId(promptId);
     setPromptTitle(null);
+  }
+  useEffect(() => {
     if (!promptId) return;
     getPrompt(projectId, promptId)
       .then((p) => setPromptTitle(p.title ?? p.version_number))
@@ -149,46 +158,53 @@ function InferenceContent() {
   }, [projectId, promptId]);
 
   // Exact prompt of the last analysis (viewable under the progress).
-  useEffect(() => {
+  const tplId = job?.prompt_template_id;
+  const [prevTplId, setPrevTplId] = useState(tplId);
+  if (prevTplId !== tplId) {
+    setPrevTplId(tplId);
     setSentPrompt(null);
-    if (!job?.prompt_template_id) return;
-    getPrompt(projectId, job.prompt_template_id)
+  }
+  useEffect(() => {
+    if (!tplId) return;
+    getPrompt(projectId, tplId)
       .then((p) => setSentPrompt(`${p.system_prompt ?? ""}\n\n${p.user_prompt_schema ?? ""}`.trim()))
       .catch(() => setSentPrompt(null));
-  }, [projectId, job?.prompt_template_id]);
+  }, [projectId, tplId]);
 
   // Gold references of the search: without them, no examples and no validation.
-  useEffect(() => {
+  const [prevGoldKey, setPrevGoldKey] = useState(searchKey);
+  if (prevGoldKey !== searchKey) {
+    setPrevGoldKey(searchKey);
     setGoldCount(null);
+  }
+  useEffect(() => {
     listGold(projectId, searchId)
       .then((g) => setGoldCount(g.length))
       .catch(() => setGoldCount(null));
   }, [projectId, searchId]);
   const noGold = goldCount === 0;
-  useEffect(() => {
-    if (noGold) {
-      setExamplesOn(false);
-      setValidate(false);
-    }
-  }, [noGold]);
+  // Without gold references, the example and validation toggles are unavailable.
+  if (noGold && (examplesOn || validate)) {
+    setExamplesOn(false);
+    setValidate(false);
+  }
 
   useEffect(() => {
     if (!active && !busy) return;
-    const id = setInterval(() => void load(), 3000);
+    const id = setInterval(() => load(), 3000);
     return () => clearInterval(id);
   }, [active, busy, load]);
 
   // Default selection: no stage 1; stage 2 = lightest model whose RAM is known.
-  useEffect(() => {
-    if (models.length === 0 || stage2) return;
+  if (models.length > 0 && !stage2) {
     const wanted = models.find((m) => m.name === wantedModel);
     if (wanted) {
       setStage2(wanted.name);
-      return;
+    } else {
+      const known = models.filter((m) => m.ram_usage_mb).sort((a, b) => a.ram_usage_mb! - b.ram_usage_mb!);
+      setStage2((known[0] ?? models[0]).name);
     }
-    const known = models.filter((m) => m.ram_usage_mb).sort((a, b) => a.ram_usage_mb! - b.ram_usage_mb!);
-    setStage2((known[0] ?? models[0]).name);
-  }, [models, stage2, wantedModel]);
+  }
 
   /** Resumes an interrupted analysis: the already-analyzed articles are skipped. */
   async function handleStop() {

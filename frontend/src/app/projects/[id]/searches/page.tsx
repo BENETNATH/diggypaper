@@ -18,6 +18,7 @@ import {
 } from "@/lib/api";
 import { SearchCreate } from "@/lib/api";
 import { useApiError } from "@/lib/errorMsg";
+import { useHasMounted } from "@/lib/useHasMounted";
 import { cleanSelection, isUntouched, prefillStoreKey, withSearch } from "@/lib/search";
 import { notifySearchesChanged, storeSearchId, useSearchId, useSearches, useSelectSearch } from "@/lib/useSearch";
 import { ModelRef } from "@/components/ModelRef";
@@ -184,9 +185,8 @@ function SearchesContent() {
   // or opened by default via ?new=1 from the "New search" button of the overview).
   const [showForm, setShowForm] = useState(false);
   const openNew = useSearchParams()?.get("new") === "1";
-  useEffect(() => {
-    if (openNew) setShowForm(true);
-  }, [openNew]);
+  // "New search" button of the overview arrives with ?new=1: open the form.
+  if (openNew && !showForm) setShowForm(true);
   const [name, setName] = useState("");
   const [selection, setSelection] = useState<Selection>({});
   const [count, setCount] = useState<number | null>(null);
@@ -212,6 +212,13 @@ function SearchesContent() {
     getProject(projectId)
       .then((p) => setIsLead(isProjectLead(p, { role })))
       .catch(() => {});
+  }, [projectId, role]);
+
+  // One-shot prefill pushed by the Articles page (client only: sessionStorage).
+  const mounted = useHasMounted();
+  const [prefillApplied, setPrefillApplied] = useState(false);
+  if (mounted && !prefillApplied) {
+    setPrefillApplied(true);
     try {
       const raw = sessionStorage.getItem(prefillStoreKey(projectId));
       if (raw) {
@@ -222,13 +229,19 @@ function SearchesContent() {
     } catch {
       /* no prefill */
     }
-  }, [projectId, role]);
+  }
 
   // Question and items of the source search: copied by default, editable.
   const originId = selection.from_search_id ?? searches?.find((s) => s.is_default)?.id;
+  // A new origin search: the definition is copied as-is again (edit reset to null).
+  const originKey = `${projectId}:${originId ?? ""}:${showForm ? "1" : "0"}`;
+  const [prevOriginKey, setPrevOriginKey] = useState(originKey);
+  if (prevOriginKey !== originKey && originId && showForm) {
+    setPrevOriginKey(originKey);
+    setEdit(null);
+  }
   useEffect(() => {
     if (!originId || !showForm) return;
-    setEdit(null);
     getProject(projectId, originId)
       .then((p) => {
         const set = p.question_set !== false; // sinon : formulaire vide + suggestion

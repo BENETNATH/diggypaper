@@ -24,17 +24,17 @@ function ProjectsContent() {
   const [creating, setCreating] = useState(false);
   const [importing, setImporting] = useState(false);
 
-  const load = useCallback(async () => {
-    setError(null);
-    try {
-      setProjects(await listProjects());
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "error");
-    }
+  const load = useCallback(() => {
+    listProjects()
+      .then((projects) => {
+        setProjects(projects);
+        setError(null);
+      })
+      .catch((e) => setError(e instanceof Error ? e.message : "error"));
   }, []);
 
   useEffect(() => {
-    void load();
+    load();
   }, [load]);
 
   async function handleCreate(e: React.FormEvent) {

@@ -164,21 +164,23 @@ function ProjectDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [modelCount, setModelCount] = useState<number | null>(null);
 
-  const load = useCallback(async () => {
-    setError(null);
-    try {
-      const [p, o, js] = await Promise.all([getProject(projectId), getOverview(projectId), listJobs(projectId)]);
-      setProject(p);
-      setOverview(o);
-      setJobs(js);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "error");
-    }
+  const load = useCallback(() => {
+    return Promise.all([getProject(projectId), getOverview(projectId), listJobs(projectId)])
+      .then(([p, o, js]) => {
+        setProject(p);
+        setOverview(o);
+        setJobs(js);
+        setError(null);
+      })
+      .catch((e) => setError(e instanceof Error ? e.message : "error"));
   }, [projectId]);
 
+
   useEffect(() => {
-    void load();
-    listModels(projectId).then((m) => setModelCount(m.length)).catch(() => setModelCount(null));
+    load();
+    listModels(projectId)
+      .then((m) => setModelCount(m.length))
+      .catch(() => setModelCount(null));
   }, [load, projectId]);
 
   if (error) return <ErrorBanner message={error} onRetry={() => void load()} />;
