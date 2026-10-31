@@ -95,7 +95,8 @@ async def _exported_crate(session, tmp_path) -> tuple[str, Project]:
 
 
 async def _human_entries(session, project) -> tuple[list[dict], dict[str, bytes]]:
-    """The ``human`` entries of article 222 and the archive's text files (excluding results.xlsx)."""
+    """The ``human`` entries of article 222 and the archive's text files
+    (excluding results.xlsx)."""
     buf = io.BytesIO()
     await write_crate(session, project, "exporter@lab.fr", buf)
     with zipfile.ZipFile(buf) as z:
