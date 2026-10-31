@@ -1,8 +1,10 @@
 """RO-Crate import: round-trip with the real export, and rejection of suspicious zips."""
 
+import io
 import json
 import struct
 import zipfile
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -11,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app import crate_import as ci
 from app.api.v1.export import write_crate
+from app.cleanup import delete_user
 from app.db.models import (
     Article,
     ArticleFile,
@@ -89,6 +92,78 @@ async def _exported_crate(session, tmp_path) -> tuple[str, Project]:
     with open(out, "wb") as fh:
         await write_crate(session, project, user.email, fh)
     return str(out), project
+
+
+async def _human_entries(session, project) -> tuple[list[dict], dict[str, bytes]]:
+    """The ``human`` entries of article 222 and the archive's text files (excluding results.xlsx)."""
+    buf = io.BytesIO()
+    await write_crate(session, project, "exporter@lab.fr", buf)
+    with zipfile.ZipFile(buf) as z:
+        files = {n: z.read(n) for n in z.namelist() if not n.endswith((".xlsx", ".pdf"))}
+    return json.loads(files["articles/pmid-222/metadata.json"])["human"], files
+
+
+async def test_crate_keeps_human_evidence_under_a_project_scoped_pseudonym(session, tmp_path):
+    """Each exported re-read keeps its identifier, its date, its quotes and a pseudonym
+    propre au projet ; ni e-mail ni identifiant de compte n'apparaissent dans les JSON/Markdown."""
+    _, project = await _exported_crate(session, tmp_path)
+    user = (await session.execute(select(User).where(User.email == "lead@lab.fr"))).scalar_one()
+    art = (await session.execute(select(Article).where(Article.pmid == "222"))).scalar_one()
+    quotes = ['"Sleep" improved 🐁\nN = 12', "  exact spacing  ", "dup", "dup"]
+    later = datetime.now(UTC) + timedelta(seconds=1)
+    second = HumanAnnotation(
+        article_id=art.id,
+        user_id=user.id,
+        decision_json={"ai": True, "evidence_quotes": quotes},
+        notes="revu",
+        created_at=later,
+    )
+    legacy = HumanAnnotation(  # relecteur inconnu (ni compte, ni empreinte)
+        article_id=art.id, decision_json={"ai": True}, created_at=later + timedelta(seconds=1)
+    )
+    session.add_all([second, legacy])
+    await session.commit()
+    anns = (
+        (
+            await session.execute(
+                select(HumanAnnotation)
+                .where(HumanAnnotation.article_id == art.id)
+                .order_by(HumanAnnotation.created_at, HumanAnnotation.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    human, files = await _human_entries(session, project)
+    assert [h["annotation_id"] for h in human] == [str(a.id) for a in anns]
+    assert [h["created_at"] for h in human] == [a.created_at.isoformat() for a in anns]
+    assert [h["evidence_quotes"] for h in human] == [None, quotes, None]
+    assert [h["answers"] for h in human] == [{"ai": False}, {"ai": True}, {"ai": True}]
+    assert [h["notes"] for h in human] == ["vu", "revu", None]
+    ref = human[0]["reviewer_ref"]
+    assert ref and ref.startswith("reviewer-") and human[1]["reviewer_ref"] == ref
+    assert human[2]["reviewer_ref"] is None  # identity unavailable: no attribution invented
+    for name, data in files.items():
+        assert b"lead@lab.fr" not in data and str(user.id).encode() not in data, name
+    assert b"reviewer_ref" in files["README.md"]
+
+    # The same reviewer gets an unlinkable pseudonym in another project...
+    other = Project(title="Autre", fields=FIELDS)
+    session.add(other)
+    await session.flush()
+    other_art = Article(project_id=other.id, pmid="222")
+    session.add(other_art)
+    await session.flush()
+    session.add(HumanAnnotation(article_id=other_art.id, user_id=user.id))
+    await session.commit()
+    assert (await _human_entries(session, other))[0][0]["reviewer_ref"] != ref
+    # ... and the pseudonym survives account deletion (digest kept).
+    await delete_user(session, user)
+    await session.commit()
+    after, _ = await _human_entries(session, project)
+    assert [h["reviewer_ref"] for h in after] == [ref, ref, None]
+    assert after[1]["evidence_quotes"] == quotes
 
 
 async def test_round_trip_restores_corpus_results_and_pdf(engine, session, tmp_path):

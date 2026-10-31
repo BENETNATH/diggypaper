@@ -1,6 +1,7 @@
 """XLSX export of a project: corpus + analysis results + human re-read + parameters."""
 
 import asyncio
+import hashlib
 import io
 import json
 import os
@@ -28,6 +29,7 @@ from app.api.v1.projects import (
     _require_project_member,
     article_filter,
 )
+from app.core.config import get_settings
 from app.db.models import (
     Article,
     ArticleFile,
@@ -267,8 +269,8 @@ async def _load(db: AsyncSession, project, where=None, search=None):
             )
         ).scalars():
             annos.setdefault(h.article_id, []).append(h)
-        names = {
-            u.id: u.full_name or u.email
+        reviewers = {
+            u.id: u
             for u in (
                 await db.execute(
                     select(User).where(
@@ -277,9 +279,17 @@ async def _load(db: AsyncSession, project, where=None, search=None):
                 )
             ).scalars()
         }
+        salt = get_settings().anon_salt
         for hs in annos.values():
             for h in hs:
-                h.reviewer = names.get(h.user_id)  # nom du relecteur pour l'export
+                u = reviewers.get(h.user_id)
+                h.reviewer = (u.full_name or u.email) if u else None  # name for results.xlsx
+                # metadata.json: project-scoped pseudonym, derived from the same salted
+                # digest kept at account deletion (``annotator_hash``).
+                digest = h.annotator_hash or (
+                    hashlib.sha256((salt + u.email).encode("utf-8")).hexdigest() if u else None
+                )
+                h.reviewer_ref = crate.reviewer_reference(project.id, digest)
     import_jobs = (
         (
             await db.execute(
