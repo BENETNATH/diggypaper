@@ -1,10 +1,9 @@
-"""Tests du contrat SourceAdapter (Phase 1, spec 2026-10-28) — 100 % offline.
+"""Tests for the SourceAdapter contract (Phase 1, spec 2026-10-28) — 100% offline.
 
-A/D : contrat seul avec ``FakeSourceAdapter`` (aucune NCBI, aucun httpx réel) ;
-A.1–A.4 drivent le **vrai** pipeline ``_import_pubmed`` avec l'adapter injecté.
-B/C : l'adapter PubMed (``PubMedAdapter``) via httpx.MockTransport, comme
-``test_pubmed.py``. D : conformité des signatures au ``Protocol``.
-"""
+A/D: contract alone with ``FakeSourceAdapter`` (no NCBI, no real httpx);
+A.1–A.4 drive the **real** ``_import_pubmed`` pipeline with the injected adapter.
+B/C: the PubMed adapter (``PubMedAdapter``) via httpx.MockTransport, like
+``test_pubmed.py``. D: signature conformance to the ``Protocol``."""
 
 import dataclasses
 import inspect
@@ -24,7 +23,7 @@ from app.tasks import _import_pubmed
 
 @pytest.fixture(autouse=True)
 def _no_sleep(monkeypatch):
-    """Pas de vrai sleep en tests (throttle NCBI + backoff retry)."""
+    """No real sleep in tests (NCBI throttle + backoff retry)."""
 
     async def _noop(_delay: float) -> None:
         return None
@@ -73,7 +72,7 @@ async def _project_status(engine, project_id) -> ProjectStatus:
 
 
 class FakeSourceAdapter:
-    """Contrat testable seul : aucune NCBI, aucun DB ; enregistre ses appels."""
+    """Contract testable alone: no NCBI, no DB; records its calls."""
 
     def __init__(
         self,
@@ -115,7 +114,7 @@ class FakeSourceAdapter:
         return self.fulltext_by_id.get(id)
 
 
-# --- A. Contrat seul, avec le fake adapter (aucune NCBI, aucun DB) -----------
+# --- A. Contract alone, with the fake adapter (no NCBI, no DB) -----------
 
 
 async def test_contract_fake_drives_import_pipeline_full_flow(engine):
@@ -149,8 +148,8 @@ async def test_contract_fake_drives_import_pipeline_full_flow(engine):
         },
     )
     result = await _import_pubmed(str(project.id), "q", session_factory=factory, adapter=fake)
-    # Ordre d'invocations : search_volume → iter_ids → fetch_metadata (un lot) →
-    # fetch_fulltext (par article, identifiant secondaire).
+    # Invocation order: search_volume -> iter_ids -> fetch_metadata (one batch) ->
+    # fetch_fulltext (per article, secondary identifier).
     kinds = [c[0] for c in fake.calls]
     assert kinds[:3] == ["search_volume", "iter_ids", "fetch_metadata"]
     assert kinds[3:] == ["fetch_fulltext"] * 3
@@ -161,7 +160,7 @@ async def test_contract_fake_drives_import_pipeline_full_flow(engine):
     assert result["fulltext"] == 2
     assert result["failed"] == 0
     assert result["total_count"] == 3
-    # Articles : fulltext (méthodes + sections) pour 2 ; avis de licence pour le 3ᵉ.
+    # Articles: fulltext (methods + sections) for 2; license notice for the 3rd.
     articles = await _articles_for(engine, project.id)
     by_pmid = {a.pmid: a for a in articles}
     assert by_pmid["3"].methods_text == "methods3" and len(by_pmid["3"].sections) == 1
@@ -172,7 +171,7 @@ async def test_contract_fake_drives_import_pipeline_full_flow(engine):
 
 
 async def test_contract_fake_volume_zero_empty_success(engine):
-    """volume=0 → succès vide : iter_ids n'est jamais appelé, pas de lot."""
+    """volume=0 -> empty success: iter_ids is never called, no batch."""
     project = await _make_project(engine)
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     fake = FakeSourceAdapter(volume=0, ids=[])
@@ -185,7 +184,7 @@ async def test_contract_fake_volume_zero_empty_success(engine):
 
 
 async def test_contract_fake_truncated_by_limit():
-    """iter_ids respecte le cap limit : les N premiers, ordre préservé, le reste non généré."""
+    """iter_ids respects the limit cap: the first N, order preserved, the rest not generated."""
     fake = FakeSourceAdapter(
         volume=50, ids=[f"P{i}" for i in range(50)], meta_by_id={f"P{i}": {} for i in range(50)}
     )
@@ -196,8 +195,8 @@ async def test_contract_fake_truncated_by_limit():
 
 
 async def test_contract_fake_error_sanitized_job_failure(engine):
-    """search_volume qui lève (hors NCBIError) → job FAILED, projet DRAFT,
-    error_message sans URL ni clé API (C-1)."""
+    """search_volume raising (outside NCBIError) -> job FAILED, project DRAFT,
+    error_message without URL nor API key (C-1)."""
     project = await _make_project(engine)
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     fake = FakeSourceAdapter(volume=3, fail_search_volume=ValueError("source indisponible (boom)"))
@@ -216,9 +215,9 @@ async def test_contract_fake_error_sanitized_job_failure(engine):
 
 
 def _date_range_handler(records: dict[str, int]):
-    """Handler esearch : count (retmax=0) ou idlist bornés par le terme [dp].
+    """esearch handler: count (retmax=0) or idlist bounded by the [dp] term.
 
-    ``records`` : pmid → ordinal du jour ; un terme sans bornes [dp] couvre tout.
+    ``records``: pmid -> day ordinal; a term without [dp] bounds covers everything.
     """
     import re
 
@@ -242,7 +241,7 @@ def _date_range_handler(records: dict[str, int]):
 
 
 async def test_iter_ids_under_window_equals_fetch_all_pmids():
-    """Sous la fenêtre NCBI : même liste, même ordre, 2 esearch (count + ids)."""
+    """Under the NCBI window: same list, same order, 2 esearch (count + ids)."""
     ids = [str(1000 + i) for i in range(50)]
     calls = {"n": 0}
 
@@ -266,12 +265,12 @@ async def test_iter_ids_under_window_equals_fetch_all_pmids():
 
 
 async def test_iter_ids_bisection_order_and_calls(monkeypatch):
-    """Au-delà de la fenêtre : même séquence d'appels et même ordre que
-    fetch_all_pmids (bissection, plus récents d'abord)."""
+    """Beyond the window: same call sequence and same order as
+    fetch_all_pmids (bisection, newest first)."""
     from app import pubmed
 
     monkeypatch.setattr(pubmed, "PUBMED_WINDOW", 5)
-    # 40 articles étalés sur 40 jours consécutifs de 2021 (pmid = 1000 + jour)
+    # 40 articles spread over 40 consecutive days of 2021 (pmid = 1000 + day)
     records = {str(1000 + d): date(2021, 1, 1).toordinal() + d for d in range(40)}
     handler = _date_range_handler(records)
     esearches: list[tuple[str, int]] = []
@@ -293,13 +292,13 @@ async def test_iter_ids_bisection_order_and_calls(monkeypatch):
     assert got == ref
     assert got == sorted(got, reverse=True)  # strictement décroissant, plus récents d'abord
     assert got[0] == "1039"
-    # Mêmes appels esearch (termes bornés + retmax) : l'adapter fait 1 count de plus.
+    # Same esearch calls (bounded terms + retmax): the adapter makes 1 extra count.
     assert adapter_calls[1:] == esearches
 
 
 async def test_iter_ids_user_bounds():
-    """Bornes utilisateur : le terme borné [dp] apparaît uniquement dans le terme
-    (pas de datetype/mindate/maxdate)."""
+    """User bounds: the bounded [dp] term appears only in the term
+    (no datetype/mindate/maxdate)."""
     ids = [str(1000 + i) for i in range(50)]
     terms: list[str] = []
 
@@ -326,9 +325,9 @@ async def test_iter_ids_user_bounds():
 
 
 async def test_iter_ids_limit_cap_most_recent():
-    """Cap limit au-delà de la fenêtre : les N premiers (les plus récents),
-    appels NCBI identiques à fetch_all_pmids(limit=N)."""
-    # 20000 articles sur 20000 jours consécutifs depuis 1970-01-01 (pmid = 1000 + jour)
+    """limit cap beyond the window: the first N (the newest),
+    NCBI calls identical to fetch_all_pmids(limit=N)."""
+    # 20000 articles over 20000 consecutive days since 1970-01-01 (pmid = 1000 + day)
     start = date(1970, 1, 1)
     records = {str(1000 + d): start.toordinal() + d for d in range(20000)}
     handler = _date_range_handler(records)
@@ -355,7 +354,7 @@ async def test_iter_ids_limit_cap_most_recent():
     assert adapter_calls[1:] == esearches
 
 
-# --- C. Règles transverses (observables à travers le contrat) ----------------
+# --- C. Cross-cutting rules (observable through the contract) ----------------
 
 
 async def test_adapter_503_retries_and_error_sanitized(monkeypatch):
@@ -380,7 +379,7 @@ async def test_adapter_503_retries_and_error_sanitized(monkeypatch):
     assert calls["n"] == 3  # 1 + 2 retries
     # 1 throttle (1/3 s) + 2 backoff retry croissants (_RETRIES = 2)
     assert sleeps == [1 / 3, 1.0, 2.0]
-    # Échec définitif : NCBIError assaini (C-1, sans l'URL ni la clé).
+    # Definitive failure: sanitized NCBIError (C-1, no URL nor key).
     fails = {"n": 0}
 
     def failing(request: httpx.Request) -> httpx.Response:
@@ -433,7 +432,7 @@ async def test_adapter_timeout_retries_and_sanitized(monkeypatch):
 
 
 async def test_adapter_metadata_oversize_payload_rejected():
-    """XML > 10 Mo → refus (I5), message sans URL ni clé (C-1)."""
+    """XML > 10 MB -> refused (I5), message without URL nor key (C-1)."""
     big = "<PubmedArticleSet><x>" + "A" * (10 * 1024 * 1024 + 1) + "</x></PubmedArticleSet>"
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -448,8 +447,8 @@ async def test_adapter_metadata_oversize_payload_rejected():
 
 
 async def test_adapter_throttle_intervals(monkeypatch):
-    """Throttle par process : un sleep par requête NCBI (esearch/efetch, dont le
-    plein texte), à l'intervalle sans clé (1/3 s)."""
+    """Per-process throttle: one sleep per NCBI request (esearch/efetch, including
+    full text), at the no-key interval (1/3 s)."""
     from app import pubmed
 
     sleeps: list[float] = []
@@ -489,20 +488,20 @@ async def test_adapter_throttle_intervals(monkeypatch):
             pass
         await adapter.fetch_metadata(["1000"])
         result = await adapter.fetch_fulltext("PMC1")
-    # 2 esearch (count + ids, court-circuit < fenêtre) + 1 efetch métadonnées
-    # + 1 efetch plein texte : le compte exact d'un équivalent fetch_all_pmids.
+    # 2 esearch (count + ids, short-circuit < window) + 1 efetch metadata
+    # + 1 efetch full text: the exact count of a fetch_all_pmids equivalent.
     assert calls["n"] == 4
-    # Throttle avant chaque requête, intervalle sans clé (le plein texte,
-    # comme _fetch_pmc_xml, throttlé avec la clé None).
+    # Throttle before each request, no-key interval (full text,
+    # like _fetch_pmc_xml, throttled with the None key).
     assert sleeps == [pubmed._INTERVAL_NO_KEY] * 4
     assert result is not None and result[0] == "We used a randomised design."
 
 
-# --- D. Conformité au contrat (fake + adapter) -------------------------------
+# --- D. Contract conformance (fake + adapter) -------------------------------
 
 
 def test_pubmed_adapter_is_source_adapter():
-    """PubMedAdapter expose les 4 méthodes du Protocol, signatures compatibles."""
+    """PubMedAdapter exposes the 4 Protocol methods, compatible signatures."""
     adapter = PubMedAdapter(_client(lambda r: httpx.Response(200)), None)
     for name in ("search_volume", "iter_ids", "fetch_metadata", "fetch_fulltext"):
         got = inspect.signature(getattr(adapter, name))
@@ -513,7 +512,7 @@ def test_pubmed_adapter_is_source_adapter():
 
 
 async def test_fake_is_source_adapter():
-    """Le fake satisfait le Protocol ; sémantique minimale du contrat."""
+    """The fake satisfies the Protocol; minimal contract semantics."""
     fake = FakeSourceAdapter(
         volume=1,
         ids=["1"],
@@ -532,7 +531,7 @@ async def test_fake_is_source_adapter():
 
 
 def test_datebounds_defaults():
-    """DateBounds : défauts None, frozen (immutabilité)."""
+    """DateBounds: defaults None, frozen (immutability)."""
     assert DateBounds() == DateBounds(None, None)
     assert DateBounds().date_from is None
     assert DateBounds().date_to is None

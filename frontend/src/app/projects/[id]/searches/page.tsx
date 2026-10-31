@@ -34,7 +34,7 @@ const DEFAULT_BLIND_N = 40;
 
 type Definition = { question: string; fields: SchemaField[]; sections: string[] };
 
-/** Items nettoyés pour l'API (options de choix sans entrées vides). */
+/** Items cleaned for the API (choice options without empty entries). */
 const cleanFields = (fields: SchemaField[]): SchemaField[] =>
   fields.map((f) => ({ ...f, options: f.type === "choice" ? (f.options ?? []).filter(Boolean) : undefined }));
 
@@ -172,8 +172,8 @@ function SearchesContent() {
   const [isLead, setIsLead] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Formulaire « Nouvelle recherche » (éventuellement prérempli depuis la page Articles,
-  // ou ouvert d'office via ?new=1 depuis le bouton « Nouvelle recherche » de l'overview).
+  // "New search" form (possibly prefilled from the Articles page,
+  // or opened by default via ?new=1 from the "New search" button of the overview).
   const [showForm, setShowForm] = useState(false);
   const openNew = useSearchParams()?.get("new") === "1";
   useEffect(() => {
@@ -182,11 +182,11 @@ function SearchesContent() {
   const [name, setName] = useState("");
   const [selection, setSelection] = useState<Selection>({});
   const [count, setCount] = useState<number | null>(null);
-  const [edit, setEdit] = useState<Definition | null>(null); // null : question copiée telle quelle
+  const [edit, setEdit] = useState<Definition | null>(null); // null: question copied as-is
   const [originDef, setOriginDef] = useState<Definition | null>(null);
   const [creating, setCreating] = useState(false);
 
-  // Analyse programmée : elle démarre quand la recherche d'origine a fini.
+  // Scheduled analysis: it starts when the source search finishes.
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [sched, setSched] = useState(false);
   const [m1, setM1] = useState("");
@@ -196,7 +196,7 @@ function SearchesContent() {
     listModels(projectId).then(setModels).catch(() => setModels([]));
   }, [projectId]);
 
-  // Échantillon à l'aveugle
+  // Blind sample
   const [blindN, setBlindN] = useState(DEFAULT_BLIND_N);
   const [blindBusy, setBlindBusy] = useState(false);
 
@@ -212,11 +212,11 @@ function SearchesContent() {
         setShowForm(true);
       }
     } catch {
-      /* pas de préremplissage */
+      /* no prefill */
     }
   }, [projectId, role]);
 
-  // Question et items de la recherche d'origine : copiés par défaut, modifiables.
+  // Question and items of the source search: copied by default, editable.
   const originId = selection.from_search_id ?? searches?.find((s) => s.is_default)?.id;
   useEffect(() => {
     if (!originId || !showForm) return;
@@ -302,7 +302,7 @@ function SearchesContent() {
     }
   }
 
-  // Aucune vraie recherche : on masque « Nouvelle recherche » (l'analyse la crée) ; l'échantillon à l'aveugle reste (référence avant analyse).
+  // No real search: we hide "New search" (the analysis creates it); the blind sample stays (reference before analysis).
   const none = !!searches && searches.every(isUntouched);
 
   if (!searches) return error ? <ErrorBanner message={error} onRetry={() => void reload()} /> : <Skeleton rows={3} />;
@@ -424,7 +424,7 @@ function SearchesContent() {
                 notifySearchesChanged();
               }}
               onDeleted={() => {
-                // La recherche supprimée était peut-être la courante : retour à la recherche initiale.
+                // The deleted search may have been the current one: back to the initial search.
                 const initial = searches.find((x) => x.is_default);
                 if (s.id === current?.id && initial) selectSearch(initial.id);
                 void reload();

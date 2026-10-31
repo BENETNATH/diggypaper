@@ -3,9 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 
 /**
- * Hook de polling : appelle `fn` toutes les `intervalMs` ms jusqu'à ce que
- * `stopWhen(result)` soit vrai (ou `active` passe à false). Utilisé pour le
- * suivi des jobs (import / benchmark / inférence).
+ * Polling hook: calls `fn` every `intervalMs` ms until
+ * `stopWhen(result)` is true (or `active` becomes false). Used for the
+ * tracking of jobs (import / benchmark / inference).
  */
 export function usePolling<T>(
   fn: () => Promise<T>,

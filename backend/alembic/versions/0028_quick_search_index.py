@@ -1,13 +1,13 @@
-"""Recherche rapide : sans accents et indexée (pg_trgm + unaccent)
+"""Quick search: accent-free and indexed (pg_trgm + unaccent)
 
 Revision ID: 0028
 Revises: 0027
 Create Date: 2026-10-18 09:00:00.000000
 
-``immutable_unaccent`` (unaccent est seulement STABLE, donc inutilisable dans un index) et un
-index trigramme sur « titre journal pmid doi auteurs » : la recherche par sous-chaîne de la liste
-des résultats reste rapide sur des dizaines de milliers d'articles. L'expression doit rester
-identique à ``search_blob()`` (app/api/v1/projects.py).
+``immutable_unaccent`` (unaccent is only STABLE, so unusable in an index) and a
+trigram index on "title journal pmid doi authors": substring search on the results
+list stays fast on tens of thousands of articles. The expression must stay
+identical to ``search_blob()`` (app/api/v1/projects.py).
 """
 
 from collections.abc import Sequence

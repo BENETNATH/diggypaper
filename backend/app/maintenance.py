@@ -1,8 +1,8 @@
-"""Entretien du serveur : alerte d'espace disque (admins) et projets inactifs (responsables).
+"""Server maintenance: disk space alert (admins) and inactive projects (leads).
 
-Lancé périodiquement par le worker (celery beat). Rien n'est supprimé tant que
-``PROJECT_RETENTION_DAYS`` vaut 0 (défaut) ; sinon : avertissement des responsables à N jours
-d'inactivité, suppression à la fin du délai de grâce si rien ne s'est passé depuis.
+Run periodically by the worker (celery beat). Nothing is deleted while
+``PROJECT_RETENTION_DAYS`` is 0 (default); otherwise: the leads are warned at N days
+of inactivity, deletion at the end of the grace period if nothing happened since.
 """
 
 from __future__ import annotations
@@ -46,7 +46,7 @@ def _export_dir() -> Path:
 
 
 def disk_status() -> dict:
-    """Occupation du disque du serveur (celui des volumes Docker) et seuils d'alerte."""
+    """Server disk usage (the Docker volumes' one) and alert thresholds."""
     settings = get_settings()
     directory = _export_dir() if _export_dir().exists() else Path("/")
     total, used, free = shutil.disk_usage(directory)
@@ -63,15 +63,15 @@ def disk_status() -> dict:
 
 
 async def db_bytes(db: AsyncSession) -> int | None:
-    """Taille de la base (PostgreSQL) ; None ailleurs."""
+    """Database size (PostgreSQL); None elsewhere."""
     if db.get_bind().dialect.name != "postgresql":
         return None
     return (await db.execute(select(func.pg_database_size(func.current_database())))).scalar_one()
 
 
 async def last_activity(db: AsyncSession) -> dict:
-    """{id du projet : dernière activité} (import, analyse, relecture, recherche, benchmark,
-    export, « Conserver », sinon création)."""
+    """{project id: last activity} (import, analysis, re-read, search, benchmark,
+    export, "Keep", else creation)."""
     last: dict = {}
 
     def bump(rows) -> None:
@@ -103,7 +103,7 @@ async def last_activity(db: AsyncSession) -> dict:
 
 
 async def project_usage(db: AsyncSession, now: datetime | None = None) -> list[dict]:
-    """Un enregistrement par projet : taille des PDF, activité, échéance de suppression."""
+    """One row per project: PDF size, activity, deletion deadline."""
     now = now or datetime.now(UTC)
     settings = get_settings()
     activity = await last_activity(db)
@@ -176,7 +176,7 @@ async def _send(mailer, user: User, subject_key: str, body_key: str, **params) -
 
 
 async def retention_sweep(db: AsyncSession, mailer, now: datetime | None = None) -> dict:
-    """Avertit les responsables des projets inactifs, supprime ceux dont le délai est écoulé."""
+    """Warns the leads of inactive projects, deletes those whose deadline has passed."""
     settings = get_settings()
     out = {"warned": 0, "deleted": 0}
     if settings.project_retention_days <= 0:
@@ -230,7 +230,7 @@ async def retention_sweep(db: AsyncSession, mailer, now: datetime | None = None)
 
 
 async def disk_alert(db: AsyncSession, mailer, now: float | None = None) -> bool:
-    """E-mail aux admins si le disque est presque plein (au plus un par jour)."""
+    """Emails the admins if the disk is almost full (at most one per day)."""
     status = disk_status()
     if not status["low"]:
         return False
@@ -268,5 +268,5 @@ async def disk_alert(db: AsyncSession, mailer, now: float | None = None) -> bool
 
 
 async def run(db: AsyncSession, mailer) -> dict:
-    """Un passage d'entretien : alerte disque puis rétention des projets."""
+    """One maintenance pass: disk alert then project retention."""
     return {"disk_alert": await disk_alert(db, mailer), **await retention_sweep(db, mailer)}

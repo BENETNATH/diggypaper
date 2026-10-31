@@ -4,7 +4,7 @@ import fr from "@/messages/fr.json";
 import de from "@/messages/de.json";
 import es from "@/messages/es.json";
 
-/** Source de chaque article (spec 2026-10-29-sources-phase2-identite §5). */
+/** Source of each article (spec 2026-10-29-sources-phase2-identite §5). */
 
 describe("sourceLabel", () => {
   it("PubMed : « PubMed PMID n »", () => {
@@ -77,8 +77,8 @@ describe("i18n source", () => {
   });
 });
 
-/** Phase 4a : sélecteur de source + OpenAlex — les chaînes nouvelles existent dans les
- * 4 langues (contrainte utilisateur : tout est multilingue). */
+/** Phase 4a: source selector + OpenAlex — the new strings exist in the
+ * 4 languages (user constraint: everything is multilingual). */
 describe("i18n phase 4a", () => {
   it.each(LOCALES)("clés import/annotate/settings présentes et non vides (%s)", (_, m) => {
     for (const [ns, key] of [

@@ -13,7 +13,7 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
-/** Matrice de confusion de la pertinence : lignes = référence (gold), colonnes = modèle. */
+/** Confusion matrix of relevance: rows = reference (gold), columns = model. */
 function Confusion({ m }: { m: Prf }) {
   const t = useTranslations("validation");
   const cell = "px-3 py-1.5 text-center tabular-nums";
@@ -46,8 +46,8 @@ function Confusion({ m }: { m: Prf }) {
 }
 
 /**
- * Notes d'un modèle comparées au gold : critère principal, pertinence (rappel / précision / F1),
- * tableau par item et matrice de confusion. Sert au benchmark et à la validation d'une analyse.
+ * Scores of a model compared to the gold: main criterion, relevance (recall / precision / F1),
+ * per-item table and confusion matrix. Serves the benchmark and the validation of an analysis.
  */
 export function ValidationView({
   scored,

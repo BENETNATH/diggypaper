@@ -1,4 +1,4 @@
-"""Tests des routes modèle (app/api/v1/models.py) — 100 % offline."""
+"""Tests for the model routes (app/api/v1/models.py) — 100% offline."""
 
 import json
 from contextlib import contextmanager
@@ -22,7 +22,7 @@ from app.db.models import (
 
 @contextmanager
 def _http(handler):
-    """Mock du transport httpx global (pattern des tests de suppression)."""
+    """Mock of the global httpx transport (deletion tests pattern)."""
     real = httpx.AsyncClient
     httpx.AsyncClient = lambda **kw: real(transport=httpx.MockTransport(handler), **kw)
     try:
@@ -32,7 +32,7 @@ def _http(handler):
 
 
 async def _give_project_membership(session, user) -> Project:
-    """Donne à `user` une membership (pour le droit de lecture des modèles)."""
+    """Gives `user` a membership (for the model read right)."""
     project = Project(title="P", created_by=user.id)
     session.add(project)
     await session.commit()
@@ -77,11 +77,19 @@ async def test_model_payload_internal_flag(client, session, admin_user, do_login
         await client.post("/api/v1/models", json={"name": "Loc", "model_identifier": "kef/kev-4b"}),
         await client.post(
             "/api/v1/models",
-            json={"name": "Priv", "backend_type": "OPENAI_API", "model_identifier": "http://10.0.0.5/v1#m"},
+            json={
+                "name": "Priv",
+                "backend_type": "OPENAI_API",
+                "model_identifier": "http://10.0.0.5/v1#m",
+            },
         ),
         await client.post(
             "/api/v1/models",
-            json={"name": "Pub", "backend_type": "OPENAI_API", "model_identifier": "https://api.openai.com/v1#gpt-4"},
+            json={
+                "name": "Pub",
+                "backend_type": "OPENAI_API",
+                "model_identifier": "https://api.openai.com/v1#gpt-4",
+            },
         ),
     ):
         assert r.status_code == 201, r.text
@@ -121,7 +129,7 @@ async def test_list_models_researcher_with_project(client, session, researcher_u
 async def test_list_models_researcher_sees_only_accessible(
     client, session, admin_user, researcher_user, do_login
 ):
-    """Sans modèle à soi ni partagé : liste vide (plus de 403, plus d'accès global)."""
+    """No own model nor shared one: empty list (no more 403, no global access)."""
     session.add(ModelRegistry(name="Platform", model_identifier="x"))
     await session.commit()
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
@@ -152,7 +160,7 @@ async def test_update_model_404(client, session, admin_user, do_login):
 
 
 async def test_delete_model_admin(client, session, admin_user, do_login):
-    """Mock Ollama requis : sans lui, DELETE pointerait vers localhost:11434 et ferait 502."""
+    """Ollama mock required: without it, DELETE would point to localhost:11434 and give 502."""
 
     def handler(req: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"deleted": True})
@@ -201,7 +209,7 @@ async def test_delete_ollama_model_calls_ollama_delete_then_removes_row(
 async def test_delete_ollama_model_missing_on_ollama_still_removes_row(
     client, session, admin_user, do_login
 ):
-    """Idempotence : modèle déjà absent d'Ollama (404) → la ligne registre part quand même."""
+    """Idempotency: model already absent from Ollama (404) -> the registry row is still removed."""
 
     def handler(req: httpx.Request) -> httpx.Response:
         return httpx.Response(404, json={"error": "model 'qwen3:4b' not found"})
@@ -290,7 +298,7 @@ async def test_delete_ollama_model_no_call_for_openai_api_backend(
 async def test_delete_ollama_model_forbidden_before_ollama_call(
     client, session, admin_user, researcher_user, do_login
 ):
-    """Le contrôle de permission précède tout appel Ollama (403, handler non appelé)."""
+    """The permission check precedes any Ollama call (403, handler not called)."""
 
     def handler(req: httpx.Request) -> httpx.Response:
         raise AssertionError("Ollama ne doit pas être appelé")
@@ -446,7 +454,7 @@ async def test_infer_with_uses_model_url_and_key():
         api_key_enc=encrypt_secret("sk-1"),
     )
     default = OpenAICompatibleService("http://unused/v1")
-    # le service créé par infer_with n'a pas de client injecté : on patche le transport global
+    # the service created by infer_with has no injected client: patch the global transport
     real = httpx.AsyncClient
     httpx.AsyncClient = lambda **kw: real(transport=httpx.MockTransport(handler), **kw)
     try:
@@ -480,7 +488,7 @@ async def test_capabilities_reports_ollama_hardware_and_recommendation(
     )
     await do_login("admin@lab.fr", "admin-pass-123")
     caps = (await client.get("/api/v1/models/capabilities")).json()
-    # Champ `mode` gagné (flag de déploiement, défaut docker) ; le reste est inchangé.
+    # `mode` field gained (deployment flag, default docker); the rest is unchanged
     assert caps["ollama"] == {"mode": "docker", "configured": True, "reachable": True}
     assert caps["hardware"]["ram_gb"] == 54
     rec = caps["recommendation"]
@@ -488,13 +496,13 @@ async def test_capabilities_reports_ollama_hardware_and_recommendation(
     assert rec["models"][0]["kind"] == "moe" and rec["models"][0]["fits"] is True
 
 
-# --- Flag de déploiement OLLAMA_MODE (spec 2026-10-28-ollama-deploy-mode) ----
+# --- OLLAMA_MODE deployment flag (spec 2026-10-28-ollama-deploy-mode) ----
 
 
 async def test_capabilities_docker_mode_default_invariant(
     client, admin_user, do_login, monkeypatch
 ):
-    """Mode docker (défaut) : comportement invariant, seul le champ `mode` est ajouté."""
+    """Docker mode (default): unchanged behavior, only the `mode` field is added."""
     from app.api.v1 import models as m
 
     async def fake_reachable(url, path=""):
@@ -527,7 +535,7 @@ async def test_capabilities_host_mode_custom_url_configured(
 async def test_capabilities_host_mode_compose_default_not_configured(
     client, session, admin_user, do_login, monkeypatch
 ):
-    """Mode host + base résiduelle du compose : non configuré, AUCUN ping, (warning loggé)."""
+    """Host mode + residual compose base: unconfigured, NO ping (warning logged)."""
     from app.api.v1 import models as m
     from app.settings.service import set_setting
 
@@ -543,7 +551,7 @@ async def test_capabilities_host_mode_compose_default_not_configured(
 
 
 async def test_capabilities_off_mode_no_ping(client, admin_user, do_login, monkeypatch):
-    """Mode off : {off, false, false} SANS ping (aucun ping en mode off)."""
+    """Off mode: {off, false, false} WITHOUT ping (no ping in off mode)."""
     from app.api.v1 import models as m
 
     async def no_ping(url, path=""):
@@ -595,7 +603,7 @@ async def test_off_register_ollama_409(client, admin_user, do_login, monkeypatch
 async def test_off_create_ollama_409_but_openai_api_still_201(
     client, admin_user, do_login, monkeypatch
 ):
-    """Les backends API clé restent opérationnels en mode off."""
+    """Key API backends stay operational in off mode."""
     from app.api.v1 import models as m
 
     def handler(req: httpx.Request) -> httpx.Response:
@@ -635,7 +643,7 @@ async def test_off_hf_install_409_before_hf_call(client, admin_user, do_login, m
 async def test_host_compose_default_endpoints_refused(
     client, session, admin_user, do_login, monkeypatch
 ):
-    """Mode host + base résiduelle compose : actions Ollama refusées (409, detail précis)."""
+    """Host mode + residual compose base: Ollama actions refused (409, precise detail)."""
     from app.api.v1 import models as m
     from app.settings.service import set_setting
 
@@ -658,7 +666,7 @@ async def test_host_compose_default_endpoints_refused(
 async def test_host_compose_default_url_variants_detected(
     client, session, admin_user, do_login, monkeypatch
 ):
-    """La dérive de base (sans /v1, rstrip) fait détecter les 3 variantes du compose."""
+    """Base drift (without /v1, rstrip) makes the 3 compose variants be detected."""
     from app.api.v1 import models as m
     from app.settings.service import set_setting
 
@@ -689,7 +697,7 @@ def test_recommend_by_resources():
     )
 
 
-# ---------- POST /models/{id}/test : confirmer qu'un modèle installé est opérationnel ----------
+# POST /models/{id}/test: confirm an installed model is operational
 
 
 async def test_test_installed_ollama_ok(client, admin_user, do_login, monkeypatch):
@@ -820,8 +828,8 @@ async def _names(client) -> list[str]:
 async def test_delete_ollama_model_shared_identifier_keeps_weights(
     client, session, admin_user, do_login
 ):
-    """Une autre ligne du registre utilise les mêmes poids : la ligne part, Ollama n'est PAS
-    appelé (sinon l'autre modèle serait cassé)."""
+    """Another registry row uses the same weights: the row is removed, Ollama is NOT
+    called (otherwise the other model would be broken)."""
     session.add(ModelRegistry(name="Q", backend_type="OLLAMA", model_identifier="qwen3:4b"))
     session.add(ModelRegistry(name="Q-bis", backend_type="OLLAMA", model_identifier="qwen3:4b"))
     await session.commit()
@@ -872,7 +880,7 @@ async def test_delete_model_in_use_by_active_benchmark_409(client, session, admi
 
 
 async def test_delete_model_after_finished_jobs_ok(client, session, admin_user, do_login):
-    """Garde : seuls les jobs PENDING/RUNNING bloquent (un job terminé n'empêche rien)."""
+    """Guard: only PENDING/RUNNING jobs block (a finished job prevents nothing)."""
     session.add(ModelRegistry(name="Q", backend_type="OLLAMA", model_identifier="qwen3:4b"))
     session.add(InferenceJob(model_used="Q", status=InferenceJobStatus.COMPLETED))
     session.add(BenchmarkRun(models_tested=["Q"], status=BenchmarkStatus.FAILED))
@@ -888,8 +896,8 @@ async def test_delete_model_after_finished_jobs_ok(client, session, admin_user, 
 async def test_delete_ollama_model_owned_by_non_admin_403_before_ollama(
     client, session, researcher_user, do_login
 ):
-    """Défense en profondeur : supprimer des poids Ollama exige ADMIN, même pour le
-    « propriétaire » d'une ligne OLLAMA (invariant owner_id NULL non garanti en base)."""
+    """Defense in depth: deleting Ollama weights requires ADMIN, even for the
+    "owner" of an OLLAMA row (owner_id NULL invariant not guaranteed in the DB)."""
     session.add(
         ModelRegistry(
             name="Q",
@@ -910,7 +918,7 @@ async def test_delete_ollama_model_owned_by_non_admin_403_before_ollama(
 async def test_delete_ollama_model_shared_identifier_latest_alias_keeps_weights(
     client, session, admin_user, do_login
 ):
-    """« qwen3 » et « qwen3:latest » désignent les mêmes poids Ollama : Ollama non appelé."""
+    """ "qwen3" and "qwen3:latest" designate the same Ollama weights: Ollama not called."""
     session.add(ModelRegistry(name="Q", backend_type="OLLAMA", model_identifier="qwen3"))
     session.add(ModelRegistry(name="Q-lat", backend_type="OLLAMA", model_identifier="qwen3:latest"))
     await session.commit()
@@ -926,7 +934,7 @@ async def test_delete_ollama_model_shared_identifier_latest_alias_keeps_weights(
 async def test_delete_ollama_model_same_identifier_other_backend_still_deletes_weights(
     client, session, admin_user, do_login
 ):
-    """Une ligne d'un autre backend au même identifiant ne partage pas les poids Ollama."""
+    """A row from another backend with the same identifier does not share the Ollama weights."""
     session.add(ModelRegistry(name="Q", backend_type="OLLAMA", model_identifier="qwen3:4b"))
     session.add(ModelRegistry(name="Q-gguf", backend_type="LLAMA_CPP", model_identifier="qwen3:4b"))
     await session.commit()
@@ -942,7 +950,7 @@ async def test_delete_ollama_model_same_identifier_other_backend_still_deletes_w
 async def test_delete_model_in_use_by_waiting_scheduled_search_409(
     client, session, admin_user, do_login, field
 ):
-    """Analyse programmée en attente : elle démarrera avec ce modèle, la suppression est refusée."""
+    """Scheduled analysis waiting: it will start with this model, the deletion is refused."""
     project = Project(title="P", created_by=None)
     session.add(project)
     await session.commit()
@@ -965,7 +973,7 @@ async def test_delete_model_in_use_by_waiting_scheduled_search_409(
 async def test_delete_model_started_scheduled_search_does_not_block(
     client, session, admin_user, do_login
 ):
-    """Garde : seule une programmation « waiting » bloque (started/failed : plus d'attente)."""
+    """Guard: only a "waiting" scheduling blocks (started/failed: no more waiting)."""
     project = Project(title="P", created_by=None)
     session.add(project)
     await session.commit()
@@ -984,7 +992,7 @@ async def test_delete_model_started_scheduled_search_does_not_block(
 async def test_delete_model_in_use_non_owner_gets_403_not_409(
     client, session, admin_user, researcher_user, do_login
 ):
-    """La permission précède le contrôle d'usage : pas de fuite d'activité d'autrui."""
+    """The permission precedes the usage check: no leak of someone else's activity."""
     session.add(
         ModelRegistry(
             name="Ext",
@@ -1026,8 +1034,8 @@ async def test_delete_model_missing_404(client, session, admin_user, do_login):
 async def test_off_or_host_default_delete_ollama_model_removes_row_only(
     client, session, admin_user, do_login, monkeypatch, mode, base_url
 ):
-    """Ollama non géré par l'instance : la ligne registre est supprimée (204), Ollama n'est
-    PAS appelé (les poids ne sont pas les nôtres) — plus de ligne indélébile."""
+    """Ollama not managed by the instance: the registry row is deleted (204), Ollama is
+    NOT called (the weights are not ours) — no more unremovable row."""
     from app.api.v1 import models as m
     from app.settings.service import set_setting
 
@@ -1049,7 +1057,7 @@ async def test_off_or_host_default_delete_ollama_model_removes_row_only(
 
 
 async def test_off_test_installed_ollama_409(client, session, admin_user, do_login, monkeypatch):
-    """Mode off : le bouton Test d'un modèle OLLAMA est refusé (409) sans contacter Ollama."""
+    """Off mode: the Test button of an OLLAMA model is refused (409) without contacting Ollama."""
     from app.api.v1 import models as m
 
     session.add(ModelRegistry(name="Q", backend_type="OLLAMA", model_identifier="qwen3:4b"))
@@ -1064,7 +1072,7 @@ async def test_off_test_installed_ollama_409(client, session, admin_user, do_log
     assert seen == []
 
 
-# --- §2 POST /models/{id}/test : endpoint décidé par le backend du modèle testé ---
+# --- §2 POST /models/{id}/test: endpoint decided by the backend of the tested model ---
 
 
 async def test_test_installed_llama_cpp_uses_v1(client, session, admin_user, do_login):
@@ -1081,7 +1089,7 @@ async def test_test_installed_llama_cpp_uses_v1(client, session, admin_user, do_
     assert [str(r.url) for r in seen] == ["http://llm.test/v1/chat/completions"]
 
 
-# --- POST /models/{id}/test : modèle verrouillé par une analyse → pas de ping concurrent ---
+# POST /models/{id}/test: model locked by an analysis -> no concurrent ping
 
 
 async def _ollama_row(session, name="Q", identifier="qwen3:4b"):
@@ -1125,7 +1133,7 @@ async def test_test_installed_model_free_pings(
 async def test_test_installed_redis_down_fails_open(
     client, session, admin_user, do_login, monkeypatch
 ):
-    """Redis injoignable : le bouton reste utilisable (ping best-effort), pas de 500."""
+    """Unreachable Redis: the button stays usable (best-effort ping), no 500."""
     from redis.exceptions import ConnectionError as RedisConnectionError
 
     from app.api.v1 import models as m

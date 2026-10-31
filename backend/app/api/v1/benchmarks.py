@@ -1,7 +1,7 @@
-"""Routes benchmark (Arena) — Module 3.
+"""Benchmark routes (Arena) - Module 3.
 
-Lecture : membre du projet. Trigger : LEAD du projet, rate limiting par IP +
-garde « un benchmark PENDING/RUNNING par projet ».
+Read: member of the project. Trigger: LEAD of the project, rate limiting per IP +
+"one PENDING/RUNNING benchmark per project" guard.
 """
 
 import uuid
@@ -46,7 +46,7 @@ BENCHMARK_MAX_CALLS = 3000  # articles × variantes × modèles : au-delà, réd
 
 
 class Variant(BaseModel):
-    """Une formulation à comparer : prompt libre, prompt enregistré, ou (rien) prompt généré."""
+    """A formulation to compare: free prompt, registered prompt, or (nothing) generated prompt."""
 
     name: str = Field(min_length=1, max_length=100)
     system_prompt: str | None = Field(default=None, max_length=20000)
@@ -97,8 +97,8 @@ def _run_payload(run: BenchmarkRun, results: list[dict] | None = None) -> dict:
 async def trigger_benchmark(
     project_id: uuid.UUID, payload: BenchmarkCreate, db: DbDep, user: UserDep
 ) -> dict:
-    """Lance un benchmark : chaque modèle × variante répond à chaque article du lot de la
-    recherche ``search_id`` (un sous-lot : créez une recherche dédiée). 202 {run_id, status}."""
+    """Launches a benchmark: each model x variant answers each article of the
+    search ``search_id`` batch (a sub-batch: create a dedicated search). 202 {run_id, status}."""
     project = await _require_project_member(db, project_id, user)
     await _require_lead(db, project_id, user)
     scope = await get_search(db, project, payload.search_id)
@@ -120,8 +120,8 @@ async def trigger_benchmark(
                 raise HTTPException(status_code=422, detail="prompt template not in this project")
         prompt_id = prompt.id
     models = await usable_models(db, user, payload.models, project_id)
-    # len(models) < len(payload.models) si un nom est inconnu OU en doublon
-    # (SQL IN déduplique) → 422.
+    # len(models) < len(payload.models) if a name is unknown OR duplicated
+    # (SQL IN deduplicates) -> 422.
     if len(models) != len(payload.models):
         raise HTTPException(status_code=422, detail="unknown or duplicate model names")
     lot = (
@@ -181,7 +181,7 @@ async def trigger_benchmark(
 async def cancel_benchmark(
     project_id: uuid.UUID, run_id: uuid.UUID, db: DbDep, user: UserDep
 ) -> dict:
-    """Arrête un benchmark en cours ou en attente (les résultats déjà calculés sont conservés)."""
+    """Stops a running or pending benchmark (already-computed results are kept)."""
     await _require_project_member(db, project_id, user)
     await _require_lead(db, project_id, user)
     run = await db.get(BenchmarkRun, run_id)
@@ -255,8 +255,8 @@ async def benchmark_articles(
     page: Annotated[int, Query(ge=1, le=1000)] = 1,
     per_page: Annotated[int, Query(ge=1, le=100)] = 25,
 ) -> dict:
-    """Grille article × variante : la réponse de chaque (modèle, variante), la référence si elle
-    existe, et si les variantes divergent. ``disagree`` ne garde que les désaccords."""
+    """Article x variant grid: the answer of each (model, variant), the reference if it
+    exists, and whether the variants diverge. ``disagree`` keeps only the disagreements."""
     project = await _require_project_member(db, project_id, user)
     run = await db.get(BenchmarkRun, run_id)
     if run is None or run.project_id != project_id:

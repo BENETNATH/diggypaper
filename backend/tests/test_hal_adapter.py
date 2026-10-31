@@ -53,7 +53,7 @@ def _no_sleep(monkeypatch):
 
 
 async def test_search_volume_params_and_count():
-    """``rows=0`` → ``numFound`` ; ``q``/``wt``/``sort`` posés, pas de ``fq`` sans bornes."""
+    """``rows=0`` -> ``numFound``; ``q``/``wt``/``sort`` set, no ``fq`` without bounds."""
     seen: dict = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -72,7 +72,7 @@ async def test_search_volume_params_and_count():
 
 
 async def test_search_volume_date_bounds_fq():
-    """Bornes → ``fq`` ``producedDate_tdate:[… TO …]`` (toujours ANDées, à la PubMed)."""
+    """Bounds -> ``fq`` ``producedDate_tdate:[… TO …]`` (always ANDed, like PubMed)."""
     seen: dict = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -89,8 +89,8 @@ async def test_search_volume_date_bounds_fq():
 
 
 async def test_iter_ids_cursor_pagination_and_limit():
-    """``cursorMark=*`` puis ``nextCursorMark`` ; cap ``limit`` ; les plus récents
-    d'abord via ``sort`` (porté par chaque requête)."""
+    """``cursorMark=*`` then ``nextCursorMark``; ``limit`` cap; the newest
+    first via ``sort`` (carried by each request)."""
     cursors: list[str | None] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -111,7 +111,7 @@ async def test_iter_ids_cursor_pagination_and_limit():
 
 
 async def test_iter_ids_volume_not_preloaded():
-    """Sans ``search_volume`` préalable : le count est fait à la volée puis paginé."""
+    """Without a prior ``search_volume``: the count is done on the fly, then paginated."""
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.params["rows"] == "0":
@@ -127,8 +127,8 @@ async def test_iter_ids_volume_not_preloaded():
 
 
 async def test_fetch_metadata_or_query_and_parsing():
-    """``halId_s:("…" OR …)`` + ``rows`` ; parsing : listes → première valeur,
-    DOI, pub_date produite, ``fulltext_id``/``fulltext_url`` = ``fileMain_s``."""
+    """``halId_s:("…" OR …)`` + ``rows``; parsing: lists -> first value,
+    DOI, produced pub_date, ``fulltext_id``/``fulltext_url`` = ``fileMain_s``."""
     seen: dict = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -148,14 +148,14 @@ async def test_fetch_metadata_or_query_and_parsing():
     assert m["doi"] == "10.1007/s10549-008-0235-7"
     assert m["fulltext_id"] == FILE_URL and m["fulltext_url"] == FILE_URL
     assert m["fulltext_source"] == "hal"
-    # notice sans fichier : note explicite, pas de fulltext_id
+    # record without file: explicit note, no fulltext_id
     assert by_id["hal-04167683"]["fulltext_note"] == "hal_no_file"
     assert "fulltext_id" not in by_id["hal-04167683"]
 
 
 async def test_fetch_metadata_year_fallback_and_chunks():
-    """``producedDate_tdate`` absent → année ``publicationDateY_i`` en secours ;
-    > 100 identifiants → tranches de 100 (100 + 50)."""
+    """``producedDate_tdate`` absent -> ``publicationDateY_i`` year as fallback;
+    > 100 identifiers -> chunks of 100 (100 + 50)."""
 
     def handler(request: httpx.Request) -> httpx.Response:
         rows = int(request.url.params["rows"])
@@ -174,7 +174,7 @@ async def test_fetch_metadata_empty_ids():
 
 
 def test_parse_doc_year_fallback():
-    """(hors async) année seule quand la date de production manque."""
+    """(outside async) year only when the production date is missing."""
     from app.hal import _parse_doc
 
     assert _parse_doc({"halId_s": "h", "publicationDateY_i": 2022})["pub_date"] == "2022"
@@ -185,8 +185,8 @@ def test_parse_doc_year_fallback():
 
 
 async def test_fetch_fulltext_pdf(monkeypatch):
-    """PDF téléchargé + sectionné → ``(None, sections)`` ; l'URL passe telle quelle
-    à ``_download_pdf`` (garde SSRF / 25 Mo / %PDF dans app.fulltext)."""
+    """PDF downloaded + sectioned -> ``(None, sections)``; the URL is passed as-is
+    to ``_download_pdf`` (SSRF guard / 25 MB / %PDF in app.fulltext)."""
     calls: list[str] = []
 
     async def _dl(url, http):
@@ -208,8 +208,8 @@ async def test_fetch_fulltext_pdf(monkeypatch):
 
 
 async def test_fetch_fulltext_unavailable(monkeypatch):
-    """Échec de téléchargement (non-PDF, SSRF, >25 Mo) → ``None`` ; PDF sans
-    texte extractible → ``None`` ; URL vide → ``None`` sans appel."""
+    """Download failure (non-PDF, SSRF, >25 MB) -> ``None``; PDF with no
+    extractable text -> ``None``; empty URL -> ``None`` without a call."""
 
     async def _dl(url, http):
         return None
@@ -224,7 +224,7 @@ async def test_fetch_fulltext_unavailable(monkeypatch):
 
 
 async def test_fetch_fulltext_empty_sections(monkeypatch):
-    """PDF mais aucune section extraite → ``None`` (pas de fulltext_source sans texte)."""
+    """PDF but no section extracted -> ``None`` (no fulltext_source without text)."""
 
     async def _dl(url, http):
         return b"%PDF-fake"
@@ -250,7 +250,7 @@ async def test_error_400_sanitized():
 
 
 async def test_retry_503_then_ok():
-    """503 → backoff puis retry (``_sleep`` mocké) ; le 2ᵉ appel réussit."""
+    """503 -> backoff then retry (``_sleep`` mocked); the 2nd call succeeds."""
     calls = {"n": 0}
 
     def handler(request: httpx.Request) -> httpx.Response:

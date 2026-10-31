@@ -21,9 +21,9 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     """Upgrade schema."""
-    # MODULE 5 (lot 6) : horodatage des prédictions — permet à l'endpoint
-    # ``GET /projects/{id}/articles/{aid}/prediction`` de renvoyer la prédiction
-    # la plus récente quand un article en a plusieurs (re-run d'inférence).
+    # MODULE 5 (lot 6): prediction timestamps - lets the
+    # ``GET /projects/{id}/articles/{aid}/prediction`` endpoint return the
+    # most recent prediction when an article has several (inference re-run).
     op.add_column(
         "article_predictions",
         sa.Column(

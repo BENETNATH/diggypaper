@@ -1,4 +1,4 @@
-"""articles.origin / origin_seeds / origin_ref (chaînage de citations)
+"""articles.origin / origin_seeds / origin_ref (citation chaining)
 
 Revision ID: 0024
 Revises: 0023

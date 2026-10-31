@@ -1,4 +1,4 @@
-"""Importer un RO-Crate : le zip exporté par Diggypaper recrée un projet."""
+"""Import an RO-Crate: the zip exported by Diggypaper recreates a project."""
 
 import logging
 import os
@@ -35,8 +35,8 @@ def upload_dir() -> Path:
     dependencies=[Depends(rate_limit_user("import_crate", 5))],
 )
 async def import_crate(request: Request, db: DbDep, user: UserDep) -> dict:
-    """Corps de la requête = le zip. Crée un projet (vous en êtes LEAD) et lance la restauration
-    en tâche de fond ; la progression est dans GET /projects/{id}/jobs."""
+    """Request body = the zip. Creates a project (you are its LEAD) and launches the restore
+    in the background; progress is in GET /projects/{id}/jobs."""
     if not user.may_create_projects:
         raise HTTPException(status_code=403, detail="project creation not allowed")
     path = upload_dir() / f"crate-{uuid.uuid4().hex}.zip"

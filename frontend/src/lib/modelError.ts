@@ -1,4 +1,4 @@
-/** Codes d'erreur backend de la page /models (inférence, mode de déploiement Ollama, suppression). */
+/** Backend error codes of the /models page (inference, Ollama deployment mode, deletion). */
 const KNOWN = new Set([
   "timeout",
   "connection_error",
@@ -13,7 +13,7 @@ const KNOWN = new Set([
   "model_busy",
 ]);
 
-/** Message traduit d'un code d'erreur (namespace « models ») ; code inconnu → code brut. */
+/** Translated message of an error code (namespace "models"); unknown code → raw code. */
 export function modelErrorMessage(
   code: string,
   t: (key: string, values?: Record<string, string | number>) => string

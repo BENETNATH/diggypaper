@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { ModelRef } from "@/components/ModelRef";
 
-// Clé i18n renvoyée telle quelle : le test ne dépend pas des fichiers de messages.
+// i18n key returned as-is: the test does not depend on the message files.
 jest.mock("next-intl", () => ({ useTranslations: () => (key: string) => key }));
 
 const DIGEST = "a1b2c3d4e5f6" + "0".repeat(52);

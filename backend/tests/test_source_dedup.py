@@ -1,5 +1,5 @@
-"""Phase 2 multi-sources : dédoublonnage par DOI à l'import (spec
-2026-10-29-sources-phase2-identite D5) — 100 % offline."""
+"""Phase 2 multi-sources: DOI dedup at import (spec
+2026-10-29-sources-phase2-identite D5) — 100% offline."""
 
 from types import SimpleNamespace
 
@@ -46,7 +46,7 @@ async def _articles(engine, project_id) -> list[Article]:
 
 
 def _efetch_xml(items: list[tuple[str, str | None, str | None]]) -> str:
-    """efetch PubMed : un PubmedArticle par (pmid, doi, pmcid)."""
+    """PubMed efetch: one PubmedArticle per (pmid, doi, pmcid)."""
     out = []
     for pmid, doi, pmcid in items:
         ids = f'<ArticleId IdType="pubmed">{pmid}</ArticleId>'
@@ -62,7 +62,7 @@ def _efetch_xml(items: list[tuple[str, str | None, str | None]]) -> str:
 
 
 def _ncbi(items: list[tuple[str, str | None, str | None]]):
-    """esearch + efetch PubMed ; journalise les appels plein texte (efetch db=pmc)."""
+    """PubMed esearch + efetch; logs full-text calls (efetch db=pmc)."""
     pmc_calls: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -97,9 +97,9 @@ async def _redraft(engine, project_id) -> None:
 
 
 async def test_doi_duplicate_other_identity_linked_fills_and_fulltext(engine):
-    """Un article du projet (autre identité : référence importée) porte déjà ce DOI : la notice
-    PubMed est RATTACHÉE (spec phase 3 D3, plus de saut) — champs vides remplis, plein texte
-    demandé pour la ligne, identité et origine de l'existant intactes."""
+    """A project article (different identity: imported reference) already carries this DOI:
+    the PubMed record is ATTACHED (spec phase 3 D3, no more skip) — empty fields filled,
+    full text requested for the row, existing identity and origin intact."""
 
     def handler(request: httpx.Request) -> httpx.Response:
         path, params = request.url.path, request.url.params
@@ -153,8 +153,8 @@ async def test_doi_duplicate_other_identity_linked_fills_and_fulltext(engine):
 
 
 async def test_doi_duplicate_within_same_import(engine):
-    """Deux PMID d'un même import partagent un DOI (casse/préfixe différents) : le premier entre,
-    le second est compté ``duplicates_doi``."""
+    """Two PMIDs from the same import share a DOI (different case/prefix): the first comes in,
+    the second is counted ``duplicates_doi``."""
     project = await _make_project(engine)
     result, _ = await _import(
         engine, project, [("111", "10.1000/X", None), ("222", "doi:10.1000/x", None)]
@@ -164,8 +164,8 @@ async def test_doi_duplicate_within_same_import(engine):
 
 
 async def test_reimport_same_identity_with_doi_is_not_doi_duplicate(engine):
-    """Garde : ré-importer les mêmes notices (même identité) n'est PAS un doublon DOI —
-    0 importé, aucun ``duplicates_doi``, comme avant."""
+    """Guard: re-importing the same records (same identity) is NOT a DOI duplicate —
+    0 imported, no ``duplicates_doi``, as before."""
     project = await _make_project(engine)
     items = [("111", "10.1000/a", None), ("222", "10.1000/b", None)]
     await _import(engine, project, items)
@@ -177,15 +177,15 @@ async def test_reimport_same_identity_with_doi_is_not_doi_duplicate(engine):
 
 
 async def test_import_without_doi_duplicate_keeps_stats_payload(engine):
-    """Garde : sans doublon DOI, le payload de stats est exactement celui d'avant (la clé
-    ``duplicates_doi`` n'apparaît que si > 0)."""
+    """Guard: without a DOI duplicate, the stats payload is exactly the old one (the
+    ``duplicates_doi`` key only appears if > 0)."""
     project = await _make_project(engine)
     result, _ = await _import(engine, project, [("111", "10.1000/a", None)])
     assert set(result) == {"imported", "failed", "fulltext", "total_count", "truncated"}
 
 
 def test_clean_doi_normalizes_prefixes_and_case():
-    """Garde : la clé de dédoublonnage est ``refimport.clean_doi`` (réutilisé, pas réécrit)."""
+    """Guard: the dedup key is ``refimport.clean_doi`` (reused, not rewritten)."""
     variants = [
         "10.1000/ABC.1",
         "https://doi.org/10.1000/abc.1",
@@ -197,8 +197,8 @@ def test_clean_doi_normalizes_prefixes_and_case():
 
 
 def test_prisma_counts_doi_duplicates():
-    """PRISMA : les doublons DOI écartés à l'import comptent dans « identifiés » et dans
-    « doublons retirés »."""
+    """PRISMA: DOI duplicates skipped at import count in "identified" and in
+    "duplicates removed"."""
     job = SimpleNamespace(
         status=SimpleNamespace(value="COMPLETED"),
         result_json={"imported": 2, "failed": 0, "duplicates_doi": 1},

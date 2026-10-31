@@ -1,4 +1,4 @@
-"""Tests de la notification post-job (app/tasks/notify.py) — 100 % offline."""
+"""Tests for the post-job notification (app/tasks/notify.py) — 100% offline."""
 
 import uuid
 
@@ -76,7 +76,7 @@ def test_format_stats_unknown():
 
 
 def test_format_stats_benchmark_empty():
-    """Stats vides → compteurs à 0 (le branch benchmark produit toujours une ligne)."""
+    """Empty stats -> counters at 0 (the benchmark branch always produces a row)."""
     assert _format_stats("benchmark", {}) == "Modèles testés: 0, articles: 0"
 
 
@@ -121,7 +121,7 @@ async def test_notify_sends_to_lead_en(engine, session):
 
 
 async def test_notify_no_lead_no_send(engine, session):
-    """Projet sans created_by → pas d'e-mail, pas d'exception."""
+    """Project without created_by -> no email, no exception."""
     project = await _make_project(session, None)
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     mailer = FakeMailer()
@@ -141,7 +141,7 @@ async def test_notify_project_not_found(engine, session):
 
 
 async def test_notify_mailing_failure_never_raises(engine, session):
-    """Échec SMTP → loggé, pas d'exception (best-effort)."""
+    """SMTP failure -> logged, no exception (best-effort)."""
     lead = await _make_lead(session, lang="en")
     project = await _make_project(session, lead)
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
@@ -161,4 +161,4 @@ async def test_notify_no_mailer_skips(engine, session):
     await notify_job_complete(
         str(project.id), "import", {"imported": 1}, session_factory=factory, mailer=None
     )
-    # pas d'exception, rien à vérifier (pas de mailer)
+    # no exception, nothing to check (no mailer)

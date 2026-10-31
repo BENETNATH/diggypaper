@@ -4,7 +4,7 @@ import fr from "@/messages/fr.json";
 import de from "@/messages/de.json";
 import es from "@/messages/es.json";
 
-/** Traçabilité modèle + version (spec 2026-10-29-tracabilite-modele-version §6). */
+/** Model + version traceability (spec 2026-10-29-tracabilite-modele-version §6). */
 
 const DIGEST = "a1b2c3d4e5f6" + "0".repeat(52); // digest Ollama (/api/tags) : 64 hex
 
@@ -19,13 +19,13 @@ describe("shortVersion", () => {
     expect(shortVersion(DIGEST)).toBe("a1b2c3d4e5f6");
     expect(shortVersion("sha256:" + DIGEST)).toBe("a1b2c3d4e5f6");
     expect(shortVersion(DIGEST.toUpperCase())).toBe("A1B2C3D4E5F6");
-    expect(shortVersion("SHA256:" + DIGEST)).toBe("a1b2c3d4e5f6"); // préfixe insensible à la casse
+    expect(shortVersion("SHA256:" + DIGEST)).toBe("a1b2c3d4e5f6"); // case-insensitive prefix
     expect(shortVersion("Sha256:" + DIGEST.toUpperCase())).toBe("A1B2C3D4E5F6");
   });
 
   it("version servie (API externe, llama.cpp) : telle quelle si courte", () => {
     expect(shortVersion("gpt-4o-2024-08-06")).toBe("gpt-4o-2024-08-06");
-    expect(shortVersion("a1b2c3")).toBe("a1b2c3"); // pas un digest complet : inchangé
+    expect(shortVersion("a1b2c3")).toBe("a1b2c3"); // not a full digest: unchanged
   });
 
   it("longue (> 40 caractères) → 39 caractères + « … »", () => {

@@ -1,8 +1,8 @@
-"""Flag de déploiement Ollama (env ``OLLAMA_MODE``) — docker | host | off.
+"""Ollama deployment flag (env ``OLLAMA_MODE``) — docker | host | off.
 
-Flag de déploiement lu UNE FOIS à l'import (pattern DEFAULTS de ``settings/keys.py``),
-pas un setting DB : il varie avec le conteneur, pas à chaud. Valeur absente →
-``docker`` (invariant : comportement actuel) ; invalide → ``docker`` + warning.
+Deployment flag read ONCE at import (the DEFAULTS pattern from ``settings/keys.py``),
+not a DB setting: it varies with the container, not at runtime. Absent value →
+``docker`` (invariant: current behavior); invalid → ``docker`` + warning.
 """
 
 import logging
@@ -12,12 +12,12 @@ logger = logging.getLogger(__name__)
 
 MODES: frozenset[str] = frozenset({"docker", "host", "off"})
 
-#: Racine du conteneur Ollama du compose (sans /v1) — base résiduelle détectée en mode host.
+#: Compose's Ollama container root (without /v1) — residual base detected in host mode.
 COMPOSE_ROOT: str = "http://ollama:11434"
 
 
 def resolve_mode() -> str:
-    """Valeur normalisée de OLLAMA_MODE ; absente/vide/invalide → 'docker' (warning si invalide)."""
+    """Normalized OLLAMA_MODE value; absent/empty/invalid → 'docker' (warning if invalid)."""
     raw = os.environ.get("OLLAMA_MODE", "").strip().lower()
     if raw in MODES:
         return raw
@@ -26,5 +26,5 @@ def resolve_mode() -> str:
     return "docker"
 
 
-#: Lu à l'import (pattern DEFAULTS, settings/keys.py) — tests : monkeypatcher ce module.
+#: Read at import (DEFAULTS pattern, settings/keys.py) — tests: monkeypatch this module.
 MODE: str = resolve_mode()

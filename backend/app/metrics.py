@@ -1,8 +1,8 @@
-"""Métriques de validation : réponses d'un modèle contre des références (gold), accord entre
-variantes. Fonctions pures (testées hors base).
+"""Validation metrics: model answers against references (gold), agreement between
+variants. Pure functions (tested out of the database).
 
-Une « décision » = dict ``{item: valeur, confidence_score: pertinence, …}`` (format de
-``ArticlePrediction.decision_json`` et de ``GoldArticle.ground_truth_json``).
+A "decision" = dict ``{item: value, confidence_score: relevance, …}`` (format of
+``ArticlePrediction.decision_json`` and ``GoldArticle.ground_truth_json``).
 """
 
 from __future__ import annotations
@@ -16,11 +16,11 @@ METRICS = ("accuracy", "recall", "precision", "f1")
 
 
 def confidence(value) -> float | None:
-    """Score de confiance d'une sortie de modèle, coercé en float dans [0, 1] ; sinon ``None``.
+    """Confidence score of a model output, coerced to a float in [0, 1]; else ``None``.
 
-    Les petits modèles renvoient parfois ``"0.9"``, ``"high"``, ``85`` (échelle 0-100) ou une
-    liste : ``bool``, types non numériques, non finis ou hors [0, 1] → ``None`` ;
-    ``int`` / ``float`` / ``str`` numérique valide → ``float``.
+    Small models sometimes return ``"0.9"``, ``"high"``, ``85`` (0-100 scale) or a
+    list: ``bool``, non-numeric types, non-finite or outside [0, 1] → ``None``;
+    valid numeric ``int`` / ``float`` / ``str`` → ``float``.
     """
     if isinstance(value, bool) or not isinstance(value, int | float | str):
         return None
@@ -53,7 +53,7 @@ def _prf(tp: int, fp: int, fn: int, tn: int) -> dict:
 
 
 def as_bool(v) -> bool:
-    """Booléen d'une sortie de modèle : "true"/"false"/"oui"/"non"/0/1 (bool("false") est True)."""
+    """Boolean of a model output: "true"/"false"/"oui"/"non"/0/1 (bool("false") is True)."""
     if isinstance(v, str):
         return v.strip().lower() in ("true", "yes", "oui", "1", "vrai")
     return bool(v)
@@ -86,10 +86,10 @@ def _token_f1(a, b) -> float:
 
 
 def score(fields: list[dict], preds: dict, gold: dict, exclude: set | None = None) -> dict:
-    """Notes de prédictions {article_id: décision} contre le gold {article_id: vérité}.
+    """Scores of predictions {article_id: decision} against the gold {article_id: truth}.
 
-    Seuls comptent les articles présents des deux côtés et hors ``exclude`` (exemples du prompt).
-    → {n, relevance: {…prf}, items: {clé: {…}}, accuracy (moyenne des items booléens/à choix)}.
+    Only articles present on both sides and outside ``exclude`` (prompt examples) count.
+    → {n, relevance: {…prf}, items: {key: {…}}, accuracy (average of boolean/choice items)}.
     """
     ids = [i for i in gold if i in preds and i not in (exclude or set())]
     rel = [0, 0, 0, 0]
@@ -132,8 +132,8 @@ def score(fields: list[dict], preds: dict, gold: dict, exclude: set | None = Non
 
 
 def primary_value(scored: dict, fields: list[dict]) -> tuple[str, str, float | None]:
-    """(cible, métrique, valeur) du critère de classement : l'item marqué ``primary`` avec sa
-    ``metric`` (défaut recall), sinon le rappel de la pertinence (un tri ne doit rien rater)."""
+    """(target, metric, value) of the ranking criterion: the item marked ``primary`` with its
+    ``metric`` (default recall), else the relevance recall (a triage must miss nothing)."""
     for f in fields:
         if f.get("primary"):
             metric = f.get("metric") if f.get("metric") in METRICS else "recall"
@@ -143,8 +143,9 @@ def primary_value(scored: dict, fields: list[dict]) -> tuple[str, str, float | N
 
 
 def agreement(by_variant: dict[str, dict], fields: list[dict]) -> dict:
-    """Accord entre variantes sans référence : pour chaque variante, part des (article, item) où
-    elle donne la réponse majoritaire des variantes. by_variant = {nom: {article_id: décision}}."""
+    """Agreement between variants without reference: for each variant, the fraction of
+    (article, item) where it gives the majority answer of the variants.
+    by_variant = {name: {article_id: decision}}."""
     names = list(by_variant)
     if len(names) < 2:
         return {}
@@ -170,7 +171,7 @@ def agreement(by_variant: dict[str, dict], fields: list[dict]) -> dict:
 
 
 def disagrees(outputs: list[dict | None], fields: list[dict]) -> bool:
-    """Les variantes diffèrent-elles sur cet article (pertinence ou un item non texte) ?"""
+    """Do the variants differ on this article (relevance or a non-text item)?"""
     seen = [o for o in outputs if o]
     if len(seen) < 2:
         return False

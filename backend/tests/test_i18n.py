@@ -1,4 +1,4 @@
-"""Tests i18n : résolution Accept-Language, catalogue, emails localisés, erreurs localisées."""
+"""i18n tests: Accept-Language resolution, catalog, localized emails, localized errors."""
 
 from app.i18n import resolve_lang, t
 
@@ -11,18 +11,18 @@ def test_resolve_lang_supported():
 
 
 def test_resolve_lang_with_qvalues_and_regions():
-    # Le test d'origine était trompeur : il passait avec un parser qui ignorait les
-    # q-values (la 1re langue supportée dans l'ordre d'apparition gagnait). On vérifie
-    # maintenant le tri par q décroissant (RFC 4647).
+    # The original test was misleading: it passed with a parser that ignored
+    # q-values (the first supported language in order of appearance won). It now
+    # verifies sorting by descending q (RFC 4647).
     assert resolve_lang("de-DE,de;q=0.9,en;q=0.8") == "de"
     assert resolve_lang("es-ES") == "es"
     assert resolve_lang("pt-BR,fr;q=0.5") == "fr"
-    # Cas où l'ordre d'apparition ne suffit pas : fr a un q plus haut que en.
+    # Case where order of appearance is not enough: fr has a higher q than en.
     assert resolve_lang("en;q=0.5,fr;q=0.9") == "fr"
 
 
 def test_resolve_lang_qvalue_edge_cases():
-    # q absent → 1.0 ; q=0 → exclu ; code inconnu → ignoré ; égalité → ordre d'apparition.
+    # q absent -> 1.0; q=0 -> excluded; unknown code -> ignored; tie -> order of appearance.
     assert resolve_lang("en;q=0.5,fr;q=0.9") == "fr"
     assert resolve_lang("fr;q=0") == "en"  # q=0 → exclu, fallback en
     assert resolve_lang("xx,en;q=0.3") == "en"  # code inconnu ignoré
@@ -60,7 +60,7 @@ async def test_invite_email_in_german(client, admin_user, mock_mailer, do_login)
 
 
 async def test_invite_invalid_language_422(client, admin_user, mock_mailer, do_login):
-    """m4 : language invalide (hors fr/en/de/es) → 422, aucun email envoyé."""
+    """m4: invalid language (outside fr/en/de/es) -> 422, no email sent."""
     await do_login("admin@lab.fr", "admin-pass-123")
     resp = await client.post("/api/v1/auth/invite", json={"email": "n@lab.fr", "language": "pt"})
     assert resp.status_code == 422

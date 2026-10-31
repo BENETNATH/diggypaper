@@ -11,10 +11,10 @@ import { ErrorBanner } from "@/components/ui/Feedback";
 type Turn = { role: "user" | "assistant"; content: string; result?: QueryAssist };
 
 /**
- * Assistant de requête : on décrit sa recherche en texte libre, un modèle propose la requête dans
- * la syntaxe du moteur choisi (`source`). Chaque proposition est vérifiée par la source (volume ;
- * sur PubMed aussi : termes inconnus et, avec des articles attendus (DOI / PMID), combien elle en
- * retrouve). Le modèle ne sert qu'à cela (borné côté serveur).
+ * Query assistant: we describe the search in free text, a model proposes the query in
+ * the syntax of the chosen engine (`source`). Each proposal is verified by the source (volume;
+ * on PubMed also: unknown terms and, with expected articles (DOI / PMID), how many it
+ * finds). The model is used only for that (bounded server-side).
  */
 export function QueryAssistant({
   projectId,
@@ -53,7 +53,7 @@ export function QueryAssistant({
     setBusy(true);
     setError(null);
     try {
-      // Le modèle reçoit le texte de la conversation, avec la requête qu'il a proposée à chaque tour.
+      // The model receives the conversation text, with the query it proposed on each turn.
       const messages = next.map((m) => ({
         role: m.role,
         content: m.result?.query ? `${m.content}\nQuery: ${m.result.query}`.slice(0, 1000) : m.content,

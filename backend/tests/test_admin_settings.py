@@ -1,4 +1,4 @@
-"""Tests des routes admin settings (app/api/v1/admin.py, Module 7)."""
+"""Tests for the admin settings routes (app/api/v1/admin.py, Module 7)."""
 
 import uuid
 
@@ -51,7 +51,7 @@ async def test_get_project_scope_via_query_param(client, session, admin_user, do
 
 
 async def test_put_mask_unchanged(client, session, admin_user, do_login):
-    """value == MASK → la valeur existante n'est pas modifiée."""
+    """value == MASK → the existing value is not modified."""
     await set_setting(session, "ncbi_api_key", "original-secret")
     await _login_admin(client, do_login)
     resp = await client.put(
@@ -75,7 +75,7 @@ async def test_put_empty_string_deletes(client, session, admin_user, do_login):
 
 
 async def test_put_new_value_encrypted_in_db(client, session, admin_user, do_login):
-    """Nouvelle valeur de secret → chiffrée en base, masquée dans la réponse."""
+    """New secret value: encrypted in the DB, masked in the response."""
     await _login_admin(client, do_login)
     resp = await client.put(
         "/api/v1/admin/settings",
@@ -93,7 +93,7 @@ async def test_put_new_value_encrypted_in_db(client, session, admin_user, do_log
 
 
 async def test_put_project_scope_requires_project_id(client, admin_user, do_login):
-    """Scope PROJECT sans project_id → 422 (scope incohérent)."""
+    """PROJECT scope without project_id → 422 (inconsistent scope)."""
     await _login_admin(client, do_login)
     resp = await client.put(
         "/api/v1/admin/settings", json={"scope": "PROJECT", "values": {"ncbi_api_key": "x"}}
@@ -117,11 +117,11 @@ async def test_put_unknown_key_422(client, admin_user, do_login):
     assert resp.status_code == 422
 
 
-# --- F1 : PUT scope + IDs superflus → 422, rien écrit ---
+# --- F1: PUT scope + surplus IDs → 422, nothing written ---
 
 
 async def test_put_global_scope_with_project_id_422(client, session, admin_user, do_login):
-    """F1 : scope GLOBAL + project_id → 422, aucune ligne system_settings créée."""
+    """F1: GLOBAL scope + project_id → 422, no system_settings row created."""
     await _login_admin(client, do_login)
     resp = await client.put(
         "/api/v1/admin/settings",
@@ -136,7 +136,7 @@ async def test_put_global_scope_with_project_id_422(client, session, admin_user,
 
 
 async def test_put_project_scope_with_user_id_422(client, session, admin_user, do_login):
-    """F1 : scope PROJECT + user_id → 422, aucune ligne créée."""
+    """F1: PROJECT scope + user_id → 422, no row created."""
     project = Project(title="P")
     session.add(project)
     await session.commit()
@@ -155,7 +155,7 @@ async def test_put_project_scope_with_user_id_422(client, session, admin_user, d
 
 
 async def test_put_user_scope_with_project_id_422(client, session, admin_user, do_login):
-    """F1 : scope USER + project_id → 422, aucune ligne créée."""
+    """F1: USER scope + project_id → 422, no row created."""
     project = Project(title="P")
     session.add(project)
     await session.commit()
@@ -177,7 +177,7 @@ async def test_put_user_scope_with_project_id_422(client, session, admin_user, d
 
 
 async def test_put_smtp_port_not_a_number_422(client, session, admin_user, do_login):
-    """F3 : smtp_port non numérique → 422, rien écrit."""
+    """F3: non-numeric smtp_port → 422, nothing written."""
     await _login_admin(client, do_login)
     resp = await client.put(
         "/api/v1/admin/settings",
@@ -188,7 +188,7 @@ async def test_put_smtp_port_not_a_number_422(client, session, admin_user, do_lo
 
 
 async def test_put_smtp_port_out_of_range_422(client, session, admin_user, do_login):
-    """F3 : smtp_port hors [1, 65535] → 422, rien écrit."""
+    """F3: smtp_port outside [1, 65535] → 422, nothing written."""
     await _login_admin(client, do_login)
     resp = await client.put(
         "/api/v1/admin/settings",
@@ -199,7 +199,7 @@ async def test_put_smtp_port_out_of_range_422(client, session, admin_user, do_lo
 
 
 async def test_put_smtp_from_email_invalid_422(client, session, admin_user, do_login):
-    """F3 : smtp_from_email invalide → 422, rien écrit."""
+    """F3: invalid smtp_from_email → 422, nothing written."""
     await _login_admin(client, do_login)
     resp = await client.put(
         "/api/v1/admin/settings",
@@ -213,7 +213,7 @@ async def test_put_smtp_from_email_invalid_422(client, session, admin_user, do_l
 
 
 async def test_non_admin_forbidden(client, researcher_user, do_login):
-    """Un RESEARCHER ne peut ni lire ni modifier les settings."""
+    """A RESEARCHER can neither read nor modify settings."""
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     assert (await client.get("/api/v1/admin/settings")).status_code == 403
     resp = await client.put(
@@ -226,7 +226,7 @@ async def test_unauthenticated_401(client):
     assert (await client.get("/api/v1/admin/settings")).status_code == 401
 
 
-# --- sécurité : pas de plaintext dans les réponses ---
+# --- security: no plaintext in responses ---
 
 
 async def test_secret_plaintext_never_in_any_response(client, session, admin_user, do_login):
@@ -246,11 +246,11 @@ async def test_secret_plaintext_never_in_any_response(client, session, admin_use
 
 
 def _fake_fastmail(captured: dict, send_error: Exception | None = None):
-    """FakeFastMail capturant la config + le message (mocké dans app.emails).
+    """FakeFastMail capturing the config + the message (mocked in app.emails).
 
-    Le point de mock est ``app.emails.FastMail`` (plus ``admin_mod.FastMail``) :
-    admin.py ne construit plus de ConnectionConfig/FastMail, il passe par
-    ``Mailer.from_settings`` qui construit le FastMail réel (config validée).
+    The mock point is ``app.emails.FastMail`` (no longer ``admin_mod.FastMail``):
+    admin.py no longer builds a ConnectionConfig/FastMail, it goes through
+    ``Mailer.from_settings`` which builds the real FastMail (validated config).
     """
 
     class FakeFastMail:
@@ -266,7 +266,7 @@ def _fake_fastmail(captured: dict, send_error: Exception | None = None):
 
 
 async def test_smtp_test_ok(client, session, admin_user, do_login, monkeypatch):
-    """SMTP mocké : config DB (fallback env) + envoi → 200 {sent: true}."""
+    """Mocked SMTP: DB config (env fallback) + send → 200 {sent: true}."""
     import app.emails as emails_mod
 
     await set_setting(session, "smtp_host", "smtp.test.local")
@@ -307,7 +307,7 @@ async def test_smtp_test_explicit_to(client, session, admin_user, do_login, monk
 
 
 async def test_smtp_test_unreachable_502(client, session, admin_user, do_login, monkeypatch):
-    """SMTP injoignable (mocké) → 502 {sent: false, error: connection}."""
+    """Unreachable SMTP (mocked) → 502 {sent: false, error: connection}."""
     import app.emails as emails_mod
 
     await set_setting(session, "smtp_host", "smtp.unreachable.local")
@@ -325,14 +325,14 @@ async def test_smtp_test_unreachable_502(client, session, admin_user, do_login, 
     assert data["error"] == "SMTP test failed: connection"
 
 
-# --- m2 : message d'erreur SMTP assaini (catégorie, pas de str(exc) brut) ---
+# --- m2: sanitized SMTP error message (category, no raw str(exc)) ---
 
 
 async def test_smtp_test_auth_failure_502_sanitized(
     client, session, admin_user, do_login, monkeypatch
 ):
-    """m2 : échec d'auth SMTP → 502, error == 'SMTP test failed: authentication',
-    et la réponse ne contient ni le password ni 'Traceback'."""
+    """m2: SMTP auth failure → 502, error == 'SMTP test failed: authentication',
+    and the response contains neither the password nor 'Traceback'."""
     from aiosmtplib import SMTPAuthenticationError
 
     import app.emails as emails_mod
@@ -357,17 +357,17 @@ async def test_smtp_test_auth_failure_502_sanitized(
     data = resp.json()
     assert data["sent"] is False
     assert data["error"] == "SMTP test failed: authentication"
-    # Le password SMTP et le traceback ne doivent JAMAIS apparaître dans la réponse.
+    # The SMTP password and the traceback must NEVER appear in the response.
     assert "super-secret-smtp-pass" not in resp.text
     assert "Traceback" not in resp.text
 
 
-# --- m1 : test_smtp passe bien par Mailer.from_settings (pas de duplication) ---
+# --- m1: test_smtp goes through Mailer.from_settings (no duplication) ---
 
 
 def test_admin_does_not_build_smtp_config_directly():
-    """m1 : admin.py ne construit plus ConnectionConfig/FastMail directement ;
-    la config SMTP est centralisée dans Mailer.from_settings."""
+    """m1: admin.py no longer builds ConnectionConfig/FastMail directly;
+    the SMTP config is centralized in Mailer.from_settings."""
     import app.api.v1.admin as admin_mod
 
     assert not hasattr(admin_mod, "ConnectionConfig")
@@ -376,13 +376,13 @@ def test_admin_does_not_build_smtp_config_directly():
     assert not hasattr(admin_mod, "MessageType")
 
 
-# --- F2/F3 : smtp/test config invalide → 502 (pas 500) ---
+# --- F2/F3: smtp/test invalid config → 502 (not 500) ---
 
 
 async def test_smtp_test_default_config_502(client, session, admin_user, do_login):
-    """F2 : config par défaut (smtp_from vide, rien en DB) → 502 'configuration', pas 500.
+    """F2: default config (empty smtp_from, nothing in DB) → 502 'configuration', not 500.
 
-    from_settings lève une ValueError propre AVANT de construire le FastMail.
+    from_settings raises a clean ValueError BEFORE building the FastMail.
     """
     await _login_admin(client, do_login)
     resp = await client.post("/api/v1/admin/settings/smtp/test", json={})
@@ -393,7 +393,7 @@ async def test_smtp_test_default_config_502(client, session, admin_user, do_logi
 
 
 async def test_smtp_test_invalid_from_email_502(client, session, admin_user, do_login):
-    """F2 : smtp_from_email invalide en DB → ConnectionConfig échoue → 502 'configuration'."""
+    """F2: invalid smtp_from_email in the DB → ConnectionConfig fails → 502 'configuration'."""
     await set_setting(session, "smtp_host", "smtp.test.local")
     await set_setting(session, "smtp_from_email", "invalid")
     await _login_admin(client, do_login)
@@ -405,7 +405,7 @@ async def test_smtp_test_invalid_from_email_502(client, session, admin_user, do_
 
 
 async def test_smtp_test_non_numeric_port_502(client, session, admin_user, do_login):
-    """F3 : port non numérique en base → from_settings lève ValueError → 502 'configuration'."""
+    """F3: non-numeric port in the DB → from_settings raises ValueError → 502 'configuration'."""
     await set_setting(session, "smtp_host", "smtp.test.local")
     await set_setting(session, "smtp_port", "not-a-port")
     await set_setting(session, "smtp_from_email", "from@example.com")
@@ -417,11 +417,11 @@ async def test_smtp_test_non_numeric_port_502(client, session, admin_user, do_lo
     assert data["error"] == "SMTP test failed: configuration"
 
 
-# --- m3 : PUT /admin/settings transactionnel (rollback si une clé échoue) ---
+# --- m3: PUT /admin/settings is transactional (rollback if a key fails) ---
 
 
 async def test_put_partial_failure_rolls_back(client, session, admin_user, do_login, monkeypatch):
-    """m3 : PUT avec 2 clés dont la 2e échoue → la 1re n'est PAS appliquée (rollback)."""
+    """m3: PUT with 2 keys, the 2nd fails → the 1st is NOT applied (rollback)."""
     import app.api.v1.admin as admin_mod
 
     await _login_admin(client, do_login)
@@ -442,12 +442,12 @@ async def test_put_partial_failure_rolls_back(client, session, admin_user, do_lo
         json={"scope": "GLOBAL", "values": {"smtp_host": "first.example.com", "smtp_port": "2525"}},
     )
     assert resp.status_code == 500
-    # La 1re clé (smtp_host) n'est PAS appliquée : rollback de la transaction.
+    # The 1st key (smtp_host) is NOT applied: transaction rollback.
     assert await get_setting(session, "smtp_host") is None
     assert await get_setting(session, "smtp_port") is None
 
 
-# --- GET /admin/settings/env : ce qui vient du .env quand la base est vide ---
+# --- GET /admin/settings/env: what comes from .env when the DB is empty ---
 
 
 async def test_env_values_shown_without_leaking_secrets(client, admin_user, do_login, monkeypatch):

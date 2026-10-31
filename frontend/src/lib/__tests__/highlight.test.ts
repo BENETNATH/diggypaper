@@ -16,10 +16,10 @@ describe("highlightSegments", () => {
   });
 
   it("est sensible à la casse (extraits verbatim)", () => {
-    // "Randomized" ne matche pas "randomized" (casse différente)
+    // "Randomized" does not match "randomized" (different case)
     const segments = highlightSegments("Mice were Randomized.", ["randomized"]);
     expect(segments).toEqual([{ text: "Mice were Randomized.", highlighted: false }]);
-    // mais "Randomized" matche "Randomized"
+    // but "Randomized" matches "Randomized"
     const segments2 = highlightSegments("Mice were Randomized.", ["Randomized"]);
     expect(segments2[1]).toEqual({ text: "Randomized", highlighted: true });
   });

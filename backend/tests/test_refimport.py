@@ -1,4 +1,4 @@
-"""Import d'une liste de références : parseurs (BibTeX, RIS, CSL, CSV, DOI/PMID) et résolution."""
+"""Reference list import: parsers (BibTeX, RIS, CSL, CSV, DOI/PMID) and resolution."""
 
 import httpx
 import pytest
@@ -95,7 +95,7 @@ def _handler():
     def handler(request: httpx.Request) -> httpx.Response:
         host, path = request.url.host, request.url.path
         if host == "www.ebi.ac.uk":
-            # Sans parenthèses, « A OR B AND SRC:MED » ne filtre que B (vu en réel).
+            # Without parentheses, "A OR B AND SRC:MED" filters only B (seen in the wild).
             query = request.url.params["query"]
             assert "DOI:" not in query or query.startswith("(DOI:")
             rows = [{"pmid": "111", "doi": "10.1001/in-pubmed", "title": "x"}]
@@ -154,7 +154,7 @@ async def test_import_references_resolves_each_source(engine):
     )
     assert by_title["File only"].pub_year == 2015
     assert await _project_status(engine, project.id) == "FROZEN"
-    # Re-import : tout est déjà là
+    # Re-import: everything is already there
     async with httpx.AsyncClient(transport=httpx.MockTransport(_handler())) as http:
         again = await _import_pubmed(
             str(project.id), "references", session_factory=factory, http=http, refs=refs

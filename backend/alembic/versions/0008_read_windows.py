@@ -1,4 +1,4 @@
-"""projects.read_windows : longueur de texte lue par article (modèles de décision, CPU)
+"""projects.read_windows: text length read per article (decision models, CPU)
 
 Revision ID: 0008
 Revises: 0007

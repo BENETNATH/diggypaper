@@ -1,4 +1,4 @@
-"""model_registry.backend_type accepte SYSTEMONE (modèles de décision Laya / Kev)
+"""model_registry.backend_type accepts SYSTEMONE (Laya / Kev decision models)
 
 Revision ID: 0007
 Revises: 0006

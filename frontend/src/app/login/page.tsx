@@ -37,7 +37,7 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const u = await login(email, password, consent || undefined);
-      // Nouvel appareil (pas de choix de langue mémorisé) : on prend la langue du compte.
+      // New device (no remembered language choice): we take the account's language.
       if (!readLocaleCookie() && u.language_preference) {
         writeLocaleCookie(u.language_preference);
         window.location.assign("/projects");
@@ -84,7 +84,7 @@ export default function LoginPage() {
               autoComplete="current-password"
             />
           </Field>
-          {/* Consentement RGPD : demandé une seule fois (le serveur le mémorise). */}
+          {/* GDPR consent: asked only once (the server remembers it). */}
           {consentRequired && (
             <>
               <Checkbox

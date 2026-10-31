@@ -1,4 +1,4 @@
-"""Invitation d'équipe par e-mail + export XLSX du projet."""
+"""Team invitation by email + XLSX export of the project."""
 
 import asyncio
 import io
@@ -406,8 +406,8 @@ async def test_prisma_counts_and_svg(client, session, lead_project):
     text = PdfReader(io.BytesIO(pdf.content)).pages[0].extract_text()
     assert "Références identifiées" in text and "n = 7" in text  # accents conservés
 
-    # Recherche dérivée : le point de départ est la recherche d'origine, les critères sont
-    # indiqués et les articles écartés ne sont pas des « doublons ».
+    # Derived search: the starting point is the original search, the criteria are
+    # stated, and the excluded articles are not "duplicates".
     r = await client.post(
         f"{base}/searches", json={"name": "Retenus", "selection": {"status": "AUTO_ACCEPTED"}}
     )
@@ -549,14 +549,14 @@ async def test_review_status_reviewer_and_prefill(client, session, lead_project)
     assert item["annotated"] and item["review"]["status"] == "VALIDATED"
     assert item["review"]["by"]  # nom ou e-mail du relecteur
 
-    # correction : la dernière relecture l'emporte, préremplie au rechargement
+    # correction: the last re-read wins, pre-filled on reload
     await asyncio.sleep(1.1)  # SQLite : created_at à la seconde, sinon égalité départagée au hasard
     r = await client.post(f"{base}/{a.id}/annotation", json={"ai": False})
     assert r.json()["status"] == "CORRECTED"
     got = (await client.get(f"{base}/{a.id}/annotation")).json()
     assert got["status"] == "CORRECTED" and got["decision_json"]["ai"] is False
     assert (await client.get(base)).json()["items"][0]["review"]["status"] == "CORRECTED"
-    # la liste affiche les réponses de la relecture (pas celles du modèle) et filtre dessus
+    # the list shows the re-read answers (not the model's) and filters on them
     item = (await client.get(base)).json()["items"][0]
     assert item["answers"] == [
         {"key": "ai", "label": "AI", "value": False, "confidence": None, "source": "human"}
@@ -572,7 +572,7 @@ async def test_review_status_reviewer_and_prefill(client, session, lead_project)
     assert row[head.index("Relu par")]
 
 
-# --- traçabilité modèle + version (spec 2026-10-29-tracabilite-modele-version §5) ---
+# --- model traceability + version (spec 2026-10-29-tracabilite-modele-version §5) ---
 
 DIGEST_BIG = "2" * 12 + "b" * 52
 DIGEST_SMALL = "1" * 12 + "a" * 52
@@ -599,8 +599,8 @@ def _projet_rows(wb) -> dict:
 
 
 async def test_export_xlsx_traces_model_identifier_and_version(client, session, lead_project):
-    """Résultats : identifiant + version du modèle par article ; Projet : modèle, identifiant,
-    version et détails des deux étages, lus dans l'instantané du job (registre non requis)."""
+    """Results: model identifier + version per article; Project: model, identifier,
+    version and details of both stages, read from the job snapshot (registry not required)."""
     from app.db.models import InferenceJob, InferenceJobStatus
 
     art = Article(project_id=lead_project.id, pmid="42", title="Mice")
@@ -645,8 +645,8 @@ async def test_export_xlsx_traces_model_identifier_and_version(client, session, 
 
 
 async def test_export_xlsx_without_recorded_version_says_so(client, session, lead_project):
-    """Données anciennes (ni version par prédiction, ni instantané) : cellules vides et mention
-    explicite « non enregistrée » dans Projet — pas d'erreur."""
+    """Old data (no version per prediction, no snapshot): empty cells and the
+    explicit "not recorded" mention in Project — no error."""
     from app.db.models import InferenceJob, InferenceJobStatus
 
     art = Article(project_id=lead_project.id, pmid="42", title="Mice")
@@ -680,7 +680,7 @@ async def test_export_xlsx_without_recorded_version_says_so(client, session, lea
 
 
 async def test_export_ris_bib_notes_mention_model_and_version(client, session, lead_project):
-    """La note RIS / BibTeX de chaque article cite le modèle, son identifiant et sa version."""
+    """The RIS / BibTeX note of each article cites the model, its identifier and its version."""
     rows = (("1", "qwen3:8b", DIGEST_BIG), ("2", None, None))
     for pmid, ident, version in rows:
         a = Article(project_id=lead_project.id, pmid=pmid, title=f"T{pmid}", doi=f"10.1/{pmid}")
@@ -708,8 +708,8 @@ async def test_export_ris_bib_notes_mention_model_and_version(client, session, l
 
 
 async def test_export_neutralizes_formula_in_model_version_columns(client, session, lead_project):
-    """Valeur « version » tierce (crate importé) commençant par « = » : préfixée d'une
-    apostrophe dans les nouvelles colonnes XLSX (Résultats) et dans l'instantané (Projet)."""
+    """Third-party "version" value (imported crate) starting with "=": prefixed with an
+    apostrophe in the new XLSX columns (Results) and in the snapshot (Project)."""
     from app.db.models import InferenceJob, InferenceJobStatus
 
     evil = '=HYPERLINK("http://evil.test","x")'
@@ -744,8 +744,8 @@ async def test_export_neutralizes_formula_in_model_version_columns(client, sessi
 
 
 async def test_export_ris_bib_model_version_cannot_inject_fields(client, session, lead_project):
-    """Version tierce `}\\r\\nTY  - JOUR` (crate importé) : une seule ligne N1 en RIS (pas de
-    faux enregistrement), accolades BibTeX équilibrées ; idem avec un `\\` final."""
+    """Third-party version `}\r\nTY  - JOUR` (imported crate): a single N1 line in RIS (no
+    false record), balanced BibTeX braces; same with a trailing `\`."""
     evil = "}\r\nTY  - JOUR"
     for pmid, model, version in (("1", "Big", evil), ("2", "Big\\", "v\\")):
         a = Article(project_id=lead_project.id, pmid=pmid, title=f"T{pmid}", doi=f"10.1/{pmid}")
@@ -774,7 +774,7 @@ async def test_export_ris_bib_model_version_cannot_inject_fields(client, session
 
 
 def test_bibtex_note_ending_with_backslash_stays_balanced():
-    """Un `\\` final de note échapperait l'accolade fermante : les antislashs sont retirés."""
+    """A trailing `\` in a note would escape the closing brace: backslashes are removed."""
     import uuid
     from types import SimpleNamespace
 

@@ -1,4 +1,4 @@
-"""Import d'un RO-Crate en tâche de fond : le zip déposé est restauré dans son projet."""
+"""Background RO-Crate import: the uploaded zip is restored into its project."""
 
 import asyncio
 import logging
@@ -34,7 +34,7 @@ _BATCH = 25
 
 @celery_app.task(name="diggypaper.import_crate")
 def import_crate_task(project_id: str, path: str, user_id: str) -> dict:
-    """Wrapper sync Celery : le core async tourne dans un thread dédié (comme l'import PubMed)."""
+    """Sync Celery wrapper: the async core runs in a dedicated thread (like the PubMed import)."""
     job_id = current_task.request.id
     out: dict = {}
     error: BaseException | None = None
@@ -55,7 +55,7 @@ def import_crate_task(project_id: str, path: str, user_id: str) -> dict:
 
 
 def _decision(answers, extra: dict) -> dict:
-    """Réponses non vides + champs annexes (certitudes, résumé, pertinence…)."""
+    """Non-empty answers + auxiliary fields (confidences, summary, relevance…)."""
     out = {k: v for k, v in (answers or {}).items() if v is not None}
     return out | {k: v for k, v in extra.items() if v is not None}
 
@@ -164,7 +164,7 @@ async def _restore(
                     ArticlePrediction(
                         article_id=art.id,
                         search_id=search.id,
-                        # entrée non fiable : sans caractères de contrôle (injection RIS/CSV)
+                        # untrusted input: no control characters (RIS/CSV injection)
                         model_used=clean_meta(ai.get("model")) or "RO-Crate",
                         model_identifier=clean_meta(ai.get("model_identifier"), 500),
                         model_version=clean_meta(ai.get("model_version"), 200),

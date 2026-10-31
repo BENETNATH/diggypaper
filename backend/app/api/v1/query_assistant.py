@@ -1,4 +1,4 @@
-"""Assistant de requête PubMed (responsable du projet) : conversation libre → requête vérifiée."""
+"""PubMed query assistant (project lead): free conversation -> verified query."""
 
 import logging
 import uuid
@@ -42,8 +42,8 @@ class AssistRequest(BaseModel):
 
 
 async def _check_source(source: str, query: str, seeds: str, db: AsyncSession) -> dict:
-    """Vérifie la requête proposée auprès du moteur : PubMed (volume, traduction, termes inconnus,
-    rappel) ; les autres sources (volume seul). Erreur assainie → {error: <source>_unavailable}."""
+    """Verifies the proposed query against the engine: PubMed (volume, translation, unknown terms,
+    recall); the other sources (volume only). Sanitized error -> {error: <source>_unavailable}."""
     api_key = await get_setting(db, _source_key_setting(source))
     try:
         async with httpx.AsyncClient(timeout=60) as http:
@@ -64,8 +64,8 @@ async def _check_source(source: str, query: str, seeds: str, db: AsyncSession) -
     dependencies=[Depends(rate_limit_user("query_assistant", 20))],
 )
 async def assist(project_id: uuid.UUID, payload: AssistRequest, db: DbDep, user: UserDep) -> dict:
-    """Le modèle propose une requête pour le moteur choisi ; la source le vérifie (volume, et pour
-    PubMed : traduction, termes inconnus, rappel sur les articles attendus)."""
+    """The model proposes a query for the chosen engine; the source verifies it (volume, and for
+    PubMed: translation, unknown terms, recall on the expected articles)."""
     await _require_project_member(db, project_id, user)
     await _require_lead_or_admin(db, project_id, user)
     if payload.messages[-1].role != "user":

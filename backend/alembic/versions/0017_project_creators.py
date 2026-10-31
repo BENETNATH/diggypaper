@@ -1,4 +1,4 @@
-"""Créateurs de projets (admin) vs invités (suppression auto sans projet)
+"""Project creators (admin) vs guests (auto-deletion without projects)
 
 Revision ID: 0017
 Revises: 0016
@@ -30,7 +30,7 @@ def upgrade() -> None:
         "users",
         sa.Column("token_version", sa.Integer(), server_default=sa.text("0"), nullable=False),
     )
-    # Comptes existants : tous créateurs (rien ne change pour eux) ; l'admin peut les rétrograder.
+    # Existing accounts: all creators (nothing changes for them); the admin can demote them.
     op.execute("UPDATE users SET can_create_projects = true")
 
 

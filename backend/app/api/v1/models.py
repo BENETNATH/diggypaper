@@ -1,8 +1,8 @@
-"""Routes modèle (ModelRegistry) — Module 3 (Arena).
+"""Model routes (ModelRegistry) - Module 3 (Arena).
 
-Lecture : les modèles accessibles à l'utilisateur (cf. ``app.model_access``). Écriture : ADMIN
-pour les modèles de la plateforme (locaux, serveurs) ; tout utilisateur pour ses propres
-modèles externes (API compatible OpenAI), qu'il peut partager avec des utilisateurs ou projets.
+Read: the models accessible to the user (cf. ``app.model_access``). Write: ADMIN
+for the platform's models (local, servers); any user for their own
+external models (OpenAI-compatible API), which they can share with users or projects.
 """
 
 import asyncio
@@ -82,7 +82,7 @@ class ModelCreate(BaseModel):
 
 
 class ExternalModel(BaseModel):
-    """Modèle génératif hébergé ailleurs (API compatible OpenAI)."""
+    """Generative model hosted elsewhere (OpenAI-compatible API)."""
 
     name: str = Field(min_length=1, max_length=200)
     base_url: str = Field(min_length=1, max_length=500)
@@ -107,7 +107,7 @@ def _require_owner_or_admin(m: ModelRegistry, user: User) -> None:
 
 
 def _check_url(url: str, user: User) -> None:
-    """Un non-admin ne peut pas pointer le serveur vers le réseau interne."""
+    """A non-admin cannot point the server at the internal network."""
     if user.role == UserRole.ADMIN:
         return
     try:
@@ -117,7 +117,7 @@ def _check_url(url: str, user: User) -> None:
 
 
 def _check_url_secrets(url: str) -> None:
-    """422 route-level (détail fixe) : la 422 de pydantic renverrait l'URL (le secret)."""
+    """422 route-level (fixed detail): the pydantic 422 would return the URL (the secret)."""
     try:
         check_url_secrets(url)
     except ValueError as exc:
@@ -125,7 +125,7 @@ def _check_url_secrets(url: str) -> None:
 
 
 def _check_openai_identifier(ident: str) -> None:
-    """OPENAI_API = ``<base_url>#<modèle>`` : un « # », deux parties non vides, base sans secret."""
+    """OPENAI_API = ``<base_url>#<model>``: one "#", two non-empty parts, base without secret."""
     url, sep, name = ident.partition("#")
     if not sep or "#" in name or not url.strip() or not name.strip():
         raise HTTPException(status_code=422, detail="model_identifier must be <base_url>#<model>")
@@ -133,7 +133,7 @@ def _check_openai_identifier(ident: str) -> None:
 
 
 def _payload(m: ModelRegistry, user: User | None = None) -> dict:
-    """Même vue pour tous : un OPENAI_API ne sort jamais tel quel (nom du modèle + endpoint)."""
+    """Same view for everyone: an OPENAI_API never comes out as-is (model name + endpoint)."""
     if m.backend_type == "OPENAI_API":
         ident, endpoint = public_model_ref("OPENAI_API", m.model_identifier)
     else:
@@ -154,8 +154,8 @@ def _payload(m: ModelRegistry, user: User | None = None) -> dict:
 
 logger = logging.getLogger(__name__)
 
-# Téléchargements Ollama en cours/terminés, par nom de modèle.
-# ponytail: état en mémoire (1 process uvicorn) ; table DB si plusieurs workers.
+# Ollama downloads in progress/finished, by model name.
+# ponytail: in-memory state (1 uvicorn process); DB table if multiple workers.
 _PULLS: dict[str, dict] = {}
 
 
@@ -170,9 +170,9 @@ async def _ollama_base(db: AsyncSession) -> str:
 
 
 async def _require_ollama(db: AsyncSession) -> str:
-    """Refuse les actions Ollama interdites par le mode de déploiement (409, détail précis).
+    """Refuses the Ollama actions forbidden by the deployment mode (409, precise detail).
 
-    Renvoie la base Ollama (sinon le comportement existant est inchangé)."""
+    Returns the Ollama base (otherwise the existing behavior is unchanged)."""
     if MODE == "off":
         raise HTTPException(status_code=409, detail="ollama_disabled_by_deployment")
     base = await _ollama_base(db)
@@ -205,7 +205,7 @@ async def _register(
 
 
 async def _reachable(url: str, path: str = "") -> bool:
-    """Le service répond-il en HTTP (n'importe quel code) ? Test rapide, jamais bloquant."""
+    """Does the service answer over HTTP (any code)? Quick test, never blocking."""
     if not url:
         return False
     try:
@@ -218,9 +218,9 @@ async def _reachable(url: str, path: str = "") -> bool:
 
 @router.get("/capabilities")
 async def capabilities(db: DbDep, user: UserDep) -> dict:
-    """Service Ollama de cette instance (profil du compose) : configuré ? joignable ? Ressources du
-    serveur et modèles conseillés. Les modèles externes (API compatible OpenAI) fonctionnent
-    toujours."""
+    """Ollama service of this instance (compose profile): configured? reachable? Server
+    resources and recommended models. External models (OpenAI-compatible API)
+    always work."""
     if MODE == "off":
         ollama = {"mode": MODE, "configured": False, "reachable": False}  # AUCUN ping
     else:
@@ -244,7 +244,7 @@ async def capabilities(db: DbDep, user: UserDep) -> dict:
 
 @router.get("/ollama")
 async def list_ollama(db: DbDep, user: UserDep) -> dict:
-    """Modèles présents sur le serveur Ollama + état d'enregistrement."""
+    """Models present on the Ollama server + registration state."""
     await _require_admin(user)
     base = await _require_ollama(db)
     try:
@@ -265,8 +265,8 @@ async def list_ollama(db: DbDep, user: UserDep) -> dict:
 
 
 async def _ollama_delete(db: AsyncSession, name: str) -> None:
-    """Supprime un modèle côté Ollama (idempotent : 404 = déjà supprimé).
-    502 ``ollama_unreachable`` (réseau) ou ``ollama_delete_failed`` (HTTP ≥ 400 ≠ 404)."""
+    """Deletes a model on the Ollama side (idempotent: 404 = already deleted).
+    502 ``ollama_unreachable`` (network) or ``ollama_delete_failed`` (HTTP >= 400 != 404)."""
     base = await _ollama_base(db)
     try:
         async with httpx.AsyncClient(timeout=10) as http:
@@ -283,7 +283,10 @@ async def _pull(
     ref = ref or key
     state = _PULLS[key]
     try:
-        async with httpx.AsyncClient(timeout=None) as http:
+        # A pull streams for hours, so no read timeout; connect/pool stay bounded.
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(connect=10.0, read=None, write=60.0, pool=10.0)
+        ) as http:
             async with http.stream("POST", f"{base}/api/pull", json={"name": ref}) as resp:
                 if resp.status_code >= 400:
                     raise RuntimeError(f"HTTP {resp.status_code}")
@@ -308,7 +311,7 @@ async def _pull(
 
 @router.post("/ollama/pull", status_code=202)
 async def pull_ollama(payload: PullRequest, db: DbDep, user: UserDep) -> dict:
-    """Télécharge un modèle sur Ollama (progression via GET /models/ollama)."""
+    """Downloads a model on Ollama (progress via GET /models/ollama)."""
     await _require_admin(user)
     await _require_ollama(db)
     if _PULLS.get(payload.name, {}).get("state") == "running":
@@ -320,7 +323,7 @@ async def pull_ollama(payload: PullRequest, db: DbDep, user: UserDep) -> dict:
 
 @router.post("/ollama/register", status_code=201)
 async def register_ollama(payload: PullRequest, db: DbDep, user: UserDep) -> dict:
-    """Enregistre un modèle déjà présent sur Ollama."""
+    """Registers a model already present on Ollama."""
     await _require_admin(user)
     await _require_ollama(db)
     await _register(db, payload.name)
@@ -331,7 +334,7 @@ async def register_ollama(payload: PullRequest, db: DbDep, user: UserDep) -> dic
 async def list_models(
     db: DbDep, user: UserDep, project_id: Annotated[uuid.UUID | None, Query()] = None
 ) -> dict:
-    """Modèles actifs accessibles à l'utilisateur (``project_id`` : ceux utilisables là)."""
+    """Active models accessible to the user (``project_id``: those usable there)."""
     items = (
         (
             await db.execute(
@@ -372,7 +375,7 @@ async def create_model(payload: ModelCreate, db: DbDep, user: UserDep) -> dict:
 
 @router.post("/external/test", dependencies=[Depends(rate_limit_user("model_test", 10))])
 async def test_external(payload: ExternalModel, user: UserDep) -> dict:
-    """Un appel minimal pour vérifier URL + clé + nom du modèle (erreur assainie)."""
+    """A minimal call to check URL + key + model name (sanitized error)."""
     _check_url_secrets(payload.base_url)
     if "#" in payload.model:
         raise HTTPException(status_code=422, detail="model must not contain '#'")
@@ -389,7 +392,7 @@ async def test_external(payload: ExternalModel, user: UserDep) -> dict:
 
 @router.post("/external", status_code=201)
 async def register_external(payload: ExternalModel, db: DbDep, user: UserDep) -> dict:
-    """Modèle externe : propriété de son créateur (un admin crée un modèle de la plateforme)."""
+    """External model: owned by its creator (an admin creates a platform model)."""
     _check_url_secrets(payload.base_url)
     if "#" in payload.model:
         raise HTTPException(status_code=422, detail="model must not contain '#'")
@@ -438,8 +441,8 @@ def _redis():
 
 
 async def _model_busy(m: ModelRegistry) -> bool:
-    """Un lock d'inférence est posé sur ce modèle. Redis injoignable → False (le ping reste
-    best-effort : le bouton ne doit pas tomber avec le broker)."""
+    """An inference lock is held on this model. Redis unreachable -> False (the ping stays
+    best-effort: the button must not die with the broker)."""
     r = _redis()
     try:
         return await r.get(model_lock_key(m.backend_type, m.model_identifier)) is not None
@@ -452,11 +455,11 @@ async def _model_busy(m: ModelRegistry) -> bool:
 
 @router.post("/{model_id}/test", dependencies=[Depends(rate_limit_user("model_test", 10))])
 async def test_installed(model_id: uuid.UUID, db: DbDep, user: UserDep) -> dict:
-    """Appel minimal pour confirmer qu'un modèle installé est opérationnel (erreur assainie).
+    """Minimal call to confirm an installed model is operational (sanitized error).
 
-    Le modèle est appelé avec son service réel (réglages de l'instance pour les
-    backends locaux, URL + clé chiffrées pour ``OPENAI_API``) ; le ping le réchauffe
-    en bonus. Le résultat est un état (200), pas une faute HTTP.
+    The model is called with its real service (instance settings for the
+    local backends, URL + encrypted key for ``OPENAI_API``); the ping warms it
+    as a bonus. The result is a state (200), not an HTTP fault.
     """
     m = await db.get(ModelRegistry, model_id)
     if m is None:
@@ -475,8 +478,8 @@ async def test_installed(model_id: uuid.UUID, db: DbDep, user: UserDep) -> dict:
 
 
 async def _in_use(db: AsyncSession, name: str) -> bool:
-    """Le modèle est référencé par une analyse ou un benchmark PENDING/RUNNING, ou une analyse
-    programmée en attente."""
+    """The model is referenced by an analysis or a PENDING/RUNNING benchmark, or a
+    scheduled analysis waiting."""
     active = (InferenceJobStatus.PENDING, InferenceJobStatus.RUNNING)
     job = await db.execute(
         select(InferenceJob.id)
@@ -488,7 +491,7 @@ async def _in_use(db: AsyncSession, name: str) -> bool:
     )
     if job.first() is not None:
         return True
-    # Filtre Python : pas de containment JSONB portable SQLite/PG.
+    # Python filter: no JSONB containment portable SQLite/PG.
     runs = await db.execute(
         select(BenchmarkRun.models_tested).where(
             BenchmarkRun.status.in_((BenchmarkStatus.PENDING, BenchmarkStatus.RUNNING))
@@ -496,7 +499,7 @@ async def _in_use(db: AsyncSession, name: str) -> bool:
     )
     if any(name in (tested or []) for tested in runs.scalars()):
         return True
-    # Analyse programmée en attente : elle démarrera avec ce modèle (JSON : filtre Python).
+    # Scheduled analysis waiting: it will start with this model (JSON: Python filter).
     waiting = await db.execute(select(Search.schedule).where(Search.schedule_state == "waiting"))
     return any(
         name in (cfg.get("model"), cfg.get("prefilter_model")) for cfg in waiting.scalars() if cfg
@@ -514,14 +517,14 @@ async def delete_model(model_id: uuid.UUID, db: DbDep, user: UserDep) -> None:
     if await _in_use(db, m.name):
         raise HTTPException(status_code=409, detail="model_in_use")
     if m.backend_type == "OLLAMA":
-        # Poids retirés AVANT la ligne registre (502 → ligne conservée), seulement si Ollama
-        # est géré par l'instance et qu'aucune autre ligne ne pointe les mêmes poids.
+        # Weights removed BEFORE the registry row (502 -> row kept), only if Ollama
+        # is managed by the instance and no other row points at the same weights.
         try:
             await _require_ollama(db)
             managed = True
         except HTTPException:
             managed = False
-        # « qwen3 » == « qwen3:latest » pour Ollama : on compare les identifiants normalisés.
+        # "qwen3" == "qwen3:latest" for Ollama: we compare the normalized identifiers.
         others = (
             await db.execute(
                 select(ModelRegistry.model_identifier).where(
@@ -536,7 +539,7 @@ async def delete_model(model_id: uuid.UUID, db: DbDep, user: UserDep) -> None:
     await db.commit()
 
 
-# --- Partage d'un modèle (utilisateurs / projets) -----------------------------
+# --- Sharing a model (users / projects) -----------------------------
 
 
 class ShareCreate(BaseModel):
@@ -579,7 +582,7 @@ async def list_shares(model_id: uuid.UUID, db: DbDep, user: UserDep) -> dict:
 
 @router.post("/{model_id}/shares", status_code=201)
 async def add_share(model_id: uuid.UUID, payload: ShareCreate, db: DbDep, user: UserDep) -> dict:
-    """Autorise un utilisateur (e-mail) ou les LEAD d'un projet à utiliser ce modèle."""
+    """Allows a user (e-mail) or the LEADs of a project to use this model."""
     m = await _owned(db, model_id, user)
     if (payload.email is None) == (payload.project_id is None):
         raise HTTPException(status_code=422, detail="give either email or project_id")
@@ -625,8 +628,8 @@ async def remove_share(model_id: uuid.UUID, share_id: uuid.UUID, db: DbDep, user
 
 _HF = "https://huggingface.co"
 _REPO_RE = r"^[A-Za-z0-9][\w.\-]*/[A-Za-z0-9][\w.\-]*$"
-# Ordre de préférence pour l'inférence CPU : bon compromis taille / qualité d'abord ;
-# les formats non quantifiés (BF16/F16/F32) et très lourds sont relégués en fin de liste.
+# Preference order for CPU inference: good size/quality trade-off first;
+# non-quantized (BF16/F16/F32) and very heavy formats are pushed to the end of the list.
 _CPU_PREFERENCE = [
     "Q4_K_M",
     "Q4_K_S",
@@ -664,7 +667,7 @@ async def search_hf(
     user: UserDep,
     q: Annotated[str, Query(min_length=2, max_length=100)],
 ) -> dict:
-    """Recherche sur Hugging Face : modèles GGUF (installés via Ollama)."""
+    """Search on Hugging Face: GGUF models (installed via Ollama)."""
     await _require_admin(user)
     data = await _hf_get(
         "/api/models",
@@ -682,7 +685,7 @@ async def search_hf(
                 "id": m["id"],
                 "downloads": m.get("downloads", 0),
                 "likes": m.get("likes", 0),
-                # modèle de décision (sans chat) : non installable comme modèle générique
+                # decision model (no chat): not installable as a generic model
                 "decision": "decision-model" in (m.get("tags") or []),
             }
             for m in data
@@ -696,11 +699,11 @@ async def hf_files(
     user: UserDep,
     repo: Annotated[str, Query(pattern=_REPO_RE)],
 ) -> dict:
-    """Variantes installables d'un dépôt : quantifications GGUF."""
+    """Installable variants of a repo: GGUF quantizations."""
     await _require_admin(user)
     tree = await _hf_get(f"/api/models/{repo}/tree/main", {"recursive": "true"})
     files = [f for f in tree if f.get("type") == "file"]
-    # Une entrée par quantification (fichiers fragmentés regroupés), triées pour le CPU.
+    # One entry per quantization (fragmented files grouped), sorted for the CPU.
     groups: dict[str, dict] = {}
     for f in files:
         name = f["path"]
@@ -711,7 +714,7 @@ async def hf_files(
         g = groups.setdefault(quant or name, {"quant": quant, "file": name, "size": 0})
         g["size"] += f.get("size") or 0
     items = sorted(groups.values(), key=lambda g: _quant_rank(g["quant"]))
-    # Recommandée : la première variante « CPU-friendly » disponible (Q4_K_M de préférence).
+    # Recommended: the first available "CPU-friendly" variant (Q4_K_M preferred).
     for g in items:
         g["recommended"] = False
     if items and _quant_rank(items[0]["quant"]) < len(_CPU_PREFERENCE):
@@ -727,7 +730,7 @@ class HFInstall(BaseModel):
 
 @router.post("/hf/install", status_code=202)
 async def install_hf(payload: HFInstall, db: DbDep, user: UserDep) -> dict:
-    """Installe un modèle trouvé sur Hugging Face (suivi via GET /models/ollama → pulls)."""
+    """Installs a model found on Hugging Face (followed via GET /models/ollama -> pulls)."""
     await _require_admin(user)
     await _require_ollama(db)  # AVANT tout appel HF
     info = await _hf_get(f"/api/models/{payload.repo}")

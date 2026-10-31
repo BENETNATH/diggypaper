@@ -1,35 +1,35 @@
-"""Client NCBI E-utilities (PubMed/PMC) — Module 2.
+"""NCBI E-utilities client (PubMed/PMC) — Module 2.
 
-``httpx.AsyncClient`` est injecté (pas créé en dur) pour permettre le mock en
-tests. ``_sleep`` est mocké en tests (pas de vrai sleep).
+``httpx.AsyncClient`` is injected (not hardcoded) to allow mocking in
+tests. ``_sleep`` is mocked in tests (no real sleep).
 
-Rate limiting NCBI (M5) : 3 req/s sans clé API, 10 req/s avec — le throttle est
-**par process** (``asyncio.sleep`` entre appels, pas de limiteur Redis : le
-volume d'ingestion est faible, un limiteur partagé serait de la sur-ingénierie).
-Conséquence en production multi-workers : chaque worker Celery a son propre
-compteur → **contrainte de déploiement obligatoire (M-3) : un seul worker dédié
-à l'ingestion** (``celery -A app.celery_app worker -c 1``) pour rester sous le
-plafond NCBI. Les rate limiting applicatifs (M-1/M-2) + la garde « un import par
-projet » (M-2) mitigent le DoS applicatif ; pas de limiteur Redis.
+NCBI rate limiting (M5): 3 req/s without an API key, 10 req/s with — the
+throttle is **per process** (``asyncio.sleep`` between calls, no Redis limiter:
+the ingestion volume is low, a shared limiter would be over-engineering).
+Consequence in multi-worker production: each Celery worker has its own
+counter → **mandatory deployment constraint (M-3): a single worker dedicated
+to ingestion** (``celery -A app.celery_app worker -c 1``) to stay under the
+NCBI ceiling. The application rate limits (M-1/M-2) + the "one import per
+project" guard (M-2) mitigate application DoS; no Redis limiter.
 
-Erreurs (C-1) : les erreurs HTTP NCBI (>= 400) et les timeouts lèvent
-``NCBIError`` (message propre, SANS l'URL ni la clé API) — pas
-``httpx.HTTPStatusError`` (dont le str() contient l'URL complète avec
-``api_key=…``). Ça évite la fuite de la clé NCBI via ``job.error`` / logs.
+Errors (C-1): NCBI HTTP errors (>= 400) and timeouts raise
+``NCBIError`` (clean message, WITHOUT the URL or the API key) — not
+``httpx.HTTPStatusError`` (whose str() contains the full URL with
+``api_key=…``). This prevents the NCBI key leaking via ``job.error`` / logs.
 
-``oa.fcgi`` (``fetch_methods``) n'est pas un E-utility : le throttle 1/3 s est
-conservé par prudence (m12).
+``oa.fcgi`` (``fetch_methods``) is not an E-utility: the 1/3 s throttle is
+kept out of caution (m12).
 
-Retry (m5) : 2 retries avec backoff simple sur erreur transitoire (429 / 5xx /
-timeout) pour esearch/efetch, en respectant ``Retry-After`` sur un 429 (NCBI le
-renvoie quand le débit dépasse le plafond : 3 req/s sans clé, 10 avec). Sans ce
-retry, une rafale (plusieurs process) faisait échouer le lot au lieu de ralentir.
-Pas de retry sur erreur de parsing (le parsing est fait par l'appelant, après la
-réponse).
+Retry (m5): 2 retries with simple backoff on transient errors (429 / 5xx /
+timeout) for esearch/efetch, honoring ``Retry-After`` on a 429 (NCBI sends it
+when the rate exceeds the ceiling: 3 req/s keyless, 10 with). Without this
+retry, a burst (several processes) would fail the batch instead of slowing down.
+No retry on parsing errors (parsing is done by the caller, after the
+response).
 
-Limite de taille (I5) : les payloads XML NCBI > 10 Mo sont refusés (défense en
-profondeur — l'entrée est NCBI via HTTPS, pas contrôlée par l'utilisateur ; la
-limite de taille suffit, pas de defusedxml).
+Size limit (I5): NCBI XML payloads > 10 MB are refused (defense in
+depth — the input is NCBI over HTTPS, not user-controlled; the size
+limit suffices, no defusedxml).
 """
 
 import asyncio
@@ -48,12 +48,12 @@ logger = logging.getLogger(__name__)
 EUTILS_BASE = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
 PMC_OA_URL = "https://www.ncbi.nlm.nih.gov/pmc/utils/oa/oa.fcgi"
 
-#: Intervalle minimum entre deux appels NCBI (s) : 3 req/s sans clé, 10 req/s avec.
+#: Minimum interval between two NCBI calls (s): 3 req/s keyless, 10 req/s with key.
 _INTERVAL_NO_KEY = 1 / 3
 _INTERVAL_WITH_KEY = 0.1
 
 
-#: Plafond d'articles par import (IMPORT_MAX_ARTICLES, défaut 5000 ; 0 = illimité).
+#: Articles per import ceiling (IMPORT_MAX_ARTICLES, default 5000; 0 = unlimited).
 UNLIMITED = 10**9
 
 
@@ -64,61 +64,61 @@ def _esearch_max() -> int:
     return n if n > 0 else UNLIMITED
 
 
-#: Une requête esearch ne renvoie jamais plus de 10 000 identifiants PubMed (limite NCBI, même
-#: avec ``retstart``) : au-delà, on découpe par date de publication (cf. ``fetch_all_pmids``).
+#: An esearch query never returns more than 10,000 PubMed identifiers (NCBI limit,
+#: even with ``retstart``): beyond that, split by publication date (cf. ``fetch_all_pmids``).
 PUBMED_WINDOW = 9999
 
 
-#: m5 : retry sur erreur transitoire (429 / 5xx / timeout), backoff simple (s).
+#: m5: retry on transient error (429 / 5xx / timeout), simple backoff (s).
 _RETRIES = 2
 _RETRY_BACKOFF_SECONDS = 1.0
 
-#: Codes HTTP retentés (429 = débit dépassé : c'est le cas « trop vite », pas une erreur fatale).
+#: Retried HTTP codes (429 = rate exceeded: the "too fast" case, not a fatal error).
 _RETRY_STATUS = frozenset({429, 500, 502, 503, 504})
 
-#: Plafond d'attente d'un ``Retry-After`` (s) : un worker ne dort pas une heure sur un en-tête.
+#: ``Retry-After`` wait ceiling (s): a worker does not sleep an hour over a header.
 _RETRY_AFTER_MAX = 30.0
 
-#: I5 : limite de taille des payloads XML NCBI (défense en profondeur) : 10 Mo.
+#: I5: NCBI XML payload size limit (defense in depth): 10 MB.
 _MAX_XML_BYTES = 10 * 1024 * 1024
 
-#: Mocké en tests (pas de vrai sleep).
+#: Mocked in tests (no real sleep).
 _sleep = asyncio.sleep
 
-#: Titres de section reconnus comme "Methods" (insensible à la casse).
+#: Section titles recognized as "Methods" (case-insensitive).
 _METHODS_TITLES = {"methods", "materials and methods", "méthodes"}
 
 
 class NCBIError(Exception):
-    """C-1 : erreur NCBI propre (message SANS l'URL ni la clé API).
+    """C-1: clean NCBI error (message WITHOUT the URL or the API key).
 
-    Remplace ``httpx.HTTPStatusError`` (dont le str() contient l'URL complète
-    avec ``api_key=…``) pour éviter la fuite de la clé NCBI via ``job.error``
-    et les logs serveur.
+    Replaces ``httpx.HTTPStatusError`` (whose str() contains the full URL
+    with ``api_key=…``) to prevent the NCBI key leaking via ``job.error``
+    and the server logs.
     """
 
 
 def _raise_for_status(resp: httpx.Response) -> None:
-    """C-1 : lève NCBIError (SANS l'URL) au lieu de httpx.HTTPStatusError."""
+    """C-1: raises NCBIError (WITHOUT the URL) instead of httpx.HTTPStatusError."""
     if resp.status_code >= 400:
         raise NCBIError(f"HTTP {resp.status_code}")
 
 
 async def _throttle(api_key: str | None) -> None:
-    """Espace les appels NCBI (3 req/s sans clé, 10 req/s avec clé)."""
+    """Spaces out NCBI calls (3 req/s keyless, 10 req/s with key)."""
     await _sleep(_INTERVAL_WITH_KEY if api_key else _INTERVAL_NO_KEY)
 
 
 async def _get_with_retry(
     http: httpx.AsyncClient, url: str, params: dict, *, retries: int = _RETRIES
 ) -> httpx.Response:
-    """GET NCBI avec retry sur erreur transitoire (m5) : 429 / 5xx / timeout.
+    """NCBI GET with retry on transient errors (m5): 429 / 5xx / timeout.
 
-    ``retries`` retries avec backoff simple (``_sleep``, mocké en tests) ; sur 429,
-    ``Retry-After`` (en secondes) est respecté, borné à ``_RETRY_AFTER_MAX``.
-    Pas de retry sur erreur de parsing (le parsing est fait par l'appelant).
-    C-1 : timeout persistant → NCBIError('timeout') ; erreur HTTP persistante →
-    NCBIError('HTTP <code>') (SANS l'URL ni la clé).
+    ``retries`` retries with simple backoff (``_sleep``, mocked in tests); on 429,
+    ``Retry-After`` (in seconds) is honored, capped at ``_RETRY_AFTER_MAX``.
+    No retry on parsing errors (parsing is done by the caller).
+    C-1: persistent timeout → NCBIError('timeout'); persistent HTTP error →
+    NCBIError('HTTP <code>') (WITHOUT the URL or the key).
     """
     for attempt in range(retries + 1):
         try:
@@ -139,16 +139,16 @@ async def _get_with_retry(
 
 
 def _check_xml_size(resp: httpx.Response) -> None:
-    """I5 : refuse les payloads XML NCBI > 10 Mo (défense en profondeur)."""
+    """I5: refuses NCBI XML payloads > 10 MB (defense in depth)."""
     if len(resp.content) > _MAX_XML_BYTES:
         raise ValueError(f"NCBI XML payload too large: {len(resp.content)} bytes")
 
 
 def _term_bounded(query: str, date_from: date | None, date_to: date | None) -> str:
-    """Terme NCBI borné par date de publication ([dp]) ; query brute si aucune borne.
+    """NCBI term bounded by publication date ([dp]); raw query if no bound.
 
-    Les bornes sont toujours ANDées, même si la query contient déjà ``[dp]`` (intersection,
-    comme les feuillets de la bissection : résultat indépendant du volume)."""
+    The bounds are always AND-ed, even if the query already contains ``[dp]``
+    (intersection, like the bisection slices: result independent of the volume)."""
     if date_from is None and date_to is None:
         return query
     lo = date_from or date(1800, 1, 1)
@@ -164,7 +164,7 @@ def _esearch_params(query: str, retmax: int, api_key: str | None) -> dict:
 
 
 async def search_volume(query: str, api_key: str | None, http: httpx.AsyncClient) -> int:
-    """Volume de résultats PubMed (esearch ``retmax=0``) → count (int)."""
+    """PubMed result volume (esearch ``retmax=0``) → count (int)."""
     await _throttle(api_key)
     resp = await _get_with_retry(
         http, f"{EUTILS_BASE}/esearch.fcgi", _esearch_params(query, 0, api_key)
@@ -173,10 +173,10 @@ async def search_volume(query: str, api_key: str | None, http: httpx.AsyncClient
 
 
 async def explain_query(query: str, api_key: str | None, http: httpx.AsyncClient) -> dict:
-    """Comment PubMed comprend la requête : {count, translation, not_found}.
+    """How PubMed understands the query: {count, translation, not_found}.
 
-    ``translation`` = la requête réécrite par PubMed (termes MeSH, champs) ; ``not_found`` = termes
-    ou champs qu'il ne connaît pas (MeSH inventé, faute de frappe) : signal d'une requête fausse.
+    ``translation`` = the query rewritten by PubMed (MeSH terms, fields); ``not_found`` =
+    terms or fields it does not know (invented MeSH, typo): signal of a wrong query.
     """
     await _throttle(api_key)
     resp = await _get_with_retry(
@@ -202,8 +202,8 @@ async def explain_query(query: str, api_key: str | None, http: httpx.AsyncClient
 async def fetch_pmids(
     query: str, api_key: str | None, http: httpx.AsyncClient, retmax: int | None = None
 ) -> list[str]:
-    """PMIDs d'une requête (esearch) : au plus ``retmax`` (défaut : le plafond d'import) et jamais
-    plus que la limite de NCBI (``PUBMED_WINDOW`` identifiants par requête)."""
+    """PMIDs of a query (esearch): at most ``retmax`` (default: the import ceiling) and never
+    more than the NCBI limit (``PUBMED_WINDOW`` identifiers per query)."""
     await _throttle(api_key)
     params = _esearch_params(query, min(retmax or _esearch_max(), PUBMED_WINDOW), api_key)
     resp = await _get_with_retry(http, f"{EUTILS_BASE}/esearch.fcgi", params)
@@ -219,26 +219,26 @@ async def fetch_all_pmids(
     date_from: date | None = None,
     date_to: date | None = None,
 ) -> list[str]:
-    """Tous les PMIDs d'une requête, même au-delà de 10 000 résultats.
+    """All PMIDs of a query, even beyond 10,000 results.
 
-    NCBI ne livre que 9 999 identifiants par requête : une requête plus grosse est découpée en
-    tranches de dates de publication (bissection tant qu'une tranche dépasse la limite), les plus
-    récentes d'abord ; les doublons (dates imprimée / électronique) sont retirés. ``limit`` borne
-    le total (les plus récents sont gardés).
+    NCBI delivers only 9,999 identifiers per query: a bigger query is split into
+    publication-date slices (bisection while a slice exceeds the limit), most
+    recent first; duplicates (print / electronic dates) are removed. ``limit``
+    caps the total (the most recent are kept).
 
-    Ordre : au-delà de la fenêtre, « les plus récents d'abord » tient au niveau des tranches
-    (la bissection visite les tranches les plus récentes en premier, NCBI ne triant pas par date
-    au sein d'une tranche) ; les identifiants d'une tranche sont insérés en inversant l'ordre
-    renvoyé par esearch, qui est croissant par date sur les fenêtres étroites. En deçà de la
-    fenêtre (un seul esearch), l'ordre renvoyé est celui de NCBI.
+    Order: beyond the window, "most recent first" holds at the slice level
+    (the bisection visits the most recent slices first, NCBI not sorting by date
+    within a slice); a slice's identifiers are inserted by reversing the order
+    returned by esearch, which is ascending by date on narrow windows. Below the
+    window (a single esearch), the returned order is NCBI's.
 
-    ``date_from``/``date_to`` (bornes utilisateur, optionnelles) bornent la requête par date de
-    publication (``[dp]``) ; absentes : comportement inchangé.
+    ``date_from``/``date_to`` (user bounds, optional) bound the query by
+    publication date (``[dp]``); absent: unchanged behavior.
     """
     limit = limit or _esearch_max()
     term = _term_bounded(query, date_from, date_to)
     if count <= PUBMED_WINDOW:
-        # Un seul esearch : l'ordre est celui de NCBI ; le cap s'applique côté NCBI (retmax).
+        # A single esearch: the order is NCBI's; the cap applies on the NCBI side (retmax).
         return await fetch_pmids(term, api_key, http, min(count, limit))
     found: dict[str, None] = {}
 
@@ -259,7 +259,7 @@ async def fetch_all_pmids(
         await walk(mid + timedelta(days=1), hi)  # les plus récents d'abord
         await walk(lo, mid)
 
-    # Bornes utilisateur (optionnelles) ; une borne absente retombe sur le défaut actuel.
+    # User bounds (optional); an absent bound falls back to the current default.
     await walk(date_from or date(1800, 1, 1), date_to or date.today() + timedelta(days=366))
     if len(found) < count:
         logger.warning(
@@ -271,7 +271,7 @@ async def fetch_all_pmids(
 async def fetch_metadata(
     pmids: list[str], api_key: str | None, http: httpx.AsyncClient
 ) -> list[dict]:
-    """Métadonnées PubMed (efetch XML) : pmid, pmcid?, doi?, title, abstract, language."""
+    """PubMed metadata (efetch XML): pmid, pmcid?, doi?, title, abstract, language."""
     if not pmids:
         return []
     await _throttle(api_key)
@@ -284,11 +284,11 @@ async def fetch_metadata(
 
 
 async def fetch_methods(pmcid: str | None, http: httpx.AsyncClient) -> str | None:
-    """Section Methods du full-text PMC (efetch ``db=pmc``, JATS) → texte.
+    """Methods section of the PMC full text (efetch ``db=pmc``, JATS) → text.
 
-    ``None`` si pas de pmcid ou pas de section Methods.
-    L'efetch ``db=pmc`` est un E-utility → throttle NCBI (3 req/s sans clé).
-    (L'ancien ``oa.fcgi`` est obsolète : 404 systématique, constaté 2026-10-12.)
+    ``None`` if no pmcid or no Methods section.
+    The ``db=pmc`` efetch is an E-utility → NCBI throttle (3 req/s keyless).
+    (The old ``oa.fcgi`` is obsolete: systematic 404, observed 2026-10-12.)
     """
     xml = await _fetch_pmc_xml(pmcid, http)
     return _extract_methods(xml) if xml else None
@@ -297,7 +297,7 @@ async def fetch_methods(pmcid: str | None, http: httpx.AsyncClient) -> str | Non
 async def fetch_fulltext(
     pmcid: str | None, http: httpx.AsyncClient
 ) -> tuple[str | None, list[dict]]:
-    """Full text PMC en un seul appel : (texte Methods, sections [{title, kind, text}])."""
+    """PMC full text in a single call: (Methods text, sections [{title, kind, text}])."""
     xml = await _fetch_pmc_xml(pmcid, http)
     if not xml:
         return None, []
@@ -344,7 +344,7 @@ _MONTHS = {
 
 
 def _pub_date(article: ET.Element) -> str | None:
-    """Date de publication ISO partielle : date électronique, sinon date du fascicule."""
+    """Partial ISO publication date: electronic date, else issue date."""
     for base in (
         "MedlineCitation/Article/ArticleDate",
         "MedlineCitation/Article/Journal/JournalIssue/PubDate",
@@ -381,15 +381,16 @@ def _authors(article: ET.Element) -> list[str]:
 
 
 def _parse_pubmed_xml(xml_text: str) -> list[dict]:
-    """Un dict par ``PubmedArticle`` : pmid, pmcid?, doi?, title, abstract, language."""
-    root = ET.fromstring(xml_text)
+    """One dict per ``PubmedArticle``: pmid, pmcid?, doi?, title, abstract, language."""
+    # ElementTree resolves no external entities (no XXE); payload size is bounded.
+    root = ET.fromstring(xml_text)  # nosec B314
     articles: list[dict] = []
     for article in root.iter("PubmedArticle"):
         articles.append(
             {
-                # PMID est enfant direct de MedlineCitation (pas dans Article).
+                # PMID is a direct child of MedlineCitation (not inside Article).
                 "pmid": _text(article, "MedlineCitation/PMID"),
-                # ArticleIdList est dans PubmedData (sibling de MedlineCitation).
+                # ArticleIdList is in PubmedData (sibling of MedlineCitation).
                 "pmcid": _text(article, "PubmedData/ArticleIdList/ArticleId[@IdType='pmc']"),
                 "doi": _text(article, "MedlineCitation/Article/ELocationID[@EIdType='doi']")
                 or _text(article, "PubmedData/ArticleIdList/ArticleId[@IdType='doi']"),
@@ -413,13 +414,14 @@ def _parse_pubmed_xml(xml_text: str) -> list[dict]:
 
 
 def _extract_methods(xml_text: str) -> str | None:
-    """Texte de la première section JATS titrée Methods / Materials and Methods / Méthodes.
+    """Text of the first JATS section titled Methods / Materials and Methods / Méthodes.
 
-    Le full-text PMC est en JATS (tags minuscules : ``sec``, ``title``, ``p``) —
-    pas le format MEDLINE (``Sec``/``Title``). Les sous-sections imbriquées sont
-    incluses (``sec.iter('p')`` parcourt l'arbre entier).
+    The PMC full text is in JATS (lowercase tags: ``sec``, ``title``, ``p``) —
+    not the MEDLINE format (``Sec``/``Title``). Nested sub-sections are
+    included (``sec.iter('p')`` walks the whole tree).
     """
-    root = ET.fromstring(xml_text)
+    # ElementTree resolves no external entities (no XXE); payload size is bounded.
+    root = ET.fromstring(xml_text)  # nosec B314
     for sec in root.iter("sec"):
         title_el = sec.find("title")
         if title_el is None:
@@ -437,9 +439,9 @@ def _local(tag) -> str:
 
 
 def _plain(el: ET.Element) -> str:
-    """Texte d'un élément JATS sans le bruit des formules : le LaTeX (``tex-math``, préambule
-    ``\\documentclass…`` compris) est ignoré ; une formule hors texte devient « [formula] » ; le
-    MathML en ligne (p < 0,05, x²…) est gardé."""
+    """Text of a JATS element without formula noise: LaTeX (``tex-math``, including the
+    ``\\documentclass…`` preamble) is ignored; an out-of-text formula becomes "[formula]";
+    inline MathML (p < 0.05, x²…) is kept."""
     out = [el.text or ""]
     for child in el:
         name = _local(child.tag)
@@ -452,10 +454,11 @@ def _plain(el: ET.Element) -> str:
 
 
 def _extract_sections(xml_text: str) -> list[dict]:
-    """Sections de premier niveau du ``body`` JATS : [{title, kind, text}]."""
+    """First-level sections of the JATS ``body``: [{title, kind, text}]."""
     from app.article_text import classify_title
 
-    root = ET.fromstring(xml_text)
+    # ElementTree resolves no external entities (no XXE); payload size is bounded.
+    root = ET.fromstring(xml_text)  # nosec B314
     body = root.find(".//body")
     if body is None:
         return []
@@ -474,15 +477,15 @@ def _extract_sections(xml_text: str) -> list[dict]:
 
 
 class PubMedAdapter:
-    """Adapter source PubMed (n°1) : les fonctions du module derrière le contrat
-    ``SourceAdapter`` (délégation mince — la logique est déplacée, pas réécrite).
+    """PubMed source adapter (n°1): the module's functions behind the
+    ``SourceAdapter`` contract (thin delegation — the logic is moved, not rewritten).
 
-    ``http`` et ``api_key`` sont capturés une fois en ``__init__`` et réutilisés
-    par chaque opération. Le count de ``search_volume`` est caché et réutilisé
-    par ``iter_ids`` (le pipeline appelle toujours ``search_volume`` avant
-    ``iter_ids`` avec la même ``(query, bornes)`` → pas de 3ᵉ esearch) ; un
-    ``iter_ids`` sans count préalable (hors pipeline) fait le fallback (1
-    esearch supplémentaire).
+    ``http`` and ``api_key`` are captured once in ``__init__`` and reused
+    by every operation. The ``search_volume`` count is cached and reused
+    by ``iter_ids`` (the pipeline always calls ``search_volume`` before
+    ``iter_ids`` with the same ``(query, bounds)`` → no 3rd esearch); an
+    ``iter_ids`` without a prior count (outside the pipeline) does the fallback (1
+    extra esearch).
     """
 
     def __init__(self, http: httpx.AsyncClient, api_key: str | None) -> None:
@@ -506,8 +509,8 @@ class PubMedAdapter:
             count = await search_volume(
                 _term_bounded(query, b.date_from, b.date_to), self._api_key, self._http
             )
-        # fetch_all_pmids absorbe le paging/bissection : comportement observable
-        # identique (même ordre « plus récents d'abord », même dédoublonnage, cap).
+        # fetch_all_pmids absorbs the paging/bisection: observable behavior
+        # identical (same order "most recent first", same deduplication, cap).
         pmids = await fetch_all_pmids(
             query, self._api_key, self._http, count, limit, b.date_from, b.date_to
         )

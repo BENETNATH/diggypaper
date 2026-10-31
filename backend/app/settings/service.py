@@ -1,8 +1,8 @@
-"""Service settings : lecture/écriture des ``system_settings`` (Module 7).
+"""Settings service: reading/writing ``system_settings`` (Module 7).
 
-Les secrets sont chiffrés AES-256-GCM (``is_secret=True``) ; les autres valeurs
-sont stockées en clair UTF-8. ``get_all`` masque les secrets définis (``MASK``)
-et renvoie ``None`` pour les clés non définies.
+Secrets are encrypted AES-256-GCM (``is_secret=True``); the other values are
+stored as plain UTF-8. ``get_all`` masks the defined secrets (``MASK``) and
+returns ``None`` for undefined keys.
 """
 
 from datetime import UTC, datetime
@@ -21,7 +21,7 @@ def _check_key(key: str) -> None:
 
 
 def _normalize_ids(scope: SettingScope, project_id, user_id) -> tuple:
-    """F1 : force project_id/user_id à None selon le scope (pas d'ID superflu)."""
+    """F1: forces project_id/user_id to None according to the scope (no surplus IDs)."""
     if scope is SettingScope.GLOBAL:
         return None, None
     if scope is SettingScope.PROJECT:
@@ -32,7 +32,7 @@ def _normalize_ids(scope: SettingScope, project_id, user_id) -> tuple:
 
 
 def _scope_filter(scope: SettingScope, project_id, user_id) -> list:
-    """Clauses WHERE isolant un scope (ferme les trous NULL des index partiels)."""
+    """WHERE clauses isolating a scope (closes the NULL holes of the partial indexes)."""
     if scope is SettingScope.GLOBAL:
         return [
             SystemSettings.scope == SettingScope.GLOBAL,
@@ -74,9 +74,9 @@ async def get_setting(
     project_id=None,
     user_id=None,
 ) -> str | None:
-    """Valeur effective d'un setting (démasquée), avec default si absent.
+    """Effective value of a setting (unmasked), with the default if absent.
 
-    ``None`` si la clé n'est pas définie et n'a pas de default.
+    ``None`` if the key is not defined and has no default.
     """
     project_id, user_id = _normalize_ids(scope, project_id, user_id)
     row = await _get_row(db, key, scope, project_id, user_id)
@@ -97,14 +97,13 @@ async def set_setting(
     *,
     commit: bool = True,
 ) -> None:
-    """Upsert d'un setting (respecte les index uniques partiels du lot 1).
+    """Upsert of a setting (respects the partial unique indexes of lot 1).
 
-    Chiffre si secret, stocke en clair UTF-8 sinon.
+    Encrypts if secret, stores plain UTF-8 otherwise.
 
-    ``commit=False`` : ne pas committer (le commit est fait par l'appelant, pour
-    grouper plusieurs set/delete dans une seule transaction — voir
-    ``admin.update_settings``). Le comportement par défaut (``commit=True``) est
-    inchangé pour les autres appelants.
+    ``commit=False``: do not commit (the commit is done by the caller, to group
+    several set/delete in a single transaction — see ``admin.update_settings``).
+    The default behavior (``commit=True``) is unchanged for the other callers.
     """
     _check_key(key)
     project_id, user_id = _normalize_ids(scope, project_id, user_id)
@@ -129,9 +128,9 @@ async def delete_setting(
     *,
     commit: bool = True,
 ) -> None:
-    """Supprime la ligne (revert au default si la clé en a un).
+    """Deletes the row (revert to the default if the key has one).
 
-    ``commit=False`` : ne pas committer (commit par l'appelant, cf. ``set_setting``).
+    ``commit=False``: do not commit (commit by the caller, cf. ``set_setting``).
     """
     _check_key(key)
     project_id, user_id = _normalize_ids(scope, project_id, user_id)
@@ -148,7 +147,7 @@ async def get_all(
     project_id=None,
     user_id=None,
 ) -> dict[str, str | None]:
-    """Toutes les valeurs d'un scope : secrets définis → ``MASK``, non définis → ``None``."""
+    """All values of a scope: defined secrets → ``MASK``, undefined → ``None``."""
     project_id, user_id = _normalize_ids(scope, project_id, user_id)
     stmt = select(SystemSettings).where(*_scope_filter(scope, project_id, user_id))
     rows = (await db.execute(stmt)).scalars().all()

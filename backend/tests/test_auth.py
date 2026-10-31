@@ -1,4 +1,4 @@
-"""Tests du flux d'authentification : invite → register → login → me + sécurité."""
+"""Tests for the auth flow: invite → register → login → me + security."""
 
 import re
 from datetime import UTC, datetime, timedelta
@@ -110,7 +110,7 @@ async def test_register_wrong_purpose_rejected(client):
 
 
 async def test_register_short_password_422(client, admin_user, mock_mailer, do_login):
-    """F6 : password < 8 caractères → 422 (politique de mot de passe)."""
+    """F6: password under 8 characters → 422 (password policy)."""
     await _invite(client, do_login, "newbie@lab.fr")
     token = _token_from_email(mock_mailer)
     resp = await client.post("/api/v1/auth/register", json={"token": token, "password": "a"})
@@ -118,7 +118,7 @@ async def test_register_short_password_422(client, admin_user, mock_mailer, do_l
 
 
 async def test_register_min_length_password_ok(client, admin_user, mock_mailer, do_login):
-    """F6 : password de 8 caractères → 201."""
+    """F6: 8-character password → 201."""
     await _invite(client, do_login, "newbie@lab.fr")
     token = _token_from_email(mock_mailer)
     resp = await client.post("/api/v1/auth/register", json={"token": token, "password": "12345678"})
@@ -126,7 +126,7 @@ async def test_register_min_length_password_ok(client, admin_user, mock_mailer, 
 
 
 async def test_register_duplicate_token_409(client, admin_user, mock_mailer, do_login):
-    """m1 : 2e register avec le même token → 409 'User already exists' (pas de 500)."""
+    """m1: 2nd register with the same token → 409 'User already exists' (no 500)."""
     await _invite(client, do_login, "newbie@lab.fr")
     token = _token_from_email(mock_mailer)
     resp1 = await client.post(
@@ -141,12 +141,12 @@ async def test_register_duplicate_token_409(client, admin_user, mock_mailer, do_
 
 
 async def test_register_integrity_error_catcher(session):
-    """m1 : le catcher IntegrityError (TOCTOU sur commit) renvoie 409, pas 500."""
+    """m1: the IntegrityError catcher (TOCTOU on commit) returns 409, not 500."""
     from fastapi import HTTPException
 
     from app.api.v1.auth import _commit_user
 
-    # User déjà en base → le commit du doublon viole la contrainte unique.
+    # User already in the DB → committing the duplicate violates the unique constraint.
     session.add(User(email="dup@lab.fr", hashed_password="h"))
     await session.commit()
     session.add(User(email="dup@lab.fr", hashed_password="h2"))
@@ -171,7 +171,7 @@ async def test_login_ok_sets_secure_httponly_cookie(client, researcher_user, do_
     assert set_cookie.startswith("access_token=")
     assert "HttpOnly" in set_cookie
     assert "Secure" in set_cookie
-    # Valeur SameSite insensible à la casse (RFC 6265bis) ; starlette écrit "strict".
+    # SameSite value is case-insensitive (RFC 6265bis); starlette writes "strict"
     assert re.search(r"SameSite=Strict", set_cookie, re.IGNORECASE)
     assert "Path=/" in set_cookie
 
@@ -221,7 +221,7 @@ async def test_me_unauthenticated_401(client):
     assert resp.status_code == 401
 
 
-# --- sécurité ---
+# --- security ---
 
 
 async def test_hashed_password_never_in_any_response(client, researcher_user, do_login):
@@ -234,7 +234,7 @@ async def test_hashed_password_never_in_any_response(client, researcher_user, do
 
 
 async def test_invite_token_cannot_authenticate(client, admin_user, mock_mailer, do_login):
-    """Le JWT d'invitation (pas de claim sub) ne sert pas à s'authentifier."""
+    """The invitation JWT (no sub claim) cannot be used to authenticate."""
     await _invite(client, do_login, "newbie@lab.fr")
     token = _token_from_email(mock_mailer)
     client.cookies.delete("access_token", domain="app.test")

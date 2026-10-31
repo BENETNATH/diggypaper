@@ -27,7 +27,7 @@ import { ErrorBanner, ProgressBar } from "@/components/ui/Feedback";
 
 const num = (v: unknown): number => (typeof v === "number" ? v : 0);
 
-/** Progression lisible d'un job : phase, pourcentage, compteurs. */
+/** Readable progress of a job: phase, percentage, counters. */
 function JobProgress({ job, onRetry }: { job: ImportJob; onRetry?: (job: ImportJob) => void }) {
   const t = useTranslations("import");
   const projectId = useParams<{ id: string }>().id;
@@ -162,10 +162,10 @@ function ImportContent() {
   const [source, setSource] = useState<"pubmed" | "europepmc" | "openalex" | "hal">("pubmed");
   const [query, setQuery] = useState("");
   const [volume, setVolume] = useState<number | null>(null);
-  const [cap, setCap] = useState(Infinity); // plafond d'import de l'instance (illimité : au-delà de 1e9)
+  const [cap, setCap] = useState(Infinity); // import cap of the instance (unlimited: beyond 1e9)
   const [checking, setChecking] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [watching, setWatching] = useState(false); // suivi actif (import lancé ou en cours)
+  const [watching, setWatching] = useState(false); // active tracking (import launched or running)
   const [error, setError] = useState<string | null>(null);
   const jobsBefore = useRef(0);
 
@@ -174,7 +174,7 @@ function ImportContent() {
       const [p, js] = await Promise.all([getProject(projectId), listJobs(projectId)]);
       setProject(p);
       setJobs(js);
-      // le layout (onglets) ne se recharge pas sur place : on lui donne l'état à jour
+      // the layout (tabs) does not reload in place: we give it the updated state
       window.dispatchEvent(new CustomEvent("diggy:project", { detail: p }));
       return js;
     } catch (e) {
@@ -190,13 +190,13 @@ function ImportContent() {
   const activeJob = jobs?.find((j) => j.status === "PENDING" || j.status === "RUNNING") ?? null;
   const polling = watching;
 
-  // Reprise du suivi si un import tourne déjà (page rechargée / revisitée).
+  // Resumes tracking if an import is already running (page reloaded / revisited).
   useEffect(() => {
     if (activeJob && !watching) setWatching(true);
   }, [activeJob, watching]);
 
-  // Suivi : boucle auto-replanifiée, indépendante de l'état React. Elle ne s'arrête que
-  // lorsqu'aucun import n'est actif ET que le job lancé est apparu (ou après 30 s).
+  // Tracking: self-rescheduling loop, independent of React state. It stops only
+  // when no import is active AND the launched job has appeared (or after 30 s).
   useEffect(() => {
     if (!watching) return;
     let stopped = false;
@@ -252,8 +252,8 @@ function ImportContent() {
     }
   }
 
-  /** Relance un job échoué (requête + source identiques : les articles déjà importés
-   *  sont ignorés). */
+  /** Restarts a failed job (same request + source: the already-imported articles
+   *  are ignored). */
   async function handleRetry(failed: ImportJob) {
     if (failed.kind === "fulltext") return handleFulltext();
     if (failed.kind === "references" || failed.kind === "citations" || failed.kind === "crate") return;
@@ -311,7 +311,7 @@ function ImportContent() {
         </Card>
       )}
 
-      {/* Textes intégraux : complément par les sources ouvertes (Europe PMC, Unpaywall, préprints) */}
+      {/* Full text: supplement via open sources (Europe PMC, Unpaywall, preprints) */}
       {project && (project.status === "FROZEN" || project.status === "COMPLETED") && (
         <Card title={t("fulltextTitle")}>
           <p className="text-sm text-foreground">
@@ -329,7 +329,7 @@ function ImportContent() {
         </Card>
       )}
 
-      {/* 1. Requête */}
+      {/* 1. Query */}
       <Card title={hasCorpus ? t("queryTitleMore") : t("queryTitle")}>
         {locked ? (
           <p className="text-sm text-muted">{t("lockedProcessing")}</p>
@@ -347,10 +347,7 @@ function ImportContent() {
                     mode === m ? "bg-primary text-white" : "text-muted hover:text-foreground"
                   }`}
                 >
-                  {t(
-                    m === "pubmed" ? "modeSearch" : m === "refs" ? "modeRefs" : "modeCites",
-                    m === "pubmed" ? { src: sourceLabel(source, null, "") ?? "" } : undefined,
-                  )}
+                  {t(m === "pubmed" ? "modeQuery" : m === "refs" ? "modeRefs" : "modeCites")}
                 </button>
               ))}
             </div>

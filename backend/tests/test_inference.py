@@ -1,4 +1,4 @@
-"""Tests de l'InferenceService (app/inference) — 100 % offline (LLM mocké)."""
+"""Tests for the InferenceService (app/inference) — 100% offline (mocked LLM)."""
 
 import json
 
@@ -14,7 +14,7 @@ from app.inference import (
 
 
 def _llm_handler(content: str, status: int = 200):
-    """MockTransport : renvoie une réponse /chat/completions avec `content`."""
+    """MockTransport: returns a /chat/completions response with `content`."""
 
     def handler(request: httpx.Request) -> httpx.Response:
         if status != 200:
@@ -112,7 +112,7 @@ async def test_make_inference_service_defaults(session):
     assert svc._api_key is None
 
 
-# --- Timeout paramétrable + warm-up ---
+# --- Configurable timeout + warm-up ---
 
 
 async def test_make_inference_service_timeout_from_settings(session):
@@ -144,7 +144,7 @@ async def test_warmup_calls_infer_with_model():
 
 
 async def test_warmup_absorbs_failure():
-    """Un échec de warmup (timeout cold start, modèle absent) ne doit pas lever."""
+    """A warmup failure (cold start timeout, missing model) must not raise."""
 
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(503, json={"error": "busy"})
@@ -153,7 +153,7 @@ async def test_warmup_absorbs_failure():
     await warmup(svc, "qwen3:4b")  # ne lève pas
 
 
-# --- Corps de requête paramétrable (llm_extra_body) ---
+# --- Configurable request body (llm_extra_body) ---
 
 
 def _capture_client():
@@ -167,7 +167,7 @@ def _capture_client():
 
 
 async def test_infer_no_extra_body_unchanged():
-    """Verrou de régression : sans extra_body, le corps est exactement le corps fixe."""
+    """Regression lock: without extra_body, the body is exactly the fixed body."""
     captured, client = _capture_client()
     svc = OpenAICompatibleService("http://llm.test/v1", http=client)
     await svc.infer("Kev-4B", "SYS", "USR")
@@ -208,7 +208,7 @@ async def test_infer_extra_body_cannot_override_fixed_keys():
 
 
 async def test_make_service_applies_extra_body_from_setting(session):
-    """Service par défaut (backends locaux) : corps additionnel toujours chargé (§2)."""
+    """Default service (local backends): extra body always loaded (§2)."""
     from app.settings.service import set_setting
 
     await set_setting(session, "llm_extra_body", '{"think": false, "options": {"num_ctx": 8192}}')
@@ -217,7 +217,7 @@ async def test_make_service_applies_extra_body_from_setting(session):
 
 
 async def test_infer_with_openai_api_never_sends_extra_body(session, monkeypatch):
-    """OPENAI_API : service propre au modèle, jamais le corps additionnel des backends locaux."""
+    """OPENAI_API: model-specific service, never the extra body of the local backends."""
     from types import SimpleNamespace
 
     from app.inference import infer_with
@@ -255,7 +255,7 @@ async def test_make_service_null_extra_body_is_empty(session):
 
 
 def _native_handler(content: str, status: int = 200):
-    """MockTransport : renvoie une réponse /api/chat (natif Ollama) avec `content`."""
+    """MockTransport: returns an /api/chat (Ollama native) response with `content`."""
 
     def handler(request: httpx.Request) -> httpx.Response:
         if status != 200:
@@ -269,7 +269,7 @@ def _native_handler(content: str, status: int = 200):
 
 
 def _capture_client_native(content: str = "{}"):
-    """Capture URL + header Authorization + corps ; réponse /api/chat avec `content`."""
+    """Captures URL + Authorization header + body; /api/chat response with `content`."""
     captured = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -293,7 +293,7 @@ async def test_infer_native_ollama_hits_api_chat():
 
 
 async def test_infer_native_body_exact_without_extra_body():
-    """Verrou de régression : sans extra_body, le corps natif est exactement le corps fixe."""
+    """Regression lock: without extra_body, the native body is exactly the fixed body."""
     captured, client = _capture_client_native()
     svc = OpenAICompatibleService("http://llm.test/v1", native_ollama=True, http=client)
     await svc.infer("Kev-4B", "SYS", "USR")
@@ -305,7 +305,7 @@ async def test_infer_native_body_exact_without_extra_body():
         ],
         "stream": False,
         "format": "json",
-        # natif Ollama : temperature lue dans options (ignorée en racine) — spec 2026-10-29 §N1
+        # Ollama native: temperature read in options (ignored at root) — spec 2026-10-29 §N1
         "options": {"temperature": 0.0},
     }
     assert "response_format" not in captured["body"]
@@ -328,7 +328,7 @@ async def test_infer_native_body_merges_extra_body_options_think():
 
 @pytest.mark.parametrize("bad", [None, 5, [1], "x"])
 async def test_infer_native_non_dict_options_ignored(bad):
-    """``options`` non-dict dans le corps additionnel : ignoré, pas de TypeError."""
+    """Non-dict ``options`` in the extra body: ignored, no TypeError."""
     captured, client = _capture_client_native()
     svc = OpenAICompatibleService(
         "http://llm.test/v1", native_ollama=True, http=client, extra_body={"options": bad}
@@ -461,17 +461,17 @@ async def test_warmup_native_ollama_uses_api_chat():
 
 
 async def test_make_service_default_native_flag_true(session):
-    """Service par défaut (fabrique, sans modèle) = Ollama local → mode natif ; la décision
-    par backend se fait par appel dans ``infer_with`` (spec 2026-10-29 §2)."""
+    """Default service (factory, no model) = local Ollama -> native mode; the per-backend
+    decision is made per call in ``infer_with`` (spec 2026-10-29 §2)."""
     svc = await make_inference_service(session)
     assert svc._native_ollama is True
 
 
-# --- Décision endpoint natif / /v1 PAR APPEL dans infer_with (spec 2026-10-29 §2) ---
+# --- Native endpoint / /v1 decision PER CALL in infer_with (spec 2026-10-29 §2) ---
 
 
 def _capture_both():
-    """Journalise (chemin, corps) de chaque appel ; répond aux deux formats (/api/chat et /v1)."""
+    """Logs (path, body) of each call; answers both formats (/api/chat and /v1)."""
     calls: list[tuple[str, dict]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -488,8 +488,8 @@ def _capture_both():
 
 
 async def test_infer_with_decides_endpoint_per_model_on_shared_default(session):
-    """Même service par défaut : LLAMA_CPP → /v1/chat/completions (+ corps additionnel),
-    OLLAMA → /api/chat ; le premier appel ne modifie pas le service partagé."""
+    """Same default service: LLAMA_CPP -> /v1/chat/completions (+ extra body),
+    OLLAMA -> /api/chat; the first call does not modify the shared service."""
     from types import SimpleNamespace
 
     from app.inference import infer_with
@@ -510,7 +510,7 @@ async def test_infer_with_decides_endpoint_per_model_on_shared_default(session):
     assert v1_body["response_format"] == {"type": "json_object"}
 
 
-# --- Timeout : valeur finie et > 0, sinon défaut 120 s (spec 2026-10-29 §3) ---
+# --- Timeout: finite value and > 0, otherwise default 120 s (spec 2026-10-29 §3) ---
 
 
 @pytest.mark.parametrize("raw", ["inf", "-inf", "nan", "0", "-5"])
@@ -522,7 +522,7 @@ async def test_make_inference_service_timeout_non_finite_or_non_positive_falls_b
     assert svc._timeout == 120.0
 
 
-# --- Réponse 200 inexploitable → InferenceError("invalid_response") (spec 2026-10-29 §N2) ---
+# --- Unusable 200 response -> InferenceError("invalid_response") (spec 2026-10-29 §N2) ---
 
 
 @pytest.mark.parametrize(
@@ -543,7 +543,7 @@ async def test_infer_unusable_200_raises_invalid_response(native, response):
 
 
 # =====================================================================================
-# Traçabilité modèle + version (spec 2026-10-29-tracabilite-modele-version §1)
+# Model traceability + version (spec 2026-10-29-tracabilite-modele-version §1)
 # =====================================================================================
 
 DIGEST = "a1b2c3d4e5f6" + "0" * 52  # 64 hex, format de GET /api/tags
@@ -568,7 +568,7 @@ TAGS = {
 
 
 def _tags_client(response=None, exc: Exception | None = None):
-    """MockTransport : GET /api/tags → ``response`` (ou lève ``exc``) ; journalise les chemins."""
+    """MockTransport: GET /api/tags -> ``response`` (or raises ``exc``); logs the paths."""
     paths: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -593,7 +593,7 @@ def _model(backend, identifier, name="Mdl"):
 
 
 async def test_model_snapshot_ollama_reads_digest_and_details_from_api_tags():
-    """OLLAMA : version = digest des poids lu sur /api/tags (racine sans /v1), + détails."""
+    """OLLAMA: version = weights digest read from /api/tags (root without /v1), + details."""
     from app.inference import model_snapshot
 
     paths, client = _tags_client()
@@ -608,7 +608,7 @@ async def test_model_snapshot_ollama_reads_digest_and_details_from_api_tags():
 
 
 async def test_model_snapshot_ollama_matches_implicit_latest_tag():
-    """« qwen3 » == « qwen3:latest » pour Ollama (même normalisation que DELETE /models)."""
+    """ "qwen3" == "qwen3:latest" for Ollama (same normalization as DELETE /models)."""
     from app.inference import model_snapshot
 
     _, client = _tags_client()
@@ -629,7 +629,7 @@ async def test_model_snapshot_ollama_matches_implicit_latest_tag():
     ids=["http-500", "non-json", "connection-error", "tag-absent", "bad-digest"],
 )
 async def test_model_snapshot_never_raises(response, exc):
-    """Relevé best-effort : tout échec → version None, identifiant conservé, aucune exception."""
+    """Best-effort reading: any failure -> version None, identifier kept, no exception."""
     from app.inference import model_snapshot
 
     _, client = _tags_client(response, exc)
@@ -639,7 +639,7 @@ async def test_model_snapshot_never_raises(response, exc):
 
 
 async def test_model_snapshot_without_http_service_is_best_effort():
-    """Service de test (sans base_url ni client HTTP) : pas d'appel, version None."""
+    """Test service (no base_url nor HTTP client): no call, version None."""
     from app.inference import model_snapshot
 
     class Fake:
@@ -648,15 +648,15 @@ async def test_model_snapshot_without_http_service_is_best_effort():
 
     snap = await model_snapshot(_model("OLLAMA", "qwen3:4b"), Fake())
     assert snap["identifier"] == "qwen3:4b" and snap["version"] is None
-    # modèle absent du registre : le nom du job sert d'identifiant (comme infer_with)
+    # model absent from the registry: the job name serves as identifier (like infer_with)
     snap = await model_snapshot(None, Fake(), name="Kev-4B")
     assert snap["name"] == "Kev-4B" and snap["identifier"] == "Kev-4B"
     assert await model_snapshot(None, Fake()) is None
 
 
 async def test_model_snapshot_openai_api_hides_url_secrets_and_makes_no_call():
-    """OPENAI_API : partie modèle + endpoint scheme://hôte:port ; ni userinfo, ni chemin, ni
-    query, ni clé ; aucun appel réseau (l'écho de la réponse donnera la version)."""
+    """OPENAI_API: model part + endpoint scheme://host:port; no userinfo, no path, no
+    query, no key; no network call (the response echo will give the version)."""
     from app.inference import model_snapshot
 
     paths, client = _tags_client()
@@ -671,7 +671,7 @@ async def test_model_snapshot_openai_api_hides_url_secrets_and_makes_no_call():
 
 
 def _echo_client(native: bool, model_field):
-    """Réponse 200 (format natif ou /v1) dont le champ ``model`` vaut ``model_field``."""
+    """200 response (native or /v1 format) whose ``model`` field equals ``model_field``."""
 
     def handler(request: httpx.Request) -> httpx.Response:
         body = (
@@ -697,8 +697,8 @@ def _echo_client(native: bool, model_field):
     ids=["v1-echo", "native-echo", "no-model-field", "control-chars"],
 )
 async def test_infer_with_meta_reports_served_model(backend, native, echoed, expected):
-    """``meta["served_model"]`` = champ ``model`` de la réponse du service réellement appelé
-    (copie /v1 comprise), assaini (caractères de contrôle retirés, 200 caractères max)."""
+    """``meta["served_model"]`` = ``model`` field of the response from the service actually called
+    (/v1 copies included), sanitized (control characters removed, 200 characters max)."""
     from app.inference import infer_with
 
     default = OpenAICompatibleService(
@@ -710,7 +710,7 @@ async def test_infer_with_meta_reports_served_model(backend, native, echoed, exp
 
 
 async def test_infer_with_meta_openai_api_served_model(monkeypatch):
-    """OPENAI_API (service propre au modèle) : l'alias résolu renvoyé par l'API est remonté."""
+    """OPENAI_API (model-specific service): the resolved alias returned by the API is surfaced."""
     from app.inference import infer_with
 
     real = httpx.AsyncClient
@@ -752,7 +752,7 @@ def test_public_model_ref_other_backends_keep_identifier():
 
 
 async def test_model_snapshot_failure_log_hides_url_and_secrets(caplog):
-    """Hygiène des logs : un relevé en échec ne journalise ni userinfo ni hôte du service."""
+    """Log hygiene: a failed reading logs neither userinfo nor service host."""
     import logging
 
     from app.inference import model_snapshot

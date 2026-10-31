@@ -31,30 +31,30 @@ import {
 } from "@/lib/api";
 
 /**
- * Viewer d'annotation mobile-first (MODULE 5).
+ * Mobile-first annotation viewer (MODULE 5).
  *
- * - Desktop : double colonne (document à gauche, formulaire à droite).
- * - Mobile / tablette : vue mono-colonne à onglets (Document / Annotation)
- *   avec barre de navigation inférieure.
- * - Surlignage dynamique des `evidence_quotes` (EvidenceHighlighter).
- * - Swipe : droite = confirmer la réponse du modèle, gauche = corriger (formulaire).
+ * - Desktop: two columns (document on the left, form on the right).
+ * - Mobile / tablet: single-column tabbed view (Document / Annotation)
+ *   with a bottom navigation bar.
+ * - Dynamic highlighting of the `evidence_quotes` (EvidenceHighlighter).
+ * - Swipe: right = confirm the model's answer, left = correct (form).
  */
 export default function AnnotatePage() {
   const t = useTranslations("annotate");
-  const ti = useTranslations("import"); // libellés des parties du texte
+  const ti = useTranslations("import"); // labels of the text parts
   const tc = useTranslations("common");
-  const ta = useTranslations("articles"); // libellés de la source
+  const ta = useTranslations("articles"); // labels of the source
   const locale = useLocale();
   const params = useParams<{ id: string }>();
   const searchParams = useSearchParams();
   const projectId = params.id;
   const articleId = searchParams.get("article") ?? "";
-  // queue=review : les cas à relire (défaut après un tri), restreints aux filtres de réponses de
-  // la liste ; list : exactement la liste filtrée/triée qu'on vient de quitter ; all : tous.
+  // queue=review: the cases to re-review (default after a ranking), restricted to the list's
+  // answer filters; list: exactly the filtered/sorted list we just left; all: everything.
   const queueMode = searchParams.get("queue") ?? "review";
   const searchId = useSearchId(projectId);
   const { searches, current } = useSearches(projectId, searchId);
-  // Recherche à l'aveugle : on relit sans voir la réponse du modèle (gold non biaisé).
+  // Blind search: we re-review without seeing the model's answer (unbiased gold).
   const isBlind = current?.kind === "blind";
 
   const [article, setArticle] = useState<Article | null>(null);
@@ -66,41 +66,41 @@ export default function AnnotatePage() {
   const [tab, setTab] = useState<"document" | "annotation">("document");
   const router = useRouter();
   const [fields, setFields] = useState<SchemaField[]>([]);
-  const [sections, setSections] = useState<string[]>(["methods"]); // parties du texte lues par la recherche
+  const [sections, setSections] = useState<string[]>(["methods"]); // text parts read by the search
   const [queue, setQueue] = useState<string[]>([]);
   const [status, setStatus] = useState<
     "idle" | "accepted" | "rejected" | "submitted"
   >("idle");
-  // Extraits de preuve de l'annotation en cours (réponse du modèle, relecture existante, ajouts à la main)
+  // Evidence excerpts of the current annotation (model's answer, existing re-review, manual additions)
   const [quotes, setQuotes] = useState<string[]>([]);
-  // Extrait à révéler dans le document : clic sur une citation du formulaire → scroll + flash.
-  // `n` (nonce) relance le scroll même sur la même citation.
+  // Excerpt to reveal in the document: click on a quote from the form → scroll + flash.
+  // `n` (nonce) re-triggers the scroll even on the same quote.
   const [focus, setFocus] = useState<{ quote: string; n: number } | null>(null);
   const [goldBusy, setGoldBusy] = useState(false);
   const [goldNote, setGoldNote] = useState<string | null>(null);
 
-  // File des articles du projet : sert à ouvrir le premier, puis à enchaîner.
+  // Queue of the project's articles: used to open the first, then to chain through them.
   useEffect(() => {
     if (!projectId) return;
     const load = async () => {
-      // Filtres de la liste d'articles (mémorisés par l'onglet).
+      // Article list filters (remembered by the tab).
       let saved: { filter?: string; sort?: "added" | "date_desc" | "date_asc" | "score_desc"; answers?: Record<string, string | boolean>; q?: string; fulltext?: boolean } = {};
       try {
         saved = JSON.parse(sessionStorage.getItem(articlesStoreKey(projectId, searchId)) ?? "{}");
       } catch {
-        /* pas de filtres mémorisés */
+        /* no remembered filters */
       }
       const status =
         queueMode === "review" ? "TO_REVIEW" : queueMode === "list" && saved.filter && saved.filter !== "ALL" ? (saved.filter as PredictionFilter) : undefined;
       const sort = queueMode === "list" ? (saved.sort ?? "added") : "added";
       const answers = queueMode === "all" ? {} : (saved.answers ?? {});
       let r = await listArticles(projectId, 1, 200, status, sort, answers, searchId, queueMode === "all" ? undefined : saved.q, queueMode === "all" ? undefined : saved.fulltext);
-      // La liste est paginée par 200 : on poursuit jusqu'à trouver l'article ouvert.
+      // The list is paginated by 200: we keep going until the opened article is found.
       const ids = r.items.map((a) => a.id);
       for (let p = 2; articleId && !ids.includes(articleId) && ids.length < r.total && p <= 5; p++) {
         ids.push(...(await listArticles(projectId, p, 200, status, sort, answers, searchId, queueMode === "all" ? undefined : saved.q, queueMode === "all" ? undefined : saved.fulltext)).items.map((a) => a.id));
       }
-      // Rien à relire (pas encore trié / tout validé) : on propose tous les articles.
+      // Nothing to re-review (not ranked yet / all accepted): we offer all articles.
       if (ids.length === 0 && queueMode === "review") r = await listArticles(projectId, 1, 200, undefined, "added", {}, searchId);
       return { ...r, items: ids.length ? ids.map((id) => ({ id })) : r.items };
     };
@@ -145,8 +145,8 @@ export default function AnnotatePage() {
       .finally(() => setLoading(false));
   }, [projectId, articleId, searchId]);
 
-  // Swipe : droite = confirmer la réponse du modèle telle quelle ;
-  // gauche = désaccord, on bascule sur le formulaire pour corriger.
+  // Swipe: right = confirm the model's answer as-is;
+  // left = disagreement, we switch to the form to correct.
   const confirmPrediction = useCallback(async () => {
     if (!articleId || !prediction?.decision_json) {
       setTab("annotation");
@@ -165,7 +165,7 @@ export default function AnnotatePage() {
     }
   }, [projectId, articleId, prediction, searchId, isBlind]);
 
-  // Repart des extraits de la relecture, sinon de ceux du modèle (rien à l'aveugle avant relecture).
+  // Starts from the re-review's excerpts, otherwise from the model's (nothing in blind mode before re-review).
   useEffect(() => {
     const locked = isBlind && !review;
     const own = review?.decision_json?.evidence_quotes;
@@ -189,7 +189,7 @@ export default function AnnotatePage() {
         try {
           setArticle(await uploadArticlePdf(projectId, articleId, file, false, searchId));
         } catch (e) {
-          // Le PDF ne ressemble pas à cet article : on laisse l'utilisateur trancher.
+          // The PDF does not look like this article: we let the user decide.
           if (!(e instanceof Error && e.message === "pdf_mismatch")) throw e;
           if (!window.confirm(t("pdfMismatch"))) return;
           setArticle(await uploadArticlePdf(projectId, articleId, file, true, searchId));
@@ -235,7 +235,7 @@ export default function AnnotatePage() {
         setSaved(r.status ?? "MANUAL");
         setStatus("submitted");
         setGoldNote(null);
-        // À l'aveugle, la réponse du modèle n'est révélée qu'une fois la relecture enregistrée.
+        // In blind mode, the model's answer is revealed only once the re-review is saved.
         if (isBlind) setPrediction(await getPrediction(projectId, articleId, searchId).catch(() => null));
       } catch (e) {
         setError((e as Error).message);
@@ -293,11 +293,11 @@ export default function AnnotatePage() {
       </nav>
     ) : null;
 
-  // À l'aveugle et pas encore relu : rien du modèle (ni réponses, ni preuves surlignées).
+  // In blind mode and not yet re-reviewed: nothing from the model (no answers, no highlighted evidence).
   const blindLocked = isBlind && !review;
   const shownPrediction = blindLocked ? null : prediction;
 
-  // Une relecture existante prime sur la réponse de l'IA : on corrige à partir d'elle.
+  // An existing re-review takes precedence over the AI's answer: we correct from it.
   const initialAnnotation = review?.decision_json
     ? { ...review.decision_json, field_confidence: shownPrediction?.decision_json?.field_confidence }
     : shownPrediction?.decision_json
@@ -310,7 +310,7 @@ export default function AnnotatePage() {
 
   return (
     <div className="flex flex-col">
-      {/* Barre supérieure (desktop) */}
+      {/* Top bar (desktop) */}
       <header className="hidden border-b p-4 md:block">
         <div className="flex items-center justify-between gap-3">
           <Link
@@ -343,7 +343,7 @@ export default function AnnotatePage() {
         )}
       </header>
 
-      {/* Barre supérieure (mobile) : retour aux articles */}
+      {/* Top bar (mobile): back to articles */}
       <header className="flex items-center justify-between gap-2 border-b p-3 md:hidden">
         <Link
           href={withSearch(`/projects/${projectId}/articles`, searchId)}
@@ -361,9 +361,9 @@ export default function AnnotatePage() {
         </div>
       )}
 
-      {/* Corps : double colonne (desktop) / mono-colonne à onglets (mobile) */}
+      {/* Body: two columns (desktop) / single-column tabs (mobile) */}
       <main className="flex flex-col md:h-[calc(100vh_-_14rem)] md:flex-row md:overflow-hidden">
-        {/* Document (gauche sur desktop, onglet sur mobile) */}
+        {/* Document (left on desktop, tab on mobile) */}
         <section
           className={`max-h-[70vh] min-h-0 flex-[3] overflow-y-auto p-4 md:max-h-none ${
             tab === "document" ? "block" : "hidden md:block"
@@ -458,7 +458,7 @@ export default function AnnotatePage() {
           </SwipeableCard>
         </section>
 
-        {/* Formulaire (droite sur desktop, onglet sur mobile) */}
+        {/* Form (right on desktop, tab on mobile) */}
         <section
           className={`max-h-[70vh] min-h-0 flex-[2] overflow-y-auto border-t p-4 md:max-h-none md:border-l md:border-t-0 ${
             tab === "annotation" ? "block" : "hidden md:block"
@@ -497,13 +497,13 @@ export default function AnnotatePage() {
             onQuotesChange={setQuotes}
             onQuoteClick={(q) => {
               setFocus((prev) => ({ quote: q, n: (prev?.n ?? 0) + 1 }));
-              setTab("document"); // mobile : le document est sous un onglet
+              setTab("document"); // mobile: the document is under a tab
             }}
           />
         </section>
       </main>
 
-      {/* Barre de navigation inférieure (mobile) */}
+      {/* Bottom navigation bar (mobile) */}
       <nav className="flex border-t md:hidden">
         <button
           onClick={() => setTab("document")}

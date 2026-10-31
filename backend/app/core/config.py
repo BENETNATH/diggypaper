@@ -1,4 +1,4 @@
-"""Configuration applicative (pydantic-settings, chargée une seule fois)."""
+"""Application configuration (pydantic-settings, loaded once)."""
 
 from functools import lru_cache
 
@@ -14,13 +14,13 @@ class Settings(BaseSettings):
     jwt_secret: str = "dev-secret-change-me-0123456789abcdef"  # ≥32 octets (HS256)
     access_token_expire_minutes: int = 60
     app_base_url: str = "http://localhost:8000"
-    # Cookie JWT : secure=True uniquement en HTTPS (sinon le cookie n'est pas
-    # envoyé par le navigateur sur HTTP → tous les appels auth sont 401).
-    # true par défaut (prod, HTTPS ou reverse proxy TLS) ; false pour un essai en HTTP local.
+    # JWT cookie: secure=True only on HTTPS (otherwise the browser does not send
+    # the cookie over HTTP → every auth call is 401).
+    # Default true (prod, HTTPS or TLS reverse proxy); false for local HTTP testing.
     cookie_secure: bool = True
     # Sel d'anonymisation RGPD : sha256(anon_salt + email_original).
     anon_salt: str = "diggypaper-anon"
-    # Clé maîtresse AES-256 (Module 7) : 64 hex chars ou 44 base64 chars.
+    # AES-256 master key (Module 7): 64 hex chars or 44 base64 chars.
     encryption_key: str = "dev-encryption-key-change-me-0000000000"
     smtp_host: str = ""
     smtp_port: int = 587
@@ -28,43 +28,42 @@ class Settings(BaseSettings):
     smtp_password: str = ""
     smtp_from: str = ""
     smtp_use_tls: bool = True
-    # F3 : vide par défaut = pas de CORS (le déploiement est same-origin derrière nginx).
+    # F3: empty by default = no CORS (the deployment is same-origin behind nginx).
     cors_origins: list[str] = []
-    # Bootstrap du premier admin (idempotent) : si définis et qu'aucun admin n'existe,
-    # le compte est créé au démarrage. Vide = pas de bootstrap.
-    # Langue par défaut (fr/en/de/es) : e-mails, nouveaux comptes, Accept-Language absent.
+    # First-admin bootstrap (idempotent): if defined and no admin exists, the account
+    # is created at startup. Empty = no bootstrap.
+    # Default language (fr/en/de/es): emails, new accounts, missing Accept-Language.
     default_language: str = "en"
     admin_email: str = ""
     admin_password: str = ""
-    # Plafond d'articles ramenés par un import ; 0 = illimité (les requêtes de plus de 10 000
-    # résultats sont découpées par date).
+    # Cap on articles fetched by an import; 0 = unlimited (queries returning more than
+    # 10,000 results are split by date).
     import_max_articles: int = 5000
-    # Licence des métadonnées et résultats de l'export RO-Crate (les PDF/textes intégraux
-    # gardent la licence de leurs éditeurs). URL + nom affiché ; adaptez-la à votre politique.
+    # License of the RO-Crate export metadata and results (full PDFs/texts keep their
+    # publishers' license). Displayed URL + name; adapt it to your policy.
     crate_license_url: str = "https://creativecommons.org/licenses/by/4.0/"
     crate_license_name: str = "CC BY 4.0"
-    # Lien « politique de confidentialité' (page de l'établissement) ; vide = non affiché.
+    # "Privacy policy" link (institution page); empty = not displayed.
     privacy_url: str = ""
-    # Alerte disque (e-mail aux admins, bandeau) : au-delà de ce taux d'occupation ou sous cet
-    # espace libre.
+    # Disk alert (email to admins, banner): beyond this usage rate or below this free space.
     disk_alert_percent: int = 85
     disk_alert_free_gb: int = 5
-    # Projets inactifs : après N jours sans activité, les responsables sont prévenus ; sans
-    # activité (ou « Conserver ») pendant le délai de grâce, le projet est supprimé. 0 = jamais.
+    # Inactive projects: after N days without activity, the leads are warned; with no
+    # activity (or "Keep") during the grace period, the project is deleted. 0 = never.
     project_retention_days: int = 0
     project_retention_grace_days: int = 14
 
 
-# Valeurs de dev par défaut : refusées en production (fail-fast, F5).
+# Dev default values: rejected in production (fail-fast, F5).
 _DEV_JWT_SECRET = "dev-secret-change-me-0123456789abcdef"
 _DEV_ANON_SALT = "diggypaper-anon"
 _DEV_ENCRYPTION_KEY = "dev-encryption-key-change-me-0000000000"
 
 
 def validate_settings(settings: Settings) -> None:
-    """F5 : fail-fast si un secret est encore la valeur de dev par défaut.
+    """F5: fail-fast if a secret is still its dev default value.
 
-    Lève RuntimeError en nommant les variables à définir
+    Raises RuntimeError naming the variables to define
     (JWT_SECRET / ANON_SALT / ENCRYPTION_KEY).
     """
     problems = []

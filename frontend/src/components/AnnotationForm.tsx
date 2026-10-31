@@ -12,18 +12,18 @@ export type Annotation = Record<string, unknown> & {
 };
 
 interface AnnotationFormProps {
-  /** Champs de la question du projet. */
+  /** Fields of the project's question. */
   fields: SchemaField[];
-  /** Appelé avec l'annotation complète à la soumission. */
+  /** Called with the full annotation on submission. */
   onSubmit: (annotation: Annotation) => void;
-  /** Appelé en cas d'erreur (ex. soumission invalide). */
+  /** Called on error (e.g. invalid submission). */
   onError?: (message: string) => void;
-  /** Valeurs initiales (pré-remplissage depuis une prédiction). */
+  /** Initial values (prefill from a prediction). */
   initial?: Record<string, unknown>;
-  /** Extraits de preuve pilotés par la page (surlignage et « + » sur le texte) ; sinon état local. */
+  /** Evidence excerpts driven by the page (highlighting and "+" on the text); otherwise local state. */
   quotes?: string[];
   onQuotesChange?: (quotes: string[]) => void;
-  /** Clic sur un extrait : la page le révèle dans le document (scroll sur le surlignage). */
+  /** Click on an excerpt: the page reveals it in the document (scroll to the highlight). */
   onQuoteClick?: (quote: string) => void;
 }
 

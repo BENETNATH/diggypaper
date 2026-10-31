@@ -1,7 +1,7 @@
-"""Administration des comptes : liste, modification, désactivation, suppression (avec leurs
-projets et restes), invitations en attente (renvoi / révocation), tous les projets.
+"""Account administration: listing, modification, deactivation, deletion (with their
+projects and leftovers), pending invitations (resend / revocation), all projects.
 
-Réservé aux ADMIN globaux.
+Reserved for global ADMINs.
 """
 
 import logging
@@ -131,13 +131,13 @@ async def delete_user(
     admin: AdminDep,
     delete_their_projects: Annotated[bool, Query()] = False,
 ) -> dict:
-    """Supprime le compte et tout ce qui lui est propre.
+    """Deletes the account and everything that is its own.
 
-    Part avec le compte : appartenances, modèles qu'il possède (et leurs partages), partages
-    reçus, réglages personnels, invitations en attente à son adresse. Ses annotations
-    restent, anonymisées (hash). ``delete_their_projects`` : supprime aussi les projets qu'il a
-    créés ou dont il est l'unique LEAD (articles, PDF, analyses, exports sur disque inclus) ;
-    sinon ces projets restent (visibles de l'admin) et sont listés dans la réponse.
+    Goes with the account: memberships, models it owns (and their shares), shares
+    received, personal settings, pending invitations to its address. Its annotations
+    stay, anonymized (hash). ``delete_their_projects``: also deletes the projects it
+    created or is the sole LEAD of (articles, PDFs, analyses, on-disk exports included);
+    otherwise those projects stay (visible to the admin) and are listed in the response.
     """
     user = await db.get(User, user_id)
     if user is None:
@@ -179,7 +179,7 @@ async def delete_user(
 
 @router.post("/users/purge-orphans")
 async def purge_orphan_users(db: DbDep, admin: AdminDep) -> dict:
-    """Supprime tous les comptes invités (non créateurs) qui n'appartiennent à aucun projet."""
+    """Deletes all guest accounts (non-creators) that belong to no project."""
     n = await purge_orphans(db)
     await db.commit()
     return {"deleted": n}
@@ -224,7 +224,7 @@ async def list_invitations(db: DbDep, admin: AdminDep) -> dict:
 
 @router.post("/invitations/{invitation_id}/resend")
 async def resend_invitation(invitation_id: uuid.UUID, db: DbDep, admin: AdminDep) -> dict:
-    """Renvoie l'e-mail (nouveau lien valable 7 j) ; sans SMTP, renvoie le lien à transmettre."""
+    """Resends the e-mail (new link valid 7 d); without SMTP, returns the link to transmit."""
     inv = await db.get(Invitation, invitation_id)
     if inv is None or inv.accepted_at is not None:
         raise HTTPException(status_code=404, detail="invitation not found")
@@ -242,14 +242,14 @@ async def resend_invitation(invitation_id: uuid.UUID, db: DbDep, admin: AdminDep
 
 @router.delete("/invitations/{invitation_id}", status_code=204)
 async def revoke_invitation(invitation_id: uuid.UUID, db: DbDep, admin: AdminDep) -> None:
-    """Révoque : le lien déjà envoyé cesse de fonctionner."""
+    """Revokes: the link already sent stops working."""
     res = await db.execute(delete(Invitation).where(Invitation.id == invitation_id))
     if not res.rowcount:
         raise HTTPException(status_code=404, detail="invitation not found")
     await db.commit()
 
 
-# --- Tous les projets --------------------------------------------------------------------
+# --- All projects --------------------------------------------------------------------
 
 
 @router.get("/projects")

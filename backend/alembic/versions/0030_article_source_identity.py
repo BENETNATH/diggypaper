@@ -1,11 +1,12 @@
-"""Identité générale des articles : (project_id, source, native_id)
+"""General article identity: (project_id, source, native_id)
 
 Revision ID: 0030
 Revises: 0029
 Create Date: 2026-10-29 12:00:00.000000
 
-Migration additive : ``pmid`` et son index unique restent. Le backfill (source='pubmed',
-native_id=pmid) ne peut pas créer de doublon du triplet, l'unicité (project_id, pmid) le garantit.
+Additive migration: ``pmid`` and its unique index stay. The backfill (source='pubmed',
+native_id=pmid) cannot create a duplicate triplet; the (project_id, pmid) uniqueness
+guarantees it.
 """
 
 from collections.abc import Sequence

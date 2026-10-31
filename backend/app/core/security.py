@@ -1,8 +1,8 @@
-"""Mots de passe (argon2-cffi) + JWT (pyjwt HS256).
+"""Passwords (argon2-cffi) + JWT (pyjwt HS256).
 
-Access token : claims {sub, email, role, iat, exp}, TTL 1h, stocké en cookie httpOnly.
-Token d'invitation : claims {email, purpose="invite", language, iat, exp}, TTL 7 jours.
-Pas de refresh token (décision documentée, lot 2).
+Access token: claims {sub, email, role, iat, exp}, TTL 1 h, stored in an httpOnly cookie.
+Invitation token: claims {email, purpose="invite", language, iat, exp}, TTL 7 days.
+No refresh token (documented decision, lot 2).
 """
 
 from datetime import UTC, datetime, timedelta
@@ -19,8 +19,8 @@ INVITE_TOKEN_TTL = timedelta(days=7)
 
 _password_hasher = PasswordHasher()
 
-# m3 : hash argon2 factice (module-level) pour égaliser le temps de réponse du login
-# quand l'email n'existe pas (évite l'oracle de timing user-existe / user-n'existe-pas).
+# m3: dummy argon2 hash (module-level) to equalize the login response time when
+# the email does not exist (avoids the user-exists / user-does-not-exist timing oracle).
 DUMMY_HASH = _password_hasher.hash("timing-equalization-dummy-password")
 
 
@@ -80,13 +80,13 @@ def create_invite_token(
 
 
 def decode_token(token: str) -> dict:
-    """Décode un JWT HS256 ; lève jwt.PyJWTError si invalide/expiré."""
+    """Decodes an HS256 JWT; raises jwt.PyJWTError if invalid/expired."""
     settings = get_settings()
     return jwt.decode(token, settings.jwt_secret, algorithms=["HS256"])
 
 
 def decode_invite_token(token: str) -> dict:
-    """Décode un JWT d'invitation ; lève jwt.PyJWTError si expiré ou mauvais purpose."""
+    """Decodes an invitation JWT; raises jwt.PyJWTError if expired or wrong purpose."""
     claims = decode_token(token)
     if claims.get("purpose") != INVITE_PURPOSE:
         raise jwt.InvalidTokenError("wrong purpose")

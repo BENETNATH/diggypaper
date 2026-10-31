@@ -1,4 +1,4 @@
-"""Question + champs propres au projet (app/schema.py) — offline."""
+"""Question + project-specific fields (app/schema.py) — offline."""
 
 import pytest
 
@@ -81,6 +81,6 @@ async def test_articles_prediction_status_and_auto_prompt(
     r = (await client.get(f"{base}/articles", params={"status": "TO_REVIEW"})).json()
     assert r["total"] == 1 and r["items"][0]["confidence"] == 0.5
     assert (await client.get(f"{base}/articles", params={"status": "NONE"})).json()["total"] == 0
-    # le prompt auto est réutilisé tant que la question ne change pas
+    # the auto prompt is reused as long as the question does not change
     p1 = (await client.post(f"{base}/prompts/generate")).json()
     assert (await client.post(f"{base}/prompts/generate")).json()["id"] == p1["id"]

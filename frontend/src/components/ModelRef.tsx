@@ -3,7 +3,7 @@
 import { useTranslations } from "next-intl";
 import { shortVersion } from "@/lib/modelVersion";
 
-/** Modèle tracé : nom (identifiant si différent) · version figée au moment de l'analyse. */
+/** Traced model: name (id if different) · version frozen at analysis time. */
 export function ModelRef({
   name,
   identifier,
@@ -23,7 +23,7 @@ export function ModelRef({
         <>
           {t("modelVersion")}{" "}
           {short !== version ? (
-            // forme abrégée : valeur complète dans le title, focalisable au clavier
+            // abbreviated form: full value in the title, focusable by keyboard
             <abbr title={version ?? undefined} tabIndex={0}>
               {short}
             </abbr>

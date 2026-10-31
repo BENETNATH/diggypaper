@@ -2,7 +2,7 @@
 
 import { useTranslations } from "next-intl";
 
-/** Certitude (0–1) d'UNE réponse du modèle : pastille colorée + pourcentage. */
+/** Certainty (0–1) of ONE model answer: colored pill + percentage. */
 export function Certainty({ value, className = "" }: { value: number | null | undefined; className?: string }) {
   const t = useTranslations("articles");
   if (value == null) return null;
@@ -15,7 +15,7 @@ export function Certainty({ value, className = "" }: { value: number | null | un
   );
 }
 
-/** Ligne « Auteur … Dernier auteur · Journal · Date » d'un article. */
+/** "Author ... Last author · Journal · Date" row of an article. */
 export function biblioLine(a: {
   first_author?: string | null;
   last_author?: string | null;
@@ -26,7 +26,7 @@ export function biblioLine(a: {
   return [authors, a.journal, a.pub_date].filter(Boolean).join(" · ");
 }
 
-/** Liens externes d'un article : DOI et texte intégral / PDF (quand ils existent). */
+/** External links of an article: DOI and full text / PDF (when they exist). */
 export function ArticleLinks({
   article,
   className = "",

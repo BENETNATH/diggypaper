@@ -1,4 +1,4 @@
-"""Dépendances FastAPI : session DB, user courant, admin, mailer."""
+"""FastAPI dependencies: DB session, current user, admin, mailer."""
 
 import uuid
 from collections.abc import AsyncIterator
@@ -22,14 +22,14 @@ async def get_db() -> AsyncIterator[AsyncSession]:
 
 
 async def get_mailer(db: Annotated[AsyncSession, Depends(get_db)]) -> Mailer | None:
-    """Mailer (SMTP des paramètres, sinon env) ; None si l'envoi n'est pas configuré."""
+    """Mailer (SMTP from the settings, else env); None if sending is not configured."""
     from app.emails import mailer_from_db
 
     return await mailer_from_db(db)
 
 
 async def _load_user(request: Request, db: AsyncSession) -> User:
-    """Charge le user depuis le cookie access_token (401 si absent/invalide/inexistant)."""
+    """Load the user from the access_token cookie (401 if missing/invalid/nonexistent)."""
     token = request.cookies.get(ACCESS_TOKEN_COOKIE)
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
@@ -39,7 +39,7 @@ async def _load_user(request: Request, db: AsyncSession) -> User:
         raise HTTPException(status_code=401, detail="Invalid token") from None
     sub = claims.get("sub")
     if not sub:
-        # Ex. un JWT d'invitation (pas de claim sub) ne sert pas à s'authentifier.
+        # Ex. an invitation JWT (no sub claim) cannot be used to authenticate.
         raise HTTPException(status_code=401, detail="Invalid token")
     try:
         user_id = uuid.UUID(sub)
@@ -56,10 +56,10 @@ async def _load_user(request: Request, db: AsyncSession) -> User:
 
 
 async def get_current_user(request: Request, db: Annotated[AsyncSession, Depends(get_db)]) -> User:
-    """User courant vivant (401 si absent/invalide ou compte anonymisé, F2)."""
+    """Living current user (401 if missing/invalid or anonymized account, F2)."""
     user = await _load_user(request, db)
     if user.anonymized_hash is not None:
-        # F2 : compte mort post-anonymisation — plus aucun accès résiduel.
+        # F2: dead account post-anonymization - no residual access left.
         raise HTTPException(status_code=401, detail="Account anonymized")
     return user
 
@@ -67,18 +67,18 @@ async def get_current_user(request: Request, db: Annotated[AsyncSession, Depends
 async def get_current_user_or_anonymized(
     request: Request, db: Annotated[AsyncSession, Depends(get_db)]
 ) -> User:
-    """Comme get_current_user mais tolère un compte déjà anonymisé.
+    """Like get_current_user but tolerates an already-anonymized account.
 
-    Réservé à l'endpoint d'anonymisation (idempotence, F2) : un compte déjà
-    anonymisé peut re-appeler DELETE /users/me/anonymize sans erreur.
+    Reserved for the anonymization endpoint (idempotence, F2): an already
+    anonymized account can re-call DELETE /users/me/anonymize without error.
     """
     return await _load_user(request, db)
 
 
 def get_client_ip(request: Request) -> str:
-    """IP client (F7/F8, spec §7) : premier IP de X-Forwarded-For si présent (posé par
-    nginx), sinon request.client.host. En prod, nginx doit poser X-Forwarded-For de
-    façon fiable (le 1er saut est fait confiance)."""
+    """Client IP (F7/F8, spec \u00a77): first IP of X-Forwarded-For if present (set by
+    nginx), else request.client.host. In prod, nginx must set X-Forwarded-For
+    reliably (the 1st hop is trusted)."""
     xff = request.headers.get("x-forwarded-for")
     if xff:
         first = xff.split(",")[0].strip()
@@ -96,7 +96,7 @@ async def get_current_admin(user: Annotated[User, Depends(get_current_user)]) ->
 
 
 def rate_limit_user(scope: str, limit: int):
-    """Dépendance : 429 au-delà de ``limit`` appels / 15 min par utilisateur (pas par IP)."""
+    """Dependency: 429 beyond ``limit`` calls / 15 min per user (not per IP)."""
     from app.api.ratelimit import is_rate_limited, record
 
     async def dependency(user: Annotated[User, Depends(get_current_user)]) -> None:

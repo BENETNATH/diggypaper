@@ -1,5 +1,5 @@
-"""Phase 4a : pipeline OpenAlex — source métadonnées seulement
-(spec 2026-10-29-sources-phase4a D1/D2) — 100 % offline (fake adapter)."""
+"""Phase 4a: OpenAlex pipeline — metadata-only source
+(spec 2026-10-29-sources-phase4a D1/D2) — 100% offline (fake adapter)."""
 
 from test_source_dedup import _articles, _factory, _make_project
 from test_sources import FakeSourceAdapter
@@ -33,8 +33,8 @@ async def _import(engine, project, fake) -> dict:
 
 
 async def test_openalex_import_metadata_only(engine):
-    """Import ``openalex`` : source/native_id posés, ``fulltext_note="metadata_only"``
-    explicite, aucun appel plein texte, ``fulltext == 0``."""
+    """``openalex`` import: source/native_id set, explicit ``fulltext_note="metadata_only"``,
+    no full-text call, ``fulltext == 0``."""
     project = await _make_project(engine)
     fake = _fake()
     result = await _import(engine, project, fake)
@@ -52,7 +52,7 @@ async def test_openalex_import_metadata_only(engine):
 
 
 async def test_openalex_reimport_same_identity_noop(engine):
-    """Réimport même identité : 0 inséré (ON CONFLICT), la note n'est pas écrasée."""
+    """Re-import same identity: 0 inserted (ON CONFLICT), the note is not overwritten."""
     project = await _make_project(engine)
     fake = _fake()
     await _import(engine, project, fake)
@@ -63,9 +63,9 @@ async def test_openalex_reimport_same_identity_noop(engine):
 
 
 async def test_openalex_doi_link_sets_note_on_existing_row(engine):
-    """Work OpenAlex portant le DOI d'une ligne existante sans fulltext : rattachement
-    — ``fulltext_note`` posé (si vide), identité et origine intactes, ``duplicates_doi`` ;
-    le second work (sans DOI) est inséré normalement."""
+    """OpenAlex Work carrying the DOI of an existing fulltext-less row: attachment —
+    ``fulltext_note`` set (if empty), identity and origin intact, ``duplicates_doi``;
+    the second work (no DOI) is inserted normally."""
     project = await _make_project(
         engine,
         {"source": "crossref", "native_id": "10.1000/oa.1", "doi": "10.1000/oa.1", "title": "T1"},

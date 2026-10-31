@@ -65,11 +65,11 @@ const GROUPS: { titleKey: string; helpKey?: string; fields: FieldDef[] }[] = [
 ];
 
 /**
- * Panneau de settings (Module 7). Réutilisé par /settings (global, admin) et
+ * Settings panel (Module 7). Reused by /settings (global, admin) and
  * /projects/[id]/settings (scope GLOBAL + PROJECT).
  *
- * - Sans `projectId` : scope GLOBAL uniquement (config serveur : LLM/SMTP/NCBI/Zotero).
- * - Avec `projectId` : scope GLOBAL + PROJECT (le PROJECT passe project_id à l'API).
+ * - Without `projectId`: scope GLOBAL only (server config: LLM/SMTP/NCBI/Zotero).
+ * - With `projectId`: scope GLOBAL + PROJECT (PROJECT passes project_id to the API).
  */
 export function SettingsPanel({ projectId }: { projectId?: string }) {
   const t = useTranslations("settings");
@@ -110,7 +110,7 @@ export function SettingsPanel({ projectId }: { projectId?: string }) {
   useEffect(() => {
     void load();
   }, [load]);
-  // Valeurs de l'environnement (admin, scope global) : montrent ce qui s'applique quand un champ est vide.
+  // Environment values (admin, global scope): show what applies when a field is empty.
   useEffect(() => {
     getEnvSettings().then(setEnv).catch(() => setEnv({}));
   }, []);

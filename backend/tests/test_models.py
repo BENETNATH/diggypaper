@@ -1,4 +1,4 @@
-"""Tests des 12 modèles ORM (spec section 3) — métadonnées + comportement sur SQLite async."""
+"""Tests for the 12 ORM models (spec section 3) — metadata + behavior on async SQLite."""
 
 import uuid
 
@@ -254,8 +254,8 @@ def test_articles_columns():
         assert isinstance(c[name].type, String) and c[name].nullable
     for name in ("title", "abstract", "methods_text"):
         assert isinstance(c[name].type, Text) and c[name].nullable
-    # m3 : VARCHAR libre (pas un enum) — les langues hors en/fr/de/es gardent
-    # leur libellé PubMed brut (pas de forçage 'en').
+    # m3: free-form VARCHAR (not an enum) — languages outside en/fr/de/es keep
+    # their raw PubMed label (no forced 'en').
     assert isinstance(c["original_language"].type, String) and c["original_language"].nullable
     assert c["original_language"].server_default.arg == "en"
     assert c["created_at"].server_default is not None
@@ -504,7 +504,7 @@ def test_article_predictions_columns():
         "search_id",
         "status",
         "created_at",
-        # traçabilité (spec 2026-10-29-tracabilite-modele-version) : figés à la prédiction
+        # traceability (spec 2026-10-29-tracabilite-modele-version): frozen at prediction
         "model_identifier",
         "model_version",
     }
@@ -629,7 +629,7 @@ async def test_system_settings_unique(session):
 
 
 async def test_settings_global_scope_unique(session):
-    """Deux settings GLOBAL même key_name → IntegrityError (index partiel uq_settings_global)."""
+    """Two GLOBAL settings, same key_name → IntegrityError (partial index)."""
     session.add(SystemSettings(scope=SettingScope.GLOBAL, key_name="smtp_host"))
     await session.commit()
     session.add(SystemSettings(scope=SettingScope.GLOBAL, key_name="smtp_host"))
@@ -638,7 +638,7 @@ async def test_settings_global_scope_unique(session):
 
 
 async def test_settings_project_scope_unique(session):
-    """Deux settings PROJECT même (project_id, key_name) → IntegrityError."""
+    """Two PROJECT settings with the same (project_id, key_name) -> IntegrityError."""
     project = Project(title="p")
     session.add(project)
     await session.flush()
@@ -654,7 +654,7 @@ async def test_settings_project_scope_unique(session):
 
 
 async def test_settings_user_scope_unique(session):
-    """Deux settings USER même (user_id, key_name) → IntegrityError."""
+    """Two USER settings with the same (user_id, key_name) -> IntegrityError."""
     user = User(email="a@b.c", hashed_password="h")
     session.add(user)
     await session.flush()
@@ -666,7 +666,7 @@ async def test_settings_user_scope_unique(session):
 
 
 async def test_settings_same_key_different_scopes_ok(session):
-    """Même key_name dans des scopes différents (GLOBAL vs PROJECT) → pas d'erreur."""
+    """Same key_name in different scopes (GLOBAL vs PROJECT) -> no error."""
     project = Project(title="p")
     session.add(project)
     await session.flush()
@@ -709,7 +709,7 @@ async def test_system_settings_cascade_delete(session):
     assert (await session.execute(select(SystemSettings))).first() is None
 
 
-# --- valeurs par défaut à l'insertion ---
+# default values on insertion
 
 
 async def test_defaults_on_insert(session):
@@ -768,7 +768,7 @@ async def test_defaults_on_insert(session):
     assert pred.status == PredictionStatus.NEEDS_HUMAN_REVIEW
 
 
-# --- comportement des FK (CASCADE / SET NULL) ---
+# FK behavior (CASCADE / SET NULL)
 
 
 async def test_cascade_delete_project(session):
@@ -880,7 +880,7 @@ async def test_rgpd_user_deletion(session):
     assert (await session.execute(select(ProjectMember))).first() is None
 
 
-# --- index sur les colonnes FK (finding sécurité MINOR) ---
+# indexes on FK columns (security finding MINOR)
 
 
 def test_fk_indexes_exist():
@@ -905,7 +905,7 @@ def test_fk_indexes_exist():
         assert index_names <= indexes, f"{table_name}: index manquants {index_names - indexes}"
 
 
-# --- DDL PostgreSQL : UUID par défaut côté base + VARCHAR sans longueur ---
+# PostgreSQL DDL: DB-side default UUID + lengthless VARCHAR
 
 
 def test_pg_ddl_uuid_default_and_varchar():
@@ -931,7 +931,7 @@ def test_pg_ddl_uuid_default_and_varchar():
     assert "role VARCHAR" in users_ddl  # sans longueur
     assert "VARCHAR(10)" not in users_ddl
 
-    # SQLite : le défaut côté base se compile en NULL (gen_random_uuid() inconnu).
+    # SQLite: the DB-side default compiles to NULL (gen_random_uuid() unknown).
     sqlite_ddl = str(CreateTable(User.__table__).compile(dialect=sqlite.dialect()))
     assert "DEFAULT NULL" in sqlite_ddl
 
@@ -984,11 +984,11 @@ async def test_jsonb_roundtrip(session):
     assert r.models_tested == ["Laya-400M", "Kev-0.8B"]
 
 
-# --- traçabilité modèle + version (spec 2026-10-29-tracabilite-modele-version §3) ---
+# model traceability + version (spec 2026-10-29-tracabilite-modele-version §3)
 
 
 def test_inference_jobs_model_info_column():
-    """Instantané des modèles du job (principal + pré-filtre) : JSONB, NULL pour les anciens."""
+    """Snapshot of the job's models (main + pre-filter): JSONB, NULL for old ones."""
     from app.db.models import InferenceJob
 
     c = InferenceJob.__table__.columns
@@ -996,7 +996,7 @@ def test_inference_jobs_model_info_column():
 
 
 def test_migration_0029_adds_traceability_columns(monkeypatch):
-    """La migration 0029 (après 0028) ajoute les 3 colonnes ; le downgrade les retire."""
+    """Migration 0029 (after 0028) adds the 3 columns; the downgrade removes them."""
     import importlib.util
     from pathlib import Path
 

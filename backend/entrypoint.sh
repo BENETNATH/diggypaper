@@ -1,14 +1,14 @@
 #!/bin/sh
 set -e
 
-# Démarré en root : on répare les droits des volumes (créés par root avant ce changement), puis on
-# relance ce même script sans privilèges (utilisateur « app »).
+# Started as root: fix the volume permissions (created by root before this change), then
+# re-run this same script without privileges (user "app").
 if [ "$(id -u)" = "0" ]; then
     chown -R app:app /app/models /app/exports 2>/dev/null || true
     exec gosu app "$0" "$@"
 fi
 
-# Worker (celery) : pas de migration ici (le backend l'applique), démarrage direct.
+# Worker (celery): no migration here (the backend applies it), direct start.
 if [ "$1" = "celery" ]; then
     shift
     exec celery "$@"

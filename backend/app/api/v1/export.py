@@ -1,4 +1,4 @@
-"""Export XLSX d'un projet : corpus + résultats d'analyse + relecture humaine + paramètres."""
+"""XLSX export of a project: corpus + analysis results + human re-read + parameters."""
 
 import asyncio
 import io
@@ -54,7 +54,7 @@ _XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
 def export_dir() -> str:
-    """Dossier des zips générés (volume partagé backend/worker)."""
+    """Directory of the generated zips (backend/worker shared volume)."""
     return os.environ.get("EXPORT_DIR", "/app/exports")
 
 
@@ -62,7 +62,7 @@ _MAX_CELL = 32000  # limite Excel : 32 767 caractères par cellule
 
 
 def _cell(v):
-    """Valeur compatible Excel : listes/dicts aplatis, texte nettoyé et tronqué."""
+    """Excel-compatible value: lists/dicts flattened, text cleaned and truncated."""
     if v is None or isinstance(v, bool | int | float):
         return v
     if isinstance(v, list):
@@ -88,7 +88,7 @@ def _sheet(ws, header: list[str], rows: list[list], widths: dict[int, int] | Non
 
 
 def _model_rows(label: str, name: str | None, snap: dict | None) -> list[list]:
-    """Lignes « Projet » d'un étage : nom, identifiant, version et détails de l'instantané."""
+    """ "Project" lines of a stage: name, identifier, version and snapshot details."""
     snap = snap or {}
     rows = [
         [label, name],
@@ -103,7 +103,7 @@ def _model_rows(label: str, name: str | None, snap: dict | None) -> list[list]:
 
 
 def _import_source(job) -> str:
-    """Base interrogée par un import ; références / crate : sources mêlées (colonne Source)."""
+    """Database queried by an import; references / crate: mixed sources (Source column)."""
     if job.source:
         return source_name(job.source)
     return "sources par article" if job.kind in ("references", "crate") else "non enregistrée"
@@ -113,7 +113,7 @@ def build_workbook(project, articles, preds, annos, import_jobs, inf_job, user_e
     fields = project_fields(project)
     wb = Workbook()
 
-    # --- Résultats : une ligne par article -----------------------------------
+    # --- Results: one line per article -----------------------------------
     header = ["PMID", "PMCID", "DOI", "Titre", "Date de publication", "Journal"]
     header += ["Premier auteur", "Dernier auteur", "Auteurs", "Types de publication", "Langue"]
     header += ["Lien DOI", "Lien texte intégral / PDF", "Source", "Identifiant source"]
@@ -160,12 +160,12 @@ def build_workbook(project, articles, preds, annos, import_jobs, inf_job, user_e
     for r in ws.iter_rows(min_row=2):
         for c in r:
             c.alignment = Alignment(vertical="top", wrap_text=c.column in (4, 9))
-            # liens cliquables (DOI, texte intégral) ; jamais javascript:/file: etc.
+            # clickable links (DOI, full text); never javascript:/file: etc.
             if c.column in (12, 13) and str(c.value or "").startswith(("http://", "https://")):
                 c.hyperlink = c.value
                 c.style = "Hyperlink"
 
-    # --- Résumé ------------------------------------------------------------------
+    # --- Summary ------------------------------------------------------------------
     counts: dict[str, int] = {}
     for row in rows:
         counts[row[header.index("Statut final")]] = (
@@ -177,7 +177,7 @@ def build_workbook(project, articles, preds, annos, import_jobs, inf_job, user_e
     ws2.append(["Total", len(rows)])
     ws2.append(["Avec texte intégral", sum(1 for a in articles if a.sections)])
 
-    # --- Projet / méthode (reproductibilité) -----------------------------------
+    # --- Project / method (reproducibility) -----------------------------------
     ws3 = wb.create_sheet("Projet")
     info = [
         ["Projet", project.title],
@@ -225,8 +225,8 @@ def build_workbook(project, articles, preds, annos, import_jobs, inf_job, user_e
 
 
 async def _load(db: AsyncSession, project, where=None, search=None):
-    """Articles + dernière prédiction / annotations par article + jobs, ceux de ``search`` (par
-    défaut : toute la recherche initiale)."""
+    """Articles + last prediction / annotations per article + jobs, those of ``search`` (default:
+    the whole initial search)."""
     search = search or await default_search(db, project)
     articles = (
         (
@@ -335,7 +335,7 @@ async def export_xlsx(
 
 
 def _notes(articles, preds: dict, fields: list[dict]) -> dict:
-    """Note par article : statut IA, pertinence et réponses (pour retrouver le tri dans Zotero)."""
+    """Note per article: AI status, relevance and answers (to recover the sort in Zotero)."""
     out = {}
     for a in articles:
         p = preds.get(a.id)
@@ -374,7 +374,7 @@ async def _references(
 
 
 async def _prisma_origin(db, project, scope) -> dict | None:
-    """Recherche autre que la recherche initiale : son point de départ et ses critères."""
+    """A search other than the initial one: its starting point and its criteria."""
     if scope.is_default:
         return None
     parent = await db.get(Search, scope.parent_id) if scope.parent_id else None
@@ -400,7 +400,7 @@ PRISMA_LANGS = "^(fr|en|de|es)$"
 async def get_prisma(
     project_id: uuid.UUID, db: DbDep, user: UserDep, search: uuid.UUID | None = None
 ) -> dict:
-    """Effectifs du diagramme de flux PRISMA 2020 d'une recherche."""
+    """Counts of the PRISMA 2020 flow diagram of a search."""
     project = await _require_project_member(db, project_id, user)
     scope = await get_search(db, project, search)
     articles, preds, annos, import_jobs, _ = await _load(db, project, search=scope)
@@ -417,7 +417,7 @@ async def get_prisma_svg(
     lang: Annotated[str | None, Query(pattern=PRISMA_LANGS)] = None,
     search: uuid.UUID | None = None,
 ) -> Response:
-    """Diagramme PRISMA 2020 en SVG (langue : ``lang`` sinon celle du projet)."""
+    """PRISMA 2020 diagram in SVG (language: ``lang`` if given, else the project's)."""
     project = await _require_project_member(db, project_id, user)
     scope = await get_search(db, project, search)
     articles, preds, annos, import_jobs, _ = await _load(db, project, search=scope)
@@ -441,7 +441,7 @@ async def get_prisma_pdf(
     lang: Annotated[str | None, Query(pattern=PRISMA_LANGS)] = None,
     search: uuid.UUID | None = None,
 ) -> Response:
-    """Diagramme PRISMA 2020 en PDF vectoriel (même contenu que le SVG)."""
+    """PRISMA 2020 diagram as a vectorial PDF (same content as the SVG)."""
     project = await _require_project_member(db, project_id, user)
     scope = await get_search(db, project, search)
     articles, preds, annos, import_jobs, _ = await _load(db, project, search=scope)
@@ -470,7 +470,7 @@ async def export_ris(
     q: Annotated[str | None, Query(max_length=200)] = None,
     fulltext: bool | None = None,
 ) -> Response:
-    """Références RIS (Zotero, EndNote, Mendeley…) ; mêmes filtres que la liste des articles."""
+    """RIS references (Zotero, EndNote, Mendeley...); same filters as the article list."""
     return await _references(project_id, db, user, status, answers, "ris", search, q, fulltext)
 
 
@@ -485,21 +485,21 @@ async def export_bibtex(
     q: Annotated[str | None, Query(max_length=200)] = None,
     fulltext: bool | None = None,
 ) -> Response:
-    """Références BibTeX ; mêmes filtres que la liste des articles."""
+    """BibTeX references; same filters as the article list."""
     return await _references(project_id, db, user, status, answers, "bib", search, q, fulltext)
 
 
 async def write_crate(
     db: AsyncSession, project, user_email: str, tmp, progress=None, search=None
 ) -> dict:
-    """Écrit le RO-Crate (zip) dans le fichier binaire ``tmp`` → {articles, pdf, text}.
+    """Writes the RO-Crate (zip) into the binary file ``tmp`` -> {articles, pdf, text}.
 
-    ``progress(done, total)`` (async, optionnel) est appelé tous les 10 articles.
+    ``progress(done, total)`` (async, optional) is called every 10 articles.
     """
     search = search or await default_search(db, project)
     articles, preds, annos, import_jobs, inf_job = await _load(db, project, search=search)
     fields = project_fields(project)
-    # Registre vivant : seulement en repli, pour un ancien job sans instantané.
+    # Living registry: only as a fallback, for an old job without a snapshot.
     names = {n for n in (inf_job.model_used, inf_job.prefilter_model) if n} if inf_job else set()
     models = {}
     if names and not inf_job.model_info:
@@ -583,7 +583,7 @@ def _export_payload(job: ExportJob) -> dict:
 
 
 async def _latest_export(db: AsyncSession, project_id: uuid.UUID, search=None) -> ExportJob | None:
-    """Dernier export du projet (ou de cette recherche si ``search`` est donnée)."""
+    """Last export of the project (or of this search if ``search`` is given)."""
     cond = [ExportJob.project_id == project_id]
     if search is not None:
         cond.append(in_search(ExportJob.search_id, search))
@@ -605,7 +605,7 @@ async def _latest_export(db: AsyncSession, project_id: uuid.UUID, search=None) -
 async def start_crate_export(
     project_id: uuid.UUID, db: DbDep, user: UserDep, search: uuid.UUID | None = None
 ) -> dict:
-    """Lance l'export RO-Crate en tâche de fond (e-mail à la fin) ; un seul à la fois."""
+    """Launches the RO-Crate export in the background (e-mail at the end); only one at a time."""
     from app.tasks.export import export_task
 
     project = await _require_project_member(db, project_id, user)
@@ -634,7 +634,7 @@ async def start_crate_export(
 async def get_crate_export(
     project_id: uuid.UUID, db: DbDep, user: UserDep, search: uuid.UUID | None = None
 ) -> dict | None:
-    """Dernier export RO-Crate de la recherche (statut, progression, téléchargeable ?)."""
+    """Last RO-Crate export of the search (status, progress, downloadable?)."""
     project = await _require_project_member(db, project_id, user)
     job = await _latest_export(db, project_id, await get_search(db, project, search))
     return _export_payload(job) if job else None

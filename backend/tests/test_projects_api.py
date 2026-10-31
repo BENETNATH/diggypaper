@@ -1,4 +1,4 @@
-"""Tests des routes projets (app/api/v1/projects.py) — Module 2, 100 % offline."""
+"""Tests for the project routes (app/api/v1/projects.py) — Module 2, 100% offline."""
 
 import uuid
 from unittest.mock import MagicMock
@@ -25,7 +25,7 @@ from app.settings.service import set_setting
 
 @pytest.fixture(autouse=True)
 def _no_sleep(monkeypatch):
-    """Pas de vrai sleep en tests (throttle NCBI sur query-volume)."""
+    """No real sleep in tests (NCBI throttle on query-volume)."""
 
     async def _noop(_delay: float) -> None:
         return None
@@ -52,7 +52,7 @@ async def _create_project(client, title: str = "P1") -> str:
 
 
 def _mock_ncbi_for_task(monkeypatch, engine, pmids: list[str] | None = None):
-    """Patch le core de la task (session de test + NCBI mocké) pour le vrai chemin eager."""
+    """Patches the task core (test session + mocked NCBI) for the real eager path."""
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     monkeypatch.setattr("app.tasks._session_factory_override", factory)
     handler = _ncbi_handler(pmids or ["111"])
@@ -64,7 +64,7 @@ def _mock_ncbi_for_task(monkeypatch, engine, pmids: list[str] | None = None):
 
 
 async def _foreign_project(session, owner: User) -> Project:
-    """Projet créé par un autre user (le testeur courant n'en est pas membre)."""
+    """Project created by another user (the current tester is not a member)."""
     project = Project(title="Foreign", created_by=owner.id)
     session.add(project)
     await session.commit()
@@ -81,7 +81,7 @@ async def _foreign_project(session, owner: User) -> Project:
 
 
 async def test_create_project(client, session, researcher_user, do_login):
-    """POST /projects crée le projet + membership LEAD du créateur (201)."""
+    """POST /projects creates the project + the creator's LEAD membership (201)."""
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     resp = await client.post(
         "/api/v1/projects",
@@ -111,7 +111,7 @@ async def test_create_project_empty_title_422(client, researcher_user, do_login)
 
 
 async def test_create_project_blank_title_422(client, researcher_user, do_login):
-    """m8 : title blanc (espaces) → 422 (strip + min_length après strip)."""
+    """m8: blank title (spaces) -> 422 (strip + min_length after strip)."""
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     resp = await client.post("/api/v1/projects", json={"title": "   "})
     assert resp.status_code == 422
@@ -135,7 +135,7 @@ async def test_list_projects_member(client, session, researcher_user, do_login):
 
 
 async def test_list_projects_excludes_foreign(client, session, researcher_user, do_login):
-    """Les projets d'autres users (dont l'user n'est pas membre) sont exclus."""
+    """Other users' projects (which the user is not a member of) are excluded."""
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     await _create_project(client, title="Le mien")
     other = await _make_user(session, "other@lab.fr", UserRole.RESEARCHER, "other-pass-123")
@@ -147,7 +147,7 @@ async def test_list_projects_excludes_foreign(client, session, researcher_user, 
 
 
 async def test_list_projects_admin_sees_all(client, session, admin_user, researcher_user, do_login):
-    """Un ADMIN global voit tous les projets (même sans membership)."""
+    """A global ADMIN sees all projects (even without membership)."""
     other = await _make_user(session, "other@lab.fr", UserRole.RESEARCHER, "other-pass-123")
     await _foreign_project(session, other)
     await do_login("admin@lab.fr", "admin-pass-123", consent=True)
@@ -166,7 +166,7 @@ async def test_list_projects_401_no_auth(client, session, researcher_user):
 
 
 async def test_get_project_as_member(client, session, researcher_user, do_login):
-    """GET /projects/{id} par un membre (200) : status, nb articles, created_by."""
+    """GET /projects/{id} by a member (200): status, article count, created_by."""
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     project_id = await _create_project(client)
     project = await session.get(Project, uuid.UUID(project_id))
@@ -183,11 +183,11 @@ async def test_get_project_as_member(client, session, researcher_user, do_login)
 
 
 async def test_get_project_invited_lead_role_in_payload(client, session, researcher_user, do_login):
-    """LEAD invité (ni créateur, ni admin) : GET /projects/{id} porte son rôle.
+    """Invited LEAD (neither creator nor admin): GET /projects/{id} carries their role.
 
-    Bug 2026-10-30 : le champ manquait (seul ``list_projects`` l'ajoutait) →
-    ``isProjectLead()`` faux dans l'UI et la page Recherches affichait
-    « Seul un chef de projet peut créer des recherches » à un vrai LEAD."""
+    Bug 2026-10-30: the field was missing (only ``list_projects`` added it) ->
+    ``isProjectLead()`` false in the UI and the Recherches page showed
+    "Only a project lead can create searches" to a real LEAD."""
     owner = await _make_user(session, "owner@lab.fr", UserRole.RESEARCHER, "owner-pass-123")
     owner.can_create_projects = True  # le helper local crée des invités par défaut
     await session.commit()
@@ -208,7 +208,7 @@ async def test_get_project_invited_lead_role_in_payload(client, session, researc
 
 
 async def test_get_project_non_member_403(client, session, researcher_user, do_login):
-    """GET /projects/{id} par un non-membre non-admin (403)."""
+    """GET /projects/{id} by a non-member non-admin (403)."""
     other = await _make_user(session, "other@lab.fr", UserRole.RESEARCHER, "other-pass-123")
     project = await _foreign_project(session, other)
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
@@ -217,7 +217,7 @@ async def test_get_project_non_member_403(client, session, researcher_user, do_l
 
 
 async def test_get_project_admin_200(client, session, admin_user, do_login):
-    """GET /projects/{id} par un ADMIN global (200, même sans membership)."""
+    """GET /projects/{id} by a global ADMIN (200, even without membership)."""
     other = await _make_user(session, "other@lab.fr", UserRole.RESEARCHER, "other-pass-123")
     project = await _foreign_project(session, other)
     await do_login("admin@lab.fr", "admin-pass-123", consent=True)
@@ -237,8 +237,8 @@ async def test_get_project_not_found_404(client, researcher_user, do_login):
 
 
 def test_import_request_dates_optional_and_reversed_rejected():
-    """ImportRequest : date_from/date_to optionnelles (ISO) ; bornes inversées →
-    ValidationError (422 via FastAPI, aucun job)."""
+    """ImportRequest: date_from/date_to optional (ISO); inverted bounds ->
+    ValidationError (422 via FastAPI, no job)."""
     from datetime import date
 
     from pydantic import ValidationError
@@ -284,7 +284,7 @@ async def test_import_empty_query_422(client, researcher_user, do_login):
 
 
 async def test_import_query_too_long_422(client, researcher_user, do_login):
-    """m8 : query > 2000 caractères → 422."""
+    """m8: query over 2000 characters -> 422."""
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     project_id = await _create_project(client)
     resp = await client.post(f"/api/v1/projects/{project_id}/import", json={"query": "a" * 2001})
@@ -294,7 +294,7 @@ async def test_import_query_too_long_422(client, researcher_user, do_login):
 async def test_import_completes_frozen_corpus(
     client, session, researcher_user, do_login, monkeypatch
 ):
-    """Un corpus FROZEN/COMPLETED peut être complété par un nouvel import (doublons ignorés)."""
+    """A FROZEN/COMPLETED corpus can be completed by a new import (duplicates ignored)."""
     import app.tasks as tasks
 
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
@@ -311,7 +311,7 @@ async def test_import_completes_frozen_corpus(
 
 
 async def test_import_processing_409(client, session, researcher_user, do_login):
-    """Import déjà en cours (PROCESSING) → 409."""
+    """Import already in progress (PROCESSING) -> 409."""
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     project_id = await _create_project(client)
     project = await session.get(Project, uuid.UUID(project_id))
@@ -322,7 +322,7 @@ async def test_import_processing_409(client, session, researcher_user, do_login)
 
 
 async def test_import_admin_allowed(client, session, admin_user, do_login, monkeypatch):
-    """I4 : un ADMIN global peut trigger l'import (même sans membership)."""
+    """I4: a global ADMIN can trigger the import (even without membership)."""
     import app.tasks as tasks
 
     other = await _make_user(session, "other@lab.fr", UserRole.RESEARCHER, "other-pass-123")
@@ -346,7 +346,7 @@ async def test_import_non_member_403(client, session, researcher_user, do_login)
 
 
 async def test_import_rate_limit_6th_429(client, researcher_user, do_login, monkeypatch):
-    """M-2 : 6e import même IP → 429 rate_limited (limite 5/15min)."""
+    """M-2: 6th import same IP -> 429 rate_limited (limit 5/15min)."""
     import app.tasks as tasks
 
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
@@ -365,7 +365,7 @@ async def test_import_rate_limit_6th_429(client, researcher_user, do_login, monk
 
 
 async def test_import_active_job_409(client, session, researcher_user, do_login, monkeypatch):
-    """M-2 : un import_job PENDING ou RUNNING existant → 409 (un import par projet)."""
+    """M-2: an existing PENDING or RUNNING import_job -> 409 (one import per project)."""
     import app.tasks as tasks
 
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
@@ -411,7 +411,7 @@ async def test_list_articles_paginated(client, session, researcher_user, do_logi
     data2 = resp2.json()
     assert data2["page"] == 2
     assert len(data2["items"]) == 1
-    # pas de doublon entre les pages
+    # no duplicate across pages
     assert {a["pmid"] for a in data["items"]} & {a["pmid"] for a in data2["items"]} == set()
 
 
@@ -436,7 +436,7 @@ async def test_list_articles_per_page_201_422(client, researcher_user, do_login)
 
 
 async def test_query_volume(client, researcher_user, do_login, monkeypatch):
-    """I1 : POST /projects/{id}/query-volume → {count} (membre, NCBI mocké)."""
+    """I1: POST /projects/{id}/query-volume -> {count} (member, mocked NCBI)."""
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     project_id = await _create_project(client)
     import app.api.v1.projects as projects_api
@@ -461,7 +461,7 @@ async def test_query_volume(client, researcher_user, do_login, monkeypatch):
 
 
 async def test_query_volume_non_member_403(client, session, researcher_user, do_login):
-    """I1 : query-volume par un non-membre non-admin → 403."""
+    """I1: query-volume by a non-member non-admin -> 403."""
     other = await _make_user(session, "other@lab.fr", UserRole.RESEARCHER, "other-pass-123")
     project = await _foreign_project(session, other)
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
@@ -470,7 +470,7 @@ async def test_query_volume_non_member_403(client, session, researcher_user, do_
 
 
 async def test_query_volume_rate_limit_21st_429(client, researcher_user, do_login, monkeypatch):
-    """M-1 : 21e query-volume même IP → 429 rate_limited (limite 20/15min)."""
+    """M-1: 21st query-volume same IP -> 429 rate_limited (limit 20/15min)."""
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     project_id = await _create_project(client)
     import app.api.v1.projects as projects_api
@@ -493,7 +493,7 @@ async def test_query_volume_rate_limit_21st_429(client, researcher_user, do_logi
 
 
 async def test_query_volume_ncbi_503_502(client, researcher_user, do_login, monkeypatch):
-    """m-1 : NCBI 503 → 502 {error: ncbi_unavailable} (pas de 500, pas de clé/URL)."""
+    """m-1: NCBI 503 -> 502 {error: ncbi_unavailable} (no 500, no key/URL)."""
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     project_id = await _create_project(client)
     import app.api.v1.projects as projects_api
@@ -518,17 +518,17 @@ async def test_query_volume_ncbi_503_502(client, researcher_user, do_login, monk
 
 
 async def test_list_jobs(client, session, researcher_user, do_login, engine, monkeypatch):
-    """M3 : GET /projects/{id}/jobs lit depuis import_jobs (pas de dict in-memory).
+    """M3: GET /projects/{id}/jobs reads from import_jobs (no in-memory dict).
 
-    m1 : en mode eager, POST /import renvoie le statut réel (SUCCESS), pas PENDING.
+    m1: in eager mode, POST /import returns the real status (SUCCESS), not PENDING.
     """
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     project_id = await _create_project(client)
-    # aucun job → liste vide
+    # no job -> empty list
     resp = await client.get(f"/api/v1/projects/{project_id}/jobs")
     assert resp.status_code == 200
     assert resp.json() == {"jobs": []}
-    # un job trigger via le vrai chemin eager (pas de mock de .delay)
+    # a job triggered via the real eager path (no .delay mock)
     _mock_ncbi_for_task(monkeypatch, engine, ["111"])
     resp = await client.post(f"/api/v1/projects/{project_id}/import", json={"query": "cancer"})
     assert resp.status_code == 202
@@ -555,8 +555,8 @@ async def test_list_jobs(client, session, researcher_user, do_login, engine, mon
 async def test_import_failure_jobs_no_key_leak(
     client, session, researcher_user, do_login, engine, monkeypatch
 ):
-    """C-1 : import échoué (NCBI 503, clé définie) → job.error sans clé ni URL ;
-    GET /jobs ne fuit pas la clé NCBI."""
+    """C-1: failed import (NCBI 503, key defined) -> job.error without key nor URL;
+    GET /jobs does not leak the NCBI key."""
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     project_id = await _create_project(client)
     await set_setting(session, "ncbi_api_key", "SECRET-NCBI-KEY-789")

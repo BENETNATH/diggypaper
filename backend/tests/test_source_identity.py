@@ -1,5 +1,5 @@
-"""Phase 2 multi-sources : identité ``(project_id, source, native_id)`` + migration 0030
-(spec 2026-10-29-sources-phase2-identite §1-§2) — 100 % offline."""
+"""Phase 2 multi-sources: identity ``(project_id, source, native_id)`` + migration 0030
+(spec 2026-10-29-sources-phase2-identite §1-§2) — 100% offline."""
 
 import importlib.util
 from collections.abc import AsyncIterator
@@ -23,7 +23,7 @@ BACKEND = Path(__file__).resolve().parents[1]
 
 @pytest.fixture(autouse=True)
 def _no_sleep(monkeypatch):
-    """Pas de vrai sleep (throttle NCBI + backoff)."""
+    """No real sleep (NCBI throttle + backoff)."""
 
     async def _noop(_delay: float) -> None:
         return None
@@ -53,7 +53,7 @@ async def _rows(engine, model, project_id) -> list:
 
 
 def _efetch_xml(items: list[tuple[str, str | None]]) -> str:
-    """efetch PubMed : un PubmedArticle par (pmid, doi) — sans PMCID (pas de plein texte)."""
+    """PubMed efetch: one PubmedArticle per (pmid, doi) — no PMCID (no full text)."""
     out = []
     for pmid, doi in items:
         doi_tag = f'<ArticleId IdType="doi">{doi}</ArticleId>' if doi else ""
@@ -81,7 +81,7 @@ def _ncbi(items: list[tuple[str, str | None]]):
 
 
 class FakeSource:
-    """Adapter de test (contrat Phase 1) : notices sans PMID, identifiées par ``native_id``."""
+    """Test adapter (Phase 1 contract): records without PMID, identified by ``native_id``."""
 
     def __init__(self, metas: list[dict]) -> None:
         self.metas = {m["native_id"]: m for m in metas}
@@ -109,11 +109,11 @@ def _refuse_network():
     return httpx.AsyncClient(transport=httpx.MockTransport(handler))
 
 
-# --- §1 Modèle ---------------------------------------------------------------------------
+# --- §1 Model ---------------------------------------------------------------------------
 
 
 def test_article_and_import_job_source_columns():
-    """``source`` / ``native_id`` (String, NULL = donnée ancienne) ; ``ImportJob.source``."""
+    """``source`` / ``native_id`` (String, NULL = old data); ``ImportJob.source``."""
     a = Article.__table__.columns
     for name in ("source", "native_id"):
         assert isinstance(a[name].type, String) and a[name].nullable
@@ -131,8 +131,8 @@ def test_article_source_native_unique_index():
 
 
 async def test_triplet_unique_enforced_null_native_free(session):
-    """Même triplet → IntegrityError ; même native_id d'une autre source, ou native_id NULL
-    répété → accepté."""
+    """Same triplet -> IntegrityError; same native_id from another source, or repeated
+    NULL native_id -> accepted."""
     project = Project(title="p")
     session.add(project)
     await session.flush()
@@ -151,7 +151,7 @@ async def test_triplet_unique_enforced_null_native_free(session):
 
 
 def test_pmid_unique_index_kept():
-    """Garde (D1) : l'unique (project_id, pmid) reste — dédoublonnage inter-sources par PMID."""
+    """Guard (D1): the (project_id, pmid) unique stays — cross-source dedup by PMID."""
     assert "uq_articles_project_pmid" in {i.name for i in Article.__table__.indexes}
 
 
@@ -168,7 +168,8 @@ def _migration(rev: str):
 
 
 def test_migration_0030_chain_after_0029():
-    """0030 suit 0029 (traçabilité) et devient l'unique tête (rouge tant que 0029 manque)."""
+    """0030 follows 0029 (traceability) and becomes the unique head
+    (fails while 0029 is missing)."""
     from alembic.config import Config
     from alembic.script import ScriptDirectory
 
@@ -179,8 +180,8 @@ def test_migration_0030_chain_after_0029():
 
 
 def test_migration_0030_backfill_and_downgrade_on_sqlite(tmp_path, monkeypatch):
-    """Sur une vraie base (SQLite) : backfill pubmed/PMID, jobs de recherche et de citations
-    → pubmed ; triplet unique ; downgrade complet ; ré-upgrade possible."""
+    """On a real DB (SQLite): pubmed/PMID backfill, search and citation jobs
+    -> pubmed; unique triplet; full downgrade; re-upgrade possible."""
     from alembic.migration import MigrationContext
     from alembic.operations import Operations
 
@@ -250,7 +251,7 @@ def test_migration_0030_backfill_and_downgrade_on_sqlite(tmp_path, monkeypatch):
 
 
 async def test_pubmed_import_sets_source_native_id_and_job_source(engine):
-    """Recherche PubMed : chaque article porte source='pubmed', native_id=PMID ; le job aussi."""
+    """PubMed search: each article carries source='pubmed', native_id=PMID; the job too."""
     project = await _make_project(engine)
     async with _ncbi([("111", None), ("222", "10.1/b")]) as http:
         result = await _import_pubmed(
@@ -268,8 +269,8 @@ async def test_pubmed_import_sets_source_native_id_and_job_source(engine):
 
 
 async def test_non_pubmed_source_keyed_on_native_id_without_pmid(engine):
-    """Source sans PMID : notices indexées par native_id, article (source, native_id), pmid NULL,
-    origin = la source ; job.source = la source."""
+    """Source without PMID: records indexed by native_id, article (source, native_id), pmid NULL,
+    origin = the source; job.source = the source."""
     project = await _make_project(engine)
     fake = FakeSource([{"native_id": "W1", "title": "Work 1", "doi": None}])
     async with _refuse_network() as http:
@@ -296,7 +297,7 @@ async def _reset_status(engine, project_id) -> None:
 
 
 async def test_reimport_same_triplet_without_pmid_no_duplicate(engine):
-    """Ré-import d'une source sans PMID : le triplet dédoublonne (0 importé, 0 échec)."""
+    """Re-import of a source without PMID: the triplet deduplicates (0 imported, 0 failure)."""
     project = await _make_project(engine)
     metas = [{"native_id": "W1", "title": "Work 1"}]
     for _ in range(2):
@@ -315,7 +316,7 @@ async def test_reimport_same_triplet_without_pmid_no_duplicate(engine):
 
 
 async def test_same_native_id_other_source_is_distinct(engine):
-    """Même native_id dans deux sources (sans DOI) : deux articles distincts."""
+    """Same native_id in two sources (no DOI): two distinct articles."""
     project = await _make_project(engine)
     for src in ("srca", "srcb"):
         async with _refuse_network() as http:
@@ -333,7 +334,7 @@ async def test_same_native_id_other_source_is_distinct(engine):
 
 
 async def test_unknown_source_without_adapter_fails_job(engine):
-    """Source absente du registre (sans adapter injecté) → LookupError, job FAILED, aucun appel."""
+    """Source absent from the registry (no injected adapter) -> LookupError, job FAILED, no call."""
     project = await _make_project(engine)
     async with _refuse_network() as http:
         with pytest.raises(LookupError):
@@ -365,8 +366,8 @@ def _refs_handler():
 
 
 async def test_refs_import_sets_source_per_resolution(engine):
-    """Import de références : PubMed → (pubmed, PMID) ; Crossref → (crossref, DOI normalisé) ;
-    fichier → (file, NULL) ; le job (sources mêlées) n'a pas de source."""
+    """Reference import: PubMed -> (pubmed, PMID); Crossref -> (crossref, normalized DOI);
+    file -> (file, NULL); the job (mixed sources) has no source."""
     project = await _make_project(engine)
     _, refs = parse_references("10.1001/in-pubmed\n10.1002/ONLY-crossref\n")
     refs.append(
@@ -388,7 +389,8 @@ async def test_refs_import_sets_source_per_resolution(engine):
 
 
 def test_task_wrapper_forwards_source():
-    """Le wrapper Celery propage ``source`` au core async (sans le valider : l'API le fait)."""
+    """The Celery wrapper propagates ``source`` to the async core (without
+    validating it: the API does)."""
     with patch("app.tasks._import_pubmed", new_callable=AsyncMock) as core:
         core.return_value = {"imported": 0}
         import_pubmed_task("proj-id", "q", source="europepmc")

@@ -1,4 +1,4 @@
-"""Tests de la task inférence massive (app/tasks/inference.py) — 100 % offline."""
+"""Tests for the mass inference task (app/tasks/inference.py) — 100% offline."""
 
 import asyncio
 import json
@@ -28,7 +28,7 @@ from app.tasks.inference import ModelBusy, _release_lock, _run_inference, _triag
 
 
 class FakeInference:
-    """Inference mockée : renvoie une prédiction fixe (confidence configurable)."""
+    """Mocked inference: returns a fixed prediction (confidence configurable)."""
 
     def __init__(self, confidence: float = 0.9):
         self._confidence = confidence
@@ -123,14 +123,14 @@ async def test_run_inference_completes(engine, session, fake_redis):
     # job COMPLETED
     await session.refresh(job)
     assert job.status == InferenceJobStatus.COMPLETED
-    # predictions créées
+    # predictions created
     preds = (await session.execute(select(ArticlePrediction))).scalars().all()
     assert len(preds) == 2
     assert all(p.status == PredictionStatus.AUTO_ACCEPTED for p in preds)
 
 
 async def test_run_inference_triage_mixed(engine, session, fake_redis):
-    """Confiances variées → triage mixte (AUTO_ACCEPTED / AUTO_REJECTED / NEEDS_HUMAN_REVIEW)."""
+    """Varied confidences -> mixed triage (AUTO_ACCEPTED / AUTO_REJECTED / NEEDS_HUMAN_REVIEW)."""
     project = Project(title="P", created_by=None, status=ProjectStatus.FROZEN)
     session.add(project)
     await session.commit()
@@ -210,7 +210,7 @@ async def test_run_inference_empty_corpus(engine, session, fake_redis):
 
 
 async def test_run_inference_failure_marks_failed(engine, session, fake_redis):
-    """Échec inférence → job FAILED (pas bloqué en RUNNING)."""
+    """Inference failure -> job FAILED (not stuck in RUNNING)."""
     project = Project(title="P", created_by=None, status=ProjectStatus.FROZEN)
     session.add(project)
     await session.commit()
@@ -244,7 +244,7 @@ async def test_run_inference_failure_marks_failed(engine, session, fake_redis):
 
 
 async def test_run_inference_stops_when_cancelled(engine, session, fake_redis):
-    """Arrêt demandé en cours de route : on s'arrête avant l'article suivant, sans e-mail."""
+    """Stop requested mid-way: stops before the next article, no email."""
     project = Project(title="P", created_by=None, status=ProjectStatus.FROZEN)
     session.add(project)
     await session.commit()
@@ -278,7 +278,7 @@ async def test_run_inference_stops_when_cancelled(engine, session, fake_redis):
     result = await _run_inference(
         str(job.id), session_factory=factory, inference=fake, redis=fake_redis
     )
-    # warm-up + 1 article traité, puis arrêt
+    # warm-up + 1 article processed, then stop
     assert result["cancelled"] is True and result["processed"] == 1 and fake.calls == 2
     await session.refresh(job)
     assert job.status == InferenceJobStatus.FAILED and job.error == "cancelled"
@@ -311,7 +311,7 @@ async def test_run_inference_skips_job_cancelled_before_start(engine, session):
 
 
 async def test_warmup_once_for_ollama_model(engine, session, fake_redis):
-    """Modèle local : un seul warm-up (absorbe le chargement des poids), pas un par article."""
+    """Local model: a single warm-up (absorbs the weights loading), not one per article."""
     project = Project(title="P", created_by=None, status=ProjectStatus.FROZEN)
     session.add(project)
     await session.commit()
@@ -340,7 +340,7 @@ async def test_warmup_once_for_ollama_model(engine, session, fake_redis):
 
 
 async def test_warmup_skipped_for_openai_api_model(engine, session):
-    """Backend distant (OPENAI_API) : pas de chargement local → pas de warm-up."""
+    """Remote backend (OPENAI_API): no local loading -> no warm-up."""
     project = Project(title="P", created_by=None, status=ProjectStatus.FROZEN)
     session.add(project)
     await session.commit()
@@ -355,7 +355,7 @@ async def test_warmup_skipped_for_openai_api_model(engine, session):
         )
     )
     await session.commit()
-    # 0 article : la boucle n'appelle jamais infer_with (reste 100 % offline)
+    # 0 articles: the loop never calls infer_with (stays 100% offline)
     job = InferenceJob(
         project_id=project.id,
         prompt_template_id=prompt.id,
@@ -372,11 +372,11 @@ async def test_warmup_skipped_for_openai_api_model(engine, session):
     assert fake.warmups == 0 and fake.calls == 0
 
 
-# --- Lock par modèle (Redis) ---
+# --- Per-model lock (Redis) ---
 
 
 async def test_lock_key_ttl_and_token(engine, session, fake_redis):
-    """Clé inference:lock:<backend>:<identifiant>, SET NX, TTL = timeout + 300 s, token hex."""
+    """Key inference:lock:<backend>:<identifier>, SET NX, TTL = timeout + 300 s, hex token."""
     project = Project(title="P", created_by=None, status=ProjectStatus.FROZEN)
     session.add(project)
     await session.commit()
@@ -406,7 +406,7 @@ async def test_lock_key_ttl_and_token(engine, session, fake_redis):
 
 
 async def test_lock_acquired_before_warmup(engine, session, fake_redis):
-    """Le SET du lock précède strictement tout appel infer() (warm-up)."""
+    """The lock's SET strictly precedes any infer() call (warm-up)."""
     project = Project(title="P", created_by=None, status=ProjectStatus.FROZEN)
     session.add(project)
     await session.commit()
@@ -441,7 +441,7 @@ async def test_lock_acquired_before_warmup(engine, session, fake_redis):
 
 
 async def test_lock_busy_writes_waiting_model_and_stays_pending(engine, session, fake_redis):
-    """Modèle occupé → ModelBusy ; job PENDING, result_json.phase = waiting_model."""
+    """Busy model -> ModelBusy; job PENDING, result_json.phase = waiting_model."""
     project = Project(title="P", created_by=None, status=ProjectStatus.FROZEN)
     session.add(project)
     await session.commit()
@@ -493,7 +493,7 @@ async def test_lock_busy_retries_task_countdown_30(monkeypatch):
         finally:
             task.pop_request()
 
-    # asyncio.run (dans le wrapper) impossible depuis une event loop en cours
+    # asyncio.run (in the wrapper) is impossible from a running event loop
     with pytest.raises(Retry) as exc_info:
         await asyncio.to_thread(_invoke)
     assert exc_info.value.when == 30  # countdown
@@ -502,7 +502,7 @@ async def test_lock_busy_retries_task_countdown_30(monkeypatch):
 
 
 async def test_lock_busy_exhausted_retries_fails_job(engine, session, monkeypatch):
-    """Wrapper : retries épuisées → job FAILED (erreur lisible, completed_at posée)."""
+    """Wrapper: retries exhausted -> job FAILED (readable error, completed_at set)."""
 
     async def _busy(*args, **kwargs):
         raise ModelBusy("inference:lock:OLLAMA:x")
@@ -547,7 +547,7 @@ async def test_lock_busy_exhausted_retries_fails_job(engine, session, monkeypatc
 
 
 async def test_lock_released_after_success(engine, session, fake_redis):
-    """Job COMPLETED → lock relâché (clé supprimée)."""
+    """Job COMPLETED -> lock released (key deleted)."""
     project = Project(title="P", created_by=None, status=ProjectStatus.FROZEN)
     session.add(project)
     await session.commit()
@@ -572,7 +572,7 @@ async def test_lock_released_after_success(engine, session, fake_redis):
 
 
 async def test_lock_released_on_inference_error(engine, session, fake_redis):
-    """infer() lève InferenceError → job FAILED et lock relâché (chemin finally)."""
+    """infer() raises InferenceError -> job FAILED and lock released (finally path)."""
 
     class Down(FakeInference):
         async def infer(self, model, system_prompt, user_prompt):
@@ -605,7 +605,7 @@ async def test_lock_released_on_inference_error(engine, session, fake_redis):
 
 
 async def test_release_only_own_token(fake_redis):
-    """Owner check : la release ne supprime pas une clé qui porte un autre token."""
+    """Owner check: the release does not delete a key carrying another token."""
     key = "inference:lock:OLLAMA:x"
     await fake_redis.set(key, "token-proprire")
     fake_redis.store[key] = "token-autre"  # lock expiré puis repris
@@ -616,7 +616,7 @@ async def test_release_only_own_token(fake_redis):
 
 
 async def test_no_lock_for_openai_api_model(engine, session, fake_redis):
-    """OPENAI_API → aucun SET, aucune release ; job COMPLETED comme aujourd'hui."""
+    """OPENAI_API -> no SET, no release; job COMPLETED as today."""
     project = Project(title="P", created_by=None, status=ProjectStatus.FROZEN)
     session.add(project)
     await session.commit()
@@ -648,7 +648,7 @@ async def test_no_lock_for_openai_api_model(engine, session, fake_redis):
 
 
 async def test_no_lock_when_model_not_in_registry(engine, session, fake_redis):
-    """model_used absent du registre → pas de lock, chemin inchangé."""
+    """model_used absent from the registry -> no lock, path unchanged."""
     project = Project(title="P", created_by=None, status=ProjectStatus.FROZEN)
     session.add(project)
     await session.commit()
@@ -673,7 +673,7 @@ async def test_no_lock_when_model_not_in_registry(engine, session, fake_redis):
 
 
 async def test_redelivered_closed_job_does_not_relock(engine, session, fake_redis):
-    """Job déjà FAILED → return {} avant le lock (aucun SET)."""
+    """Job already FAILED -> return {} before the lock (no SET)."""
     project = Project(title="P", created_by=None, status=ProjectStatus.FROZEN)
     session.add(project)
     await session.commit()
@@ -732,7 +732,7 @@ def _factory(engine):
 
 
 class ByModel(FakeInference):
-    """Réponse par identifiant de modèle : dict (prédiction) ou exception à lever."""
+    """Response per model identifier: dict (prediction) or exception to raise."""
 
     def __init__(self, answers: dict, events: list | None = None):
         super().__init__()
@@ -750,8 +750,8 @@ class ByModel(FakeInference):
 
 
 def _llm_transport(answers: dict):
-    """Vrai OpenAICompatibleService derrière httpx.MockTransport : répond selon le modèle
-    demandé aux deux formats (/api/chat et /v1) ; journalise (chemin, corps) de chaque appel."""
+    """Real OpenAICompatibleService behind httpx.MockTransport: answers per requested
+    model in both formats (/api/chat and /v1); logs (path, body) of each call."""
     calls: list[tuple[str, dict]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -769,12 +769,12 @@ def _llm_transport(answers: dict):
     return calls, httpx.AsyncClient(transport=httpx.MockTransport(handler))
 
 
-# --- §2 : endpoint natif / /v1 et corps additionnel décidés PAR MODÈLE (vrai service) ---
+# --- §2: native endpoint / /v1 and extra body decided PER MODEL (real service) ---
 
 
 async def test_mixed_job_endpoint_per_model_real_service(engine, session, fake_redis):
-    """Pré-filtre OLLAMA + principal LLAMA_CPP, service réel : chaque appel (warm-ups compris)
-    part sur l'endpoint de SON modèle — /api/chat pour OLLAMA, /v1 pour LLAMA_CPP."""
+    """OLLAMA pre-filter + LLAMA_CPP main, real service: each call (warm-ups included)
+    goes to ITS model's endpoint — /api/chat for OLLAMA, /v1 for LLAMA_CPP."""
     project, prompt = await _project_prompt(session)
     session.add(ModelRegistry(name="Small", model_identifier="qwen3:1.7b", backend_type="OLLAMA"))
     session.add(ModelRegistry(name="Big", model_identifier="llama-big", backend_type="LLAMA_CPP"))
@@ -799,8 +799,8 @@ async def test_mixed_job_endpoint_per_model_real_service(engine, session, fake_r
 async def test_prefilter_ollama_native_with_extra_body_when_main_is_openai_api(
     engine, session, fake_redis
 ):
-    """Principal OPENAI_API + pré-filtre OLLAMA : le pré-filtre garde /api/chat ET le corps
-    additionnel (num_ctx, think) — il n'hérite pas des réglages du modèle principal."""
+    """OPENAI_API main + OLLAMA pre-filter: the pre-filter keeps /api/chat AND the
+    extra body (num_ctx, think) — it does not inherit the main model's settings."""
     project, prompt = await _project_prompt(session)
     session.add(
         ModelRegistry(
@@ -813,7 +813,7 @@ async def test_prefilter_ollama_native_with_extra_body_when_main_is_openai_api(
     await set_setting(session, "llm_extra_body", '{"think": false, "options": {"num_ctx": 8192}}')
     await _seed(session, project, prompt, None, n_articles=1)
     job = await _job(session, project, prompt, "GPT", "Small")
-    # étage 1 rejette : le modèle principal (distant) n'est jamais appelé → 100 % offline
+    # stage 1 rejects: the main model (remote) is never called -> 100% offline
     calls, client = _llm_transport({"qwen3:1.7b": {"confidence_score": 0.05}})
     result = await _run_inference(
         str(job.id), session_factory=_factory(engine), http=client, redis=fake_redis
@@ -826,12 +826,12 @@ async def test_prefilter_ollama_native_with_extra_body_when_main_is_openai_api(
     assert all(b.get("think") is False for _, b in pre)
 
 
-# --- §3 : lock par modèle — renouvellement, erreurs, TTL, attente, pré-filtre ---
+# --- §3: per-model lock — renewal, errors, TTL, waiting, pre-filter ---
 
 
 async def test_lock_renewed_before_each_model_call(engine, session, fake_redis):
-    """Le TTL (timeout + 300 s) borne UN appel, pas le job : renouvelé (EXPIRE, même TTL)
-    juste avant chaque appel modèle, warm-up compris."""
+    """The TTL (timeout + 300 s) bounds ONE call, not the job: renewed (EXPIRE, same TTL)
+    just before each model call, warm-up included."""
     project, prompt = await _project_prompt(session)
     session.add(ModelRegistry(name="Kev-4B", model_identifier="x", backend_type="OLLAMA"))
     await session.commit()
@@ -852,7 +852,7 @@ async def test_lock_renewed_before_each_model_call(engine, session, fake_redis):
 
 
 class DownRedis:
-    """Redis injoignable : SET en erreur (message avec host:port interne)."""
+    """Unreachable Redis: SET in error (message with internal host:port)."""
 
     async def set(self, *args, **kwargs):
         from redis.exceptions import ConnectionError as RedisConnectionError
@@ -873,8 +873,8 @@ class DownRedis:
 
 
 async def test_lock_redis_error_marks_job_failed(engine, session):
-    """Redis en erreur à l'acquisition : job FAILED (pas PENDING à vie, qui bloquerait la
-    garde « un job par projet »), message générique (jamais host:port dans job.error)."""
+    """Redis in error at acquisition: job FAILED (not PENDING for life, which would block the
+    "one job per project" guard), generic message (never host:port in job.error)."""
     project, prompt = await _project_prompt(session)
     session.add(ModelRegistry(name="Kev-4B", model_identifier="x", backend_type="OLLAMA"))
     await session.commit()
@@ -894,7 +894,7 @@ async def test_lock_redis_error_marks_job_failed(engine, session):
 
 
 async def test_lock_redis_error_on_prefilter_key_releases_main_lock(engine, session, fake_redis):
-    """Erreur Redis sur la 2e clé : le 1er lock déjà pris est relâché, job FAILED."""
+    """Redis error on the 2nd key: the 1st lock already taken is released, job FAILED."""
     from redis.exceptions import ConnectionError as RedisConnectionError
 
     class FlakyRedis(type(fake_redis)):
@@ -921,8 +921,8 @@ async def test_lock_redis_error_on_prefilter_key_releases_main_lock(engine, sess
 
 @pytest.mark.parametrize("main,pre", [("Big", "Small"), ("Small", "Big")])
 async def test_lock_keys_acquired_in_deterministic_order(engine, session, fake_redis, main, pre):
-    """Ordre des SET indépendant de (principal, pré-filtre) : pas de livelock croisé
-    entre deux jobs aux rôles inversés."""
+    """SET order independent of (main, pre-filter): no crossed livelock
+    between two jobs with inverted roles."""
     project, prompt = await _project_prompt(session)
     session.add(ModelRegistry(name="Big", model_identifier="big:8b", backend_type="OLLAMA"))
     session.add(ModelRegistry(name="Small", model_identifier="small:1b", backend_type="OLLAMA"))
@@ -956,8 +956,8 @@ async def test_lock_renewal_covers_both_keys_with_prefilter(engine, session, fak
 async def test_heartbeat_lost_token_does_not_renew_nor_delete_foreign_lock(
     engine, session, fake_redis
 ):
-    """Lock repris par un autre job en cours de route : pas d'EXPIRE, pas de DEL du lock
-    étranger (release compris), le job continue."""
+    """Lock taken over by another job mid-way: no EXPIRE, no DEL of the
+    foreign lock (release included), the job continues."""
     key = "inference:lock:OLLAMA:x"
 
     class Thief(FakeInference):
@@ -1002,7 +1002,7 @@ async def test_heartbeat_redis_error_lets_job_continue(engine, session, fake_red
 
 
 async def test_running_commit_failure_marks_job_failed(engine, session, fake_redis):
-    """Échec du commit RUNNING (DB) : job FAILED, lock relâché."""
+    """RUNNING commit failure (DB): job FAILED, lock released."""
 
     class BoomSession(AsyncSession):
         async def commit(self):
@@ -1028,8 +1028,8 @@ async def test_running_commit_failure_marks_job_failed(engine, session, fake_red
 
 
 async def test_lock_ttl_non_finite_timeout_falls_back(engine, session, fake_redis):
-    """inference_timeout = 'inf' : TTL = 120 + 300 (même parseur que la fabrique), pas
-    d'OverflowError."""
+    """inference_timeout = 'inf': TTL = 120 + 300 (same parser as the factory), no
+    OverflowError."""
     project, prompt = await _project_prompt(session)
     session.add(ModelRegistry(name="Kev-4B", model_identifier="x", backend_type="OLLAMA"))
     await session.commit()
@@ -1042,8 +1042,8 @@ async def test_lock_ttl_non_finite_timeout_falls_back(engine, session, fake_redi
 
 
 async def test_lock_busy_keeps_waiting_beyond_40_retries(engine, session, monkeypatch):
-    """Attente bornée par l'horizon d'un job (24 h, visibility_timeout), pas 20 min : à la 40e
-    tentative le job est encore requeue et reste PENDING."""
+    """Waiting bounded by a job's horizon (24 h, visibility_timeout), not 20 min: at the 40th
+    attempt the job is still requeued and stays PENDING."""
 
     async def _busy(*args, **kwargs):
         raise ModelBusy("inference:lock:OLLAMA:x")
@@ -1082,7 +1082,7 @@ async def test_lock_busy_keeps_waiting_beyond_40_retries(engine, session, monkey
 
 
 async def test_lock_also_taken_on_prefilter_model(engine, session, fake_redis):
-    """Pré-filtre local : locké lui aussi (clé propre), puis relâché avec le principal."""
+    """Local pre-filter: locked too (own key), then released with the main one."""
     project, prompt = await _project_prompt(session)
     session.add(ModelRegistry(name="Big", model_identifier="big:8b", backend_type="OLLAMA"))
     session.add(ModelRegistry(name="Small", model_identifier="small:1b", backend_type="OLLAMA"))
@@ -1097,7 +1097,7 @@ async def test_lock_also_taken_on_prefilter_model(engine, session, fake_redis):
 
 
 async def test_lock_prefilter_busy_releases_main_and_waits(engine, session, fake_redis):
-    """Tout-ou-rien : pré-filtre occupé → le lock du principal est relâché, job PENDING
+    """All-or-nothing: busy pre-filter -> the main lock is released, job PENDING
     waiting_model, ModelBusy."""
     project, prompt = await _project_prompt(session)
     session.add(ModelRegistry(name="Big", model_identifier="big:8b", backend_type="OLLAMA"))
@@ -1119,8 +1119,8 @@ async def test_lock_prefilter_busy_releases_main_and_waits(engine, session, fake
 
 
 async def test_lock_prefilter_same_model_single_key(engine, session, fake_redis):
-    """Garde : pré-filtre et principal sur le même modèle local → une seule clé (pas
-    d'auto-blocage)."""
+    """Guard: pre-filter and main on the same local model -> a single key (no
+    self-locking)."""
     project, prompt = await _project_prompt(session)
     session.add(ModelRegistry(name="Big", model_identifier="qwen3:4b", backend_type="OLLAMA"))
     session.add(ModelRegistry(name="Alias", model_identifier="qwen3:4b", backend_type="OLLAMA"))
@@ -1133,7 +1133,7 @@ async def test_lock_prefilter_same_model_single_key(engine, session, fake_redis)
     assert [c[0] for c in fake_redis.set_calls] == ["inference:lock:OLLAMA:qwen3:4b"]
 
 
-# --- §4 : sorties de petits modèles (JSON invalide, confiance non numérique) ---
+# --- §4: small model outputs (invalid JSON, non-numeric confidence) ---
 
 
 @pytest.mark.parametrize(
@@ -1164,7 +1164,7 @@ def test_triage_numeric_string_coerced():
 
 
 async def test_run_inference_non_numeric_confidence_completes(engine, session, fake_redis):
-    """confidence_score non numérique : job COMPLETED, article en relecture, score stocké None."""
+    """Non-numeric confidence_score: job COMPLETED, article in re-read, stored score None."""
     project, prompt = await _project_prompt(session)
     session.add(ModelRegistry(name="Kev-4B", model_identifier="x", backend_type="OLLAMA"))
     await session.commit()
@@ -1185,7 +1185,7 @@ async def test_run_inference_non_numeric_confidence_completes(engine, session, f
 
 
 async def test_prefilter_invalid_json_falls_through_to_main(engine, session, fake_redis):
-    """Sortie non-JSON de l'étage 1 : l'article passe au modèle principal (pas écarté)."""
+    """Stage 1 non-JSON output: the article goes to the main model (not skipped)."""
     project, prompt = await _project_prompt(session)
     session.add(ModelRegistry(name="Big", model_identifier="big:8b", backend_type="OLLAMA"))
     session.add(ModelRegistry(name="Small", model_identifier="small:1b", backend_type="OLLAMA"))
@@ -1205,7 +1205,7 @@ async def test_prefilter_invalid_json_falls_through_to_main(engine, session, fak
 
 
 # =====================================================================================
-# Traçabilité modèle + version (spec 2026-10-29-tracabilite-modele-version §2)
+# Model traceability + version (spec 2026-10-29-tracabilite-modele-version §2)
 # =====================================================================================
 
 DIGEST_SMALL = "1" * 12 + "a" * 52
@@ -1229,9 +1229,9 @@ def _tags(*entries: tuple[str, str]) -> dict:
 
 
 def _tags_transport(answers: dict, tags=None, tags_exc=None, served: dict | None = None):
-    """Comme ``_llm_transport`` + ``GET /api/tags`` (``tags`` : dict JSON ou httpx.Response ;
-    ``tags_exc`` : exception levée) ; ``served`` : champ ``model`` renvoyé par modèle demandé.
-    Journalise les chemins GET dans ``gets``."""
+    """Like ``_llm_transport`` + ``GET /api/tags`` (``tags``: JSON dict or httpx.Response;
+    ``tags_exc``: raised exception); ``served``: ``model`` field returned per requested model.
+    Logs the GET paths in ``gets``."""
     calls: list[tuple[str, dict]] = []
     gets: list[str] = []
 
@@ -1264,8 +1264,8 @@ async def _ollama_job(session, project, prompt, main="Big", pre=None):
 
 
 async def test_job_snapshot_and_prediction_version_ollama_real_service(engine, session, fake_redis):
-    """OLLAMA : instantané du job (digest + détails, relevés sur /api/tags) et chaque prédiction
-    porte l'identifiant et le digest du modèle qui l'a produite."""
+    """OLLAMA: job snapshot (digest + details, read from /api/tags) and each prediction
+    carries the identifier and digest of the model that produced it."""
     project, prompt = await _project_prompt(session)
     session.add(ModelRegistry(name="Big", model_identifier="qwen3:8b", backend_type="OLLAMA"))
     await session.commit()
@@ -1294,8 +1294,8 @@ async def test_job_snapshot_and_prediction_version_ollama_real_service(engine, s
 async def test_prefilter_rejected_prediction_carries_prefilter_identifier_and_version(
     engine, session, fake_redis
 ):
-    """Rejet à l'étage 1 : la prédiction porte le modèle du pré-filtre (nom, identifiant,
-    digest) ; l'instantané du job couvre les deux étages."""
+    """Rejection at stage 1: the prediction carries the pre-filter model (name, identifier,
+    digest); the job snapshot covers both stages."""
     project, prompt = await _project_prompt(session)
     session.add(ModelRegistry(name="Small", model_identifier="qwen3:1.7b", backend_type="OLLAMA"))
     session.add(ModelRegistry(name="Big", model_identifier="qwen3:8b", backend_type="OLLAMA"))
@@ -1331,7 +1331,7 @@ async def test_prefilter_rejected_prediction_carries_prefilter_identifier_and_ve
     ids=["http-500", "non-json", "connection-error", "tag-absent"],
 )
 async def test_snapshot_failure_never_fails_job(engine, session, fake_redis, tags, exc):
-    """Relevé de version impossible : le job se termine, version None, identifiant conservé."""
+    """Version reading impossible: the job completes, version None, identifier kept."""
     project, prompt = await _project_prompt(session)
     session.add(ModelRegistry(name="Big", model_identifier="qwen3:8b", backend_type="OLLAMA"))
     await session.commit()
@@ -1350,8 +1350,8 @@ async def test_snapshot_failure_never_fails_job(engine, session, fake_redis, tag
 
 
 async def test_local_v1_backend_version_is_served_model_echo(engine, session, fake_redis):
-    """LLAMA_CPP (/v1) : pas de /api/tags ; la version est le ``model`` renvoyé par le serveur,
-    sur la prédiction et dans l'instantané du job."""
+    """LLAMA_CPP (/v1): no /api/tags; the version is the ``model`` returned by the server,
+    on the prediction and in the job snapshot."""
     project, prompt = await _project_prompt(session)
     session.add(ModelRegistry(name="Big", model_identifier="llama-big", backend_type="LLAMA_CPP"))
     await session.commit()
@@ -1376,8 +1376,8 @@ async def test_local_v1_backend_version_is_served_model_echo(engine, session, fa
 async def test_openai_api_job_traces_served_model_without_url_secrets(
     engine, session, fake_redis, monkeypatch
 ):
-    """OPENAI_API : identifiant = partie modèle, endpoint sans secret, version = alias résolu
-    renvoyé par l'API ; ni userinfo, ni query, ni clé dans l'instantané ou la prédiction."""
+    """OPENAI_API: identifier = model part, endpoint without secret, version = resolved alias
+    returned by the API; no userinfo, no query, no key in the snapshot or the prediction."""
     from app.core.crypto import encrypt_secret
 
     project, prompt = await _project_prompt(session)
@@ -1412,7 +1412,7 @@ async def test_openai_api_job_traces_served_model_without_url_secrets(
 async def test_injected_fake_service_records_identifier_without_version(
     engine, session, fake_redis
 ):
-    """Service injecté (tests, sans HTTP) : identifiant tracé, version None, job complet."""
+    """Injected service (tests, no HTTP): identifier traced, version None, full job."""
     project, prompt = await _project_prompt(session)
     session.add(ModelRegistry(name="Kev-4B", model_identifier="kef/kev-4b", backend_type="OLLAMA"))
     await session.commit()
@@ -1429,13 +1429,13 @@ async def test_injected_fake_service_records_identifier_without_version(
     assert pred.model_identifier == "kef/kev-4b" and pred.model_version is None
 
 
-# --- Revue : versions par étage, job multi-articles (spec §2, D4) ---
+# --- Review: versions per stage, multi-article job (spec §2, D4) ---
 
 
 def _served_transport(contents: dict, served):
-    """Vrai service derrière MockTransport : ``contents`` = contenu BRUT renvoyé par modèle
-    (str, non encodé) ; ``served(n, model)`` = champ ``model`` renvoyé à l'appel n° ``n``
-    (0 = warm-up, puis un par appel réel) ou None (champ absent)."""
+    """Real service behind MockTransport: ``contents`` = RAW content returned per model
+    (str, unencoded); ``served(n, model)`` = ``model`` field returned at call n° ``n``
+    (0 = warm-up, then one per real call) or None (field absent)."""
     n = 0
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -1463,8 +1463,8 @@ async def _pred_tuple(session):
 async def test_prefilter_passes_prediction_carries_main_identifier_and_version(
     engine, session, fake_redis
 ):
-    """D4 : le pré-filtre ne rejette pas → la prédiction porte le modèle principal (identifiant
-    + digest), pas ceux du pré-filtre."""
+    """D4: the pre-filter does not reject -> the prediction carries the main model (identifier
+    + digest), not the pre-filter's."""
     project, prompt = await _project_prompt(session)
     session.add(ModelRegistry(name="Small", model_identifier="qwen3:1.7b", backend_type="OLLAMA"))
     session.add(ModelRegistry(name="Big", model_identifier="qwen3:8b", backend_type="OLLAMA"))
@@ -1484,8 +1484,8 @@ async def test_prefilter_passes_prediction_carries_main_identifier_and_version(
 async def test_prefilter_invalid_json_prediction_carries_main_served_echo(
     engine, session, fake_redis
 ):
-    """D4 : étage 1 illisible → étage 2 ; la version vient de l'écho de l'étage 2 (le ``meta``
-    de l'étage 1 n'est pas réutilisé)."""
+    """D4: unreadable stage 1 -> stage 2; the version comes from the stage 2 echo (the stage 1
+    ``meta`` is not reused)."""
     project, prompt = await _project_prompt(session)
     session.add(ModelRegistry(name="Small", model_identifier="small-id", backend_type="LLAMA_CPP"))
     session.add(ModelRegistry(name="Big", model_identifier="big-id", backend_type="LLAMA_CPP"))
@@ -1505,7 +1505,7 @@ async def test_prefilter_invalid_json_prediction_carries_main_served_echo(
 async def test_non_ollama_prefilter_rejecting_prediction_carries_prefilter_served_version(
     engine, session, fake_redis
 ):
-    """D4 : rejet par un pré-filtre non Ollama → identifiant du pré-filtre + son écho."""
+    """D4: rejection by a non-Ollama pre-filter -> pre-filter identifier + its echo."""
     project, prompt = await _project_prompt(session)
     session.add(ModelRegistry(name="Small", model_identifier="small-id", backend_type="LLAMA_CPP"))
     session.add(ModelRegistry(name="Big", model_identifier="big-id", backend_type="LLAMA_CPP"))
@@ -1525,8 +1525,8 @@ async def test_non_ollama_prefilter_rejecting_prediction_carries_prefilter_serve
 async def test_multi_article_non_ollama_versions_per_prediction_job_keeps_first(
     engine, session, fake_redis
 ):
-    """Job non Ollama de 3 articles : version PAR prédiction (None, v2, v3) ; l'instantané du
-    job garde la première version non nulle, et elle survit aux commits suivants."""
+    """Non-Ollama 3-article job: version PER prediction (None, v2, v3); the job
+    snapshot keeps the first non-null version, and it survives the following commits."""
     project, prompt = await _project_prompt(session)
     session.add(ModelRegistry(name="Big", model_identifier="big-id", backend_type="LLAMA_CPP"))
     await session.commit()
@@ -1554,8 +1554,8 @@ async def test_multi_article_non_ollama_versions_per_prediction_job_keeps_first(
 async def test_non_ollama_prefilter_never_rejecting_still_fills_job_snapshot_version(
     engine, session, fake_redis
 ):
-    """Pré-filtre non Ollama qui répond sur tous les articles sans jamais rejeter : sa version
-    servie remplit quand même l'instantané du job (il n'a produit aucune prédiction)."""
+    """Non-Ollama pre-filter answering on all articles without ever rejecting: its
+    served version still fills the job snapshot (it produced no prediction)."""
     project, prompt = await _project_prompt(session)
     session.add(ModelRegistry(name="Small", model_identifier="small-id", backend_type="LLAMA_CPP"))
     session.add(ModelRegistry(name="Big", model_identifier="big-id", backend_type="LLAMA_CPP"))

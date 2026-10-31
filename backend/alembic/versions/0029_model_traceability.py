@@ -1,4 +1,4 @@
-"""Traçabilité du modèle et de sa version (prédictions + instantané du job)
+"""Model and version traceability (predictions + job snapshot)
 
 Revision ID: 0029
 Revises: 0028

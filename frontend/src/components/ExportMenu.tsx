@@ -17,8 +17,8 @@ import { isProjectLead } from "@/lib/role";
 import { useSearchId } from "@/lib/useSearch";
 
 /**
- * Exports de la recherche courante : Excel, références (RIS / BibTeX, suivent les filtres de la liste) et
- * corpus complet RO-Crate (tâche de fond : suivi ici + e-mail à la fin).
+ * Exports of the current search: Excel, references (RIS / BibTeX, following the list's filters) and
+ * full RO-Crate corpus (background task: tracked here + e-mail at the end).
  */
 export function ExportMenu({
   projectId,
@@ -51,7 +51,7 @@ export function ExportMenu({
       setJob(j);
       if (j && (j.status === "PENDING" || j.status === "RUNNING")) timer.current = setTimeout(poll, 3000);
     } catch {
-      /* réessaie à la prochaine visite */
+      /* retries on the next visit */
     }
   }, [projectId, searchId]);
 

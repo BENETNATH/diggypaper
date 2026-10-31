@@ -1,5 +1,5 @@
-"""Accès aux modèles (propriété / partage), comptes désactivables, suppression d'un utilisateur
-avec ses restes, invitations suivies (liste, renvoi, révocation)."""
+"""Model access (ownership / sharing), deactivatable accounts, deletion of a user
+with their leftovers, tracked invitations (list, resend, revocation)."""
 
 import pytest
 from sqlalchemy import func, select
@@ -24,7 +24,7 @@ API = "/api/v1"
 
 @pytest.fixture
 def public_urls(monkeypatch):
-    """Pas de DNS en test : toute URL est « publique »."""
+    """No DNS in tests: every URL is "public"."""
     monkeypatch.setattr("app.api.v1.models.check_public_url", lambda url: None)
 
 
@@ -66,7 +66,7 @@ async def _names(client, **params):
 EXT = {"name": "My-GPT", "base_url": "https://api.example.com/v1", "model": "m", "api_key": "k"}
 
 
-# --- modèles : propriété et partage ----------------------------------------------------
+# --- models: ownership and sharing ----------------------------------------------------
 
 
 async def test_user_defines_and_shares_own_external_model(client, session, alice, bob, public_urls):
@@ -96,7 +96,7 @@ async def test_user_defines_and_shares_own_external_model(client, session, alice
 
     await _login(client, "bob@lab.fr", "bob-pass-12345")
     assert await _names(client) == ["My-GPT"]
-    # bob peut l'utiliser mais ni le partager plus loin ni le supprimer
+    # bob can use it but neither share it further nor delete it
     assert (
         await client.post(f"{API}/models/{mid}/shares", json={"email": "alice@lab.fr"})
     ).status_code == 404
@@ -117,7 +117,7 @@ async def test_model_shared_with_project_follows_membership(
     mid = (await client.post(f"{API}/models/external", json=EXT)).json()["id"]
     r = await client.post(f"{API}/models/{mid}/shares", json={"project_id": str(project.id)})
     assert r.status_code == 201
-    # un projet dont on n'est pas membre : introuvable
+    # a project the user is not a member of: not found
     stranger = await _project(session, bob, "Bobs")
     r = await client.post(f"{API}/models/{mid}/shares", json={"project_id": str(stranger.id)})
     assert r.status_code == 404
@@ -129,7 +129,7 @@ async def test_model_shared_with_project_follows_membership(
     await _login(client, "bob@lab.fr", "bob-pass-12345")
     assert await _names(client, project_id=str(project.id)) == ["My-GPT"]
     assert await _names(client, project_id=str(other.id)) == []  # partagé à un autre projet
-    # retiré du projet : plus d'accès
+    # removed from the project: no more access
     await session.execute(
         ProjectMember.__table__.delete().where(
             ProjectMember.user_id == bob.id, ProjectMember.project_id == project.id
@@ -184,7 +184,7 @@ async def test_non_admin_cannot_point_model_at_internal_network(client, session,
     assert r.status_code == 201 and r.json()["platform"] is True
 
 
-# --- comptes : désactivation, suppression ----------------------------------------------
+# --- accounts: deactivation, deletion ----------------------------------------------
 
 
 async def test_disabled_account_loses_access_and_cannot_login(client, session, admin_user, alice):
@@ -198,7 +198,7 @@ async def test_disabled_account_loses_access_and_cannot_login(client, session, a
         json={"email": "alice@lab.fr", "password": "alice-pass-123", "consent": True},
     )
     assert r.status_code == 403
-    # une session déjà ouverte est coupée
+    # an already-open session is cut off
     client.cookies.clear()
     await _login(client, "admin@lab.fr", "admin-pass-123")
     await client.patch(f"{API}/admin/users/{alice.id}", json={"is_active": True})
@@ -304,7 +304,7 @@ async def test_pending_invitations_listed_resent_and_revoked(client, session, ad
     await _login(client, "admin@lab.fr", "admin-pass-123")
     items = (await client.get(f"{API}/admin/invitations")).json()["items"]
     assert [(i["email"], i["language"], i["project"]) for i in items] == [("new@lab.fr", "de", "P")]
-    # ré-inviter la même adresse ne duplique pas
+    # re-inviting the same address does not duplicate
     await _login(client, "alice@lab.fr", "alice-pass-123")
     await client.post(
         f"{API}/projects/{project.id}/members/invite",
@@ -344,7 +344,7 @@ async def test_register_marks_invitation_accepted(
     assert (await client.get(f"{API}/admin/invitations")).json()["items"] == []
 
 
-# --- créateurs et invités ---------------------------------------------------------------
+# --- creators and invitees ---------------------------------------------------------------
 
 
 async def _exists(session, email):
@@ -385,7 +385,7 @@ async def test_guest_removed_from_last_project_is_deleted_creator_is_not(
     assert await _exists(session, "guest@lab.fr") is None
     assert (await client.delete(f"{API}/projects/{pid}/members/{bid}")).status_code == 204
     assert await _exists(session, "bob@lab.fr") is not None  # créateur : conservé
-    # le créateur qui supprime son projet garde son compte (régression B1)
+    # the creator deleting their project keeps their account (regression B1)
     assert (await client.delete(f"{API}/projects/{pid}")).status_code == 204
     assert await _exists(session, "alice@lab.fr") is not None
 

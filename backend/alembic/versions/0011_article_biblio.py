@@ -1,4 +1,4 @@
-"""articles : journal, date de publication, auteurs, types de publication
+"""articles: journal, publication date, authors, publication types
 
 Revision ID: 0011
 Revises: 0010

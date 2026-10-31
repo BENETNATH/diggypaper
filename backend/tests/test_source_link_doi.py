@@ -1,5 +1,5 @@
-"""Phase 3 multi-sources : rattachement DOI avec complétion des champs manquants
-(spec 2026-10-29-sources-phase3 D3, archi § 3) — 100 % offline."""
+"""Phase 3 multi-sources: DOI attachment with completion of missing fields
+(spec 2026-10-29-sources-phase3 D3, archi §3) — 100% offline."""
 
 from test_source_dedup import _articles, _factory, _make_project
 from test_sources import FakeSourceAdapter
@@ -46,9 +46,9 @@ async def _redraft(engine, project_id) -> None:
 
 
 async def test_doi_duplicate_other_identity_links_and_fills(engine):
-    """Ligne ``pubmed`` existante (même DOI, champs vides) : la notice ``europepmc`` la
-    complète — champs vides remplis, sections posées, identité et origine intactes,
-    compté ``duplicates_doi``, aucune nouvelle ligne."""
+    """Existing ``pubmed`` row (same DOI, empty fields): the ``europepmc`` record
+    completes it — empty fields filled, sections set, identity and origin intact,
+    counted ``duplicates_doi``, no new row."""
     project = await _make_project(
         engine,
         {"source": "pubmed", "native_id": "34335492", "pmid": "34335492", "doi": "10.1000/xyz.1"},
@@ -68,7 +68,7 @@ async def test_doi_duplicate_other_identity_links_and_fills(engine):
 
 
 async def test_link_never_overwrites_existing_values(engine):
-    """Une valeur existante non vide n'est jamais écrasée (pas de fusion de valeurs)."""
+    """A non-empty existing value is never overwritten (no value merging)."""
     project = await _make_project(
         engine,
         {
@@ -91,7 +91,7 @@ async def test_link_never_overwrites_existing_values(engine):
 
 
 async def test_link_skips_fulltext_when_row_has_sections(engine):
-    """Ligne existante déjà pourvue de sections : aucun appel plein texte."""
+    """Existing row already with sections: no full-text call."""
     project = await _make_project(
         engine,
         {
@@ -110,7 +110,7 @@ async def test_link_skips_fulltext_when_row_has_sections(engine):
 
 
 async def test_link_prefers_smallest_article_id(engine):
-    """Deux lignes porteuses du DOI : la première en ``Article.id`` est complétée, pas l'autre."""
+    """Two rows carrying the DOI: the first by ``Article.id`` is completed, not the other."""
     project = await _make_project(
         engine,
         {"source": "pubmed", "native_id": "1", "pmid": "1", "doi": "10.1000/two.1"},
@@ -126,8 +126,8 @@ async def test_link_prefers_smallest_article_id(engine):
 
 
 async def test_reimport_same_identity_not_linked(engine):
-    """Garde : ré-import de la même identité → ``ON CONFLICT`` (ni rattachement, ni
-    ``duplicates_doi``, ni plein texte)."""
+    """Guard: re-import of the same identity -> ``ON CONFLICT`` (no attachment, no
+    ``duplicates_doi``, no full text)."""
     project = await _make_project(engine)
     fake = _fake(NOTICE)
     await _import_epmc(engine, project, fake)
@@ -142,7 +142,7 @@ async def test_reimport_same_identity_not_linked(engine):
 
 
 async def test_link_no_doi_plain_insert(engine):
-    """Notice sans DOI : insertion normale, ``duplicates_doi`` absent du payload."""
+    """Record without DOI: normal insertion, ``duplicates_doi`` absent from the payload."""
     project = await _make_project(engine)
     notice = {k: v for k, v in NOTICE.items() if k != "doi"}
     result = await _import_epmc(engine, project, _fake(notice))
@@ -151,8 +151,8 @@ async def test_link_no_doi_plain_insert(engine):
 
 
 async def test_doi_duplicate_same_import_still_skipped_not_linked(engine):
-    """Deux notices du même import portant le même DOI : la 2ᵉ est sautée (phase 2) — pas
-    rattachée, son plein texte n'est pas demandé, ses champs ne sont pas fusionnés."""
+    """Two records from the same import carrying the same DOI: the 2nd is skipped (phase 2) —
+    not attached, its full text is not requested, its fields are not merged."""
     project = await _make_project(engine)
     fake = FakeSourceAdapter(
         volume=2,

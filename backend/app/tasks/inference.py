@@ -1,23 +1,24 @@
-"""Task inférence massive (MODULE 4, lot 5).
+"""Mass inference task (MODULE 4, lot 5).
 
-Même pattern d'exécution que ``benchmark_task`` / ``import_pubmed_task`` (C1/C2) :
-wrapper sync Celery → thread dédié → ``asyncio.run`` du core async ; engine par run
-(ou ``session_factory`` injecté en tests).
+Same execution pattern as ``benchmark_task`` / ``import_pubmed_task`` (C1/C2):
+sync Celery wrapper → dedicated thread → ``asyncio.run`` of the async core; engine
+per run (or ``session_factory`` injected in tests).
 
-L'inférence exécute le prompt validé sur **chaque article** du corpus (FROZEN),
-stocke le résultat dans ``article_predictions``, et applique le **triage
-automatique** selon le score de confiance (spec MODULE 4) :
+The inference runs the validated prompt on **every article** of the corpus (FROZEN),
+stores the result in ``article_predictions``, and applies the **automatic
+triage** according to the confidence score (spec MODULE 4):
 
 - ``confidence_score > 0.85`` → ``AUTO_ACCEPTED``
 - ``confidence_score < 0.15`` → ``AUTO_REJECTED``
-- sinon (ou score absent) → ``NEEDS_HUMAN_REVIEW``
+- else (or missing score) → ``NEEDS_HUMAN_REVIEW``
 
-À l'achèvement, le job passe ``COMPLETED`` (statistiques dans ``result_json``) et
-une notification est envoyée (e-mail best-effort via ``notify_job_complete``).
+On completion, the job goes ``COMPLETED`` (statistics in ``result_json``) and a
+notification is sent (best-effort email via ``notify_job_complete``).
 
-Traçabilité (spec 2026-10-29) : après le warm-up, ``job.model_info`` fige un instantané des
-modèles (principal + pré-filtre : identifiant, version/digest) ; chaque prédiction porte
-``model_identifier`` / ``model_version`` du modèle qui l'a produite (best-effort, jamais bloquant).
+Traceability (spec 2026-10-29): after the warm-up, ``job.model_info`` freezes a snapshot of
+the models (main + prefilter: identifier, version/digest); each prediction carries
+``model_identifier`` / ``model_version`` of the model that produced it (best-effort,
+never blocking).
 """
 
 import asyncio
@@ -67,7 +68,7 @@ from app.searches import ScopedProject, get_search, gold_condition, in_search, l
 from app.settings.service import get_setting
 from app.tasks.notify import notify_job_complete
 
-#: Clés SMTP lues en DB pour ``Mailer.from_settings`` (DB > env).
+#: SMTP keys read from the DB for ``Mailer.from_settings`` (DB > env).
 _SMTP_SETTING_KEYS = (
     "smtp_host",
     "smtp_port",
@@ -79,23 +80,23 @@ _SMTP_SETTING_KEYS = (
 
 logger = logging.getLogger(__name__)
 
-#: Hook de test : session_factory injecté pour le vrai chemin thread+asyncio.run.
+#: Test hook: injected session_factory for the real thread+asyncio.run path.
 _session_factory_override: async_sessionmaker[AsyncSession] | None = None
 
-#: Bornes de triage (spec MODULE 4).
+#: Triage bounds (spec MODULE 4).
 _AUTO_ACCEPT_THRESHOLD = 0.85
 _AUTO_REJECT_THRESHOLD = 0.15
 
-#: Lock par modèle (backends locaux) : requeue 30 s ; horizon d'attente = 24 h (aligné sur
-#: le ``visibility_timeout`` Celery, un job CPU dure des heures) ; TTL = timeout + marge
-#: anti-fuite, renouvelé avant chaque appel modèle (crash du worker → le lock expire).
+#: Per-model lock (local backends): requeue 30 s; wait horizon = 24 h (aligned with
+#: the Celery ``visibility_timeout``, a CPU job lasts hours); TTL = timeout +
+#: anti-leak margin, renewed before each model call (worker crash → the lock expires).
 _MODEL_BUSY_RETRY_SECONDS = 30
 _MODEL_BUSY_MAX_RETRIES = 24 * 3600 // _MODEL_BUSY_RETRY_SECONDS
 _MODEL_BUSY_TTL_GRACE_SECONDS = 300
 
 
 class ModelBusy(Exception):
-    """Modèle local déjà utilisé par un autre job (lock Redis) → requeue le job."""
+    """Local model already used by another job (Redis lock) → requeue the job."""
 
 
 def _make_session_factory():
@@ -110,11 +111,11 @@ REJECTED = PredictionStatus.AUTO_REJECTED
 
 
 def _triage(confidence_score) -> PredictionStatus:
-    """Triage automatique selon le score de confiance (spec MODULE 4).
+    """Automatic triage according to the confidence score (spec MODULE 4).
 
     - ``> 0.85`` → ``AUTO_ACCEPTED``
     - ``< 0.15`` → ``AUTO_REJECTED``
-    - sinon (bornes incluses, score absent ou non numérique) → ``NEEDS_HUMAN_REVIEW``
+    - else (bounds included, missing or non-numeric score) → ``NEEDS_HUMAN_REVIEW``
     """
     confidence_score = metrics.confidence(confidence_score)
     if confidence_score is None:
@@ -128,11 +129,11 @@ def _triage(confidence_score) -> PredictionStatus:
 
 @celery_app.task(name="diggypaper.inference", bind=True)
 def inference_task(self, inference_job_id: str) -> dict:
-    """Wrapper sync Celery : exécute le core async dans un thread dédié (C1/C2).
+    """Sync Celery wrapper: runs the async core in a dedicated thread (C1/C2).
 
-    ``ModelBusy`` (modèle local locké par un autre job) : requeue
-    ``_MODEL_BUSY_RETRY_SECONDS`` s, jusqu'à ``_MODEL_BUSY_MAX_RETRIES`` ; au-delà,
-    le job passe FAILED puis l'exception est relancée.
+    ``ModelBusy`` (local model locked by another job): requeue after
+    ``_MODEL_BUSY_RETRY_SECONDS`` s, up to ``_MODEL_BUSY_MAX_RETRIES``; beyond that,
+    the job goes FAILED and the exception is re-raised.
     """
     result: dict = {}
     error: BaseException | None = None
@@ -165,18 +166,20 @@ async def _run_inference(
     inference: OpenAICompatibleService | None = None,
     redis=None,
 ) -> dict:
-    """Core async de l'inférence massive.
+    """Async core of the mass inference.
 
-    - ``session_factory`` injectable (tests) ; sinon engine par run (C2).
-    - ``inference`` injectable (tests) ; sinon ``make_inference_service``.
-    - ``redis`` injectable (tests) ; sinon client à la demande pour le lock par modèle.
-    - Lock par modèle (backends locaux : principal + pré-filtre, clés triées, tout-ou-rien) : si un
-      modèle est occupé → ``ModelBusy`` (job PENDING, phase ``waiting_model``), requeue au
-      wrapper. Les locks sont renouvelés avant chaque appel modèle (``heartbeat``).
-    - Toute autre exception avant la fin du job (acquisition Redis incluse) → FAILED.
-    - Séquentiel par article (CPU-friendly, spec).
-    - Renvoie les statistiques clés (``processed``, ``auto_accepted``,
-      ``auto_rejected``, ``needs_review``, ``duration_seconds``).
+    - ``session_factory`` injectable (tests); else engine per run (C2).
+    - ``inference`` injectable (tests); else ``make_inference_service``.
+    - ``redis`` injectable (tests); else on-demand client for the per-model lock.
+    - Per-model lock (local backends: main + prefilter, sorted keys, all-or-nothing):
+      if a model is busy → ``ModelBusy`` (job PENDING, phase ``waiting_model``),
+      requeue to the wrapper. The locks are renewed before each model call
+      (``heartbeat``).
+    - Any other exception before the end of the job (Redis acquisition included)
+      → FAILED.
+    - Sequential per article (CPU-friendly, spec).
+    - Returns the key statistics (``processed``, ``auto_accepted``, ``auto_rejected``,
+      ``needs_review``, ``duration_seconds``).
     """
     if session_factory is None:
         session_factory = _session_factory_override
@@ -203,8 +206,8 @@ async def _run_inference(
                 InferenceJobStatus.COMPLETED,
                 InferenceJobStatus.RUNNING,
             ):
-                # Redélivrance : job déjà clos, ou déjà en cours dans un autre processus
-                # (un redémarrage du worker passe d'abord RUNNING → FAILED).
+                # Redelivery: job already closed, or already in flight in another process
+                # (a worker restart first goes RUNNING → FAILED).
                 return {}
             try:
                 registry = {
@@ -219,11 +222,11 @@ async def _run_inference(
                         )
                     ).scalars()
                 }
-                # Lock par modèle (backends locaux : principal + pré-filtre) : rend visible
-                # l'attente sérialisée dans Ollama. Tout-ou-rien : un lock refusé → ceux déjà
-                # pris sont relâchés (finally) et le job attend. L'acquisition est avant
-                # RUNNING : un job en attente reste PENDING en base (garde « un job par
-                # projet » conservée).
+                # Per-model lock (local backends: main + prefilter): makes the
+                # serialized wait in Ollama visible. All-or-nothing: one refused lock →
+                # the ones already taken are released (finally) and the job waits. The
+                # acquisition is before RUNNING: a waiting job stays PENDING in the
+                # database (the "one job per project" guard is kept).
                 keys: list[str] = []
                 for name in (job.model_used, job.prefilter_model):
                     m = registry.get(name) if name else None
@@ -242,13 +245,13 @@ async def _run_inference(
                         )
                         own_redis = True
                     ttl = await _lock_ttl(session)
-                # ordre fixe : pas de livelock entre jobs aux rôles principal/pré-filtre inversés
+                # fixed order: no livelock between jobs with inverted main/prefilter roles
                 for key in sorted(keys):
                     token = uuid.uuid4().hex
                     try:
                         acquired = await redis_client.set(key, token, nx=True, ex=ttl)
                     except RedisError as exc:
-                        # host:port interne : au log seulement, jamais dans job.error
+                        # internal host:port: in the log only, never in job.error
                         logger.warning("inference: lock %s indisponible (Redis) : %s", key, exc)
                         raise RuntimeError("model_lock_unavailable") from exc
                     if not acquired:
@@ -297,16 +300,16 @@ async def _run_inference(
 
 
 async def _lock_ttl(session: AsyncSession) -> int:
-    """TTL du lock = ``inference_timeout`` (même parseur que make_inference_service,
-    défaut 120 s) + marge anti-fuite : crash du worker → le lock expirera au TTL."""
+    """Lock TTL = ``inference_timeout`` (same parser as make_inference_service,
+    default 120 s) + anti-leak margin: worker crash → the lock will expire at the TTL."""
     return int(await get_inference_timeout(session)) + _MODEL_BUSY_TTL_GRACE_SECONDS
 
 
 async def _renew_locks(redis_client, locks: list[tuple[str, str]], ttl: int) -> None:
-    """Renouvelle le TTL de chaque lock détenu (GET == token → EXPIRE, même TTL qu'à
-    l'acquisition). Best-effort comme la release : token différent ou Redis en erreur →
-    warning, le job continue."""
-    # ponytail: GET puis EXPIRE non atomique, Lua compare-and-set si la contention le justifie
+    """Renews the TTL of each held lock (GET == token → EXPIRE, same TTL as at
+    acquisition). Best-effort like the release: different token or Redis in error →
+    warning, the job continues."""
+    # ponytail: GET then EXPIRE not atomic, Lua compare-and-set if the contention justifies it
     for key, token in locks:
         try:
             current = await redis_client.get(key)
@@ -321,10 +324,10 @@ async def _renew_locks(redis_client, locks: list[tuple[str, str]], ttl: int) -> 
 
 
 async def _release_lock(redis_client, key: str, token: str) -> None:
-    """Release du lock : DEL seulement si la valeur courante est notre token
-    (owner check) ; appelé en finally (succès, échec, annulation).
+    """Lock release: DEL only if the current value is our token
+    (owner check); called in finally (success, failure, cancellation).
 
-    Un échec (Redis injoignable) est loggé, pas relancé : le TTL expirera le lock.
+    A failure (Redis unreachable) is logged, not re-raised: the TTL will expire the lock.
     """
     try:
         current = await redis_client.get(key)
@@ -337,7 +340,7 @@ async def _release_lock(redis_client, key: str, token: str) -> None:
 
 
 async def _mark_model_busy_failed(inference_job_id: str) -> None:
-    """Retries épuisées : job FAILED (même pattern que ``_record_failure``)."""
+    """Retries exhausted: job FAILED (same pattern as ``_record_failure``)."""
     factory = _session_factory_override
     engine = None
     if factory is None:
@@ -366,7 +369,7 @@ async def _mark_model_busy_failed(inference_job_id: str) -> None:
 
 
 async def _start_scheduled(session: AsyncSession, project_id) -> None:
-    """Lance l'analyse programmée suivante, s'il y en a une prête (best-effort)."""
+    """Starts the next scheduled analysis, if one is ready (best-effort)."""
     from app.scheduler import start_ready
 
     try:
@@ -383,10 +386,10 @@ async def _do_inference(
     inference: OpenAICompatibleService,
     heartbeat=None,
 ) -> dict:
-    """Corps de l'inférence : pour chaque article, inférence + triage + persistance.
+    """Inference body: for each article, inference + triage + persistence.
 
-    ``heartbeat`` (async, optionnel) : renouvelle les locks par modèle ; appelé juste avant
-    chaque appel modèle (warm-ups et ``predict``)."""
+    ``heartbeat`` (async, optional): renews the per-model locks; called just before
+    each model call (warm-ups and ``predict``)."""
     prompt = await session.get(PromptTemplate, job.prompt_template_id)
     if prompt is None:
         raise LookupError(f"prompt template not found: {job.prompt_template_id}")
@@ -395,7 +398,7 @@ async def _do_inference(
     if base_project is None:
         raise LookupError(f"project not found: {job.project_id}")
     search = await get_search(session, base_project, job.search_id)
-    # question, items et parties de texte : ceux de la recherche (le projet pour le reste)
+    # question, items and text parts: those of the search (the project for the rest)
     project = ScopedProject(base_project, search)
 
     articles = (
@@ -410,7 +413,7 @@ async def _do_inference(
         .all()
     )
 
-    # Gold : exemples ajoutés au prompt (« éduquer » le modèle) et/ou validation des résultats.
+    # Gold: examples added to the prompt ("educate" the model) and/or validation of the results.
     opts = job.options or {}
     gold_all: dict = {}
     example_ids: list = []
@@ -440,7 +443,7 @@ async def _do_inference(
             ex, gold_all, example_ids, project_fields(project), project.text_sections
         )
 
-    # Reprise : articles déjà prédits (même prompt) depuis la date du job interrompu.
+    # Resume: articles already predicted (same prompt) since the interrupted job's date.
     done_status: dict = {}
     if job.resume_after is not None:
         rows = await session.execute(
@@ -467,7 +470,7 @@ async def _do_inference(
             "needs_review": needs_review,
         }
 
-    # Modèles du registre : étage 1 (petit modèle rapide, optionnel) et modèle principal.
+    # Registry models: stage 1 (small fast model, optional) and main model.
     names = [n for n in (job.model_used, job.prefilter_model) if n]
     registry = {
         m.name: m
@@ -478,9 +481,9 @@ async def _do_inference(
     pre = registry.get(job.prefilter_model) if job.prefilter_model else None
     main = registry.get(job.model_used)
     prefiltered = 0
-    # Cold start : le premier appel d'un modèle local charge les poids dans
-    # Ollama (plusieurs minutes sur CPU) — on l'absorbe dans le budget du
-    # timeout plutôt que de le faire payer au premier article.
+    # Cold start: the first call of a local model loads the weights in
+    # Ollama (several minutes on CPU) — absorb it in the timeout budget
+    # rather than making the first article pay for it.
     for m, name in ((pre, job.prefilter_model), (main, job.model_used)):
         if m is not None and m.backend_type == "OPENAI_API":
             continue  # backend distant : pas de chargement local
@@ -489,7 +492,7 @@ async def _do_inference(
             if heartbeat:
                 await heartbeat()
             await warmup(inference, ident, m)
-    # Traçabilité : instantané des modèles (digest Ollama relevé une fois ; best-effort).
+    # Traceability: model snapshot (Ollama digest read once; best-effort).
     job.model_info = {
         "main": await model_snapshot(main, inference, job.model_used),
         "prefilter": (
@@ -498,12 +501,12 @@ async def _do_inference(
             else None
         ),
     }
-    # Visible tout de suite (0 / N) : le premier appel peut télécharger les poids du modèle.
+    # Visible right away (0 / N): the first call may download the model's weights.
     await _progress(session, job, 0, len(articles), 0, counts())
 
     async def predict(model, article, *, light: bool, meta: dict) -> dict:
-        """Appel du modèle ; ``light`` = étage 1 (titre + abstract seulement) ; ``meta``
-        reçoit ``served_model`` (version renvoyée par le serveur)."""
+        """Model call; ``light`` = stage 1 (title + abstract only); ``meta``
+        receives ``served_model`` (version returned by the server)."""
         kinds = ["abstract"] if light else project.text_sections
         user_prompt = fill_prompt(prompt.user_prompt_schema, article, kinds)
         system = prompt.system_prompt or ""
@@ -519,16 +522,17 @@ async def _do_inference(
         return out
 
     def note_served(stage: str, meta: dict) -> None:
-        """Backend non Ollama : la première version servie de l'étage remplit l'instantané du
-        job, même si cet étage ne produit pas la prédiction (pré-filtre qui ne rejette jamais)."""
+        """Non-Ollama backend: the stage's first served version fills the job's
+        snapshot, even if that stage does not produce the prediction (a prefilter that
+        never rejects)."""
         snap = job.model_info[stage] or {}
         version = meta.get("served_model")
         if version and not snap.get("version") and snap.get("backend") not in (None, "OLLAMA"):
-            # nouveau dict (pas de mutation en place) : sinon SQLAlchemy ne voit pas le changement
+            # new dict (no in-place mutation): otherwise SQLAlchemy does not see the change
             job.model_info = {**job.model_info, stage: {**snap, "version": version}}
 
     async def cancelled() -> bool:
-        # Arrêt demandé depuis l'interface (POST …/inference/cancel : statut FAILED en base).
+        # Stop requested from the UI (POST …/inference/cancel: FAILED status in the database).
         status = (
             await session.execute(select(InferenceJob.status).where(InferenceJob.id == job.id))
         ).scalar_one_or_none()
@@ -549,7 +553,7 @@ async def _do_inference(
         prediction = None
         try:
             if pre is not None:
-                # Étage 1 : titre + abstract ; un rejet net écarte l'article sans étage 2.
+                # Stage 1: title + abstract; a clean rejection discards the article without stage 2.
                 try:
                     meta = {}
                     p1 = await predict(pre, article, light=True, meta=meta)
@@ -566,8 +570,8 @@ async def _do_inference(
                 prediction = await predict(main, article, light=False, meta=meta)
                 note_served("main", meta)
         except InferenceError as exc:
-            # Petits modèles : une sortie non-JSON ne doit pas tuer tout le job ;
-            # timeout / connexion / HTTP restent fatals.
+            # Small models: a non-JSON output must not kill the whole job;
+            # timeout / connection / HTTP remain fatal.
             if str(exc) != "invalid_json":
                 raise
             invalid += 1
@@ -615,7 +619,7 @@ async def _do_inference(
                     .where(
                         in_search(ArticlePrediction.search_id, search),
                         ArticlePrediction.article_id.in_(in_lot),
-                        # pas les prédictions d'un run antérieur (article en sortie invalide ici)
+                        # not the predictions of an earlier run (article with invalid output here)
                         ArticlePrediction.created_at >= (job.resume_after or job.created_at),
                     )
                     .order_by(ArticlePrediction.created_at.nulls_first(), ArticlePrediction.id)
@@ -642,7 +646,7 @@ async def _do_inference(
     job.status = InferenceJobStatus.COMPLETED
     job.result_json = stats
     job.completed_at = datetime.now(UTC)
-    # m10 : l'inférence terminée marque le projet COMPLETED (réservé au MODULE 4).
+    # m10: finished inference marks the project COMPLETED (reserved for MODULE 4).
     base_project.status = ProjectStatus.COMPLETED
     await session.commit()
     return stats
@@ -663,10 +667,10 @@ async def _progress(
 
 
 async def _make_mailer(session: AsyncSession) -> Mailer | None:
-    """Mailer depuis les settings (DB > env) ; ``None`` si config invalide/absente.
+    """Mailer from the settings (DB > env); ``None`` if the config is invalid/absent.
 
-    Best-effort : un échec de config ne casse pas le job (la notification est
-    simplement skipée).
+    Best-effort: a config failure does not break the job (the notification is
+    simply skipped).
     """
     try:
         db_settings = {key: await get_setting(session, key) for key in _SMTP_SETTING_KEYS}
@@ -677,7 +681,7 @@ async def _make_mailer(session: AsyncSession) -> Mailer | None:
 
 
 async def _record_failure(session: AsyncSession, job: InferenceJob, exc: Exception) -> None:
-    """Échec : job FAILED (best effort)."""
+    """Failure: job FAILED (best effort)."""
     logger.error("inference failed (job %s): %s", job.id, _sanitize(exc))
     try:
         await session.rollback()
@@ -690,5 +694,5 @@ async def _record_failure(session: AsyncSession, job: InferenceJob, exc: Excepti
 
 
 def _sanitize(exc: BaseException) -> str:
-    """Message court (pas de traceback brut, pas d'URL ni secret)."""
+    """Short message (no raw traceback, no URL or secret)."""
     return str(exc)[:500] or type(exc).__name__

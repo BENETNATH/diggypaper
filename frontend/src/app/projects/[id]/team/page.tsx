@@ -19,7 +19,7 @@ function TeamContent() {
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<Member["role"]>("ANNOTATOR");
   const locale = useLocale();
-  const [lang, setLang] = useState(locale); // langue de l'e-mail et de l'interface de l'invité
+  const [lang, setLang] = useState(locale); // language of the e-mail and the invitee's interface
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ text: string; link?: string | null } | null>(null);

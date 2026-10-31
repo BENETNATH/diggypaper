@@ -6,7 +6,7 @@ import es from "@/messages/es.json";
 
 type Messages = { models: Record<string, string> };
 
-/** t() minimal façon next-intl (namespace « models ») : clé absente → exception (parité i18n). */
+/** Minimal next-intl-style t() (namespace "models"): missing key → exception (i18n parity). */
 function tFor(messages: Messages) {
   return (key: string, values?: Record<string, string | number>) => {
     const raw = messages.models[key];
@@ -15,7 +15,7 @@ function tFor(messages: Messages) {
   };
 }
 
-/** Codes d'erreur renvoyés par le backend sur la page /models (spec 2026-10-29 §8). */
+/** Error codes returned by the backend on the /models page (spec 2026-10-29 §8). */
 const CODES = [
   "timeout",
   "connection_error",

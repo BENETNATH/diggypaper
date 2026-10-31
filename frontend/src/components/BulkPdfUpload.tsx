@@ -6,7 +6,7 @@ import { matchArticlePdf } from "@/lib/api";
 
 type Row = { name: string; state: "wait" | "ok" | "no_match" | "ambiguous" | "error"; title?: string | null; error?: string };
 
-/** Dépôt de plusieurs PDF d'un coup : chacun est rattaché à l'article dont il porte le titre / le DOI. */
+/** Upload of several PDFs at once: each is linked to the article whose title / DOI it carries. */
 export function BulkPdfUpload({ projectId, onDone }: { projectId: string; onDone: () => void }) {
   const t = useTranslations("articles");
   const [rows, setRows] = useState<Row[]>([]);

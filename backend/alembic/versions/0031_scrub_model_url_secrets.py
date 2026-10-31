@@ -1,14 +1,14 @@
-"""Nettoie les secrets (userinfo, query, fragment) des identifiants OPENAI_API.
+"""Scrub secrets (userinfo, query, fragment) from OPENAI_API identifiers.
 
 Revision ID: 0031
 Revises: 0030
 Create Date: 2026-10-29 15:00:00.000000
 
-Défense en profondeur : le masquage en sortie (payload) ne suffit pas, le secret doit
-cesser d'exister en clair au repos (dumps, sauvegardes). Une ligne ``<url>#<modèle>``
-devient l'URL assainie (scheme://hôte[:port] + chemin, sans userinfo/query/fragment)
-+ le modèle après le DERNIER « # ». Les autres backends sont intacts. Le downgrade est
-un no-op : on ne restaure jamais un secret.
+Defense in depth: output masking (payload) is not enough, the secret must
+stop existing in clear at rest (dumps, backups). A ``<url>#<model>`` row
+becomes the sanitized URL (scheme://host[:port] + path, no userinfo/query/fragment)
++ the model after the LAST "#". The other backends are untouched. The downgrade
+is a no-op: a secret is never restored.
 """
 
 import logging
@@ -28,7 +28,7 @@ log = logging.getLogger(__name__)
 
 
 def _scrub(ident: str) -> str:
-    """URL = avant le PREMIER « # » (assainie), modèle = après le DERNIER « # » (fragment jeté)."""
+    """URL = before the FIRST "#" (sanitized), model = after the LAST "#" (fragment discarded)."""
     base, model = ident.split("#", 1)[0], ident.rsplit("#", 1)[1] if "#" in ident else ""
     p = urlsplit(base)
     netloc = p.netloc.rsplit("@", 1)[-1]  # userinfo retiré (hôte, [IPv6], port tels quels)
@@ -53,9 +53,9 @@ def upgrade() -> None:
                 {"m": new, "i": row_id},
             )
             cleaned.append(name)
-    # Les NOMS seulement, jamais l'URL : c'est elle qui porte le secret.
+    # Only the NAMES, never the URL: it is what carries the secret.
     log.info("0031: %d identifiant(s) OPENAI_API nettoyé(s): %s", len(cleaned), ", ".join(cleaned))
 
 
 def downgrade() -> None:
-    """No-op : on ne remet jamais un secret en clair."""
+    """No-op: a secret is never put back in clear."""

@@ -1,14 +1,14 @@
 /**
- * Client API (frontend → backend FastAPI).
+ * API client (frontend → backend FastAPI).
  *
- * Les appels sont faits côté client (fetch, same-origin). En prod, nginx proxy
- * /api/v1 vers le backend ; en dev, le rewrite next.config.mjs fait le même.
- * L'auth est un cookie JWT httpOnly posé par le backend (credentials: include).
+ * Calls are made client-side (fetch, same-origin). In prod, nginx proxies
+ * /api/v1 to the backend; in dev, the next.config.mjs rewrite does the same.
+ * Auth is an httpOnly JWT cookie set by the backend (credentials: include).
  */
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "/api/v1";
 
-// --- Types partagés ---------------------------------------------------------
+// --- Shared types -----------------------------------------------------------
 
 export interface User {
   id: string;
@@ -21,7 +21,7 @@ export interface User {
   created_at: string;
 }
 
-/** Métrique de classement d'un item (benchmark) : rappel par défaut. */
+/** Ranking metric for an item (benchmark): recall by default. */
 export type RankMetric = "recall" | "precision" | "f1" | "accuracy";
 
 export interface SchemaField {
@@ -29,13 +29,13 @@ export interface SchemaField {
   label: string;
   type: "boolean" | "choice" | "text";
   options?: string[];
-  /** Critère de classement des modèles / prompts du benchmark (un seul item) et sa métrique. */
+  /** Ranking criterion for the benchmark's models / prompts (a single item) and its metric. */
   primary?: boolean;
   metric?: RankMetric;
 }
 
 export interface Project {
-  retention_delete_on?: string | null; // suppression programmée pour inactivité
+  retention_delete_on?: string | null; // scheduled deletion due to inactivity
   id: string;
   title: string;
   description: string | null;
@@ -56,8 +56,8 @@ export interface Project {
 export interface Article {
   id: string;
   pmid: string | null;
-  source?: string | null; // pubmed | crossref | file… ; null : donnée ancienne
-  native_id?: string | null; // identifiant dans cette source (PMID, DOI…)
+  source?: string | null; // pubmed | crossref | file...; null: older data
+  native_id?: string | null; // identifier in this source (PMID, DOI...)
   pmcid: string | null;
   doi: string | null;
   title: string | null;
@@ -86,7 +86,7 @@ export interface Article {
   created_at: string | null;
 }
 
-/** Dernière relecture humaine d'un article. */
+/** Latest human re-review of an article. */
 export interface Review {
   by: string | null;
   at: string | null;
@@ -103,7 +103,7 @@ export interface ArticlePrediction {
   article_id: string;
   prompt_template_id: string | null;
   model_used: string;
-  /** Identifiant et version du modèle figés à la prédiction (null : données anciennes). */
+  /** Model ID and version frozen at prediction time (null: older data). */
   model_identifier?: string | null;
   model_version?: string | null;
   decision_json: Record<string, unknown> | null;
@@ -113,14 +113,14 @@ export interface ArticlePrediction {
   created_at: string | null;
 }
 
-/** Décision : un champ par SchemaField du projet + clés standard. */
+/** Decision: one field per project SchemaField + standard keys. */
 export type AnnotationPayload = Record<string, unknown>;
 
 export interface ImportJob {
   id: string;
   task: string;
   kind?: "import" | "fulltext" | "references" | "citations" | "crate";
-  source?: string | null; // base interrogée ; null : références, crate, plein texte
+  source?: string | null; // queried database; null: references, crate, full text
   status: "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
   query: string | null;
   result: Record<string, unknown> | null;
@@ -136,7 +136,7 @@ export interface GoldArticle {
   article_title: string | null;
   ground_truth_json: Record<string, unknown>;
   search_id?: string | null;
-  /** Relecture dont la référence est la copie (null : saisie manuelle ancienne). */
+  /** Re-review whose reference is the copy (null: older manual entry). */
   source?: {
     annotation_id: string;
     by: string | null;
@@ -145,7 +145,7 @@ export interface GoldArticle {
     blind: boolean;
   } | null;
   added_by?: string | null;
-  /** La relecture a changé depuis la copie : « mettre à jour ». */
+  /** The re-review changed since the copy: "update". */
   stale?: boolean;
 }
 
@@ -153,9 +153,9 @@ export interface GoldArticle {
 
 export type SearchKind = "standard" | "tuning" | "blind";
 
-/** Une recherche : une question (ses items) posée à un lot d'articles. */
+/** A search: a question (its items) posed to a batch of articles. */
 export interface SearchInfo {
-  /** Analyse programmée : en attente de la fin de la recherche d'origine, démarrée, ou échouée. */
+  /** Scheduled analysis: waiting for the source search to finish, started, or failed. */
   schedule_state?: "waiting" | "started" | "failed" | null;
   schedule?: { model: string; prefilter_model?: string | null; instructions?: string | null; error?: string } | null;
   id: string;
@@ -172,14 +172,14 @@ export interface SearchInfo {
   lot_size: number;
   predicted: number;
   reviewed: number;
-  /** Répartition des résultats de l'IA dans le lot ({} pour une recherche à l'aveugle). */
+  /** Distribution of the AI results in the batch ({} for a blind search). */
   breakdown: Partial<Record<"AUTO_ACCEPTED" | "AUTO_REJECTED" | "NEEDS_HUMAN_REVIEW" | "NONE", number>>;
-  /** Incertains pas encore relus. */
+  /** Uncertain, not yet re-reviewed. */
   to_review: number;
   last_job: { status: InferenceJob["status"]; model: string; model_version?: string | null } | null;
 }
 
-/** Vue d'ensemble d'un projet : chiffres globaux (articles distincts) + état de chaque recherche. */
+/** Project overview: global counts (distinct articles) + state of each search. */
 export interface ProjectOverview {
   articles: number;
   fulltext: number;
@@ -191,7 +191,7 @@ export interface ProjectOverview {
 export const getOverview = (projectId: string): Promise<ProjectOverview> =>
   request(`/projects/${projectId}/overview`);
 
-/** Quels articles : critères cumulés sur les résultats d'une recherche (aucun = tout le corpus). */
+/** Which articles: cumulative criteria over a search's results (none = the whole corpus). */
 export interface Selection {
   from_search_id?: string;
   status?: PredictionFilter;
@@ -221,21 +221,21 @@ export interface ModelInfo {
   id: string;
   name: string;
   backend_type: string | null;
-  /** OPENAI_API : nom du modèle seul (l'URL ne sort jamais du serveur). */
+  /** OPENAI_API: model name only (the URL never leaves the server). */
   model_identifier: string;
-  /** OPENAI_API : `scheme://hôte[:port]` ; null pour les autres backends. */
+  /** OPENAI_API: `scheme://host[:port]`; null for the other backends. */
   endpoint?: string | null;
   ram_usage_mb: number | null;
   is_active: boolean | null;
-  /** Modèle défini par l'utilisateur courant. */
+  /** Model defined by the current user. */
   mine?: boolean;
-  /** Modèle de la plateforme (installé par un administrateur). */
+  /** Platform model (installed by an administrator). */
   platform?: boolean;
-  /** Servi en interne (Ollama/LLaMA.cpp/Transformers, ou API sur réseau privé). */
+  /** Served internally (Ollama/LLaMA.cpp/Transformers, or an API on a private network). */
   internal?: boolean;
 }
 
-/** Matrice de confusion et métriques de la pertinence ou d'un item booléen. */
+/** Confusion matrix and metrics for relevance or a boolean item. */
 export interface Prf {
   tp: number;
   fp: number;
@@ -248,13 +248,13 @@ export interface Prf {
   specificity: number;
 }
 
-/** Métriques d'un item : booléen (confusion + prf), choix (exactitude), texte (f1 de mots). */
+/** Metrics for an item: boolean (confusion + prf), choice (accuracy), text (word f1). */
 export interface ItemMetrics extends Partial<Prf> {
   type: SchemaField["type"];
   n: number;
 }
 
-/** Réponses du modèle comparées au gold (benchmark : details.scored ; analyse : validation). */
+/** Model answers compared to the gold (benchmark: details.scored; analysis: validation). */
 export interface Scored {
   n: number;
   relevance: Prf;
@@ -262,7 +262,7 @@ export interface Scored {
   accuracy: number | null;
 }
 
-/** Critère de classement : item (ou « relevance ») + métrique + valeur. */
+/** Ranking criterion: item (or "relevance") + metric + value. */
 export interface PrimaryCriterion {
   item: string;
   metric: RankMetric;
@@ -271,7 +271,7 @@ export interface PrimaryCriterion {
 
 export type Validation = Scored & { primary?: PrimaryCriterion };
 
-/** Une formulation à comparer dans un benchmark. */
+/** A phrasing to compare in a benchmark. */
 export interface BenchmarkVariant {
   name: string;
   system_prompt?: string;
@@ -290,7 +290,7 @@ export interface BenchmarkResult {
   f1_score: number | null;
   details?: {
     articles?: number;
-    /** Accord (0..1) avec la majorité des variantes. */
+    /** Agreement (0..1) with the majority of variants. */
     agreement?: number | null;
     scored?: Scored;
     primary?: PrimaryCriterion;
@@ -311,7 +311,7 @@ export interface BenchmarkRun {
   results?: BenchmarkResult[];
 }
 
-/** Réponse d'un (modèle, variante) pour un article. */
+/** Answer of a (model, variant) for an article. */
 export interface BenchmarkOutput {
   model: string;
   variant: string | null;
@@ -327,7 +327,7 @@ export interface BenchmarkArticleRow {
   outputs: BenchmarkOutput[];
 }
 
-/** Instantané d'un modèle figé au démarrage d'une analyse (jamais de clé ni d'URL complète). */
+/** Snapshot of a model frozen at analysis start (never a key or full URL). */
 export interface ModelSnapshot {
   name: string;
   backend: string | null;
@@ -349,7 +349,7 @@ export interface InferenceJob {
   model_used: string;
   search_id?: string | null;
   prefilter_model?: string | null;
-  /** Instantané des deux étages (null : analyse ancienne). */
+  /** Snapshot of both stages (null: older analysis). */
   model_info?: { main: ModelSnapshot | null; prefilter: ModelSnapshot | null } | null;
   status: "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
   result: Record<string, unknown> | null;
@@ -358,7 +358,7 @@ export interface InferenceJob {
   completed_at: string | null;
 }
 
-// --- Client générique -------------------------------------------------------
+// --- Generic client ---------------------------------------------------------
 
 export class ApiError extends Error {
   status: number;
@@ -382,7 +382,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
       const body = await resp.json();
       detail = body.detail ?? body.error ?? detail;
     } catch {
-      /* pas de body JSON */
+      /* no JSON body */
     }
     throw new ApiError(resp.status, detail);
   }
@@ -390,7 +390,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   return resp.json();
 }
 
-/** Chaîne de requête `?a=1&b=2` sans les valeurs vides (chaîne vide si aucune). */
+/** Query string `?a=1&b=2` without empty values (empty string if none). */
 function qs(params: Record<string, string | boolean | undefined>): string {
   const q = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== "" && v !== false) q.set(k, String(v));
@@ -432,8 +432,8 @@ export async function me(): Promise<User> {
   return request<User>("/auth/me");
 }
 
-/** Déconnexion côté client (le cookie est httpOnly → on ne peut que demander
- *  au serveur de l'effacer ; ici on force un rechargement vers /login). */
+/** Client-side logout (the cookie is httpOnly, so we can only ask
+ *  the server to clear it; here we force a reload to /login). */
 export async function logout(): Promise<void> {
   try {
     await request("/auth/logout", { method: "POST" });
@@ -482,7 +482,7 @@ export async function createProject(payload: {
   });
 }
 
-/** Le projet ; question, items et parties de texte sont ceux de la recherche `searchId` (déf. initiale). */
+/** The project; question, items and text parts are those of search `searchId` (default: initial). */
 export async function getProject(projectId: string, searchId?: string): Promise<Project> {
   return request<Project>(`/projects/${projectId}${qs({ search: searchId })}`);
 }
@@ -524,7 +524,7 @@ export interface ReferencesPreview {
   max: number;
 }
 
-/** Liste de références (DOI/PMID, BibTeX, RIS, CSL JSON, CSV) : aperçu (dryRun) ou import. */
+/** List of references (DOI/PMID, BibTeX, RIS, CSL JSON, CSV): preview (dryRun) or import. */
 export async function importReferences(
   projectId: string,
   content: string,
@@ -550,7 +550,7 @@ export interface CitationRequest {
   max_candidates: number;
 }
 
-/** Chaînage de citations : estimation (dryRun) ou import des candidats les plus liés aux graines. */
+/** Citation chaining: estimate (dryRun) or import of the candidates most linked to the seeds. */
 export async function expandByCitations(
   projectId: string,
   body: CitationRequest,
@@ -577,7 +577,7 @@ export interface QueryAssist {
   check: QueryCheck | null;
 }
 
-/** Assistant de requête : un modèle propose une requête dans la syntaxe du moteur, la source la vérifie. */
+/** Query assistant: a model proposes a query in the engine's syntax, the source verifies it. */
 export async function assistQuery(
   projectId: string,
   body: {
@@ -694,7 +694,7 @@ export async function getArticleWithPrediction(
   return { article, prediction, review };
 }
 
-/** Dépôt manuel du PDF d'un article : le texte est extrait et remplace le texte intégral. */
+/** Manual upload of an article's PDF: the text is extracted and replaces the full text. */
 export async function uploadArticlePdf(
   projectId: string,
   articleId: string,
@@ -709,7 +709,7 @@ export async function uploadArticlePdf(
   });
 }
 
-/** Dépôt en lot : rattache ce PDF à l'article du projet dont il porte le titre / le DOI. */
+/** Batch upload: links this PDF to the project article whose title / DOI it carries. */
 export async function matchArticlePdf(
   projectId: string,
   file: File
@@ -721,7 +721,7 @@ export async function matchArticlePdf(
   });
 }
 
-/** Importe un RO-Crate (zip exporté par Diggypaper) : crée un projet et restaure son contenu. */
+/** Imports an RO-Crate (zip exported by Diggypaper): creates a project and restores its content. */
 export function importCrate(file: File): Promise<{ project_id: string; job_id: string }> {
   return request("/projects/import-crate", {
     method: "POST",
@@ -730,7 +730,7 @@ export function importCrate(file: File): Promise<{ project_id: string; job_id: s
   });
 }
 
-/** Relit la notice PubMed de l'article puis relance la recherche de son texte intégral. */
+/** Re-reads the article's PubMed record, then re-runs the search for its full text. */
 export const searchArticleFulltext = (
   projectId: string,
   articleId: string,
@@ -760,7 +760,7 @@ export async function listGold(projectId: string, searchId?: string): Promise<Go
   return data.items;
 }
 
-/** Ajoute au gold la dernière relecture des articles donnés (défaut : tous les articles relus). */
+/** Adds to the gold the latest re-review of the given articles (default: all re-reviewed articles). */
 export const goldFromReviews = (
   projectId: string,
   opts: { articleIds?: string[]; refresh?: boolean } = {},
@@ -827,9 +827,9 @@ export async function updatePrompt(
   });
 }
 
-// --- Modèles (MODULE 3) -----------------------------------------------------
+// --- Models (MODULE 3) ------------------------------------------------------
 
-/** Modèles que l'utilisateur peut utiliser (dans ce projet si `projectId`). */
+/** Models the user can use (in this project if `projectId`). */
 export async function listModels(projectId?: string): Promise<ModelInfo[]> {
   const q = projectId ? `?project_id=${projectId}` : "";
   const data = await request<{ items: ModelInfo[] }>(`/models${q}`);
@@ -902,7 +902,7 @@ export interface HfModel {
   id: string;
   downloads: number;
   likes: number;
-  decision?: boolean; // modèle de décision (sans chat) : ne s'installe pas via Ollama
+  decision?: boolean; // decision model (no chat): not installed via Ollama
 }
 export interface HfFile {
   file: string;
@@ -988,7 +988,7 @@ export async function getBenchmark(
   return request<BenchmarkRun>(`/projects/${projectId}/benchmarks/${runId}`);
 }
 
-/** Grille article × (modèle, variante) d'un benchmark, désaccords d'abord. */
+/** Article × (model, variant) grid of a benchmark, disagreements first. */
 export const listBenchmarkArticles = (
   projectId: string,
   runId: string,
@@ -1002,7 +1002,7 @@ export const listBenchmarkArticles = (
     })}`
   );
 
-// --- Inférence (MODULE 4) ---------------------------------------------------
+// --- Inference (MODULE 4) ---------------------------------------------------
 
 export async function triggerInference(
   projectId: string,
@@ -1029,7 +1029,7 @@ export const cancelInference = (projectId: string): Promise<unknown> =>
 export const cancelBenchmark = (projectId: string, runId: string): Promise<unknown> =>
   request(`/projects/${projectId}/benchmarks/${runId}/cancel`, { method: "POST" });
 
-/** Dernier job de la recherche ; avec ``active``, le job en cours du projet (toutes recherches). */
+/** Latest job of the search; with ``active``, the project's current job (all searches). */
 export async function getInference(
   projectId: string,
   searchId?: string,
@@ -1045,7 +1045,7 @@ export async function getInference(
 
 export type SettingsScope = "GLOBAL" | "PROJECT" | "USER";
 
-/** Valeurs venant de l'environnement du serveur (.env) : elles s'appliquent tant que la base est vide. */
+/** Values from the server environment (.env): they apply while the database is empty. */
 export type EnvSettings = Record<string, { set: boolean; value: string | null }>;
 export const getEnvSettings = (): Promise<EnvSettings> => request("/admin/settings/env");
 
@@ -1078,7 +1078,7 @@ export interface Storage {
 }
 export const getStorageStatus = (): Promise<DiskStatus> => request("/admin/storage/status");
 export const getStorage = (): Promise<Storage> => request("/admin/storage");
-/** « Conserver ce projet » : annule la suppression programmée pour inactivité. */
+/** "Keep this project": cancels the scheduled deletion due to inactivity. */
 export const keepProject = (projectId: string): Promise<{ kept_at: string }> =>
   request(`/projects/${projectId}/keep`, { method: "POST" });
 
@@ -1134,7 +1134,7 @@ export interface OllamaCapability {
 }
 export interface ModelRecommendation {
   profile: "small" | "medium" | "large" | "gpu";
-  slow_cpu: boolean; // CPU sans AVX2 : inférence 2 à 3 fois plus lente
+  slow_cpu: boolean; // CPU without AVX2: inference 2 to 3 times slower
   models: { tag: string; ram_gb: number; kind: "tiny" | "small" | "moe" | "gpu"; fits: boolean }[];
 }
 export interface ModelCapabilities {
@@ -1144,7 +1144,7 @@ export interface ModelCapabilities {
 }
 export const getModelCapabilities = (): Promise<ModelCapabilities> => request("/models/capabilities");
 
-// --- Équipe + export ---------------------------------------------------------
+// --- Team + export ----------------------------------------------------------
 
 export interface Member {
   user_id: string;
@@ -1170,11 +1170,11 @@ export const inviteMember = (
 export const removeMember = (projectId: string, userId: string): Promise<void> =>
   request(`/projects/${projectId}/members/${userId}`, { method: "DELETE" });
 
-/** Lien de téléchargement du classeur Excel (le cookie d'authentification suffit). */
+/** Download link for the Excel workbook (the auth cookie is enough). */
 export const exportUrl = (projectId: string, searchId?: string): string =>
   `${API_BASE}/projects/${projectId}/export.xlsx${qs({ search: searchId })}`;
 
-/** Références RIS (Zotero, EndNote, Mendeley…) ou BibTeX, avec les mêmes filtres que la liste. */
+/** RIS references (Zotero, EndNote, Mendeley...) or BibTeX, with the same filters as the list. */
 export function referencesUrl(
   projectId: string,
   fmt: "ris" | "bib",
@@ -1207,11 +1207,11 @@ export interface CrateExport {
 export const prismaPdfUrl = (projectId: string, lang: string, searchId?: string): string =>
   `${API_BASE}/projects/${projectId}/prisma.pdf${qs({ lang, search: searchId })}`;
 
-/** Diagramme PRISMA 2020 (SVG) ; ``lang`` = langue des libellés. */
+/** PRISMA 2020 diagram (SVG); ``lang`` = label language. */
 export const prismaUrl = (projectId: string, lang: string, searchId?: string): string =>
   `${API_BASE}/projects/${projectId}/prisma.svg${qs({ lang, search: searchId })}`;
 
-/** RO-Crate (.zip) : tâche de fond (e-mail à la fin) puis téléchargement. */
+/** RO-Crate (.zip): background task (e-mail at the end) then download. */
 export const startCrateExport = (projectId: string, searchId?: string): Promise<CrateExport> =>
   request(`/projects/${projectId}/export/crate${qs({ search: searchId })}`, { method: "POST" });
 export const getCrateExport = (projectId: string, searchId?: string): Promise<CrateExport | null> =>
@@ -1219,7 +1219,7 @@ export const getCrateExport = (projectId: string, searchId?: string): Promise<Cr
 export const crateDownloadUrl = (projectId: string, jobId: string): string =>
   `${API_BASE}/projects/${projectId}/export/crate/${jobId}/download`;
 
-// --- Administration des comptes ---------------------------------------------
+// --- Account administration --------------------------------------------------
 
 export interface AdminUser {
   id: string;
@@ -1294,12 +1294,12 @@ export const revokeInvitation = (id: string): Promise<void> =>
 export const listAdminProjects = async (): Promise<AdminProject[]> =>
   (await request<{ items: AdminProject[] }>("/admin/projects")).items;
 
-// --- Recherches (une question posée à un lot d'articles) ---------------------
+// --- Searches (a question posed to a batch of articles) ----------------------
 
 export const listSearches = async (projectId: string): Promise<SearchInfo[]> =>
   (await request<{ items: SearchInfo[] }>(`/projects/${projectId}/searches`)).items;
 
-/** Nombre d'articles qui répondent à la sélection (avant de créer la recherche). */
+/** Number of articles matching the selection (before creating the search). */
 export const previewSelection = async (projectId: string, selection: Selection): Promise<number> =>
   (
     await request<{ count: number }>(`/projects/${projectId}/searches/preview`, {
@@ -1315,7 +1315,7 @@ export interface SearchCreate {
   text_sections?: string[];
   kind?: SearchKind;
   selection: Selection;
-  /** Analyse programmée : démarre quand la recherche d'origine (selection.from_search_id) a fini. */
+  /** Scheduled analysis: starts when the source search (selection.from_search_id) finishes. */
   schedule?: { model: string; prefilter_model?: string; instructions?: string };
 }
 

@@ -20,8 +20,8 @@ export default function RegisterPage() {
 
   const [tokenInput, setTokenInput] = useState(urlToken);
 
-  // La page d'inscription s'ouvre dans la langue choisie par la personne qui invite
-  // (claim `language` du lien), sauf si l'invité a déjà choisi sa propre langue.
+  // The registration page opens in the language chosen by the inviter
+  // (the link's `language` claim), unless the invitee already chose their own language.
   useEffect(() => {
     try {
       const claims = JSON.parse(atob(urlToken.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
@@ -30,7 +30,7 @@ export default function RegisterPage() {
         window.location.reload();
       }
     } catch {
-      /* lien absent ou illisible : langue par défaut */
+      /* link missing or unreadable: default language */
     }
   }, [urlToken]);
   const [fullName, setFullName] = useState("");

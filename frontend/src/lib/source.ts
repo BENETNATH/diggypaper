@@ -1,6 +1,6 @@
-/** Libellé lisible de la source d'un article (mêmes règles que `app.sources.source_label`) :
- * « PubMed PMID 123 », « Crossref DOI 10.1/x », le libellé traduit pour un fichier ; `null` sans
- * source (donnée ancienne : l'appelant affiche son repli). */
+/** Readable label of an article's source (same rules as `app.sources.source_label`):
+ * "PubMed PMID 123", "Crossref DOI 10.1/x", the translated label for a file; `null` without
+ * a source (older data: the caller shows its fallback). */
 const NAMES: Record<string, string> = {
   pubmed: "PubMed",
   europepmc: "Europe PMC",
@@ -10,7 +10,7 @@ const NAMES: Record<string, string> = {
 };
 const ID_KINDS: Record<string, string> = { pubmed: "PMID", crossref: "DOI" };
 
-/** Nom lisible d'une source (« europepmc » → « Europe PMC ») ; `null` si code inconnu. */
+/** Readable name of a source ("europepmc" → "Europe PMC"); `null` if the code is unknown. */
 export const sourceName = (code: string): string | null => NAMES[code] ?? null;
 
 export function sourceLabel(

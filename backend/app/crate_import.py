@@ -1,13 +1,13 @@
-"""Import d'un RO-Crate produit par l'export de Diggypaper : un projet restauré à partir d'un zip.
+"""Import of a RO-Crate produced by the Diggypaper export: a project restored from a zip.
 
-Restauré : titre, question, items et parties de texte du projet ; articles (identifiants,
-bibliographie, résumé, texte intégral sectionné, PDF) ; réponses du modèle (certitudes, extraits de
-preuve) et réponses humaines finales. Le crate ne contient qu'une recherche (celle exportée) : elle
-devient la recherche initiale du nouveau projet. Les relectures sont attribuées à la personne qui
-importe (le crate ne porte pas les identités), sans note de pertinence.
+Restored: project title, question, items and text parts; articles (identifiers,
+bibliography, abstract, sectioned full text, PDF); model answers (confidences, evidence
+quotes) and final human answers. The crate holds a single search (the exported one): it
+becomes the new project's initial search. Re-reads are attributed to the importing
+person (the crate carries no identities), with no relevance note.
 
-Le zip est une entrée non fiable : seuls les fichiers attendus sont lus, avec des tailles bornées ;
-rien n'est extrait sur le disque ni exécuté.
+The zip is untrusted input: only the expected files are read, with bounded sizes;
+nothing is extracted to disk or executed.
 """
 
 from __future__ import annotations
@@ -36,12 +36,12 @@ class CrateError(ValueError):
 
 
 class _ReadBudget:
-    """Octets réellement décompressés pour un crate (compteur, pas la taille annoncée).
+    """Bytes actually decompressed for a crate (a counter, not the announced size).
 
-    ``open_crate`` refuse déjà une somme de tailles déclarées > ``MAX_TOTAL`` ; ce compteur
-    est la ceinture : il porte sur ce que ``zipfile`` produit vraiment, donc il ne dépend
-    ni des en-têtes ni du comportement de ``zipfile`` (défense en profondeur, entrée non
-    fiable). ``BadZipFile``/CRC : voir ``_read``.
+    ``open_crate`` already refuses a declared size sum > ``MAX_TOTAL``; this counter
+    is the belt: it tracks what ``zipfile`` actually produces, so it depends
+    neither on the headers nor on ``zipfile`` behavior (defense in depth, untrusted
+    input). ``BadZipFile``/CRC: see ``_read``.
     """
 
     __slots__ = ("left",)
@@ -50,7 +50,7 @@ class _ReadBudget:
         self.left = limit
 
     def check(self) -> None:
-        """Refus avant toute nouvelle décompression quand le budget est épuisé."""
+        """Refused before any new decompression once the budget is exhausted."""
         if self.left <= 0:
             raise CrateError("too_large")
 
@@ -61,7 +61,7 @@ class _ReadBudget:
 
 
 def _budget(zf: zipfile.ZipFile) -> _ReadBudget:
-    """Budget d'un crate, porté par l'objet ``ZipFile`` (créé par ``open_crate``)."""
+    """Budget of a crate, held on the ``ZipFile`` object (created by ``open_crate``)."""
     budget = getattr(zf, "_crate_budget", None)
     if budget is None:
         budget = _ReadBudget(MAX_TOTAL)
@@ -82,8 +82,8 @@ def _read(zf: zipfile.ZipFile, name: str, limit: int) -> bytes:
         with zf.open(info) as fh:
             data = fh.read(limit + 1)
     except (zipfile.BadZipFile, zlib.error, EOFError, RuntimeError, NotImplementedError) as exc:
-        # en-tête menteur (CRC faux), zip chiffré, compression exotique : entrée illisible.
-        # Sans ça, une archive forgée remontait un BadZipFile brut (500 sur l'API, tâche cassée).
+        # lying header (bad CRC), encrypted zip, exotic compression: unreadable input.
+        # Without this, a forged archive raised a raw BadZipFile (500 on the API, broken task).
         raise CrateError(f"invalid_zip:{name}") from exc
     if len(data) > limit:
         raise CrateError(f"too_large:{name}")
@@ -102,13 +102,13 @@ def _json(zf: zipfile.ZipFile, name: str) -> dict:
 
 
 def open_crate(path: str | Path) -> tuple[zipfile.ZipFile, dict]:
-    """Ouvre le zip et renvoie ``project.json`` après les contrôles de conformité."""
+    """Opens the zip and returns ``project.json`` after the conformance checks."""
     if not zipfile.is_zipfile(path):
         raise CrateError("not_a_zip")
     try:
         zf = zipfile.ZipFile(path)
     except (zipfile.BadZipFile, OSError, RuntimeError, NotImplementedError) as exc:
-        # central directory corrompue / zip64 exotique : refus propre, pas de 500
+        # corrupt central directory / exotic zip64: clean refusal, no 500
         raise CrateError("not_a_zip") from exc
     try:
         names = zf.namelist()
@@ -129,7 +129,7 @@ def open_crate(path: str | Path) -> tuple[zipfile.ZipFile, dict]:
 
 
 def article_keys(zf: zipfile.ZipFile) -> list[str]:
-    """Clés des dossiers ``articles/<clé>/`` qui ont un ``metadata.json``."""
+    """Keys of the ``articles/<key>/`` folders that have a ``metadata.json``."""
     keys = []
     for n in zf.namelist():
         m = re.fullmatch(r"articles/([^/]+)/metadata\.json", n)
@@ -154,7 +154,7 @@ def _strings(value) -> list[str] | None:
 
 
 def sections_from_markdown(md: str) -> list[dict]:
-    """``fulltext.md`` (« ## titre » + texte) → sections ; le résumé est lu dans les métadonnées."""
+    """``fulltext.md`` ("## title" + text) → sections; the abstract is read from the metadata."""
     sections, title, buf = [], None, []
 
     def flush() -> None:
@@ -173,7 +173,7 @@ def sections_from_markdown(md: str) -> list[dict]:
 
 
 def read_article(zf: zipfile.ZipFile, key: str) -> dict:
-    """Un article du crate : métadonnées validées, sections, PDF éventuel."""
+    """One article from the crate: validated metadata, sections, optional PDF."""
     meta = _json(zf, f"articles/{key}/metadata.json")
     base = f"articles/{key}/"
     sections: list[dict] = []
@@ -218,7 +218,7 @@ def read_article(zf: zipfile.ZipFile, key: str) -> dict:
 
 
 def project_definition(info: dict) -> dict:
-    """question, items et parties de texte du projet (items validés comme à la saisie)."""
+    """Project question, items and text parts (items validated as at entry)."""
     fields = info.get("fields")
     try:
         fields = check_fields(fields) if fields else None

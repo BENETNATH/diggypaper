@@ -1,14 +1,14 @@
-"""Chiffrement AES-256-GCM des secrets (clés API, mots de passe SMTP) — Module 7.
+"""AES-256-GCM encryption of secrets (API keys, SMTP passwords) — Module 7.
 
-Clé maîtresse : 32 octets depuis l'env ``ENCRYPTION_KEY``, acceptée en
-- hex : 64 caractères (``bytes.fromhex``), ou
-- base64 : 44 caractères (``base64.b64decode``).
+Master key: 32 bytes from the ``ENCRYPTION_KEY`` env var, accepted as
+- hex: 64 characters (``bytes.fromhex``), or
+- base64: 44 characters (``base64.b64decode``).
 
-Une chaîne de 64 caractères entièrement hexadécimale est interprétée en hex
-(elle serait aussi un base64 valide de 48 octets, donc ambigu — le hex prime).
+A 64-character fully hexadecimal string is interpreted as hex
+(it would also be a valid base64 of 48 bytes, hence ambiguous — hex wins).
 
-Format stocké en base : ``nonce (12 octets) || ciphertext`` où le ciphertext
-GCM inclut le tag d'authentification (16 octets) en fin de bloc.
+Format stored in the database: ``nonce (12 bytes) || ciphertext`` where the
+GCM ciphertext includes the authentication tag (16 bytes) at the end of the block.
 """
 
 import base64
@@ -19,7 +19,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from app.core.config import get_settings
 
-#: Masque renvoyé à l'API pour un secret déjà défini (jamais le plaintext).
+#: Mask returned to the API for an already-defined secret (never the plaintext).
 MASK = "••••••••"
 
 _NONCE_SIZE = 12
@@ -28,10 +28,10 @@ _HEX_CHARS = set("0123456789abcdefABCDEF")
 
 
 def _parse_key(raw: str) -> bytes:
-    """Parse ``ENCRYPTION_KEY`` (hex 64 ou base64 44) → 32 octets.
+    """Parses ``ENCRYPTION_KEY`` (hex 64 or base64 44) → 32 bytes.
 
-    Fail-fast : lève ``ValueError`` si la clé est absente, mal formée ou de
-    longueur invalide.
+    Fail-fast: raises ``ValueError`` if the key is missing, malformed, or
+    has an invalid length.
     """
     if not raw:
         raise ValueError("ENCRYPTION_KEY is not set")
@@ -47,15 +47,15 @@ def _parse_key(raw: str) -> bytes:
 
 
 def load_key() -> bytes:
-    """Clé maîtresse 32 octets depuis ``ENCRYPTION_KEY`` (fail-fast si invalide)."""
+    """32-byte master key from ``ENCRYPTION_KEY`` (fail-fast if invalid)."""
     return _parse_key(get_settings().encryption_key)
 
 
 def encrypt_secret(plaintext: str) -> bytes:
-    """Chiffre un secret → ``nonce (12) || ciphertext+tag (GCM)``.
+    """Encrypts a secret → ``nonce (12) || ciphertext+tag (GCM)``.
 
-    Le nonce est aléatoire : deux chiffrages du même plaintext produisent des
-    ciphertexts différents.
+    The nonce is random: encrypting the same plaintext twice produces
+    different ciphertexts.
     """
     nonce = os.urandom(_NONCE_SIZE)
     ct = AESGCM(load_key()).encrypt(nonce, plaintext.encode("utf-8"), None)
@@ -63,10 +63,10 @@ def encrypt_secret(plaintext: str) -> bytes:
 
 
 def decrypt_secret(data: bytes) -> str:
-    """Inverse de :func:`encrypt_secret`.
+    """Inverse of :func:`encrypt_secret`.
 
-    Lève ``cryptography.exceptions.InvalidTag`` si le ciphertext a été altéré
-    (tamper) et ``ValueError`` si le format est invalide.
+    Raises ``cryptography.exceptions.InvalidTag`` if the ciphertext was altered
+    (tampered) and ``ValueError`` if the format is invalid.
     """
     if len(data) < _NONCE_SIZE + 16:
         raise ValueError("ciphertext too short")

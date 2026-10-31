@@ -36,7 +36,7 @@ function Kpi({ label, value, sub }: { label: string; value: ReactNode; sub?: Rea
   );
 }
 
-/** Barre découpée : validés / à relire / écartés / pas encore analysés, sur le lot de la recherche. */
+/** Split bar: accepted / to re-review / set aside / not yet analyzed, over the search's batch. */
 function LotBar({ s }: { s: SearchInfo }) {
   const t = useTranslations("project");
   const b = s.breakdown;
@@ -221,7 +221,7 @@ function ProjectDashboard() {
         </div>
       )}
 
-      {/* Chiffres globaux : articles distincts, toutes recherches confondues */}
+      {/* Global counts: distinct articles, across all searches */}
       <section className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
         <Kpi label={t("kpiArticles")} value={overview.articles.toLocaleString()} />
         <Kpi
@@ -243,7 +243,7 @@ function ProjectDashboard() {
         <Kpi label={t("kpiGold")} value={overview.gold.toLocaleString()} />
       </section>
 
-      {/* Les recherches : ouvrir directement les résultats, la relecture ou l'analyse de chacune */}
+      {/* The searches: open directly the results, the re-review or the analysis of each */}
       <section className="flex flex-col gap-3">
         <div className="flex items-center justify-between gap-2">
           <h2 className="text-base font-semibold text-foreground">

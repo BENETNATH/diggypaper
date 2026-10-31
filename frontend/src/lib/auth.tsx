@@ -23,9 +23,9 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 /**
- * Provider d'authentification : charge l'user courant (GET /auth/me) au montage,
- * expose login/register/logout/refresh. Le cookie JWT httpOnly est géré par le
- * backend (credentials: include) ; ici on ne stocke que l'user en mémoire.
+ * Auth provider: loads the current user (GET /auth/me) on mount,
+ * exposes login/register/logout/refresh. The httpOnly JWT cookie is managed by the
+ * backend (credentials: include); here we only keep the user in memory.
  */
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);

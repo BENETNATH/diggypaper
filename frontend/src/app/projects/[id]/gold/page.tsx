@@ -14,9 +14,9 @@ import { Button } from "@/components/ui/Button";
 import { Badge, Card } from "@/components/ui/Card";
 import { Skeleton, ErrorBanner, EmptyState } from "@/components/ui/Feedback";
 
-/** Une référence est « pertinente » à partir de ce score (même seuil que le calcul des métriques). */
+/** A reference is "relevant" from this score (same threshold as the metrics computation). */
 const RELEVANT_AT = 0.5;
-/** En dessous, le gold est trop petit pour mesurer quoi que ce soit de fiable. */
+/** Below this, the gold is too small to measure anything reliable. */
 const MIN_GOLD = 30;
 
 function Stat({ label, value, tone }: { label: string; value: number; tone?: string }) {
@@ -43,7 +43,7 @@ function GoldContent() {
   const [fields, setFields] = useState<SchemaField[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
-  const [busy, setBusy] = useState<string | null>(null); // "all" ou id de la ligne en cours
+  const [busy, setBusy] = useState<string | null>(null); // "all" or the id of the current row
 
   const load = useCallback(async () => {
     setError(null);

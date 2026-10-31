@@ -22,15 +22,15 @@ down_revision: str | Sequence[str] | None = None
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-# JSON portable : JSON générique (SQLite), JSONB sur PostgreSQL.
+# Portable JSON: plain JSON (SQLite), JSONB on PostgreSQL.
 JSONB = sa.JSON().with_variant(postgresql.JSONB(), "postgresql")
 
 
-# --- UUID par défaut côté base (spec : DEFAULT gen_random_uuid()) -----------------
-# SQLite rejette `DEFAULT gen_random_uuid()` (fonction inconnue) : le défaut est donc
-# compilé par dialecte, exactement comme dans app/db/models.py. La migration reste
-# auto-suffisante (pas d'import du code applicatif) : PG → gen_random_uuid(),
-# SQLite → NULL (le défaut Python uuid4 de l'ORM couvre les inserts côté app).
+# --- DB-side default UUID (spec: DEFAULT gen_random_uuid()) -----------------
+# SQLite rejects `DEFAULT gen_random_uuid()` (unknown function), so the default is
+# compiled per dialect, exactly like in app/db/models.py. The migration stays
+# self-contained (no import of application code): PG -> gen_random_uuid(),
+# SQLite -> NULL (the ORM Python uuid4 default covers app-side inserts).
 class _UuidGenExpr(ClauseElement):
     __visit_name__ = "uuid_gen_expr"
 
@@ -392,7 +392,7 @@ def upgrade() -> None:
         sa.UniqueConstraint("scope", "project_id", "user_id", "key_name"),
     )
 
-    # Index sur les colonnes FK (pratique 2026 : indexer les colonnes de jointure).
+    # Indexes on FK columns (2026 practice: index join columns).
     op.create_index("ix_articles_project_id", "articles", ["project_id"])
     op.create_index("ix_benchmark_runs_project_id", "benchmark_runs", ["project_id"])
     op.create_index(
@@ -408,10 +408,10 @@ def upgrade() -> None:
     op.create_index("ix_human_annotations_article_id", "human_annotations", ["article_id"])
     op.create_index("ix_human_annotations_user_id", "human_annotations", ["user_id"])
 
-    # Unicité stricte de system_settings par scope : la UniqueConstraint ci-dessus a
-    # des trous NULL (NULL ≠ NULL en UNIQUE) ; ces index uniques partiels les ferment.
-    # sqlite_where est requis pour que l'unicité soit effective (et testable) sur
-    # SQLite ; postgresql_where couvre le DDL de production.
+    # Strict per-scope uniqueness for system_settings: the UniqueConstraint above has
+    # NULL holes (NULL != NULL in UNIQUE); these partial unique indexes close them.
+    # sqlite_where is required for the uniqueness to be effective (and testable) on
+    # SQLite; postgresql_where covers the production DDL.
     op.create_index(
         "uq_settings_global",
         "system_settings",

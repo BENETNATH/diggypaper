@@ -7,7 +7,7 @@ export type Answers = Record<string, string>;
 
 const selectCls = "rounded border border-border bg-surface p-1 text-xs text-foreground";
 
-/** Filtres « réponse à l'item X = valeur » (liste d'articles, sélecteur d'articles d'une recherche). */
+/** "Answer to item X = value" filters (article list, article selector of a search). */
 export function AnswerFilters({
   fields,
   values,

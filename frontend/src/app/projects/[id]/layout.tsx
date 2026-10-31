@@ -24,7 +24,7 @@ const STEPS = [
   { key: "benchmarks", href: "/benchmarks", needsCorpus: true, leadOnly: true, optional: true },
 ] as const;
 
-/** Navigation persistante du projet : fil d'Ariane + onglets des étapes. */
+/** Persistent project navigation: breadcrumb + step tabs. */
 export default function ProjectLayout({ children }: { children: ReactNode }) {
   const t = useTranslations("project");
   const { user } = useAuth();
@@ -32,22 +32,22 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const [project, setProject] = useState<Project | null>(null);
 
-  // Recherche courante. Le layout est rendu côté serveur : tant que le client n'a pas monté, on
-  // ne lit pas le sessionStorage (sinon les liens des onglets diffèrent entre serveur et client).
+  // Current search. The layout is rendered on the server: until the client has mounted, we
+  // do not read sessionStorage (otherwise the tab links differ between server and client).
   const hookSearchId = useSearchId(id);
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
   const searchId = mounted ? hookSearchId : undefined;
-  // Les recherches changent (création, renommage, suppression, analyses) : on relit à chaque page.
+  // The searches change (creation, rename, deletion, analyses): we re-read on every page.
   const { searches, current } = useSearches(id, searchId, pathname);
   const selectSearch = useSelectSearch(id);
 
-  // Recharge à chaque changement de page : le statut évolue (import → corpus figé).
+  // Reload on every page change: the status evolves (import → corpus frozen).
   useEffect(() => {
     getProject(id).then(setProject).catch(() => setProject(null));
   }, [id, pathname]);
 
-  // La page Import pousse l'état à jour du projet (statut PROCESSING → FROZEN) sans changer d'URL.
+  // The Import page pushes the project's updated state (status PROCESSING → FROZEN) without changing the URL.
   useEffect(() => {
     const onProject = (e: Event) => {
       const p = (e as CustomEvent<Project>).detail;
@@ -57,7 +57,7 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("diggy:project", onProject);
   }, [id]);
 
-  // Import en cours : bandeau de progression visible sur toutes les pages du projet.
+  // Import in progress: progress banner visible on every project page.
   const [job, setJob] = useState<ImportJob | null>(null);
   const importing = project?.status === "PROCESSING";
   useEffect(() => {
@@ -71,9 +71,9 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
         const [js, p] = await Promise.all([listJobs(id), getProject(id)]);
         if (stopped) return;
         setJob(js.find((j) => j.kind !== "fulltext" && (j.status === "PENDING" || j.status === "RUNNING")) ?? null);
-        setProject(p); // le statut passe à FROZEN à la fin : le bandeau disparaît
+        setProject(p); // the status becomes FROZEN at the end: the banner disappears
       } catch {
-        /* réessaie au prochain tick */
+        /* retries on the next tick */
       }
     };
     void tick();
@@ -83,7 +83,7 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
       clearInterval(timer);
     };
   }, [importing, id]);
-  // Recherche de textes intégraux (sources ouvertes) : job de fond, projet déjà figé.
+  // Full-text search (open sources): background job, project already frozen.
   const [ft, setFt] = useState<ImportJob | null>(null);
   useEffect(() => {
     let stopped = false;
@@ -96,7 +96,7 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
         setFt(j);
         if (j) timer = setTimeout(tick, 3000);
       } catch {
-        /* ignoré */
+        /* ignored */
       }
     };
     void tick();
@@ -110,17 +110,17 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
   const fdone = typeof fr.done === "number" ? fr.done : 0;
   const ffound = typeof fr.found === "number" ? fr.found : 0;
 
-  // Analyse (tri) en cours : même bandeau, sur toutes les pages du projet.
+  // Analysis (ranking) in progress: same banner, on every project page.
   const [inf, setInf] = useState<InferenceJob | null>(null);
   const analysing = inf?.status === "PENDING" || inf?.status === "RUNNING";
   useEffect(() => {
     let stopped = false;
     const check = async () => {
       try {
-        const j = await getInference(id, undefined, true); // l'analyse en cours du projet
+        const j = await getInference(id, undefined, true); // the project's analysis in progress
         if (!stopped) setInf(j);
       } catch {
-        /* ignoré */
+        /* ignored */
       }
     };
     void check();
@@ -137,7 +137,7 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
       await cancelInference(id);
       setInf(await getInference(id, undefined, true));
     } catch {
-      /* l'état réel est relu au prochain tick */
+      /* the real state is re-read on the next tick */
     }
   }
   async function handleDelete() {

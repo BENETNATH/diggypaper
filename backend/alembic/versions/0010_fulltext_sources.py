@@ -1,4 +1,4 @@
-"""articles.fulltext_source + import_jobs.kind (texte intégral complété par sources ouvertes)
+"""articles.fulltext_source + import_jobs.kind (full text completed by open sources)
 
 Revision ID: 0010
 Revises: 0009

@@ -1,9 +1,9 @@
-"""Bootstrap du premier admin (idempotent).
+"""Bootstrap of the first admin (idempotent).
 
-Au démarrage, si ``ADMIN_EMAIL``/``ADMIN_PASSWORD`` sont définis et qu'aucun admin
-n'existe, le compte admin est créé (ou l'utilisateur existant est promu). C'est le
-seul mécanisme pour démarrer l'application à l'état vide : sans admin, on ne peut
-ni inviter ni configurer.
+At startup, if ``ADMIN_EMAIL``/``ADMIN_PASSWORD`` are defined and no admin
+exists, the admin account is created (or the existing user is promoted). This
+is the only way to start the application in a fresh state: without an admin
+you can neither invite nor configure.
 """
 
 import logging
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 async def bootstrap_admin(settings: Settings) -> None:
-    """Créer/promouvoir le premier admin si les vars sont définies et qu'aucun admin n'existe."""
+    """Create/promote the first admin if the vars are defined and no admin exists."""
     if not settings.admin_email or not settings.admin_password:
         return
     async with SessionLocal() as session:

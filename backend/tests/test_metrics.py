@@ -1,4 +1,4 @@
-"""Métriques de validation (app/metrics.py) et exemples du gold (app/gold_examples.py)."""
+"""Validation metrics (app/metrics.py) and gold examples (app/gold_examples.py)."""
 
 import pytest
 

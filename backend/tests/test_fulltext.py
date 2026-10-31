@@ -1,4 +1,4 @@
-"""Texte intégral hors PMC : PDF → sections, chaîne Europe PMC / Unpaywall / OpenAlex (offline)."""
+"""Full text outside PMC: PDF → sections, Europe PMC / Unpaywall / OpenAlex chain (offline)."""
 
 import httpx
 import pytest
@@ -123,7 +123,7 @@ async def test_upload_pdf_sets_fulltext(client, session, researcher_user, do_log
 
 
 def test_pdf_to_sections_strips_nul_chars(monkeypatch):
-    """NUL → JSONB Postgres refuse (« unsupported Unicode escape sequence »)."""
+    """NUL → Postgres JSONB refuses ("unsupported Unicode escape sequence")."""
     import pypdf
 
     class Page:
@@ -141,7 +141,7 @@ def test_pdf_to_sections_strips_nul_chars(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def _public_hosts(monkeypatch):
-    """Pas de DNS en test : les hôtes fictifs sont « publics »."""
+    """No DNS in tests: the fictitious hosts are "public"."""
     monkeypatch.setattr("app.fulltext.check_public_url", lambda url: None)
 
 
@@ -182,7 +182,7 @@ def test_pdf_matches_article_title_doi_and_unverifiable():
     assert match(TITLE, None, ok) is True  # casse, tirets, ponctuation ignorés
     other = _sec("Deep learning for protein folding prediction across large genomes " * 5)
     assert match(TITLE, None, other) is False
-    # titre mal extrait, mais DOI de l'article en tête de document
+    # badly extracted title, but the article's DOI at the top of the document
     garbled = _sec("doi: 10.64898/2026.09.21.753377 xx qq rr")
     assert match(TITLE, "10.64898/2026.09.21.753377", garbled) is True
     assert match("Short", None, other) is None and match(None, None, other) is None
@@ -277,7 +277,7 @@ async def test_search_fulltext_relaunch_for_one_article(
     assert r.status_code == 200 and r.json()["found"] and r.json()["source"] == "europepmc"
     assert r.json()["article"]["has_fulltext"] and r.json()["article"]["pmcid"] == "PMC42"
     assert calls == ["refresh", ("PMC42", TITLE)]
-    # un PDF déposé à la main n'est pas écrasé par la recherche automatique
+    # a manually uploaded PDF is not overwritten by the automatic search
     art.fulltext_source = "pdf:upload"
     await session.commit()
     r = await client.post(url)
@@ -303,14 +303,14 @@ async def test_bulk_pdf_matches_the_right_article(client, session, researcher_us
     assert r.status_code == 200 and r.json()["article_id"] == str(a1.id)
     await session.refresh(a1)
     assert a1.fulltext_source == "pdf:upload" and a1.sections
-    # DOI en tête : départage deux titres presque identiques
+    # DOI at the top: breaks the tie between two nearly identical titles
     r = await client.post(
         url,
         content=make_pdf(["Cancer genomics of rare tumours in adults", "doi 10.1/aa"] + body),
         headers=hdr,
     )
     assert r.json()["article_id"] == str(a1.id)  # le DOI prime sur le titre
-    # deux articles également plausibles : on ne choisit pas pour l'utilisateur
+    # two equally plausible articles: no choice made for the user
     r = await client.post(
         url, content=make_pdf(["Cancer genomics of rare tumours in adults"] + body), headers=hdr
     )

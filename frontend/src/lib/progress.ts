@@ -1,8 +1,8 @@
-/** Vitesse et temps restant d'une tâche, estimés sur une fenêtre glissante d'échantillons. */
+/** Speed and remaining time of a task, estimated on a sliding window of samples. */
 
 export type Sample = { t: number; done: number };
 
-/** Ajoute un échantillon (t en ms) ; garde les `keep` derniers ; réinitialise si `done` recule. */
+/** Adds a sample (t in ms); keeps the last `keep`; resets if `done` goes back. */
 export function pushSample(samples: Sample[], now: number, done: number, keep = 12): Sample[] {
   const last = samples[samples.length - 1];
   if (last && done < last.done) return [{ t: now, done }];
@@ -10,7 +10,7 @@ export function pushSample(samples: Sample[], now: number, done: number, keep = 
   return [...samples, { t: now, done }].slice(-keep);
 }
 
-/** Éléments traités par seconde, ou null tant que l'estimation n'est pas fiable. */
+/** Items processed per second, or null until the estimate is reliable. */
 export function ratePerSecond(samples: Sample[]): number | null {
   if (samples.length < 2) return null;
   const a = samples[0];
@@ -21,13 +21,13 @@ export function ratePerSecond(samples: Sample[]): number | null {
   return dn / dt;
 }
 
-/** Secondes restantes, ou null si la vitesse est inconnue. */
+/** Remaining seconds, or null if the speed is unknown. */
 export function etaSeconds(done: number, total: number, rate: number | null): number | null {
   if (rate === null || rate <= 0 || total <= done) return null;
   return (total - done) / rate;
 }
 
-/** « 45 s », « 14 min », « 1 h 05 » (unités identiques en fr/en/de/es). */
+/** "45 s", "14 min", "1 h 05" (identical units in fr/en/de/es). */
 export function formatDuration(seconds: number): string {
   const s = Math.max(0, Math.round(seconds));
   if (s < 90) return `${s} s`;

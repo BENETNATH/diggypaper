@@ -50,7 +50,7 @@ def _no_sleep(monkeypatch):
 
 
 async def test_search_volume_params_and_count():
-    """``/works?search=…&per_page=1`` → ``meta.count`` (pas d'appel count séparé)."""
+    """``/works?search=…&per_page=1`` -> ``meta.count`` (no separate count call)."""
     seen: dict = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -69,7 +69,7 @@ async def test_search_volume_params_and_count():
 
 
 async def test_search_volume_date_bounds_in_filter():
-    """Bornes dates → ``filter`` (from/to_publication_date), jamais paramètre de requête."""
+    """Date bounds -> ``filter`` (from/to_publication_date), never a request parameter."""
     from datetime import date
 
     seen: list[str] = []
@@ -89,7 +89,7 @@ async def test_search_volume_date_bounds_in_filter():
 
 
 async def test_search_volume_api_key_sent_when_set():
-    """Clé posée → paramètre ``api_key`` ; sans clé → pas de param (pool IP gratuit)."""
+    """Key set -> ``api_key`` parameter; without key -> no param (free IP pool)."""
     seen: list[dict] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -107,8 +107,8 @@ async def test_search_volume_api_key_sent_when_set():
 
 
 async def test_iter_ids_page_pagination():
-    """page 1 → 2 (per_page ≤ 200, sort publication_date:desc, bornes dans filter) ;
-    W… sans préfixe ; dédoublonné ; arrêt quand page × per_page couvre le count."""
+    """page 1 -> 2 (per_page ≤ 200, sort publication_date:desc, bounds in filter);
+    W… ids without prefix; deduplicated; stops when page x per_page covers the count."""
     calls: list[dict] = []
     from datetime import date
 
@@ -135,7 +135,7 @@ async def test_iter_ids_page_pagination():
 
 
 async def test_iter_ids_limit_stops_early():
-    """limit < page : arrêt après la 1ʳᵉ page, ids dans l'ordre de première occurrence."""
+    """limit < page: stop after the 1st page, ids in first-occurrence order."""
 
     def handler(request: httpx.Request) -> httpx.Response:
         return _works_resp([{"id": W1}, {"id": W2}], count=100, page=1, per_page=200)
@@ -150,8 +150,8 @@ async def test_iter_ids_limit_stops_early():
 
 
 async def test_fetch_metadata_one_get_per_id_and_parse():
-    """Un ``GET /works/{id}`` par id ; abstract inversée reconstruite ; doi sans préfixe ;
-    journal / auteurs / pub_date / language ; pmid nu depuis ``ids`` ; fulltext_note posée."""
+    """One ``GET /works/{id}`` per id; inverted abstract reconstructed; doi without prefix;
+    journal / authors / pub_date / language; bare pmid from ``ids``; fulltext_note set."""
     fetched: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -203,7 +203,7 @@ async def test_fetch_metadata_one_get_per_id_and_parse():
 
 
 async def test_fetch_fulltext_always_none():
-    """Source métadonnées seulement : jamais de plein texte (→ fulltext_note pipeline)."""
+    """Metadata-only source: never full text (-> fulltext_note pipeline)."""
 
     def handler(_request: httpx.Request) -> httpx.Response:
         raise AssertionError("aucun appel HTTP attendu")
@@ -215,7 +215,7 @@ async def test_fetch_fulltext_always_none():
 
 
 async def test_retry_on_429_and_error_sanitized(monkeypatch):
-    """429 → backoff + retry ; ``OpenAlexError`` sans URL dans le message ; throttle _INTERVAL."""
+    """429 -> backoff + retry; ``OpenAlexError`` without URL in the message; _INTERVAL throttle."""
     sleeps: list[float] = []
 
     async def _rec(d: float) -> None:

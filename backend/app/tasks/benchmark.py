@@ -1,12 +1,12 @@
-"""Task benchmark (mise au point) : comparer des variantes (modèle × prompt) sur un lot d'articles.
+"""Benchmark task (tuning): compare variants (model × prompt) on a lot of articles.
 
-Même pattern d'exécution que ``import_pubmed_task`` : wrapper sync Celery → thread dédié →
-``asyncio.run`` du core async ; engine par run (ou ``session_factory`` injecté en tests).
+Same execution pattern as ``import_pubmed_task``: sync Celery wrapper → dedicated thread →
+``asyncio.run`` of the async core; engine per run (or ``session_factory`` injected in tests).
 
-Le banc d'essai est le lot d'une recherche. Chaque variante répond à chaque article ; les réponses
-sont conservées (``benchmark_predictions``) pour comparer côte à côte. Si le gold est demandé, les
-variantes sont notées contre lui (articles du lot présents au gold, hors exemples du prompt) ;
-sinon on mesure leur accord. Les variantes de prompt ne concernent que les modèles génératifs.
+The test bench is a search's lot. Each variant answers each article; the answers are
+kept (``benchmark_predictions``) for side-by-side comparison. If the gold is requested, the
+variants are scored against it (lot articles present in the gold, excluding prompt examples);
+otherwise their agreement is measured. Prompt variants concern generative models only.
 """
 
 import asyncio
@@ -49,7 +49,7 @@ from app.searches import ScopedProject, get_search, gold_condition, lot_conditio
 
 logger = logging.getLogger(__name__)
 
-#: Hook de test : session_factory injecté pour le vrai chemin thread+asyncio.run.
+#: Test hook: injected session_factory for the real thread+asyncio.run path.
 _session_factory_override: async_sessionmaker[AsyncSession] | None = None
 
 DEFAULT_USER_PROMPT = "Article text:\n{article_text}"
@@ -65,7 +65,7 @@ def _make_session_factory():
 
 @celery_app.task(name="diggypaper.benchmark")
 def benchmark_task(benchmark_run_id: str) -> dict:
-    """Wrapper sync Celery : exécute le core async dans un thread dédié (C1/C2)."""
+    """Sync Celery wrapper: runs the async core in a dedicated thread (C1/C2)."""
     result: dict = {}
     error: BaseException | None = None
 
@@ -90,12 +90,12 @@ async def _run_benchmark(
     http=None,
     inference: OpenAICompatibleService | None = None,
 ) -> dict:
-    """Core async du benchmark.
+    """Async core of the benchmark.
 
-    - ``session_factory`` injectable (tests) ; sinon engine par run (C2).
-    - ``inference`` injectable (tests) ; sinon ``make_inference_service``.
-    - Séquentiel par modèle, puis par gold article.
-    - Renvoie ``{"models", "articles", "results"}``.
+    - ``session_factory`` injectable (tests); else engine per run (C2).
+    - ``inference`` injectable (tests); else ``make_inference_service``.
+    - Sequential per model, then per gold article.
+    - Returns ``{"models", "articles", "results"}``.
     """
     if session_factory is None:
         session_factory = _session_factory_override
@@ -132,7 +132,7 @@ async def _run_benchmark(
 
 
 async def _prompts(session: AsyncSession, run: BenchmarkRun) -> list[tuple[str, str, str]]:
-    """Variantes résolues : [(nom, prompt système, schéma du prompt utilisateur)]."""
+    """Resolved variants: [(name, system prompt, user prompt schema)]."""
     out = []
     for v in run.variants or [{}]:
         pid = v.get("prompt_template_id") or (
@@ -155,7 +155,7 @@ async def _prompts(session: AsyncSession, run: BenchmarkRun) -> list[tuple[str, 
 async def _do_benchmark(
     session: AsyncSession, run: BenchmarkRun, inference: OpenAICompatibleService
 ) -> dict:
-    """Corps du benchmark : chaque (modèle, variante) répond à chaque article du lot."""
+    """Benchmark body: each (model, variant) answers each article of the lot."""
     base_project = await session.get(Project, run.project_id)
     search = await get_search(session, base_project, run.search_id)
     project = ScopedProject(base_project, search)  # question / items / parties de la recherche
@@ -176,7 +176,7 @@ async def _do_benchmark(
     lot_ids = {a.id for a in lot}
     opts = run.options or {}
 
-    # Références : exemples du prompt (hors lot de préférence) et notes de validation
+    # References: prompt examples (outside the lot when possible) and validation notes
     gold_all: dict = {}
     if opts.get("use_gold") or opts.get("gold_examples"):
         rows = await session.execute(
@@ -326,7 +326,7 @@ async def _do_benchmark(
 
 
 async def _cancelled(session: AsyncSession, run: BenchmarkRun) -> bool:
-    """Arrêt demandé depuis l'interface (POST …/benchmarks/{id}/cancel : statut FAILED en base)."""
+    """Stop requested from the UI (POST …/benchmarks/{id}/cancel: FAILED status in the database)."""
     status = (
         await session.execute(select(BenchmarkRun.status).where(BenchmarkRun.id == run.id))
     ).scalar_one_or_none()
@@ -334,7 +334,7 @@ async def _cancelled(session: AsyncSession, run: BenchmarkRun) -> bool:
 
 
 async def _record_failure(session: AsyncSession, run: BenchmarkRun, exc: Exception) -> None:
-    """Échec : run FAILED (best effort)."""
+    """Failure: run FAILED (best effort)."""
     logger.error("benchmark failed (run %s): %s", run.id, _sanitize(exc))
     try:
         await session.rollback()
@@ -345,5 +345,5 @@ async def _record_failure(session: AsyncSession, run: BenchmarkRun, exc: Excepti
 
 
 def _sanitize(exc: BaseException) -> str:
-    """Message court (pas de traceback brut)."""
+    """Short message (no raw traceback)."""
     return str(exc)[:500] or type(exc).__name__

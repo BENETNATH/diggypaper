@@ -9,7 +9,7 @@ import { Input, Select } from "@/components/ui/Field";
 const fmtSize = (n?: number | null) =>
   n ? (n > 1e9 ? `${(n / 1e9).toFixed(1)} GB` : `${Math.round(n / 1e6)} MB`) : "";
 
-/** Recherche Hugging Face (GGUF via Ollama) → choix de la variante → installation. */
+/** Hugging Face search (GGUF via Ollama) → choice of the variant → installation. */
 export function HfSearch({
   onStarted,
   onError,
@@ -48,7 +48,7 @@ export function HfSearch({
     try {
       const r = await hfFiles(id);
       setFiles(r.items);
-      // Présélection : la variante recommandée pour le CPU, sinon la première (déjà triée).
+      // Preselection: the variant recommended for the CPU, otherwise the first (already sorted).
       setChoice((r.items.find((f) => f.recommended) ?? r.items[0])?.quant ?? "");
     } catch (err) {
       onError(err instanceof Error ? err.message : "error");
@@ -82,7 +82,7 @@ export function HfSearch({
     onStarted();
   }
 
-  // Nom Ollama direct (« qwen3:4b ») : pas de recherche possible côté Ollama.
+  // Direct Ollama name ("qwen3:4b"): no search possible on the Ollama side.
   const ollamaName = /^[\w.-]+(:[\w.-]+)?$/.test(q.trim()) ? q.trim() : null;
 
   return (

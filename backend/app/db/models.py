@@ -1,4 +1,4 @@
-"""Modèles ORM SQLAlchemy 2.0 — les 12 tables de la spec (section 3)."""
+"""SQLAlchemy 2.0 ORM models — the 12 tables of the spec (section 3)."""
 
 import enum
 import uuid
@@ -29,7 +29,7 @@ from sqlalchemy.sql.elements import ClauseElement
 
 from app.db.base import Base
 
-# JSON portable : JSON générique (SQLite/tests), JSONB sur PostgreSQL.
+# Portable JSON: generic JSON (SQLite/tests), JSONB on PostgreSQL.
 JSONB = JSON().with_variant(_PG_JSONB, "postgresql")
 
 
@@ -104,7 +104,7 @@ class SettingScope(enum.StrEnum):
 
 
 def _enum(e: type[enum.Enum]) -> Enum:
-    """Enum stocké en VARCHAR sans longueur + CHECK (portable SQLite/PG), valeurs = .value."""
+    """Enum stored in a lengthless VARCHAR + CHECK (portable SQLite/PG), values = .value."""
     return Enum(
         e,
         native_enum=False,
@@ -115,7 +115,7 @@ def _enum(e: type[enum.Enum]) -> Enum:
 
 
 class _UuidGenExpr(ClauseElement):
-    """Défaut côté base : gen_random_uuid() sur PG, NULL sur SQLite (qui le rejette)."""
+    """Database-side default: gen_random_uuid() on PG, NULL on SQLite (which rejects it)."""
 
     __visit_name__ = "uuid_gen_expr"
 
@@ -131,7 +131,7 @@ def _uuid_gen_sqlite(element, compiler, **kw):
 
 
 def _uuid_pk() -> dict:
-    """Kwargs PK UUID : défaut Python (uuid4) + défaut côté base (gen_random_uuid() sur PG)."""
+    """UUID PK kwargs: Python default (uuid4) + database-side default (gen_random_uuid() on PG)."""
     return dict(
         primary_key=True,
         default=uuid.uuid4,
@@ -152,14 +152,15 @@ class User(Base):
     )
     data_consent_given: Mapped[bool | None] = mapped_column(Boolean, server_default=text("false"))
     anonymized_hash: Mapped[str | None] = mapped_column(String)
-    # Compte désactivé par un admin : plus de connexion, données conservées.
+    # Account disabled by an admin: no more login, data kept.
     is_active: Mapped[bool] = mapped_column(Boolean, server_default=text("true"), default=True)
-    # Créateur : peut créer des projets. Sinon « invité » : n'existe que par les projets où on
-    # l'a invité et est supprimé quand il perd le dernier (cf. cleanup.purge_orphans).
+    # Creator: can create projects. Otherwise an "invitee": exists only through the
+    # projects they were invited to and is deleted when losing the last one
+    # (cf. cleanup.purge_orphans).
     can_create_projects: Mapped[bool] = mapped_column(
         Boolean, server_default=text("false"), default=False
     )
-    # Incrémenté au changement de mot de passe / à la déconnexion : révoque les JWT émis avant.
+    # Incremented on password change / logout: revokes JWTs issued before.
     token_version: Mapped[int] = mapped_column(Integer, server_default=text("0"), default=0)
     created_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
@@ -198,18 +199,18 @@ class Project(Base):
     default_language: Mapped[LanguageCode | None] = mapped_column(
         _enum(LanguageCode), server_default="en"
     )
-    # Parties d'article fournies aux modèles (kinds, cf. app.article_text) ; NULL = ["methods"].
+    # Article parts fed to the models (kinds, cf. app.article_text); NULL = ["methods"].
     text_sections: Mapped[list[str] | None] = mapped_column(JSONB)
-    # Question posée aux modèles + champs de réponse (cf. app.schema) ; NULL = schéma historique.
+    # Question posed to the models + answer fields (cf. app.schema); NULL = historical schema.
     question: Mapped[str | None] = mapped_column(Text)
-    # Fenêtres de texte lues par article par les modèles de décision (NULL = défaut).
+    # Text windows read per article by the decision models (NULL = default).
     read_windows: Mapped[int | None] = mapped_column(Integer)
     fields: Mapped[list[dict] | None] = mapped_column(JSONB)
     created_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
-    # Rétention : « Conserver » (compte comme une activité) et date de l'avertissement de
-    # suppression pour inactivité (cf. app.maintenance).
+    # Retention: "Keep" (counts as activity) and date of the inactivity deletion
+    # warning (cf. app.maintenance).
     kept_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     retention_warned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
@@ -259,8 +260,8 @@ class Article(Base):
     __tablename__ = "articles"
     __table_args__ = (
         Index("ix_articles_project_id", "project_id"),
-        # M2 : dédoublonnage au re-import — un seul article par (project_id, pmid).
-        # Partiel (pmid non NULL) : les articles sans pmid ne sont pas concernés.
+        # M2: deduplication on re-import — one article per (project_id, pmid).
+        # Partial (pmid non-NULL): articles without a pmid are not affected.
         Index(
             "uq_articles_project_pmid",
             "project_id",
@@ -269,8 +270,8 @@ class Article(Base):
             postgresql_where=text("pmid IS NOT NULL"),
             sqlite_where=text("pmid IS NOT NULL"),
         ),
-        # Phase 2 multi-sources : identité générale (project_id, source, native_id) ; on garde
-        # l'unicité du PMID (identifiant universel que d'autres sources fournissent).
+        # Phase 2 multi-sources: general identity (project_id, source, native_id); the PMID
+        # uniqueness is kept (universal identifier that other sources provide).
         Index(
             "uq_articles_project_source_native",
             "project_id",
@@ -286,8 +287,8 @@ class Article(Base):
     project_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("projects.id", ondelete="CASCADE")
     )
-    # Base qui a fourni la notice (pubmed | crossref | file…) et son identifiant natif (PMID, DOI
-    # normalisé…). NULL : donnée ancienne sans PMID dont la base n'a jamais été notée.
+    # Database that provided the record (pubmed | crossref | file…) and its native identifier (PMID,
+    # normalized DOI…). NULL: old data without a PMID whose source was never noted.
     source: Mapped[str | None] = mapped_column(String)
     native_id: Mapped[str | None] = mapped_column(String)
     pmid: Mapped[str | None] = mapped_column(String)
@@ -296,10 +297,10 @@ class Article(Base):
     title: Mapped[str | None] = mapped_column(Text)
     abstract: Mapped[str | None] = mapped_column(Text)
     methods_text: Mapped[str | None] = mapped_column(Text)
-    # Full text PMC découpé par section : [{"title", "kind", "text"}] (kind : cf. app.article_text).
+    # PMC full text split by section: [{"title", "kind", "text"}] (kind: cf. app.article_text).
     sections: Mapped[list[dict] | None] = mapped_column(JSONB)
-    # Pourquoi il n'y a pas de texte intégral (ex. « preprint_not_archived » : licence de
-    # l'auteur interdisant l'archivage dans PMC) ; effacé dès qu'un texte est trouvé.
+    # Why there is no full text (e.g. "preprint_not_archived": the author's license
+    # forbidding PMC archiving); erased as soon as a text is found.
     fulltext_note: Mapped[str | None] = mapped_column(String)
     fulltext_source: Mapped[str | None] = mapped_column(String)  # pmc | europepmc | pdf[:version]
     fulltext_url: Mapped[str | None] = mapped_column(String)  # lien public vers le texte / PDF
@@ -310,12 +311,13 @@ class Article(Base):
         JSONB
     )  # « Nom Initiales », ordre de l'article
     pub_types: Mapped[list[str] | None] = mapped_column(JSONB)  # Review, Journal Article…
-    # m3 : VARCHAR libre (pas un enum) — les langues hors en/fr/de/es gardent leur
-    # libellé PubMed brut (ex. "Italian") ; pas de forçage 'en' (spec §3 : VARCHAR).
+    # m3: free-form VARCHAR (not an enum) — languages outside en/fr/de/es keep their
+    # raw PubMed label (e.g. "Italian"); no forced 'en' (spec §3: VARCHAR).
     original_language: Mapped[str | None] = mapped_column(String, server_default="en")
-    # D'où vient l'article : <source> (recherche : pubmed…) | references (liste importée) | citation
-    # (chaînage de citations). NULL : import antérieur. ``origin_seeds`` : nombre d'articles de
-    # départ qui le citent ou qu'il cite ; ``origin_ref`` : identifiant du job d'import.
+    # Where the article comes from: <source> (search: pubmed…) | references
+    # (imported list) | citation
+    # (citation chaining). NULL: earlier import. ``origin_seeds``: number of seed
+    # articles that cite it or that it cites; ``origin_ref``: id of the import job.
     origin: Mapped[str | None] = mapped_column(String)
     origin_seeds: Mapped[int | None] = mapped_column(Integer)
     origin_ref: Mapped[str | None] = mapped_column(String)
@@ -336,7 +338,7 @@ class Article(Base):
 
 
 class ArticleFile(Base):
-    """PDF conservé d'un article (dépôt manuel ou copie ouverte trouvée) : matière du RO-Crate."""
+    """Kept PDF of an article (manual upload or open copy found): RO-Crate material."""
 
     __tablename__ = "article_files"
 
@@ -351,7 +353,7 @@ class ArticleFile(Base):
 
 
 class ExportJob(Base):
-    """Export RO-Crate en tâche de fond : le zip est écrit dans EXPORT_DIR (volume partagé)."""
+    """Background RO-Crate export: the zip is written to EXPORT_DIR (shared volume)."""
 
     __tablename__ = "export_jobs"
     __table_args__ = (Index("ix_export_jobs_project_id", "project_id"),)
@@ -363,7 +365,7 @@ class ExportJob(Base):
     user_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("users.id", ondelete="SET NULL")
     )  # destinataire de l'e-mail de fin
-    # Recherche exportée (NULL = recherche initiale du projet).
+    # Exported search (NULL = the project's initial search).
     search_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("searches.id", ondelete="CASCADE")
     )
@@ -391,14 +393,14 @@ class ModelRegistry(Base):
     ram_usage_mb: Mapped[int | None] = mapped_column(Integer)
     is_active: Mapped[bool | None] = mapped_column(Boolean, server_default=text("true"))
     api_key_enc: Mapped[bytes | None] = mapped_column(LargeBinary)  # OPENAI_API : clé chiffrée
-    # Propriétaire (modèle externe défini par un utilisateur) ; NULL = modèle de la plateforme.
+    # Owner (external model defined by a user); NULL = platform model.
     owner_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("users.id", ondelete="CASCADE")
     )
 
 
 class ModelShare(Base):
-    """Droit d'usage d'un modèle pour un utilisateur OU pour tous les LEAD d'un projet."""
+    """Usage right of a model for a user, or for all LEADs of a project."""
 
     __tablename__ = "model_shares"
     __table_args__ = (
@@ -423,7 +425,7 @@ class ModelShare(Base):
 
 
 class Invitation(Base):
-    """Invitation d'inscription en attente (liste admin, renvoi, révocation)."""
+    """Pending registration invitation (admin list, resend, revocation)."""
 
     __tablename__ = "invitations"
 
@@ -434,7 +436,7 @@ class Invitation(Base):
         Uuid, ForeignKey("projects.id", ondelete="CASCADE")
     )
     role: Mapped[str | None] = mapped_column(String)
-    # Compte créé par cette invitation : créateur de projets (invitation admin) ou invité.
+    # Account created by this invitation: project creator (admin invite) or invitee.
     can_create_projects: Mapped[bool] = mapped_column(
         Boolean, server_default=text("false"), default=False
     )
@@ -456,13 +458,13 @@ class BenchmarkRun(Base):
         Uuid, ForeignKey("projects.id", ondelete="CASCADE")
     )
     prompt_template_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
-    # Recherche dont le lot sert de banc d'essai (NULL = recherche initiale).
+    # Search whose lot serves as the test bench (NULL = initial search).
     search_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("searches.id", ondelete="CASCADE")
     )
-    # Variantes comparées : [{name, prompt_template_id | system_prompt | None (= généré)}].
+    # Compared variants: [{name, prompt_template_id | system_prompt | None (= generated)}].
     variants: Mapped[list[dict] | None] = mapped_column(JSONB)
-    # {use_gold: valider contre le gold, gold_examples: k exemples du gold dans le prompt}
+    # {use_gold: validate against the gold, gold_examples: k gold examples in the prompt}
     options: Mapped[dict | None] = mapped_column(JSONB)
     models_tested: Mapped[list[str] | None] = mapped_column(JSONB)
     progress: Mapped[dict | None] = mapped_column(JSONB)  # {done, total} pendant le RUNNING
@@ -490,7 +492,7 @@ class BenchmarkResult(Base):
     model_name: Mapped[str] = mapped_column(String, nullable=False)
     variant: Mapped[str | None] = mapped_column(String)  # variante de prompt (NULL = unique)
     n_scored: Mapped[int | None] = mapped_column(Integer)  # articles notés (gold hors exemples)
-    # Métriques par item, matrice de confusion, accord entre variantes…
+    # Metrics per item, confusion matrix, agreement between variants…
     details: Mapped[dict | None] = mapped_column(JSONB)
     execution_time_seconds: Mapped[float | None] = mapped_column(Float)
     accuracy: Mapped[float | None] = mapped_column(Float)
@@ -502,8 +504,8 @@ class BenchmarkResult(Base):
 
 
 class BenchmarkPrediction(Base):
-    """Réponse d'une variante (modèle × prompt) pour un article du banc d'essai : comparaison côte
-    à côte, désaccords, recalcul des métriques sans relancer les modèles."""
+    """Answer of a variant (model × prompt) for an article of the test bench: side-by-side
+    comparison, disagreements, metric recompute without re-running the models."""
 
     __tablename__ = "benchmark_predictions"
     __table_args__ = (Index("ix_benchmark_predictions_run_id", "benchmark_run_id"),)
@@ -544,12 +546,12 @@ class PromptTemplate(Base):
 
 
 class Search(Base):
-    """Une recherche : une (ou plusieurs) questions posées à un lot d'articles du projet.
+    """A search: one (or several) questions posed to a lot of the project's articles.
 
-    Elle porte sa propre question, ses items de réponse et ses parties de texte lues ; ses
-    prédictions, relectures, analyses et références (gold) lui sont rattachées. Le lot est soit
-    tout le corpus (``lot_all``, dynamique), soit une liste figée (``search_articles``), par
-    exemple « les articles où la recherche X a répondu oui » (``parent_id`` + ``parent_spec``).
+    It carries its own question, its answer items and its text parts read; its
+    predictions, re-reads, analyses and references (gold) are attached to it. The lot is either
+    the whole corpus (``lot_all``, dynamic) or a frozen list (``search_articles``), for
+    example "the articles where search X answered yes" (``parent_id`` + ``parent_spec``).
     """
 
     __tablename__ = "searches"
@@ -564,7 +566,7 @@ class Search(Base):
     fields: Mapped[list[dict] | None] = mapped_column(JSONB)
     text_sections: Mapped[list[str] | None] = mapped_column(JSONB)
     read_windows: Mapped[int | None] = mapped_column(Integer)
-    # Empreinte de (question, items) : même empreinte = même question, références partagées.
+    # Fingerprint of (question, items): same fingerprint = same question, shared references.
     definition_hash: Mapped[str | None] = mapped_column(String)
     kind: Mapped[str] = mapped_column(String, server_default="standard", default="standard")
     is_default: Mapped[bool] = mapped_column(Boolean, server_default=text("false"), default=False)
@@ -573,8 +575,8 @@ class Search(Base):
         Uuid, ForeignKey("searches.id", ondelete="SET NULL")
     )
     parent_spec: Mapped[dict | None] = mapped_column(JSONB)
-    # Analyse programmée : {model, prefilter_model, instructions, selection, error?}. Le lot
-    # n'existe pas encore : calculé quand la recherche d'origine a fini (cf. app.scheduler).
+    # Scheduled analysis: {model, prefilter_model, instructions, selection, error?}. The lot
+    # does not exist yet: computed when the origin search has finished (cf. app.scheduler).
     schedule: Mapped[dict | None] = mapped_column(JSONB)
     schedule_state: Mapped[str | None] = mapped_column(String)  # waiting | started | failed
     created_by: Mapped[uuid.UUID | None] = mapped_column(
@@ -586,7 +588,7 @@ class Search(Base):
 
 
 class SearchArticle(Base):
-    """Lot figé d'une recherche (absent quand ``Search.lot_all``)."""
+    """Frozen lot of a search (absent when ``Search.lot_all``)."""
 
     __tablename__ = "search_articles"
 
@@ -614,11 +616,11 @@ class GoldArticle(Base):
         Uuid, ForeignKey("articles.id", ondelete="CASCADE")
     )
     ground_truth_json: Mapped[dict] = mapped_column(JSONB, nullable=False)
-    # Recherche (donc question) dont c'est la référence ; NULL = recherche par défaut du projet.
+    # Search (hence question) this is the reference of; NULL = the project's default search.
     search_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("searches.id", ondelete="CASCADE"), index=True
     )
-    # Relecture d'origine (lien retour vers la fiche) et relecteur ; copie figée des réponses.
+    # Origin re-read (back link to the card) and re-reader; frozen copy of the answers.
     source_annotation_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("human_annotations.id", ondelete="SET NULL")
     )
@@ -645,14 +647,14 @@ class ArticlePrediction(Base):
         Uuid, ForeignKey("prompt_templates.id")
     )
     model_used: Mapped[str] = mapped_column(String, nullable=False)
-    # Figés au moment de la prédiction (registre renommable/supprimable, tag re-pullable) ;
-    # NULL = données anciennes ou version non relevée.
+    # Frozen at prediction time (registry renamable/deletable, tag re-pullable);
+    # NULL = old data or version not recorded.
     model_identifier: Mapped[str | None] = mapped_column(String)
     model_version: Mapped[str | None] = mapped_column(String)
     decision_json: Mapped[dict | None] = mapped_column(JSONB)
     confidence_score: Mapped[float | None] = mapped_column(Float)
     evidence_quotes: Mapped[list[str] | None] = mapped_column(JSONB)
-    # Recherche qui l'a produite ; NULL = recherche par défaut du projet (données anciennes).
+    # Search that produced it; NULL = the project's default search (old data).
     search_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("searches.id", ondelete="CASCADE"), index=True
     )
@@ -681,11 +683,11 @@ class HumanAnnotation(Base):
         Uuid, ForeignKey("users.id", ondelete="SET NULL")
     )
     annotator_hash: Mapped[str | None] = mapped_column(String)
-    # Recherche (question) à laquelle cette relecture répond ; NULL = recherche par défaut.
+    # Search (question) this re-read answers; NULL = default search.
     search_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("searches.id", ondelete="CASCADE"), index=True
     )
-    # Relecture à l'aveugle : faite sans voir la prédiction du modèle.
+    # Blind re-read: done without seeing the model's prediction.
     blind: Mapped[bool] = mapped_column(Boolean, server_default=text("false"), default=False)
     decision_json: Mapped[dict | None] = mapped_column(JSONB)
     notes: Mapped[str | None] = mapped_column(Text)
@@ -701,9 +703,9 @@ class SystemSettings(Base):
     __tablename__ = "system_settings"
     __table_args__ = (
         UniqueConstraint("scope", "project_id", "user_id", "key_name"),
-        # La contrainte UNIQUE ci-dessus a des trous NULL (SQLite/PG : NULL ≠ NULL en
-        # UNIQUE) : un doublon GLOBAL (project_id=NULL, user_id=NULL) passerait. Les
-        # index uniques partiels ci-dessous ferment ces trous, scope par scope.
+        # The UNIQUE constraint above has NULL holes (SQLite/PG: NULL != NULL in
+        # UNIQUE): a GLOBAL duplicate (project_id=NULL, user_id=NULL) would pass. The
+        # partial unique indexes below close these holes, scope by scope.
         Index(
             "uq_settings_global",
             "key_name",
@@ -749,9 +751,9 @@ class SystemSettings(Base):
 
 
 class ImportJob(Base):
-    """Job d'import PubMed (lot 4A) : persiste la requête + le statut + le résultat.
+    """PubMed import job (lot 4A): persists the query + status + result.
 
-    MODULE 6 (reproductibilité) : la requête PubMed exacte est conservée ici.
+    MODULE 6 (reproducibility): the exact PubMed query is kept here.
     """
 
     __tablename__ = "import_jobs"
@@ -763,7 +765,7 @@ class ImportJob(Base):
     )
     query: Mapped[str] = mapped_column(Text, nullable=False)
     kind: Mapped[str | None] = mapped_column(String, server_default="import")  # import | fulltext
-    # Base interrogée (pubmed…) ; NULL : références (sources mêlées), crate, plein texte.
+    # Database queried (pubmed…); NULL: references (mixed sources), crate, full text.
     source: Mapped[str | None] = mapped_column(String)
     job_id: Mapped[str | None] = mapped_column(String)  # id Celery du task
     status: Mapped[ImportJobStatus | None] = mapped_column(
@@ -787,10 +789,10 @@ class InferenceJobStatus(enum.StrEnum):
 
 
 class InferenceJob(Base):
-    """Job d'inférence massive (MODULE 4, lot 5) : statut + statistiques clés.
+    """Mass inference job (MODULE 4, lot 5): status + key statistics.
 
-    MODULE 6 (reproductibilité) : le prompt + le modèle utilisés sont conservés.
-    Notifications in-app : le frontend poll ``GET /projects/{id}/inference``.
+    MODULE 6 (reproducibility): the prompt + model used are kept.
+    In-app notifications: the frontend polls ``GET /projects/{id}/inference``.
     """
 
     __tablename__ = "inference_jobs"
@@ -804,17 +806,17 @@ class InferenceJob(Base):
         Uuid, ForeignKey("prompt_templates.id")
     )
     model_used: Mapped[str] = mapped_column(String, nullable=False)
-    # Étage 1 optionnel (encodeur ONNX sur abstracts) ; NULL = pas de pré-filtre.
+    # Optional stage 1 (ONNX encoder on abstracts); NULL = no prefilter.
     prefilter_model: Mapped[str | None] = mapped_column(String)
-    # Instantané figé au démarrage : {"main": snap, "prefilter": snap | None} avec
-    # snap = {name, backend, identifier, version, ...} ; NULL = job ancien.
+    # Frozen snapshot at start: {"main": snap, "prefilter": snap | None} with
+    # snap = {name, backend, identifier, version, ...}; NULL = old job.
     model_info: Mapped[dict | None] = mapped_column(JSONB)
     search_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("searches.id", ondelete="CASCADE"), index=True
     )
-    # {gold_examples: k exemples du gold dans le prompt, validate_with_gold: bool}
+    # {gold_examples: k gold examples in the prompt, validate_with_gold: bool}
     options: Mapped[dict | None] = mapped_column(JSONB)
-    # Reprise d'un job interrompu : les articles déjà prédits depuis cette date sont sautés.
+    # Resuming an interrupted job: articles already predicted since this date are skipped.
     resume_after: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     status: Mapped[InferenceJobStatus | None] = mapped_column(
         _enum(InferenceJobStatus), server_default="PENDING"

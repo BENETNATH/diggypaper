@@ -4,7 +4,7 @@ import { ReactNode } from "react";
 import { useAuth } from "@/lib/auth";
 import { Spinner } from "@/components/ui/Feedback";
 
-/** Garde admin : affiche un message si l'utilisateur n'est pas ADMIN (le backend l'applique aussi). */
+/** Admin guard: shows a message if the user is not ADMIN (the backend enforces it too). */
 export function RequireAdmin({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
   if (loading || !user) {

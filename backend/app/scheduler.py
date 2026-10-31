@@ -1,8 +1,9 @@
-"""Analyses programmées : « quand la recherche 1 aura fini, analyse ses résultats (ou son lot) ».
+"""Scheduled analyses: "when search 1 finishes, analyze its results (or its lot)".
 
-Une recherche programmée (``schedule_state='waiting'``) n'a pas encore de lot. Dès qu'aucune analyse
-ne tourne dans le projet et que sa recherche d'origine a terminé une analyse, son lot est calculé
-(critères appliqués aux résultats de l'origine, ou même lot) puis l'analyse démarre.
+A scheduled search (``schedule_state='waiting'``) has no lot yet. As soon as no
+analysis is running in the project and its origin search has finished an analysis,
+its lot is computed (criteria applied to the origin's results, or the same lot)
+and the analysis starts.
 """
 
 from __future__ import annotations
@@ -34,7 +35,7 @@ async def _fail(db: AsyncSession, s: Search, error: str) -> None:
 
 
 async def start_ready(db: AsyncSession, project: Project) -> str | None:
-    """Démarre la première analyse programmée prête (id du job), sinon None. Une seule à la fois."""
+    """Starts the first ready scheduled analysis (job id), else None. One at a time."""
     from app.api.v1.prompts import ensure_prompt
     from app.api.v1.searches import Selection, select_articles
     from app.tasks.inference import inference_task
@@ -115,5 +116,5 @@ async def start_ready(db: AsyncSession, project: Project) -> str | None:
 
 
 def selection_dict(sel, origin_id: uuid.UUID) -> dict:
-    """Sélection mémorisée : critères sur les résultats de l'origine (ou même lot si vide)."""
+    """Stored selection: criteria on the origin's results (or same lot if empty)."""
     return {**sel.model_dump(mode="json", exclude_none=True), "from_search_id": str(origin_id)}

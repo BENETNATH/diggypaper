@@ -2,7 +2,7 @@
 
 import { ReactNode, useEffect, useRef } from "react";
 
-/** Fenêtre modale : fond assombri, Échap / clic extérieur / bouton pour fermer, défilement interne. */
+/** Modal window: darkened backdrop, Escape / outside click / button to close, internal scrolling. */
 export function Modal({
   title,
   onClose,

@@ -20,9 +20,9 @@ const unpct = (v: string): number | undefined => {
 };
 
 /**
- * Choix des articles d'une recherche : on part du lot (et des résultats) d'une recherche existante,
- * on filtre (statut, réponses, relecture, texte intégral, confiance), éventuellement on tire au
- * hasard N articles. Les critères se cumulent ; aperçu du nombre d'articles en direct.
+ * Choosing the articles of a search: we start from the batch (and results) of an existing search,
+ * we filter (status, answers, re-review, full text, confidence), optionally we draw
+ * N articles at random. The criteria are cumulative; live preview of the article count.
  */
 export function ArticleSelector({
   projectId,
@@ -35,7 +35,7 @@ export function ArticleSelector({
   searches: SearchInfo[];
   value: Selection;
   onChange: (next: Selection) => void;
-  /** Nombre d'articles retenus (null : calcul en cours ou indisponible). */
+  /** Number of selected articles (null: computing or unavailable). */
   onCount?: (n: number | null) => void;
 }) {
   const t = useTranslations("searches");
@@ -51,7 +51,7 @@ export function ArticleSelector({
     [value.answers]
   );
 
-  // Aperçu en direct (retardé de 400 ms pour ne pas appeler le serveur à chaque frappe).
+  // Live preview (debounced by 400 ms to avoid calling the server on every keystroke).
   const key = JSON.stringify(cleanSelection(value));
   useEffect(() => {
     let stale = false;
@@ -73,7 +73,7 @@ export function ArticleSelector({
       stale = true;
       clearTimeout(timer);
     };
-    // onCount est volontairement hors des dépendances (callback du parent, identité instable)
+    // onCount is deliberately outside the dependencies (parent callback, unstable identity)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, key]);
 
@@ -84,7 +84,7 @@ export function ArticleSelector({
         <select
           value={origin?.id ?? ""}
           onChange={(e) => {
-            // Les items diffèrent d'une recherche à l'autre : on repart sans filtre de réponses.
+            // The items differ from one search to the next: we restart without answer filters.
             const id = e.target.value;
             set({
               from_search_id: id === initial?.id ? undefined : id,
@@ -181,7 +181,7 @@ export function ArticleSelector({
             placeholder={t("selSampleAll")}
             onChange={(e) => {
               const n = parseInt(e.target.value, 10);
-              // Graine tirée dès qu'on active le tirage : l'aperçu et la création voient le même échantillon.
+              // Seed drawn as soon as the draw is enabled: the preview and creation see the same sample.
               set(
                 n > 0
                   ? { sample_n: n, seed: value.seed ?? Math.floor(Math.random() * 1e9) }

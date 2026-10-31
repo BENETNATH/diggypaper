@@ -1,7 +1,7 @@
-"""Import d'une liste de références : DOI / PMID, BibTeX, RIS, CSL JSON, CSV (Zotero…).
+"""Import of a references list: DOI / PMID, BibTeX, RIS, CSL JSON, CSV (Zotero…).
 
-``parse_references`` renvoie des entrées ``{doi, pmid, title, authors, journal, year, abstract,
-language}`` (champs absents = None). La résolution (PubMed via Europe PMC, Crossref) est ici aussi.
+``parse_references`` returns entries ``{doi, pmid, title, authors, journal, year, abstract,
+language}`` (absent fields = None). Resolution (PubMed via Europe PMC, Crossref) is here too.
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ _PMID_LABEL = re.compile(r"(?:pmid|pubmed(?:/|\.ncbi\.nlm\.nih\.gov/)?)\W{0,3}(\
 
 
 def clean_doi(value: str | None) -> str | None:
-    """« https://doi.org/10.1/X. » → « 10.1/x » (minuscules : un DOI est insensible à la casse)."""
+    """ "https://doi.org/10.1/X." → "10.1/x" (lowercase: a DOI is case-insensitive)."""
     m = _DOI.search(value or "")
     return m.group(0).rstrip(".,;:)]").lower() if m else None
 
@@ -40,7 +40,7 @@ def _clean(text: str | None) -> str | None:
 
 
 def _author(name: str) -> str:
-    """« Dupont, Jean Paul » / « Jean Paul Dupont » → « Dupont JP » (format PubMed du corpus)."""
+    """ "Dupont, Jean Paul" / "Jean Paul Dupont" → "Dupont JP" (the corpus' PubMed format)."""
     name = name.strip()
     if "," in name:
         last, _, first = name.partition(",")
@@ -72,7 +72,7 @@ def _entry(**kw) -> dict:
 
 
 def parse_plain(text: str) -> list[dict]:
-    """Une référence par ligne : DOI (ou lien doi.org) ou PMID (nombre seul ou « PMID: n »)."""
+    """One reference per line: DOI (or doi.org link) or PMID (bare number or "PMID: n")."""
     out = []
     for line in text.splitlines():
         line = line.strip()
@@ -88,7 +88,7 @@ def parse_plain(text: str) -> list[dict]:
 
 
 def _bibtex_fields(body: str) -> dict[str, str]:
-    """Champs d'une entrée BibTeX : ``nom = {…}`` | ``"…"`` | nombre (accolades équilibrées)."""
+    """Fields of a BibTeX entry: ``name = {…}`` | "…" | number (balanced braces)."""
     fields, i, n = {}, 0, len(body)
     while i < n:
         m = re.compile(r"\s*,?\s*([\w-]+)\s*=\s*").match(body, i)
@@ -223,7 +223,7 @@ def parse_csl_json(text: str) -> list[dict]:
 
 
 def parse_csv(text: str) -> list[dict]:
-    """Export CSV de Zotero (colonnes Title, DOI, Author, Publication Title, Publication Year…)."""
+    """Zotero CSV export (columns Title, DOI, Author, Publication Title, Publication Year…)."""
     out = []
     for row in csv.DictReader(io.StringIO(text)):
         r = {k.strip().lower(): (v or "") for k, v in row.items() if k}
@@ -244,7 +244,7 @@ def parse_csv(text: str) -> list[dict]:
 
 
 def parse_references(content: str) -> tuple[str, list[dict]]:
-    """Détecte le format → (format, entrées utilisables : au moins un DOI, un PMID ou un titre)."""
+    """Detects the format → (format, usable entries: at least one DOI, PMID or title)."""
     text = content.lstrip("\ufeff").strip()
     if text[:1] in "[{":
         fmt, parse = "csl", parse_csl_json
@@ -263,7 +263,7 @@ def parse_references(content: str) -> tuple[str, list[dict]]:
 
 
 def dedupe(entries: list[dict]) -> list[dict]:
-    """Une seule entrée par DOI / PMID / titre (la première ; les champs manquants sont comblés)."""
+    """One entry per DOI / PMID / title (the first; missing fields are filled in)."""
     seen: dict[str, dict] = {}
     out = []
     for e in entries:
@@ -285,11 +285,11 @@ def label(e: dict) -> str:
     return e.get("doi") or (e.get("pmid") and f"PMID {e['pmid']}") or (e.get("title") or "")[:120]
 
 
-# --- résolution --------------------------------------------------------------
+# --- resolution --------------------------------------------------------------
 
 
 async def epmc_pmids_by_doi(dois: list[str], http: httpx.AsyncClient) -> dict[str, str]:
-    """DOI → PMID, par lots (Europe PMC) ; les DOI sans notice PubMed sont absents."""
+    """DOI → PMID, in batches (Europe PMC); DOIs without a PubMed record are absent."""
     dois = [d for d in dois if re.fullmatch(r"[^\s\"\\]+", d)]
     found: dict[str, str] = {}
     for i in range(0, len(dois), 25):
@@ -311,7 +311,7 @@ async def epmc_pmids_by_doi(dois: list[str], http: httpx.AsyncClient) -> dict[st
 
 
 async def epmc_pmid_by_title(title: str, http: httpx.AsyncClient) -> str | None:
-    """PMID d'un titre quasi identique (≥ 90 %), sinon None : jamais un article voisin."""
+    """PMID of a nearly identical title (≥ 90%), else None: never a neighboring article."""
     q = re.sub(r"[\"\\]", " ", title)
     data = await _get_json(
         http,
@@ -331,7 +331,7 @@ async def epmc_pmid_by_title(title: str, http: httpx.AsyncClient) -> str | None:
 
 
 async def crossref(doi: str, email: str, http: httpx.AsyncClient) -> dict | None:
-    """Notice Crossref d'un DOI → entrée normalisée, ou None (inconnu ou indisponible)."""
+    """Crossref record of a DOI → normalized entry, or None (unknown or unavailable)."""
     data = await _get_json(http, f"{CROSSREF}/{quote(doi, safe='/')}", {"mailto": email})
     msg = (data or {}).get("message")
     if not msg:

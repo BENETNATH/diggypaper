@@ -8,10 +8,10 @@ _TRUTHY = ("1", "true", "yes", "on")
 
 
 class Mailer:
-    """Wrapper FastAPI-Mail injectable (mocké en tests via get_mailer).
+    """Injectable FastAPI-Mail wrapper (mocked in tests via get_mailer).
 
-    La config SMTP provient de l'env (``Settings``). ``from_settings`` permet
-    d'overwriter par les settings DB (Module 7) : DB en priorité, env en fallback.
+    The SMTP config comes from the env (``Settings``). ``from_settings`` allows
+    overriding it from the DB settings (Module 7): DB first, env as fallback.
     """
 
     def __init__(self, settings: Settings) -> None:
@@ -31,12 +31,12 @@ class Mailer:
     def from_settings(
         cls, settings: Settings, db_settings: dict[str, str | None] | None = None
     ) -> "Mailer":
-        """Mailer avec config SMTP effective : settings DB (priorité) > env (fallback).
+        """Mailer with the effective SMTP config: DB settings (priority) > env (fallback).
 
-        ``db_settings`` est un dictionnaire de clés settings (``smtp_host``,
+        ``db_settings`` is a dict of settings keys (``smtp_host``,
         ``smtp_port``, ``smtp_user``, ``smtp_password``, ``smtp_from_email``,
-        ``use_tls``) aux valeurs réelles (démasquées). Les valeurs vides/absentes
-        laissent la valeur env.
+        ``use_tls``) to their real values (unmasked). Empty/absent values leave
+        the env value in place.
         """
         db = db_settings or {}
 
@@ -83,7 +83,7 @@ _SMTP_KEYS = ("smtp_host", "smtp_port", "smtp_user", "smtp_password", "smtp_from
 
 
 async def mailer_from_db(db) -> "Mailer | None":
-    """Mailer avec la config SMTP des paramètres (DB > env) ; ``None`` si inutilisable."""
+    """Mailer with the settings' SMTP config (DB > env); ``None`` if unusable."""
     from app.core.config import get_settings
     from app.settings.service import get_setting
 

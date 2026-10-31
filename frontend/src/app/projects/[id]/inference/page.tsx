@@ -52,18 +52,18 @@ function InferenceContent() {
   const searchId = useSearchId(projectId);
   const { searches, current } = useSearches(projectId, searchId);
   const selectSearch = useSelectSearch(projectId);
-  // Sur quels articles : une recherche existante, ou une nouvelle sélection créée au lancement.
+  // Which articles: an existing search, or a new selection created at launch.
   const [scopeMode, setScopeMode] = useState<"existing" | "new">("existing");
   const [newSel, setNewSel] = useState<Selection>({});
   const [newName, setNewName] = useState("");
   const [newCount, setNewCount] = useState<number | null>(null);
-  // Préremplissage depuis un benchmark : ?model=<nom>&prompt=<id du prompt enregistré>.
+  // Prefill from a benchmark: ?model=<name>&prompt=<id of the saved prompt>.
   const sp = useSearchParams();
   const wantedModel = sp.get("model");
   const wantedPrompt = sp.get("prompt");
 
   const [job, setJob] = useState<InferenceJob | null>(null);
-  const [busy, setBusy] = useState<InferenceJob | null>(null); // l'analyse en cours du projet (toutes recherches)
+  const [busy, setBusy] = useState<InferenceJob | null>(null); // the project's analysis in progress (all searches)
   const [notice, setNotice] = useState<string | null>(null);
   const [saved0, setSaved0] = useState("");
   const [models, setModels] = useState<ModelInfo[]>([]);
@@ -106,7 +106,7 @@ function InferenceContent() {
     }
   }, [projectId, searchId]);
 
-  // Changer de recherche recharge sa question, ses items et son état d'analyse.
+  // Changing the search reloads its question, its items and its analysis state.
   useEffect(() => {
     setJob(null);
     setQ(null);
@@ -115,7 +115,7 @@ function InferenceContent() {
     void load();
     getProject(projectId, searchId)
       .then((p) => {
-        const set = p.question_set !== false; // sinon : pas de question, seulement une suggestion
+        const set = p.question_set !== false; // otherwise: no question, only a suggestion
         setQ({
           question: set ? (p.question ?? "") : "",
           fields: set ? (p.fields ?? []) : [],
@@ -130,16 +130,16 @@ function InferenceContent() {
     listModels(projectId).then(setModels).catch(() => {});
   }, [projectId]);
 
-  // Prompt venu d'un benchmark : on affiche son titre pour que le choix soit visible.
+  // Prompt from a benchmark: we show its title so the choice is visible.
   useEffect(() => {
     setPromptTitle(null);
     if (!promptId) return;
     getPrompt(projectId, promptId)
       .then((p) => setPromptTitle(p.title ?? p.version_number))
-      .catch(() => setPromptId(null)); // prompt introuvable : retour au prompt généré
+      .catch(() => setPromptId(null)); // prompt not found: back to the generated prompt
   }, [projectId, promptId]);
 
-  // Prompt exact de la dernière analyse (consultable sous la progression).
+  // Exact prompt of the last analysis (viewable under the progress).
   useEffect(() => {
     setSentPrompt(null);
     if (!job?.prompt_template_id) return;
@@ -148,7 +148,7 @@ function InferenceContent() {
       .catch(() => setSentPrompt(null));
   }, [projectId, job?.prompt_template_id]);
 
-  // Références du gold de la recherche : sans elles, ni exemples ni validation.
+  // Gold references of the search: without them, no examples and no validation.
   useEffect(() => {
     setGoldCount(null);
     listGold(projectId, searchId)
@@ -169,7 +169,7 @@ function InferenceContent() {
     return () => clearInterval(id);
   }, [active, busy, load]);
 
-  // Sélection par défaut : pas d'étage 1 ; étage 2 = modèle le plus léger dont la RAM est connue.
+  // Default selection: no stage 1; stage 2 = lightest model whose RAM is known.
   useEffect(() => {
     if (models.length === 0 || stage2) return;
     const wanted = models.find((m) => m.name === wantedModel);
@@ -181,7 +181,7 @@ function InferenceContent() {
     setStage2((known[0] ?? models[0]).name);
   }, [models, stage2, wantedModel]);
 
-  /** Reprend une analyse interrompue : les articles déjà analysés sont sautés. */
+  /** Resumes an interrupted analysis: the already-analyzed articles are skipped. */
   async function handleStop() {
     if (!window.confirm(t("stopConfirm"))) return;
     setSubmitting(true);
@@ -234,7 +234,7 @@ function InferenceContent() {
       }));
       let runSearchId = searchId;
       if (scopeMode === "new") {
-        // Nouvelle sélection : on crée la recherche (avec la question affichée) puis on l'analyse.
+        // New selection: we create the search (with the displayed question), then analyze it.
         const created = await createSearch(projectId, {
           name: newName.trim() || undefined,
           question: q.question,
@@ -254,7 +254,7 @@ function InferenceContent() {
         (current?.predicted ?? 0) + (current?.reviewed ?? 0) > 0 &&
         JSON.stringify([q.question, cleanFields]) !== saved0
       ) {
-        // La question d'une recherche déjà analysée ou relue ne change plus : nouvelle recherche, même lot.
+        // The question of an already-analyzed or re-reviewed search can no longer change: new search, same batch.
         const created = await createSearch(projectId, {
           question: q.question,
           fields: cleanFields,
@@ -268,14 +268,14 @@ function InferenceContent() {
         selectSearch(created.id);
         setNotice(t("questionLocked", { name: created.name }));
       } else {
-        // La question est enregistrée au lancement (une seule étape pour l'utilisateur).
+        // The question is saved at launch (a single step for the user).
         await updateProject(projectId, {
           question: q.question,
           fields: cleanFields,
           text_sections: q.sections,
         }, searchId);
       }
-      // Étage 2 vide : l'étage 1 décide seul.
+      // Empty stage 2: stage 1 decides alone.
       await triggerInference(projectId, {
         model: stage2 || stage1,
         ...(stage2 && stage1 && stage2 !== stage1 ? { prefilter_model: stage1 } : {}),
@@ -286,7 +286,7 @@ function InferenceContent() {
       });
       await load();
       setLaunched(true);
-      // La zone de progression est sous la ligne de flottaison : on y amène l'utilisateur.
+      // The progress area is below the fold: we bring the user there.
       setTimeout(() => progressRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
     } catch (err) {
       setError(err instanceof Error ? err.message : "error");
@@ -296,7 +296,7 @@ function InferenceContent() {
   }
 
   const r = job?.result ?? {};
-  // Modèles tracés de l'analyse (instantané figé) : principal + pré-filtre éventuel.
+  // Traced models of the analysis (frozen snapshot): main + possible pre-filter.
   const jobModels = job && (
     <>
       <ModelRef

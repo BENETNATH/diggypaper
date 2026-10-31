@@ -1,7 +1,7 @@
-"""Références bibliographiques d'un corpus : RIS (Zotero, EndNote, Mendeley, Citavi…) et BibTeX.
+"""Bibliographic references of a corpus: RIS (Zotero, EndNote, Mendeley, Citavi…) and BibTeX.
 
-Les auteurs sont stockés « Nom Initiales » (PubMed) → « Nom, Initiales » à l'export.
-``notes`` : {article.id: texte} ajouté en note (statut IA, réponses…) pour retrouver le tri.
+Authors are stored "Name Initials" (PubMed) → "Name, Initials" at export.
+``notes``: {article.id: text} added as a note (AI status, answers…) to recover the triage.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ BIBTEX_MIME = "application/x-bibtex"
 
 
 def _author(name: str) -> str:
-    """« van der Berg JA » → « van der Berg, JA » (derniers jetons = initiales en majuscules)."""
+    """ "van der Berg JA" → "van der Berg, JA" (last tokens = uppercase initials)."""
     head, _, tail = name.strip().rpartition(" ")
     return f"{head}, {tail}" if head and re.fullmatch(r"[A-Z]{1,4}", tail) else name.strip()
 
@@ -67,7 +67,7 @@ _BIB_ESC = str.maketrans({"&": r"\&", "%": r"\%", "$": r"\$", "#": r"\#", "_": r
 
 
 def _bib(text: str | None) -> str:
-    # antislash retiré AVANT l'échappement : un « \ » final échapperait l'accolade fermante
+    # backslash removed BEFORE escaping: a final backslash would escape the closing brace
     return _clean(text).replace("\\", "").translate(_BIB_ESC).replace("{", "").replace("}", "")
 
 

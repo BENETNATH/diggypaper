@@ -39,7 +39,7 @@ function BenchmarksContent() {
     listModels(projectId).then(setModels).catch(() => {});
   }, [load, projectId]);
 
-  // Polling uniquement pendant qu'un run est actif (pas de boucle inutile).
+  // Polling only while a run is active (no useless loop).
   useEffect(() => {
     if (!hasActive) return;
     const id = setInterval(() => {
@@ -62,7 +62,7 @@ function BenchmarksContent() {
   if (error && !runs) return <ErrorBanner message={error} onRetry={() => void load()} />;
   if (!runs || !searches) return <Skeleton rows={3} />;
 
-  // Plus récent d'abord.
+  // Newest first.
   const ordered = [...runs].reverse();
 
   return (

@@ -1,4 +1,4 @@
-"""Contrôle d'accès : comptes désactivables, modèles propriétaires/partagés, invitations suivies
+"""Access control: deactivable accounts, owned/shared models, tracked invitations
 
 Revision ID: 0016
 Revises: 0015
@@ -55,8 +55,8 @@ def upgrade() -> None:
         sa.Column("accepted_at", sa.DateTime(timezone=True)),
     )
     op.create_index("ix_invitations_email", "invitations", ["email"])
-    # Comportement actuel conservé : chaque projet existant garde l'usage des modèles déjà
-    # enregistrés ; l'admin peut ensuite retirer ces partages.
+    # Current behavior kept: each existing project keeps use of the models already
+    # registered; the admin can then remove these shares.
     op.execute(
         """
         INSERT INTO model_shares (id, model_id, project_id)

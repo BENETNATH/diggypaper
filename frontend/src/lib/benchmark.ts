@@ -1,22 +1,22 @@
 /**
- * Logique pure du benchmark « mise au point » (sans React ni réseau : testable).
+ * Pure logic of the "fine-tuning" benchmark (no React, no network: testable).
  *
- * Un benchmark = mêmes modèles, même lot d'articles, prompts différents. Les résultats sont
- * classés sur le critère principal de la question (item « primary » + métrique), à défaut
- * sur l'accord entre variantes, à défaut sur le temps.
+ * A benchmark = same models, same batch of articles, different prompts. Results are
+ * ranked on the question's main criterion (item "primary" + metric), otherwise
+ * on agreement between variants, otherwise on time.
  */
 import type { BenchmarkResult, BenchmarkVariant, PrimaryCriterion, RankMetric, SchemaField } from "@/lib/api";
 
-/** Plafond d'appels du serveur (articles × modèles × variantes) : au-delà, il refuse. */
+/** Server call cap (articles × models × variants): beyond it, the server refuses. */
 export const MAX_CALLS = 3000;
-/** Au-delà de ce lot, un benchmark devient long (CPU) : on prévient. */
+/** Beyond this batch size, a benchmark gets long (CPU): we warn. */
 export const LOT_WARN = 100;
 export const MAX_VARIANTS = 10;
 export const MAX_GOLD_EXAMPLES = 20;
 export const DEFAULT_TUNING_N = 30;
 export const RANK_METRICS: RankMetric[] = ["recall", "precision", "f1", "accuracy"];
 
-/** Une variante en cours de saisie (le prompt utilisateur vient du prompt généré, non édité). */
+/** A variant being typed (the user prompt comes from the generated prompt, unedited). */
 export interface VariantDraft {
   name: string;
   system_prompt: string;
@@ -24,14 +24,15 @@ export interface VariantDraft {
 }
 
 /**
- * Nombre d'appels au modèle : articles × somme sur les modèles (variantes, ou 1 pour un modèle de
- * décision qui ignore le prompt). Sans variante saisie, un seul prompt (généré) est utilisé.
+ * Number of model calls: articles × sum over models (variants, or 1 for a decision
+ * model that ignores the prompt). With no variant typed, a single prompt (generated)
+ * is used.
  */
 export function estimateCalls(lot: number, models: number, variants: number): number {
   return lot * models * Math.max(1, variants);
 }
 
-/** Nom « Variante N » absent de la liste. */
+/** "Variant N" name not in the list. */
 export function nextVariantName(prefix: string, names: string[]): string {
   let i = names.length + 1;
   while (names.includes(`${prefix} ${i}`)) i++;
@@ -40,7 +41,7 @@ export function nextVariantName(prefix: string, names: string[]): string {
 
 export type VariantProblem = "name" | "duplicate" | "prompt" | null;
 
-/** Les variantes saisies sont-elles acceptables par le serveur (nom et prompt non vides, noms uniques) ? */
+/** Are the typed variants acceptable by the server (non-empty name and prompt, unique names)? */
 export function variantsProblem(drafts: VariantDraft[]): VariantProblem {
   const names = drafts.map((d) => d.name.trim());
   if (names.some((n) => !n)) return "name";
@@ -49,7 +50,7 @@ export function variantsProblem(drafts: VariantDraft[]): VariantProblem {
   return null;
 }
 
-/** Charge utile `variants` de l'API (vide = prompt généré côté serveur). */
+/** API `variants` payload (empty = server-generated prompt). */
 export function toVariants(drafts: VariantDraft[]): BenchmarkVariant[] {
   return drafts.map((d) => ({
     name: d.name.trim(),
@@ -62,7 +63,7 @@ const desc = (a: number | null | undefined, b: number | null | undefined): numbe
   const x = a ?? null;
   const y = b ?? null;
   if (x === y) return 0;
-  if (x === null) return 1; // sans valeur : en dernier
+  if (x === null) return 1; // no value: last
   if (y === null) return -1;
   return y - x;
 };
@@ -70,7 +71,7 @@ const desc = (a: number | null | undefined, b: number | null | undefined): numbe
 const asc = (a: number | null | undefined, b: number | null | undefined): number =>
   a == null || b == null ? desc(a, b) : a - b;
 
-/** Classement des résultats : critère principal ↓, puis accord entre variantes ↓, puis temps ↑. */
+/** Ranking of results: main criterion ↓, then agreement between variants ↓, then time ↑. */
 export function rankResults(results: BenchmarkResult[]): BenchmarkResult[] {
   return [...results].sort(
     (a, b) =>
@@ -80,7 +81,7 @@ export function rankResults(results: BenchmarkResult[]): BenchmarkResult[] {
   );
 }
 
-/** Libellé du critère : item (libellé de la question si connu) + métrique. */
+/** Criterion label: item (question label if known) + metric. */
 export function primaryParts(p: PrimaryCriterion | undefined, fields: SchemaField[]): { item: string | null; metric: RankMetric } | null {
   if (!p) return null;
   const f = fields.find((x) => x.key === p.item);
@@ -91,30 +92,30 @@ export function resultKey(r: Pick<BenchmarkResult, "model_name" | "variant">): s
   return `${r.model_name}\u0000${r.variant ?? ""}`;
 }
 
-/** Valeur de métrique (0..1) en pourcentage, « — » si absente. */
+/** Metric value (0..1) as a percentage, "—" if missing. */
 export function pct(v: number | null | undefined): string {
   return v === null || v === undefined ? "—" : `${(v * 100).toFixed(1)} %`;
 }
 
-/** Valeur d'un item d'une décision pour l'affichage (booléen, choix, texte, absent). */
+/** Display value of a decision's item (boolean, choice, text, absent). */
 export function showValue(v: unknown): string {
   if (v === null || v === undefined || v === "") return "—";
   if (typeof v === "boolean") return v ? "✓" : "✗";
   return String(v);
 }
 
-/** Pertinence (confidence_score) d'une décision, en pourcentage ; « — » si absente. */
+/** Relevance (confidence_score) of a decision, as a percentage; "—" if missing. */
 export function relevanceOf(decision: Record<string, unknown> | null | undefined): string {
   const c = decision?.confidence_score;
   return typeof c === "number" ? `${Math.round(c * 100)} %` : "—";
 }
 
-/** Version d'un prompt enregistré depuis une variante (50 caractères max côté serveur). */
+/** Version of a prompt saved from a variant (50 chars max server-side). */
 export function savedPromptVersion(runId: string, name: string): string {
   return `bench-${runId.slice(0, 8)}-${name}`.slice(0, 50);
 }
 
-/** Clé i18n (benchmarks.err_*) d'un message d'erreur connu du serveur, sinon null (message brut). */
+/** i18n key (benchmarks.err_*) of a known server error message, else null (raw message). */
 export function benchmarkErrorKey(detail: string): string | null {
   const known: [string, string][] = [
     ["too many calls", "err_tooMany"],
@@ -128,7 +129,7 @@ export function benchmarkErrorKey(detail: string): string | null {
   return known.find(([m]) => detail.includes(m))?.[1] ?? null;
 }
 
-/** Nombre d'appels annoncé par le serveur dans « too many calls (N > MAX) », sinon null. */
+/** Call count announced by the server in "too many calls (N > MAX)", else null. */
 export function tooManyCalls(detail: string): number | null {
   const m = /too many calls \((\d+)/.exec(detail);
   return m ? Number(m[1]) : null;

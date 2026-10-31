@@ -7,9 +7,9 @@ import { useAuth } from "@/lib/auth";
 import { Spinner } from "@/components/ui/Feedback";
 
 /**
- * Landing (racine) : splash de marque + redirection selon l'état d'auth.
- * - Non connecté → /login
- * - Connecté → /projects
+ * Landing (root): brand splash + redirect based on the auth state.
+ * - Not signed in → /login
+ * - Signed in → /projects
  */
 export default function Home() {
   const t = useTranslations("landing");

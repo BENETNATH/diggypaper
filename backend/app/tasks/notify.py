@@ -1,9 +1,9 @@
-"""Notification post-job (e-mail) — Module 4.
+"""Post-job notification (email) — Module 4.
 
-À l'achèvement d'un job Celery (import / benchmark), un e-mail est envoyé au LEAD
-du projet, dans sa langue préférée, avec les statistiques clés et un lien direct
-vers le dashboard. **Best-effort** : un échec d'envoi est loggé mais ne casse pas
-le job.
+On a Celery job's completion (import / benchmark), an email is sent to the LEAD
+of the project, in their preferred language, with the key statistics and a direct
+link to the dashboard. **Best-effort**: a sending failure is logged but does not
+break the job.
 """
 
 import logging
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 def _format_stats(job_type: str, stats: dict) -> str:
-    """Statistiques clés en texte (indépendant de la langue)."""
+    """Key statistics as text (language-independent)."""
     lines = []
     if job_type == "benchmark":
         for r in stats.get("results", []):
@@ -44,12 +44,11 @@ async def notify_job_complete(
     mailer=None,
     app_base_url: str = "http://localhost:8000",
 ) -> None:
-    """Envoie l'e-mail de fin de job au LEAD du projet (best-effort).
+    """Sends the end-of-job email to the project's LEAD (best-effort).
 
-    - ``session_factory`` injectable (tests) ; sinon le caller fournit sa session.
-    - ``mailer`` injectable (tests) ; sinon ``None`` → pas d'envoi (le caller
-      passe son mailer).
-    - Ne lève jamais : tout échec est loggé (le job principal n'est pas cassé).
+    - ``session_factory`` injectable (tests); else the caller provides its session.
+    - ``mailer`` injectable (tests); else ``None`` → no sending (the caller passes its mailer).
+    - Never raises: every failure is logged (the main job is not broken).
     """
     try:
         if isinstance(project_id, uuid.UUID):

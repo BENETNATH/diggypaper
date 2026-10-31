@@ -1,20 +1,20 @@
-"""Fixtures partagées : engine SQLite async in-memory + session + client API."""
+"""Shared fixtures: in-memory async SQLite engine + session + API client."""
 
 import os
 from pathlib import Path
 
-# Settings lit "./.env" relatif au CWD : lancé depuis la racine du repo, pytest
-# chargerait le .env de production (secrets réels, IMPORT_MAX_ARTICLES, …) et
-# ferait échouer ~12 tests. On se place dans backend/ — le CWD documenté du README.
+# Settings reads "./.env" relative to the CWD: run from the repo root, pytest
+# would load the production .env (real secrets, IMPORT_MAX_ARTICLES, …) and
+# fail ~12 tests. Move into backend/ — the CWD documented in the README.
 os.chdir(Path(__file__).resolve().parents[1])
 
-# F5 : secrets de test AVANT tout import de app (create_app() fait fail-fast sur les
-# valeurs de dev par défaut). JWT_SECRET ≥ 32 octets (HS256).
+# F5: test secrets BEFORE any app import (create_app() fails fast on the
+# default dev values). JWT_SECRET ≥ 32 bytes (HS256).
 os.environ["JWT_SECRET"] = "test-secret-0123456789abcdef-0123456789abcdef"
 os.environ["ANON_SALT"] = "test-anon-salt"
-# Clé maîtresse AES-256 (Module 7) : 64 hex chars = 32 octets.
+# AES-256 master key (Module 7): 64 hex chars = 32 bytes.
 os.environ["ENCRYPTION_KEY"] = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-# Celery en mode eager (exécution inline, sans broker Redis) — lot 4A.
+# Celery in eager mode (inline execution, no Redis broker) — batch 4A.
 os.environ["CELERY_EAGER"] = "true"
 os.environ["COOKIE_SECURE"] = "false"  # client de test en HTTP ; défaut applicatif : true
 
@@ -30,7 +30,7 @@ from app.db.models import User, UserRole
 
 @pytest.fixture(autouse=True)
 def _clean_ratelimit():
-    """F7 : le limiteur est in-memory et global → on le vide avant/après chaque test."""
+    """F7: the rate limiter is in-memory and global → it is cleared before/after each test."""
     _reset_ratelimit()
     yield
     _reset_ratelimit()
@@ -44,7 +44,7 @@ async def engine():
         connect_args={"check_same_thread": False},
     )
 
-    # SQLite n'applique les FK (CASCADE / SET NULL) que si le pragma est activé.
+    # SQLite only enforces FKs (CASCADE / SET NULL) if the pragma is enabled.
     @event.listens_for(eng.sync_engine, "connect")
     def _enable_fk(dbapi_connection, connection_record):
         dbapi_connection.execute("PRAGMA foreign_keys=ON")
@@ -63,7 +63,7 @@ async def session(engine) -> AsyncSession:
 
 
 class MockMailer:
-    """Mailer de test : capture les messages au lieu d'envoyer du SMTP réel."""
+    """Test mailer: captures messages instead of sending real SMTP."""
 
     def __init__(self) -> None:
         self.sent: list[dict[str, str]] = []
@@ -78,10 +78,10 @@ def mock_mailer() -> MockMailer:
 
 
 class FakeRedis:
-    """Redis en mémoire pour les tests du lock par modèle : SET NX / GET / DEL / EXPIRE.
+    """In-memory Redis for the per-model lock tests: SET NX / GET / DEL / EXPIRE.
 
-    ``set_calls`` : [(key, value, nx, ex)] ; ``expire_calls`` : [(key, seconds)] ;
-    ``events`` : journal d'ordonnancement.
+    ``set_calls``: [(key, value, nx, ex)]; ``expire_calls``: [(key, seconds)];
+    ``events``: the scheduling journal.
     """
 
     def __init__(self) -> None:
@@ -120,7 +120,7 @@ def fake_redis():
 
 @pytest.fixture
 async def client(engine, session, mock_mailer):
-    """Client API : app réelle, DB in-memory, mailer mocké (100 % offline)."""
+    """API client: real app, in-memory DB, mocked mailer (100% offline)."""
     from httpx import ASGITransport, AsyncClient
 
     from app.api.deps import get_db, get_mailer
@@ -134,10 +134,10 @@ async def client(engine, session, mock_mailer):
     app.dependency_overrides[get_db] = _override_get_db
     app.dependency_overrides[get_mailer] = lambda: mock_mailer
 
-    # https:// : le déploiement a du TLS en amont (spec §7) ; le cookie Secure ne
-    # round-trippe que sur un origine sécurisé. Host avec un point : le cookie jar
-    # standard (http.cookiejar) traite les hosts sans point comme "local" (domain
-    # dérivé en "<host>.local"), ce qui casserait le round-trip du cookie.
+    # https://: the deployment has TLS upstream (spec §7); the Secure cookie
+    # round-trips only on a secure origin. Host with a dot: the standard cookie
+    # jar (http.cookiejar) treats dotless hosts as "local" (domain derived as
+    # "<host>.local"), which would break the cookie round-trip.
     async with AsyncClient(transport=ASGITransport(app=app), base_url="https://app.test") as ac:
         yield ac
     app.dependency_overrides.clear()
@@ -167,13 +167,13 @@ async def _make_user(
 
 @pytest.fixture
 async def admin_user(session) -> User:
-    """Admin seedé directement en base (pas via API), consentement déjà donné."""
+    """Admin seeded directly in the DB (not via API), consent already given."""
     return await _make_user(session, "admin@lab.fr", UserRole.ADMIN, "admin-pass-123", consent=True)
 
 
 @pytest.fixture
 async def researcher_user(session) -> User:
-    """Researcher seedé en base (pas via API), sans consentement (tests RGPD)."""
+    """Researcher seeded in the DB (not via API), no consent (GDPR tests)."""
     return await _make_user(
         session, "researcher@lab.fr", UserRole.RESEARCHER, "researcher-pass-123"
     )
@@ -181,7 +181,7 @@ async def researcher_user(session) -> User:
 
 @pytest.fixture
 def do_login(client):
-    """Aide : POST /api/v1/auth/login, renvoie la réponse."""
+    """Helper: POST /api/v1/auth/login, returns the response."""
 
     async def _login(email: str, password: str, consent: bool | None = None):
         payload: dict[str, object] = {"email": email, "password": password}

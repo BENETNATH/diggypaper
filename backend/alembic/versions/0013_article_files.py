@@ -1,4 +1,4 @@
-"""article_files : PDF conservés (matière première de l'export RO-Crate)
+"""article_files: kept PDFs (raw material of the RO-Crate export)
 
 Revision ID: 0013
 Revises: 0012

@@ -1,4 +1,4 @@
-"""Import d'un RO-Crate : aller-retour avec l'export réel, et refus des zips douteux."""
+"""RO-Crate import: round-trip with the real export, and rejection of suspicious zips."""
 
 import json
 import struct
@@ -148,7 +148,7 @@ async def test_round_trip_restores_corpus_results_and_pdf(engine, session, tmp_p
         await session.execute(select(HumanAnnotation).where(HumanAnnotation.article_id == a2.id))
     ).scalar_one()
     assert ann.decision_json == {"ai": False} and ann.user_id == importer_id and ann.notes == "vu"
-    # ces résultats sont ceux de la recherche initiale du nouveau projet
+    # these results are those of the new project's initial search
     initial = await default_search(session, project)
     assert pred.search_id == initial.id == ann.search_id
     job = (
@@ -174,11 +174,10 @@ GRAPH = json.dumps({"@graph": [{"conformsTo": {"@id": "https://w3id.org/ro/crate
 def _patch_zip_headers(
     path: str, local_off: int, central_off: int, value: int, *, flag: bool = False
 ) -> None:
-    """Réécrit un champ des deux en-têtes (local ``PK\\x03\\x04`` + central ``PK\\x01\\x02``).
+    """Rewrites a field of both headers (local ``PK\\x03\\x04`` + central ``PK\\x01\\x02``).
 
-    Sert à forger un zip malhonnête : taille annoncée mensongère (offset 22/24) ou bit
-    « chiffré » du general purpose flag (offset 6/8).
-    """
+    Used to forge a dishonest zip: lying announced size (offset 22/24) or the
+    the "encrypted" bit of the general purpose flag (offset 6/8)."""
     data = bytearray(Path(path).read_bytes())
     for sig, off in ((b"PK\x03\x04", local_off), (b"PK\x01\x02", central_off)):
         i = 0
@@ -218,20 +217,20 @@ def test_open_crate_rejects_what_is_not_a_diggypaper_crate(tmp_path):
     zf.close()
 
 
-# --- Zip bomb : bornes sur ce qui est réellement décompressé, pas sur les en-têtes ---
+# --- zip bomb: bounds on what is actually decompressed, not on the headers ---
 
 _VALID = {"ro-crate-metadata.json": GRAPH, "project.json": '{"title": "T"}'}
 
 
 def test_declared_total_over_max_total_is_rejected(tmp_path, monkeypatch):
-    """Somme des tailles ANNONCÉES > MAX_TOTAL → refus à l'ouverture (garde rapide)."""
+    """Sum of the ANNOUNCED sizes > MAX_TOTAL → refused at open (fast guard)."""
     monkeypatch.setattr(ci, "MAX_TOTAL", 16)  # les 2 fichiers déclarent plus que ça
     with pytest.raises(ci.CrateError, match="too_large"):
         ci.open_crate(_zip(tmp_path, _VALID))
 
 
 def test_read_budget_counts_bytes_actually_decompressed(tmp_path):
-    """Le plafond porte sur les octets réellement lus (compteur partagé par le crate)."""
+    """The cap is on the bytes actually read (counter shared by the crate)."""
     zf, _ = ci.open_crate(_zip(tmp_path, _VALID))
     try:
         ci._budget(zf).left = 5  # budget d'un crate déjà presque épuisé
@@ -239,7 +238,7 @@ def test_read_budget_counts_bytes_actually_decompressed(tmp_path):
             ci._json(zf, "project.json")
         left = ci._budget(zf).left
         assert left < 0  # la lecture a bien été imputée
-        # Budget épuisé : la lecture suivante est refusée AVANT toute décompression
+        # Budget exhausted: the next read is refused BEFORE any decompression
         with pytest.raises(ci.CrateError, match="too_large"):
             ci._json(zf, "ro-crate-metadata.json")
         assert ci._budget(zf).left == left  # rien n'a été décompressé (compteur inchangé)
@@ -248,12 +247,11 @@ def test_read_budget_counts_bytes_actually_decompressed(tmp_path):
 
 
 def test_lying_header_cannot_expand_an_entry(tmp_path):
-    """Taille annoncée mensongèrement petite : zipfile s'arrête au CRC → CrateError, pas 500.
+    """Lyingly small announced size: zipfile stops at the CRC → CrateError, not 500.
 
-    Preuve que rien ne se « décompresse au-delà » de la taille déclarée : la lecture d'une
-    entrée menteuse échoue (CRC) avant d'avoir produit les octets, et l'erreur est convertie
-    en CrateError (sinon BadZipFile brut = 500 sur POST /import-crate, tâche cassée).
-    """
+    Proof that nothing "decompresses beyond" the declared size: reading a lying
+    entry fails (CRC) before producing the bytes, and the error is converted to
+    CrateError (otherwise raw BadZipFile = 500 on POST /import-crate, broken task)."""
     path = _zip(tmp_path, _VALID)
     _patch_zip_headers(path, 22, 24, 10)  # taille décompressée annoncée : 10 octets
     with pytest.raises(ci.CrateError, match="invalid_zip"):
@@ -261,7 +259,7 @@ def test_lying_header_cannot_expand_an_entry(tmp_path):
 
 
 def test_encrypted_entry_is_rejected(tmp_path):
-    """Zip « chiffré » (bit 0 du general purpose flag) → CrateError, pas RuntimeError brut."""
+    """Zip "encrypted" (bit 0 of the general purpose flag) → CrateError, not raw RuntimeError."""
     path = _zip(tmp_path, _VALID)
     _patch_zip_headers(path, 6, 8, 1, flag=True)
     with pytest.raises(ci.CrateError, match="invalid_zip"):
@@ -307,7 +305,7 @@ async def test_import_endpoint(client, session, researcher_user, do_login, tmp_p
     assert len(list((tmp_path / "uploads").glob("crate-*.zip"))) == 1  # le zip refusé est supprimé
 
 
-# --- traçabilité modèle + version (spec 2026-10-29-tracabilite-modele-version §5) ---
+# --- model traceability + version (spec 2026-10-29-tracabilite-modele-version §5) ---
 
 DIGEST_BIG = "2" * 12 + "b" * 52
 DIGEST_SMALL = "1" * 12 + "a" * 52
@@ -330,8 +328,8 @@ SNAPSHOT = {
 
 
 async def _traced_crate(session, tmp_path, model_info=SNAPSHOT, registry=()) -> str:
-    """Crate d'un projet : 1 article prédit (identifiant + version figés), 1 job d'analyse avec
-    ``model_info`` (None = ancien job) ; ``registry`` : lignes ModelRegistry présentes."""
+    """Project crate: 1 predicted article (identifier + version frozen), 1 analysis job with
+    ``model_info`` (None = old job); ``registry``: ModelRegistry rows present."""
     from app.db.models import InferenceJob, InferenceJobStatus
 
     project = Project(title="Trace", question="Q ?", fields=FIELDS)
@@ -369,8 +367,8 @@ async def _traced_crate(session, tmp_path, model_info=SNAPSHOT, registry=()) -> 
 
 
 async def test_crate_export_traces_snapshot_even_if_registry_row_deleted(session, tmp_path):
-    """Aucune ligne de registre (modèles supprimés) : project.json, metadata.json,
-    extraction.csv et le graphe JSON-LD donnent quand même identifiant + version."""
+    """No registry rows (deleted models): project.json, metadata.json,
+    extraction.csv and the JSON-LD graph still provide identifier + version."""
     import csv
     import io
 
@@ -398,7 +396,7 @@ async def test_crate_export_traces_snapshot_even_if_registry_row_deleted(session
 
 
 async def test_crate_round_trip_restores_model_identifier_and_version(engine, session, tmp_path):
-    """Export puis import : chaque prédiction restaurée garde identifiant + version."""
+    """Export then import: each restored prediction keeps its identifier + version."""
     path = await _traced_crate(session, tmp_path)
     new = Project(title="Trace", status=ProjectStatus.PROCESSING)
     importer = User(email="me@lab.fr", hashed_password="x")
@@ -424,8 +422,8 @@ async def test_crate_round_trip_restores_model_identifier_and_version(engine, se
 
 
 async def test_crate_import_old_crate_without_model_version(engine, session, tmp_path):
-    """Crate produit avant la traçabilité (ai sans identifiant ni version) : import inchangé,
-    champs à None ; une valeur non textuelle est ignorée (entrée non fiable)."""
+    """Crate produced before traceability (ai without identifier or version): import unchanged,
+    fields set to None; a non-textual value is ignored (unreliable entry)."""
     meta = {
         "pmid": "9",
         "title": "Vieux",
@@ -467,8 +465,8 @@ async def test_crate_import_old_crate_without_model_version(engine, session, tmp
 
 
 async def test_crate_project_json_old_job_fallback_without_url_secrets(session, tmp_path):
-    """Ancien job (pas d'instantané) : repli sur le registre, mais l'identifiant OPENAI_API
-    n'expose que la partie modèle + l'hôte — ni userinfo, ni query, ni clé ; version None."""
+    """Old job (no snapshot): fallback to the registry, but the OPENAI_API identifier
+    exposes only the model part + the host — no userinfo, no query, no key; version None."""
     from app.core.crypto import encrypt_secret
     from app.db.models import ModelRegistry
 
@@ -489,8 +487,8 @@ async def test_crate_project_json_old_job_fallback_without_url_secrets(session, 
 
 
 async def test_crate_import_cleans_untrusted_model_strings(engine, session, tmp_path):
-    """Entrée non fiable : model, identifiant et version perdent leurs caractères de contrôle
-    (pas de `\\r\\n` à l'export RIS) et sont tronqués (200 / 500 / 200)."""
+    """Unreliable entry: model, identifier and version lose their control characters
+    (no `\\r\\n` at RIS export) and are truncated (200 / 500 / 200)."""
     meta = {
         "pmid": "9",
         "title": "T",
@@ -533,8 +531,8 @@ async def test_crate_import_cleans_untrusted_model_strings(engine, session, tmp_
 
 
 async def test_crate_jsonld_model_entity_drops_null_values(session, tmp_path):
-    """Ancien job sans instantané ni registre : l'entité SoftwareApplication n'a aucune clé à
-    null (alternateName / softwareVersion absents plutôt que `null`)."""
+    """Old job with no snapshot and no registry: the SoftwareApplication entity has no key set to
+    null (alternateName / softwareVersion absent rather than `null`)."""
     path = await _traced_crate(session, tmp_path, model_info=None)
     with zipfile.ZipFile(path) as z:
         graph = json.loads(z.read("ro-crate-metadata.json"))["@graph"]
@@ -543,8 +541,8 @@ async def test_crate_jsonld_model_entity_drops_null_values(session, tmp_path):
 
 
 async def test_crate_config_sha256_covers_endpoint(session, tmp_path):
-    """OPENAI_API : le même modèle sur deux endpoints donne deux empreintes ; sans endpoint,
-    la formule reste {name, backend, identifier}."""
+    """OPENAI_API: the same model on two endpoints yields two fingerprints; without an endpoint,
+    the formula stays {name, backend, identifier}."""
     from app.crate import sha256_json
 
     def snap(endpoint):

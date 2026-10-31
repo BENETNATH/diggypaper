@@ -1,4 +1,4 @@
-"""Tests des routes inférence (app/api/v1/inference.py) — 100 % offline."""
+"""Tests for the inference routes (app/api/v1/inference.py) — 100% offline."""
 
 import uuid
 from unittest.mock import MagicMock
@@ -36,7 +36,7 @@ async def _make_user(session: AsyncSession, email: str, role: UserRole, password
 
 
 async def _create_frozen_project(client, session, researcher_user) -> str:
-    """Crée un projet FROZEN avec 1 article + prompt + modèle (prérequis inférence)."""
+    """Creates a FROZEN project with 1 article + prompt + model (inference prerequisites)."""
     resp = await client.post("/api/v1/projects", json={"title": "P1"})
     assert resp.status_code == 201
     project_id = resp.json()["id"]
@@ -76,7 +76,7 @@ def _mock_inference_task(monkeypatch, state: str = "PENDING"):
 
 
 async def test_trigger_inference_lead(client, session, researcher_user, do_login, monkeypatch):
-    """LEAD du projet : 202 {job_id, status} + job PERSISTÉ en base."""
+    """Project LEAD: 202 {job_id, status} + job PERSISTED in the DB."""
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     project_id, prompt_id = await _create_frozen_project(client, session, researcher_user)
     mock_delay = _mock_inference_task(monkeypatch)
@@ -96,7 +96,7 @@ async def test_trigger_inference_lead(client, session, researcher_user, do_login
 
 
 async def test_trigger_inference_admin(client, session, admin_user, do_login, monkeypatch):
-    """ADMIN global : autorisé même sans membership."""
+    """Global ADMIN: allowed even without membership."""
     other = await _make_user(session, "other@lab.fr", UserRole.RESEARCHER, "other-pass-123")
     project = Project(title="Foreign", created_by=other.id, status=ProjectStatus.FROZEN)
     session.add(project)
@@ -157,7 +157,7 @@ async def test_trigger_inference_non_member_403(client, session, researcher_user
 
 
 async def test_trigger_inference_not_frozen_409(client, session, researcher_user, do_login):
-    """Projet non-FROZEN (DRAFT) → 409 (corpus pas gelé)."""
+    """Non-FROZEN project (DRAFT) -> 409 (corpus not frozen)."""
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     resp = await client.post("/api/v1/projects", json={"title": "P1"})
     project_id = resp.json()["id"]
@@ -188,7 +188,7 @@ async def test_trigger_inference_unknown_prompt_422(client, session, researcher_
 async def test_trigger_inference_prompt_other_project_422(
     client, session, researcher_user, do_login
 ):
-    """Prompt d'un autre projet → 422 (pas de cross-project)."""
+    """Prompt from another project -> 422 (no cross-project)."""
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     project_id, _ = await _create_frozen_project(client, session, researcher_user)
     other = await _make_user(session, "other@lab.fr", UserRole.RESEARCHER, "other-pass-123")
@@ -216,7 +216,7 @@ async def test_trigger_inference_unknown_model_422(client, session, researcher_u
 
 
 async def test_trigger_inference_active_job_409(client, session, researcher_user, do_login):
-    """Un job PENDING/RUNNING existant → 409 (une inférence par projet)."""
+    """An existing PENDING/RUNNING job -> 409 (one inference per project)."""
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     project_id, prompt_id = await _create_frozen_project(client, session, researcher_user)
     for status in (InferenceJobStatus.PENDING, InferenceJobStatus.RUNNING):
@@ -240,7 +240,7 @@ async def test_trigger_inference_active_job_409(client, session, researcher_user
 async def test_trigger_inference_rate_limit_6th_429(
     client, session, researcher_user, do_login, monkeypatch
 ):
-    """6e trigger même IP → 429 (limite 5/15min)."""
+    """6th trigger same IP -> 429 (limit 5/15min)."""
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     project_id, prompt_id = await _create_frozen_project(client, session, researcher_user)
     _mock_inference_task(monkeypatch)
@@ -274,14 +274,14 @@ async def test_trigger_inference_rate_limit_6th_429(
 
 
 async def test_get_inference_status_member(client, session, researcher_user, do_login):
-    """GET /projects/{id}/inference : statut du dernier job + statistiques."""
+    """GET /projects/{id}/inference: status of the last job + statistics."""
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     project_id, _ = await _create_frozen_project(client, session, researcher_user)
     # aucun job → {job: null}
     resp = await client.get(f"/api/v1/projects/{project_id}/inference")
     assert resp.status_code == 200
     assert resp.json() == {"job": None}
-    # un job COMPLETED avec stats
+    # a COMPLETED job with stats
     job = InferenceJob(
         project_id=uuid.UUID(project_id),
         model_used="Kev-4B",
@@ -346,14 +346,15 @@ async def test_cancel_inference_stops_active_job_and_allows_resume(
     job = await session.get(InferenceJob, uuid.UUID(job_id))
     await session.refresh(job)
     assert job.status == InferenceJobStatus.FAILED and job.completed_at is not None
-    # une analyse arrêtée se reprend, et une nouvelle peut être lancée
+    # a stopped analysis resumes, and a new one can be started
     assert (await client.post(url, json={**body, "resume": True})).status_code == 202
 
 
 async def test_extra_instructions_extend_the_generated_prompt(
     client, session, researcher_user, do_login, monkeypatch
 ):
-    """Sans prompt choisi, la consigne s'ajoute au prompt généré (réutilisé s'il est identique)."""
+    """With no prompt chosen, the instruction is added to the generated prompt
+    (reused if identical)."""
     from sqlalchemy import select
 
     from app.db.models import PromptTemplate
@@ -383,8 +384,8 @@ async def test_extra_instructions_extend_the_generated_prompt(
 async def test_get_inference_status_exposes_model_info_snapshot(
     client, session, researcher_user, do_login
 ):
-    """Traçabilité (spec 2026-10-29-tracabilite-modele-version §4) : le job renvoie l'instantané
-    des modèles (principal + pré-filtre) ; ancien job → model_info null."""
+    """Traceability (spec 2026-10-29-tracabilite-modele-version §4): the job returns the
+    models snapshot (main + pre-filter); old job -> model_info null."""
     from datetime import UTC, datetime
 
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)

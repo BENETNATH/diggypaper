@@ -1,5 +1,5 @@
-"""Phase 3 multi-sources : exports qui ne mentent plus pour un article non-PubMed
-(spec 2026-10-29-sources-phase3 D6) — 100 % offline."""
+"""Phase 3 multi-sources: exports that no longer lie for a non-PubMed article
+(spec 2026-10-29-sources-phase3 D6) — 100% offline."""
 
 from types import SimpleNamespace
 
@@ -39,13 +39,13 @@ def _art(**kw):
 
 
 def test_ris_an_for_native_id():
-    """``AN`` = PMID si dispo, sinon l'identifiant natif lisible, sinon rien."""
+    """``AN`` = PMID if available, otherwise the readable native identifier, otherwise nothing."""
     a = _art(source="europepmc", native_id="W123")
     assert "AN  - Europe PMC W123" in to_ris([a])
     assert "AN  - PMID" not in to_ris([a])
     with_pmid = _art(pmid="34335492", source="pubmed", native_id="34335492")
     assert "AN  - PMID:34335492" in to_ris([with_pmid])
-    # pas de PMID ni d'identifiant natif → pas de ligne AN
+    # no PMID nor native identifier -> no AN row
     out = to_ris([_art()])
     assert "AN  - " not in out
 
@@ -54,19 +54,19 @@ def test_ris_an_for_native_id():
 
 
 def test_crate_article_key_native_id():
-    """Clé de dossier : pmid → doi → {source}-{native_id} → art-<uuid8>."""
+    """Folder key: pmid -> doi -> {source}-{native_id} -> art-<uuid8>."""
     assert crate.article_key(_art(pmid="123")) == "pmid-123"
     assert crate.article_key(_art(doi="10.1000/xyz.1", source="europepmc", native_id="W123")) == (
         "doi-10-1000-xyz-1"
     )
     assert crate.article_key(_art(source="europepmc", native_id="W123")) == "europepmc-W123"
-    # source inconnue/absente : préfixe « art »
+    # unknown/absent source: "art" prefix
     assert crate.article_key(_art(native_id="W.123")) == "art-W-123"
     assert crate.article_key(_art()).startswith("art-")
 
 
 def test_crate_exports_imports():
-    """project.json : clé ``imports`` (renommage propre, phase 4a) — plus de ``pubmed_queries``."""
+    """project.json: ``imports`` key (clean rename, phase 4a) — no more ``pubmed_queries``."""
     job = SimpleNamespace(
         query="q", source="europepmc", created_at=None, result_json={"imported": 3}
     )
@@ -102,8 +102,8 @@ def _arts(*sources):
 
 
 def test_prisma_identified_label_lists_sources():
-    """Le libellé « identifiées » liste les sources réellement présentes + les listes
-    importées ; le cas pubmed+refs reste identique à l'actuel."""
+    """The "identified" label lists the sources actually present + the imported
+    lists; the pubmed+refs case stays identical to the current one."""
     articles = _arts(None)  # lignes sans source (jobs antérieurs à la migration 0030)
     pubmed_refs = [_job("pubmed"), _job(None, kind="references")]
     counts = prisma.prisma_counts(articles, {}, {}, pubmed_refs)
@@ -122,5 +122,5 @@ def test_prisma_identified_label_lists_sources():
     counts = prisma.prisma_counts(sans_refs, {}, {}, jobs)
     svg = prisma.render_svg(counts, "fr", *prisma.identified_parts(sans_refs, jobs))
     assert "Europe PMC" in svg and "listes importées" not in svg
-    # garde : appelant historique (sources/lists None) → libellé statique d'avant
+    # guard: historical caller (sources/lists None) -> the old static label
     assert "(PubMed, listes importées)" in prisma.render_svg(counts, "fr")

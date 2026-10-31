@@ -23,7 +23,7 @@ const FILTERS: Filter[] = ["ALL", "TO_REVIEW", "AUTO_ACCEPTED", "AUTO_REJECTED",
 const PER_PAGE = 100;
 
 type Sort = "added" | "date_desc" | "date_asc" | "score_desc";
-/** Filtres mémorisés par projet et par recherche : retrouvés au retour d'un article (ou d'un rechargement). */
+/** Filters remembered per project and per search: restored when returning from an article (or a reload). */
 function loadSaved(projectId: string, searchId?: string): { filter?: Filter; sort?: Sort; page?: number; answers?: Answers; q?: string; fulltext?: boolean } {
   try {
     return JSON.parse(sessionStorage.getItem(articlesStoreKey(projectId, searchId)) ?? "{}");
@@ -50,17 +50,17 @@ function ResultsContent() {
   const [pdfOpen, setPdfOpen] = useState(false);
   const [prismaOpen, setPrismaOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [answers, setAnswers] = useState<Answers>({}); // appliqués à la requête
-  const [draft, setDraft] = useState<Answers>({}); // saisie (texte retardé de 300 ms)
-  const [text, setText] = useState(""); // recherche rapide appliquée (titre, auteurs, PMID, DOI)
+  const [answers, setAnswers] = useState<Answers>({}); // applied to the request
+  const [draft, setDraft] = useState<Answers>({}); // input (text debounced by 300 ms)
+  const [text, setText] = useState(""); // quick search applied (title, authors, PMID, DOI)
   const [textDraft, setTextDraft] = useState("");
-  const [fulltext, setFulltext] = useState<boolean | undefined>(undefined); // texte intégral (true) / résumé seul (false)
+  const [fulltext, setFulltext] = useState<boolean | undefined>(undefined); // full text (true) / abstract only (false)
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout>>();
-  const restoredFor = useRef(""); // clé de stockage dont les filtres sont restaurés (évite d'écraser une autre recherche)
+  const restoredFor = useRef(""); // storage key from which filters are restored (avoids clobbering another search)
 
-  // Restaure filtres / tri / page mémorisés (propres à la recherche), puis charge ses items.
+  // Restores remembered filters / sort / page (specific to the search), then loads its items.
   useEffect(() => {
     const key = articlesStoreKey(projectId, searchId);
     restoredFor.current = "";
@@ -91,11 +91,11 @@ function ResultsContent() {
         JSON.stringify({ filter, sort, page, answers, q: text, fulltext })
       );
     } catch {
-      /* stockage indisponible : filtres non mémorisés */
+      /* storage unavailable: filters not remembered */
     }
   }, [ready, projectId, searchId, filter, sort, page, answers, text, fulltext]);
 
-  // Recherche rapide : appliquée 300 ms après la dernière frappe, repart à la première page.
+  // Quick search: applied 300 ms after the last keystroke, returns to the first page.
   useEffect(() => {
     if (textDraft === text) return;
     const id = setTimeout(() => {
@@ -145,9 +145,9 @@ function ResultsContent() {
       ? Object.entries(stats).reduce((a, [k, n]) => (k === "TO_REVIEW" ? a : a + n), 0) // TO_REVIEW recoupe NEEDS_HUMAN_REVIEW
       : stats[f] ?? 0;
   const triaged = count("ALL") - count("NONE") > 0;
-  const queue = "list"; // la file de relecture reprend la liste affichée (filtres, tri)
+  const queue = "list"; // the re-review queue resumes the displayed list (filters, sort)
 
-  /** Ouvre la page Recherches avec une sélection préremplie par les filtres courants. */
+  /** Opens the Searches page with a selection prefilled by the current filters. */
   function newSearchFromFilters() {
     try {
       sessionStorage.setItem(
@@ -155,7 +155,7 @@ function ResultsContent() {
         JSON.stringify(selectionFromFilters(filter, answers, searchId, text, fulltext))
       );
     } catch {
-      /* stockage indisponible : la page Recherches s'ouvre sans préremplissage */
+      /* storage unavailable: the Searches page opens without prefill */
     }
     router.push(withSearch(`/projects/${projectId}/searches`, searchId));
   }

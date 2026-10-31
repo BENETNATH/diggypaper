@@ -11,7 +11,7 @@ import { ErrorBanner } from "@/components/ui/Feedback";
 
 type Direction = "backward" | "forward" | "both";
 
-/** Enrichir le corpus par citations : références / citants des articles choisis, sans analyse préalable. */
+/** Enrich the corpus by citations: references / citing articles of the chosen ones, without prior analysis. */
 export function CitationExpand({ projectId, onStarted }: { projectId: string; onStarted: () => void }) {
   const t = useTranslations("import");
   const [searches, setSearches] = useState<SearchInfo[] | null>(null);

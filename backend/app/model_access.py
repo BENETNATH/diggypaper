@@ -1,8 +1,8 @@
-"""Qui peut utiliser quel modèle (et donc dépenser CPU / crédits API).
+"""Who can use which model (and hence spend CPU / API credits).
 
-Un modèle est utilisable par : un ADMIN ; son propriétaire (modèle externe défini par un
-utilisateur) ; les utilisateurs auxquels il est partagé ; les LEAD d'un projet auquel il est
-partagé. Les modèles de la plateforme (``owner_id`` NULL) ne sont utilisables que par partage.
+A model is usable by: an ADMIN; its owner (external model defined by a
+user); the users it is shared with; the LEADs of a project it is shared
+with. Platform models (``owner_id`` NULL) are usable only by sharing.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from app.db.models import ModelRegistry, ModelShare, ProjectMember, User, UserRo
 
 
 def access_filter(user: User, project_id: uuid.UUID | None = None):
-    """Condition SQL « ce modèle m'est accessible ». Avec ``project_id`` : dans ce projet."""
+    """SQL condition "this model is accessible to me". With ``project_id``: within that project."""
     if user.role == UserRole.ADMIN:
         return true()
     if project_id is not None:
@@ -35,7 +35,7 @@ def access_filter(user: User, project_id: uuid.UUID | None = None):
 async def usable_models(
     db: AsyncSession, user: User, names: list[str], project_id: uuid.UUID
 ) -> list[ModelRegistry]:
-    """Modèles de ``names`` que ``user`` peut lancer dans ce projet (les autres sont omis)."""
+    """Models from ``names`` that ``user`` can run in this project (the others are omitted)."""
     rows = await db.execute(
         select(ModelRegistry).where(ModelRegistry.name.in_(names), access_filter(user, project_id))
     )
@@ -43,10 +43,10 @@ async def usable_models(
 
 
 def check_public_url(url: str) -> None:
-    """Refuse les URL internes (SSRF) pour un modèle externe saisi par un non-admin.
+    """Refuses internal URLs (SSRF) for an external model entered by a non-admin.
 
-    ponytail: contrôle à l'enregistrement ; une réécriture DNS ultérieure le contournerait
-    (épingler l'IP résolue si l'instance accepte des utilisateurs hostiles).
+    ponytail: check at registration; a later DNS rewrite would bypass it
+    (pin the resolved IP if the instance accepts hostile users).
     """
     parts = urlsplit(url.strip())
     if parts.scheme not in ("http", "https") or not parts.hostname:
@@ -62,10 +62,10 @@ def check_public_url(url: str) -> None:
 
 
 def check_url_secrets(url: str) -> None:
-    """Une base URL ne porte jamais de secret : le jeton va dans ``api_key`` (chiffré).
+    """A base URL never carries a secret: the token goes in ``api_key`` (encrypted).
 
-    Userinfo (``user:pw@``, même user seul), query (même vide) et fragment (notre séparateur
-    URL/modèle) sont refusés. Messages fixes : l'URL n'est jamais échoée.
+    Userinfo (``user:pw@``, even user alone), query (even empty) and fragment (our
+    URL/model separator) are refused. Fixed messages: the URL is never echoed.
     """
     try:
         parts = urlsplit(url.strip())
@@ -76,10 +76,10 @@ def check_url_secrets(url: str) -> None:
 
 
 def is_internal_url(url: str | None) -> bool:
-    """True si l'URL pointe sur localhost ou une IP non globale (réseau interne).
+    """True if the URL points to localhost or a non-global IP (internal network).
 
-    Pas de DNS : un nom de domaine est considéré externe (cohérent avec ``check_public_url``,
-    qui résout car il refuse ; ici on n'attend pas le réseau pour afficher un badge).
+    No DNS: a domain name is considered external (consistent with ``check_public_url``,
+    which resolves because it refuses; here we do not wait on the network to display a badge).
     """
     if not url:
         return False

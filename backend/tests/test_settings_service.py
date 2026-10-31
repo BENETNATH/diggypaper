@@ -1,4 +1,4 @@
-"""Tests du service settings (app/settings/service.py, Module 7)."""
+"""Tests for the settings service (app/settings/service.py, Module 7)."""
 
 import pytest
 from sqlalchemy import func, select
@@ -9,7 +9,7 @@ from app.settings.service import delete_setting, get_all, get_setting, set_setti
 
 
 async def test_set_get_secret_encrypted(session):
-    """Secret chiffré en base : le plaintext n'apparaît PAS en clair dans value_encrypted."""
+    """Secret encrypted in the DB: the plaintext does NOT appear in clear in value_encrypted."""
     await set_setting(session, "ncbi_api_key", "my-secret-ncbi-key")
     assert await get_setting(session, "ncbi_api_key") == "my-secret-ncbi-key"
     row = (
@@ -22,7 +22,7 @@ async def test_set_get_secret_encrypted(session):
 
 
 async def test_set_get_non_secret_plaintext(session):
-    """Valeur non sensible : stockée en clair (UTF-8) dans value_encrypted."""
+    """Non-sensitive value: stored in clear (UTF-8) in value_encrypted."""
     await set_setting(session, "smtp_host", "mail.example.com")
     assert await get_setting(session, "smtp_host") == "mail.example.com"
     row = (
@@ -44,7 +44,7 @@ async def test_delete_reverts_default(session):
 
 
 async def test_upsert_no_duplicate(session):
-    """Upsert : 2 set_setting sur la même clé → 1 seule ligne (index uniques partiels)."""
+    """Upsert: 2 set_setting on the same key -> 1 single row (partial unique indexes)."""
     await set_setting(session, "ncbi_api_key", "key-1")
     await set_setting(session, "ncbi_api_key", "key-2")
     count = (
@@ -59,7 +59,7 @@ async def test_upsert_no_duplicate(session):
 
 
 async def test_scopes_isolated(session):
-    """GLOBAL / PROJECT / USER sont isolés pour la même clé."""
+    """GLOBAL / PROJECT / USER are isolated for the same key."""
     project = Project(title="P")
     user = User(email="scope@test.fr", hashed_password="h")
     session.add_all([project, user])
@@ -85,7 +85,7 @@ async def test_scopes_isolated(session):
 
 
 async def test_get_all_masks_secrets(session):
-    """get_all : secrets définis → MASK, non-secrets → valeur, non définis → None."""
+    """get_all: defined secrets -> MASK, non-secrets -> value, undefined -> None."""
     await set_setting(session, "ncbi_api_key", "secret-value")
     await set_setting(session, "smtp_host", "mail.example.com")
     result = await get_all(session)
@@ -95,13 +95,13 @@ async def test_get_all_masks_secrets(session):
 
 
 async def test_unknown_key_rejected(session):
-    """Clé inconnue → refusée (pas de stockage arbitraire)."""
+    """Unknown key -> refused (no arbitrary storage)."""
     with pytest.raises(ValueError):
         await set_setting(session, "totally_unknown_key", "x")
 
 
 async def test_openalex_api_key_secret(session):
-    """Phase 4a : ``openalex_api_key`` est une clé connue, sécrète (chiffrée, masquée)."""
+    """Phase 4a: ``openalex_api_key`` is a known, secret key (encrypted, masked)."""
     await set_setting(session, "openalex_api_key", "ok-123")
     assert await get_setting(session, "openalex_api_key") == "ok-123"
     row = (

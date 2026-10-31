@@ -1,4 +1,4 @@
-"""Recherches nommées AAMMJJ-n ; source « pmc » des textes importés depuis PMC
+"""Searches named AAMMJJ-n; "pmc" source for texts imported from PMC
 
 Revision ID: 0022
 Revises: 0021
@@ -20,7 +20,7 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     bind = op.get_bind()
-    # « Recherche initiale » → AAMMJJ-n (jour de création, rang dans le projet)
+    # "Initial search" -> AAMMJJ-n (creation day, rank in the project)
     rows = bind.execute(
         sa.text(
             "SELECT id, project_id, created_at FROM searches WHERE name = 'Recherche initiale' "
@@ -45,7 +45,7 @@ def upgrade() -> None:
         bind.execute(
             sa.text("UPDATE searches SET name = :n WHERE id = :i"), {"n": f"{prefix}-{n}", "i": sid}
         )
-    # Imports PMC antérieurs : le texte était stocké sans source (non compté « avec texte »)
+    # Earlier PMC imports: the text was stored without a source (not counted "with text")
     op.execute(
         "UPDATE articles SET fulltext_source = 'pmc', "
         "fulltext_url = CASE WHEN pmcid IS NOT NULL "

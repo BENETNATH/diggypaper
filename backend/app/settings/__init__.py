@@ -1,1 +1,1 @@
-"""Settings système & API keys (Module 7) : clés connues + service DB."""
+"""System settings & API keys (Module 7): known keys + DB service."""

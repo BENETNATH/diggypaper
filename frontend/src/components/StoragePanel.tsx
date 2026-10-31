@@ -9,7 +9,7 @@ import { Card } from "@/components/ui/Card";
 const gb = (n: number | null | undefined): string => (n == null ? "—" : `${(n / 1024 ** 3).toFixed(1)} GB`);
 const mb = (n: number): string => (n >= 1024 ** 3 ? gb(n) : `${Math.round(n / 1024 ** 2)} MB`);
 
-/** Espace disque du serveur, poids des PDF et projets inactifs (administrateur). */
+/** Server disk space, weight of the PDFs and inactive projects (administrator). */
 export function StoragePanel() {
   const t = useTranslations("storage");
   const locale = useLocale();

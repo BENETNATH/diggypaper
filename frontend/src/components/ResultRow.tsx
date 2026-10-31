@@ -12,13 +12,13 @@ const STATUS_DOT: Record<string, string> = {
   NEEDS_HUMAN_REVIEW: "bg-warning",
 };
 
-/** Valeur technique (« BOTH_SEXES ») → « both sexes » ; un texte libre reste tel quel. */
+/** Technical value ("BOTH_SEXES") → "both sexes"; free text stays as-is. */
 const pretty = (v: unknown): string => {
   const text = String(v);
   return /^[A-Z0-9_]+$/.test(text) ? text.replace(/_/g, " ").toLowerCase() : text;
 };
 
-/** Petit point de certitude (vert / orange / rouge) ; le pourcentage est dans l'infobulle. */
+/** Small certainty dot (green / orange / red); the percentage is in the tooltip. */
 function CertaintyDot({ value }: { value: number | null | undefined }) {
   const t = useTranslations("articles");
   if (value == null) return null;
@@ -30,9 +30,9 @@ function CertaintyDot({ value }: { value: number | null | undefined }) {
 type Answer = NonNullable<Article["answers"]>[number];
 
 /**
- * Une réponse dans un cadre de taille fixe : l'item (une ligne) et la réponse (deux lignes au plus)
- * sont tronqués, la pastille de certitude reste toujours visible ; au survol (ou au clavier), une
- * fiche affiche l'item, la réponse complète et son origine.
+ * An answer in a fixed-size box: the item (one line) and the answer (at most two lines)
+ * are truncated, the certainty pill stays always visible; on hover (or keyboard), a
+ * card shows the item, the full answer and its origin.
  */
 function AnswerCell({ r }: { r: Answer }) {
   const t = useTranslations("articles");
@@ -58,12 +58,12 @@ function AnswerCell({ r }: { r: Answer }) {
           {shown || "—"}
         </p>
       </div>
-      {/* Pas d'interstice entre la cellule et la fiche (pt-1, pas mt-1) et pointeur actif : on peut
-          y amener la souris et la faire défiler ; un léger délai évite qu'elle se ferme en route. */}
+      {/* No gap between the cell and the card (pt-1, not mt-1) and active pointer: we can
+          move the mouse there and scroll it; a slight delay prevents it from closing en route. */}
       <div
         role="tooltip"
         onClick={(e) => {
-          e.preventDefault(); // la ligne est un lien : un clic dans la fiche n'ouvre pas l'article
+          e.preventDefault(); // the row is a link: a click in the card does not open the article
           e.stopPropagation();
         }}
         className="invisible absolute left-0 top-full z-30 w-80 max-w-[min(20rem,calc(100vw-3rem))] pt-1 opacity-0 transition-[opacity,visibility] delay-150 group-focus-within/cell:visible group-focus-within/cell:opacity-100 group-focus-within/cell:delay-0 group-hover/cell:visible group-hover/cell:opacity-100 group-hover/cell:delay-0"
@@ -83,8 +83,8 @@ function AnswerCell({ r }: { r: Answer }) {
 }
 
 /**
- * Une ligne de la liste des résultats : titre, une seule ligne de repères en gris, réponses en
- * cadres de taille fixe, et à droite l'état : relu ou décision du modèle.
+ * A row of the results list: title, one line of grey markers, answers in
+ * fixed-size boxes, and on the right the state: re-reviewed or the model's decision.
  */
 export function ResultRow({ a, href }: { a: Article; href: string }) {
   const t = useTranslations("articles");

@@ -9,8 +9,8 @@ import { Certainty } from "@/components/Certainty";
 export type Values = Record<string, unknown>;
 
 /**
- * Champ texte ajusté à sa hauteur : les réponses du modèle peuvent faire plusieurs
- * lignes ; un simple `<input>` les tronquait (illisibles en entier).
+ * Text field auto-sized to its height: the model's answers can span several
+ * lines; a plain `<input>` truncated them (unreadable in full).
  */
 export function AnswerTextarea({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -18,7 +18,7 @@ export function AnswerTextarea({ value, onChange }: { value: string; onChange: (
     const el = ref.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 320)}px`; // ~11 lignes, puis défilement interne
+    el.style.height = `${Math.min(el.scrollHeight, 320)}px`; // ~11 lines, then internal scrolling
   }, [value]);
   return (
     <Textarea
@@ -31,7 +31,7 @@ export function AnswerTextarea({ value, onChange }: { value: string; onChange: (
   );
 }
 
-/** Valeurs par défaut d'un jeu de champs (booléen=false, choix=1re option, texte=""). */
+/** Default values of a field set (boolean=false, choice=1st option, text=""). */
 export function defaultValues(fields: SchemaField[], initial?: Values): Values {
   const out: Values = {};
   for (const f of fields) {
@@ -42,7 +42,7 @@ export function defaultValues(fields: SchemaField[], initial?: Values): Values {
   return out;
 }
 
-/** Rend un champ par SchemaField de la question du projet. */
+/** Renders one field per SchemaField of the project's question. */
 export function DecisionFields({
   fields,
   values,
@@ -52,7 +52,7 @@ export function DecisionFields({
   fields: SchemaField[];
   values: Values;
   onChange: (next: Values) => void;
-  /** Certitude du modèle pour chaque réponse (clé du champ → 0–1). */
+  /** Model certainty for each answer (field key → 0–1). */
   certainty?: Record<string, number | null>;
 }) {
   const tSex = useTranslations("sex");

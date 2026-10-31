@@ -1,12 +1,12 @@
-"""Retrait des modèles de décision (Laya, Kev, encodeurs ONNX)
+"""Removal of the decision models (Laya, Kev, ONNX encoders)
 
 Revision ID: 0023
 Revises: 0022
 Create Date: 2026-10-17 12:00:00.000000
 
-Les modèles SYSTEMONE / ONNX_LOCAL du registre sont désactivés (les prédictions déjà produites
-restent : ``model_used`` est un texte libre) et ne servent plus de pré-filtre. Les valeurs de
-l'enum restent en base (PostgreSQL ne sait pas en retirer une proprement).
+The SYSTEMONE / ONNX_LOCAL registry models are disabled (predictions already produced
+stay: ``model_used`` is free text) and no longer serve as pre-filter. The enum values
+stay in the database (PostgreSQL cannot drop them cleanly).
 """
 
 from collections.abc import Sequence

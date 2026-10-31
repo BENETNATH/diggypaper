@@ -1,4 +1,4 @@
-"""Cascade 2 étages (petit modèle sur titre + abstract → modèle principal) — offline."""
+"""Two-stage cascade (small model on title + abstract → main model) — offline."""
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -18,7 +18,7 @@ from app.tasks.inference import _run_inference
 
 
 class FakeChat:
-    """L'étage 1 (« small:1b ») rejette l'article « low » ; l'étage 2 accepte."""
+    """Stage 1 ("small:1b") rejects the "low" article; stage 2 accepts."""
 
     def __init__(self):
         self.models: list[str] = []
@@ -67,7 +67,7 @@ async def test_prefilter_rejects_before_main_model(engine, session, fake_redis):
         str(job.id), session_factory=factory, inference=chat, redis=fake_redis
     )
 
-    # étage 1 sur les 2 articles ; l'étage 2 ne voit que l'article « mid »
+    # stage 1 on both articles; stage 2 only sees the "mid" article
     assert sorted(chat.models) == ["big:30b", "small:1b", "small:1b"]
     assert (
         result["prefiltered"] == 1 and result["auto_rejected"] == 1 and result["auto_accepted"] == 1

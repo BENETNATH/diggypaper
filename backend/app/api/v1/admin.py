@@ -1,11 +1,11 @@
-"""Routes admin : System Settings & API Keys (Module 7).
+"""Admin routes: System Settings & API Keys (Module 7).
 
-- ``GET  /admin/settings`` : valeurs par scope (secrets masqués, non définis → null).
-- ``PUT  /admin/settings`` : upsert/delete par clé (MASK → inchangé, "" → delete).
-- ``POST /admin/settings/smtp/test`` : envoie un email de test (config DB, fallback env).
+- ``GET  /admin/settings``: values per scope (secrets masked, undefined -> null).
+- ``PUT  /admin/settings``: upsert/delete per key (MASK -> unchanged, "" -> delete).
+- ``POST /admin/settings/smtp/test``: sends a test email (DB config, env fallback).
 
-Admin uniquement (``get_current_admin``). Les secrets ne sont JAMAIS renvoyés en
-clair : masque ``••••••••`` si défini, ``null`` sinon.
+Admin only (``get_current_admin``). Secrets are NEVER returned in
+plain: mask ``••••••••`` if defined, ``null`` otherwise.
 """
 
 import logging
@@ -36,7 +36,7 @@ AdminDep = Annotated[User, Depends(get_current_admin)]
 
 _EMAIL_ADAPTER = TypeAdapter(EmailStr)
 
-#: Clés SMTP lues en DB pour ``Mailer.from_settings`` (DB > env).
+#: SMTP keys read from DB for ``Mailer.from_settings`` (DB > env).
 _SMTP_SETTING_KEYS = (
     "smtp_host",
     "smtp_port",
@@ -48,7 +48,7 @@ _SMTP_SETTING_KEYS = (
 
 
 def _smtp_error_category(exc: Exception) -> str:
-    """Catégorie d'erreur SMTP pour le message client (le détail reste en log)."""
+    """SMTP error category for the client message (detail stays in the log)."""
     if isinstance(exc, SMTPAuthenticationError):
         return "authentication"
     if isinstance(exc, (ConnectionError, TimeoutError, ConnectionRefusedError)):
@@ -92,7 +92,7 @@ async def read_settings(
     project_id: Annotated[uuid.UUID | None, Query()] = None,
     user_id: Annotated[uuid.UUID | None, Query()] = None,
 ) -> dict[str, dict[str, str | None]]:
-    """Valeurs par scope : GLOBAL toujours, PROJECT/USER si query param fourni."""
+    """Values per scope: GLOBAL always, PROJECT/USER if the query param is given."""
     result: dict[str, dict[str, str | None]] = {"GLOBAL": await get_all(db)}
     if project_id is not None:
         result["PROJECT"] = await get_all(db, scope=SettingScope.PROJECT, project_id=project_id)
@@ -103,9 +103,9 @@ async def read_settings(
 
 @router.get("/settings/env")
 async def settings_from_environment(admin: AdminDep) -> dict[str, dict]:
-    """Valeurs qui viennent de l'ENVIRONNEMENT du serveur (.env) quand la base n'en définit pas :
-    ce sont elles qui s'appliquent tant que le réglage est vide dans l'interface. Les secrets ne
-    sont jamais renvoyés (``set`` seulement)."""
+    """Values that come from the server ENVIRONMENT (.env) when the database defines none:
+    these are the ones that apply while the setting is empty in the UI. Secrets are
+    never returned (``set`` only)."""
     s = get_settings()
     env = {
         "llm_api_base_url": DEFAULTS.get("llm_api_base_url", ""),
@@ -126,7 +126,7 @@ async def settings_from_environment(admin: AdminDep) -> dict[str, dict]:
 async def update_settings(
     payload: SettingsUpdate, db: DbDep, admin: AdminDep
 ) -> dict[str, str | None]:
-    """Upsert/delete par clé. Renvoie l'état après mise à jour (masqué)."""
+    """Upsert/delete per key. Returns the state after update (masked)."""
     scope = SettingScope(payload.scope)
     for key in payload.values:
         if key not in KNOWN_KEYS:
@@ -148,9 +148,9 @@ async def update_settings(
                 raise HTTPException(
                     status_code=422, detail="smtp_from_email must be a valid email"
                 ) from exc
-    # m3 : transactionnel — toutes les clés sont appliquées ou aucune.
-    # Pas de ``db.begin()`` : la session peut avoir une transaction autobegun
-    # (ex. le SELECT du login) → InvalidRequestError. commit/rollback explicites.
+    # m3: transactional - all keys are applied or none.
+    # No ``db.begin()``: the session may have an autobegun transaction
+    # (e.g. the SELECT of the login) -> InvalidRequestError. Explicit commit/rollback.
     try:
         for key, value in payload.values.items():
             if value == MASK:
@@ -173,11 +173,11 @@ async def update_settings(
 
 @router.post("/settings/smtp/test")
 async def test_smtp(payload: SmtpTestRequest, db: DbDep, admin: AdminDep) -> dict:
-    """Envoie un email de test avec la config SMTP effective (DB, fallback env).
+    """Sends a test email with the effective SMTP config (DB, env fallback).
 
-    ``to`` absent → email de l'admin courant. 200 {sent: true} ou
-    502 {sent: false, error} si l'envoi échoue. Le détail (traceback) est loggé
-    côté serveur ; le client ne reçoit qu'une catégorie (jamais le password).
+    ``to`` absent -> email of the current admin. 200 {sent: true} or
+    502 {sent: false, error} if the send fails. The detail (traceback) is logged
+    server-side; the client only gets a category (never the password).
     """
     to = payload.to or admin.email
     db_settings = {key: await get_setting(db, key) for key in _SMTP_SETTING_KEYS}
@@ -199,13 +199,13 @@ async def test_smtp(payload: SmtpTestRequest, db: DbDep, admin: AdminDep) -> dic
 
 @router.get("/storage/status")
 async def storage_status(admin: AdminDep) -> dict:
-    """Occupation du disque (léger : alimente le bandeau d'alerte des administrateurs)."""
+    """Disk usage (light: feeds the administrators' alert banner)."""
     return maintenance.disk_status()
 
 
 @router.get("/storage")
 async def storage(db: DbDep, admin: AdminDep) -> dict:
-    """Disque, base, PDF et projets (taille, dernière activité, échéance de suppression)."""
+    """Disk, database, PDFs and projects (size, last activity, deletion deadline)."""
     settings = get_settings()
     projects = await maintenance.project_usage(db)
     return {

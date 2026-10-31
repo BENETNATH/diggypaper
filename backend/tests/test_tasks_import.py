@@ -1,9 +1,8 @@
-"""Tests de la task d'import PubMed (app/tasks) — NCBI mocké, session_factory injecté.
+"""Tests for the PubMed import task (app/tasks) — mocked NCBI, injected session_factory.
 
-C1/C2 : le wrapper Celery (sync) exécute le core async dans un thread dédié via
-``asyncio.run`` ; le core crée son propre engine par run (ou utilise le
-``session_factory`` injecté / le hook ``_session_factory_override`` en tests).
-"""
+C1/C2: the Celery wrapper (sync) runs the async core in a dedicated thread via
+``asyncio.run``; the core creates its own engine per run (or uses the injected
+``session_factory`` / the ``_session_factory_override`` hook in tests)."""
 
 from unittest.mock import AsyncMock, patch
 
@@ -21,7 +20,7 @@ from app.tasks import _import_pubmed, _map_language, _sanitize_error, import_pub
 
 @pytest.fixture(autouse=True)
 def _no_sleep(monkeypatch):
-    """Pas de vrai sleep en tests (throttle NCBI + backoff retry)."""
+    """No real sleep in tests (NCBI throttle + backoff retry)."""
 
     async def _noop(_delay: float) -> None:
         return None
@@ -30,7 +29,7 @@ def _no_sleep(monkeypatch):
 
 
 def _efetch_xml(pmids: list[str], with_pmcid: bool = True) -> str:
-    """XML efetch : un PubmedArticle par pmid ; pmcid sur les pairs si with_pmcid."""
+    """efetch XML: one PubmedArticle per pmid; pmcid on the even ones if with_pmcid."""
     articles = []
     for i, pmid in enumerate(pmids):
         pmcid = f"PMC{pmid}" if (with_pmcid and i % 2 == 0) else None
@@ -84,7 +83,7 @@ def _ncbi_handler(pmids: list[str], efetch_pmids: list[str] | None = None, with_
                 return httpx.Response(200, json={"esearchresult": {"count": str(len(pmids))}})
             return httpx.Response(200, json={"esearchresult": {"idlist": pmids}})
         if path.endswith("efetch.fcgi"):
-            # db=pmc → full-text (Methods) ; db=pubmed → métadonnées.
+            # db=pmc -> full text (Methods); db=pubmed -> metadata.
             if request.url.params.get("db") == "pmc":
                 return httpx.Response(200, text=_PMC_XML)
             return httpx.Response(200, text=_efetch_xml(efetch_pmids or pmids, with_pmcid))
@@ -133,7 +132,7 @@ async def _jobs_for(engine, project_id) -> list[ImportJob]:
 
 
 async def test_import_pubmed_inserts_articles_and_freezes(engine):
-    """Insère les articles (métadonnées + methods) et marque le projet FROZEN."""
+    """Inserts the articles (metadata + methods) and marks the project FROZEN."""
     project = await _make_project(engine)
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     handler = _ncbi_handler(["111", "222"])
@@ -161,7 +160,7 @@ async def test_import_pubmed_inserts_articles_and_freezes(engine):
 
 
 async def test_import_pubmed_count_zero_frozen(engine):
-    """m10 : count=0 → succès (corpus vide) → FROZEN, 0 article, aucun efetch."""
+    """m10: count=0 -> success (empty corpus) -> FROZEN, 0 article, no efetch."""
     project = await _make_project(engine)
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
@@ -186,7 +185,7 @@ async def test_import_pubmed_count_zero_frozen(engine):
 
 
 async def test_import_pubmed_partial_error_continues(engine):
-    """Un pmid absent du efetch → compté failed, les autres importés, FROZEN."""
+    """A pmid missing from the efetch -> counted failed, the others imported, FROZEN."""
     project = await _make_project(engine)
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     handler = _ncbi_handler(pmids=["111", "222"], efetch_pmids=["111"])
@@ -205,7 +204,7 @@ async def test_import_pubmed_partial_error_continues(engine):
 
 
 async def test_import_pubmed_unknown_project_raises(engine):
-    """Projet inexistant → erreur totale (LookupError), rien d'inséré, pas de job."""
+    """Nonexistent project -> total error (LookupError), nothing inserted, no job."""
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     handler = _ncbi_handler(["111"])
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
@@ -216,7 +215,7 @@ async def test_import_pubmed_unknown_project_raises(engine):
 
 
 async def test_import_pubmed_total_error_raises(engine):
-    """Erreur totale (NCBI down) → lève NCBIError (C-1), job FAILED, projet DRAFT (m10)."""
+    """Total error (NCBI down) -> raises NCBIError (C-1), job FAILED, project DRAFT (m10)."""
     project = await _make_project(engine)
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
@@ -239,7 +238,7 @@ async def test_import_pubmed_total_error_raises(engine):
 
 
 async def test_import_failure_error_sanitized_no_key_no_url(engine):
-    """C-1 : NCBI 503 + clé définie → job.error sans clé ni URL (NCBIError propre)."""
+    """C-1: NCBI 503 + key defined -> job.error without key nor URL (clean NCBIError)."""
     project = await _make_project(engine)
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     async with factory() as session:
@@ -266,7 +265,7 @@ async def test_import_failure_error_sanitized_no_key_no_url(engine):
 
 
 async def test_import_creates_import_job(engine):
-    """M3 : le job est persisté (PENDING → COMPLETED, query + result_json)."""
+    """M3: the job is persisted (PENDING -> COMPLETED, query + result_json)."""
     project = await _make_project(engine)
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     handler = _ncbi_handler(["111", "222"])
@@ -293,11 +292,11 @@ async def test_import_creates_import_job(engine):
     assert job.completed_at is not None
 
 
-# --- M2 : garde d'état + dédoublonnage ---
+# --- M2: state guard + deduplication ---
 
 
 async def test_import_processing_project_raises(engine):
-    """Import déjà en cours (PROCESSING) → refus (LookupError), pas de job, pas d'article."""
+    """Import already in progress (PROCESSING) -> refused (LookupError), no job, no article."""
     project = await _make_project(engine)
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     async with factory() as session:
@@ -313,7 +312,7 @@ async def test_import_processing_project_raises(engine):
 
 
 async def test_import_completes_frozen_project(engine):
-    """Un projet FROZEN accepte un nouvel import qui complète le corpus."""
+    """A FROZEN project accepts a new import that completes the corpus."""
     project = await _make_project(engine)
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     async with factory() as session:
@@ -328,7 +327,7 @@ async def test_import_completes_frozen_project(engine):
 
 
 async def test_reimport_no_duplicates(engine):
-    """M2 : re-import → pas de doublons (ON CONFLICT DO NOTHING)."""
+    """M2: re-import -> no duplicates (ON CONFLICT DO NOTHING)."""
     project = await _make_project(engine)
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     handler = _ncbi_handler(["111", "222"])
@@ -342,7 +341,7 @@ async def test_reimport_no_duplicates(engine):
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
         r2 = await _import_pubmed(str(project.id), "cancer", session_factory=factory, http=http)
     assert r1 == {"imported": 2, "failed": 0, "total_count": 2, "fulltext": 1, "truncated": False}
-    # re-import : tout est en doublon → 0 importé, 0 échec
+    # re-import: everything is a duplicate -> 0 imported, 0 failure
     assert r2 == {"imported": 0, "failed": 0, "total_count": 2, "fulltext": 0, "truncated": False}
     articles = await _articles_for(engine, project.id)
     assert len(articles) == 2
@@ -353,7 +352,7 @@ async def test_reimport_no_duplicates(engine):
 
 
 async def test_truncation_count_over_10000(engine):
-    """M1 : count > 10000 → truncated=True + total_count = count réel (pas len(pmids))."""
+    """M1: count > 10000 -> truncated=True + total_count = real count (not len(pmids))."""
     project = await _make_project(engine)
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     pmids = [str(1000 + i) for i in range(150)]
@@ -384,7 +383,7 @@ async def test_truncation_count_over_10000(engine):
 
 
 async def test_chunking_over_100_pmids(engine):
-    """I4 : 150 pmids → efetch par lots de 100 (100 + 50)."""
+    """I4: 150 pmids -> efetch in batches of 100 (100 + 50)."""
     project = await _make_project(engine)
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     pmids = [str(1000 + i) for i in range(150)]
@@ -413,7 +412,7 @@ async def test_chunking_over_100_pmids(engine):
 
 
 async def test_import_pubmed_count_term_bounded_by_dates(engine):
-    """Le compte esearch (retmax=0) reçoit le terme borné [dp] ; total_count = count borné."""
+    """The esearch count (retmax=0) receives the bounded [dp] term; total_count = bounded count."""
     from datetime import date
 
     project = await _make_project(engine)
@@ -442,7 +441,7 @@ async def test_import_pubmed_count_term_bounded_by_dates(engine):
 
 
 async def test_import_pubmed_without_dates_count_term_unchanged(engine):
-    """Sans bornes : le terme du compte est la query brute (pas de [dp] ajouté)."""
+    """No bounds: the count term is the raw query (no [dp] added)."""
     project = await _make_project(engine)
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
@@ -478,17 +477,17 @@ def test_import_pubmed_task_wrapper_passes_dates():
     assert mock_core.await_args.kwargs["date_to"] == date(2024, 6, 30)
 
 
-# --- C-1 : assainissement de l'erreur (job.error + log serveur) ---
+# --- C-1: error sanitization (job.error + server log) ---
 
 
 def test_sanitize_error_ncbi_error_passthrough():
-    """C-1 : NCBIError → son message (déjà propre, sans URL ni clé)."""
+    """C-1: NCBIError -> its message (already clean, no URL nor key)."""
     assert _sanitize_error(NCBIError("HTTP 503")) == "HTTP 503"
     assert _sanitize_error(NCBIError("timeout")) == "timeout"
 
 
 def test_sanitize_error_filters_api_key():
-    """C-1 : autre exception → api_key=… masqué (pas de fuite de la clé)."""
+    """C-1: other exception -> api_key=… masked (no key leak)."""
     exc = ValueError(
         "Server error '503' for url 'https://eutils.ncbi.nlm.nih.gov/esearch.fcgi"
         "?db=pubmed&api_key=SECRET123'"
@@ -499,12 +498,12 @@ def test_sanitize_error_filters_api_key():
 
 
 def test_sanitize_error_truncates_500():
-    """C-1 : message > 500 caractères → tronqué à 500."""
+    """C-1: message over 500 characters -> truncated to 500."""
     assert len(_sanitize_error(ValueError("x" * 600))) == 500
 
 
 def test_sanitize_error_empty_falls_back_to_type():
-    """C-1 : str(exc) vide → nom du type (pas de chaîne vide)."""
+    """C-1: empty str(exc) -> the type name (no empty string)."""
     assert _sanitize_error(ValueError("")) == "ValueError"
 
 
@@ -512,7 +511,7 @@ def test_sanitize_error_empty_falls_back_to_type():
 
 
 def test_map_language_unknown_keeps_raw():
-    """m3 : langue hors en/fr/de/es → libellé brut (pas de forçage 'en')."""
+    """m3: language outside en/fr/de/es -> raw label (no forced 'en')."""
     assert _map_language("English") == "en"
     assert _map_language("french") == "fr"
     assert _map_language("German") == "de"
@@ -523,7 +522,7 @@ def test_map_language_unknown_keeps_raw():
 
 
 async def test_import_unknown_language_stored_raw(engine):
-    """m3 : un article en italien garde 'Italian' (VARCHAR libre, pas d'enum)."""
+    """m3: an Italian article keeps 'Italian' (free VARCHAR, no enum)."""
     project = await _make_project(engine)
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     xml = """<PubmedArticleSet><PubmedArticle>
@@ -556,8 +555,8 @@ async def test_import_unknown_language_stored_raw(engine):
 
 
 async def test_import_creates_own_engine(tmp_path, monkeypatch):
-    """C2 : sans session_factory, le core crée son propre engine (DATABASE_URL,
-    lu à l'appel) et le dispose en fin de run (pas de réutilisation de boucle)."""
+    """C2: without session_factory, the core creates its own engine (DATABASE_URL,
+    read at call time) and disposes it at the end of the run (no loop reuse)."""
     db_file = tmp_path / "own_engine.db"
     eng = create_async_engine(f"sqlite+aiosqlite:///{db_file}")
     async with eng.begin() as conn:
@@ -585,7 +584,7 @@ async def test_import_creates_own_engine(tmp_path, monkeypatch):
         "fulltext": 1,
         "truncated": False,
     }
-    # vérification via un nouvel engine (le run a disposé le sien)
+    # verification via a new engine (the run disposed its own)
     eng2 = create_async_engine(f"sqlite+aiosqlite:///{db_file}")
     factory2 = async_sessionmaker(eng2, class_=AsyncSession, expire_on_commit=False)
     async with factory2() as session:
@@ -597,13 +596,12 @@ async def test_import_creates_own_engine(tmp_path, monkeypatch):
 
 
 async def test_import_real_path_eager_no_delay_mock(engine, monkeypatch):
-    """C1/C2 : chemin réel en mode eager, SANS mock de .delay ni du core.
+    """C1/C2: real path in eager mode, WITHOUT .delay or core mocks.
 
-    Appelé depuis une boucle asyncio en cours (comme dans une requête FastAPI
-    en mode eager) : le wrapper sync spawn un thread dédié qui fait
-    ``asyncio.run`` — pas de RuntimeError 'cannot be called from a running
-    event loop', pas de réutilisation d'un engine lié à une boucle fermée.
-    """
+    Called from a running asyncio loop (like in a FastAPI request in eager
+    mode): the sync wrapper spawns a dedicated thread that does
+    ``asyncio.run`` — no RuntimeError 'cannot be called from a running
+    event loop', no reuse of an engine bound to a closed loop."""
     project = await _make_project(engine)
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     monkeypatch.setattr("app.tasks._session_factory_override", factory)
@@ -617,7 +615,7 @@ async def test_import_real_path_eager_no_delay_mock(engine, monkeypatch):
 
     result = import_pubmed_task.delay(str(project.id), "cancer")
 
-    # eager : le job est déjà terminé (pas de PENDING)
+    # eager: the job is already done (no PENDING)
     assert result.state == "SUCCESS"
     assert result.result == {
         "imported": 2,
@@ -639,7 +637,7 @@ async def test_import_real_path_eager_no_delay_mock(engine, monkeypatch):
 
 
 def test_import_pubmed_task_wrapper_calls_core():
-    """Le wrapper sync appelle le core async (mocké) avec l'id Celery du job."""
+    """The sync wrapper calls the async core (mocked) with the Celery id of the job."""
     with patch("app.tasks._import_pubmed", new_callable=AsyncMock) as mock_core:
         mock_core.return_value = {
             "imported": 1,
@@ -663,7 +661,7 @@ def test_import_pubmed_task_wrapper_calls_core():
 
 
 async def test_pmc_stub_body_is_not_kept_as_fulltext(engine, monkeypatch):
-    """Préprint non archivable : PMC ne renvoie qu'un avis de 2 lignes, pas un texte intégral."""
+    """Non-archivable preprint: PMC returns only a 2-line notice, not a full text."""
     from app import tasks
 
     notice = [{"title": "Full Text Availability", "kind": "other", "text": "Not archived. " * 12}]

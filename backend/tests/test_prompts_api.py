@@ -88,7 +88,7 @@ async def test_update_prompt_status_production(client, session, researcher_user,
 
 
 async def test_annotator_cannot_create_prompt_403(client, session, researcher_user, do_login):
-    """Un ANNOTATOR (non-LEAD) ne peut pas créer de prompt."""
+    """An ANNOTATOR (non-LEAD) cannot create a prompt."""
     from app.core.security import hash_password
     from app.db.models import User, UserRole
 
@@ -112,7 +112,7 @@ async def test_annotator_cannot_create_prompt_403(client, session, researcher_us
 
 async def test_non_member_cannot_list_prompts_403(client, session, researcher_user, do_login):
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
-    # Projet sans membership pour le researcher.
+    # Project without membership for the researcher
     project = Project(title="Foreign", created_by=researcher_user.id)
     session.add(project)
     await session.commit()

@@ -1,7 +1,7 @@
-"""Diagramme de flux PRISMA 2020 (adapté : tri IA + relecture humaine), en SVG.
+"""PRISMA 2020 flow diagram (adapted: AI triage + human re-read), in SVG.
 
-Les effectifs viennent de la base : requêtes importées, corpus, dernière prédiction par
-article et annotation humaine la plus récente (pertinence ≥ 0,5 = inclus).
+The counts come from the database: imported queries, corpus, last prediction per
+article and the most recent human annotation (relevance ≥ 0.5 = included).
 """
 
 from __future__ import annotations
@@ -183,11 +183,11 @@ LABELS = {
 def prisma_counts(
     articles, preds: dict, annos: dict, import_jobs, origin: dict | None = None
 ) -> dict:
-    """Effectifs de chaque case du diagramme (cf. ``render_svg``).
+    """Count of each box of the diagram (cf. ``render_svg``).
 
-    ``origin`` (recherche autre que la recherche initiale) : ``{name, size, criteria, labels}`` —
-    l'identification part alors des références de la recherche d'origine, et celles que les
-    critères de sélection écartent remplacent les « doublons » (qui sont ceux des imports).
+    ``origin`` (search other than the initial one): ``{name, size, criteria, labels}`` —
+    identification then starts from the origin search's references, and those the
+    selection criteria reject replace the "duplicates" (which are the import ones).
     """
     total = len(articles)
     identified = failed = 0
@@ -249,7 +249,7 @@ def prisma_counts(
 
 
 def describe_criteria(spec: dict, labels: dict, lang: str = "fr") -> list[str]:
-    """Critères de sélection (``Selection`` d'une recherche dérivée) en phrases courtes."""
+    """Selection criteria (the ``Selection`` of a derived search) as short sentences."""
     L = LABELS.get(lang, LABELS["en"])
     out = []
     if spec.get("status"):
@@ -303,11 +303,11 @@ def _arrow(x1, y1, x2, y2) -> str:
 
 
 def identified_parts(articles, import_jobs) -> tuple[list[str], bool]:
-    """Sources réellement présentes (libellés lisibles) + la partie « listes importées ».
+    """Actually present sources (readable labels) + the "imported lists" part.
 
-    Job sans ``source`` (ligne antérieure à la migration 0030) = PubMed, comme le
-    backfill : ``kind`` NULL/« import »/« citations ». « listes importées » : jobs
-    références/crate ou articles sans source."""
+    Job without ``source`` (row predating migration 0030) = PubMed, like the
+    backfill: ``kind`` NULL/"import"/"citations". "imported lists":
+    references/crate jobs or articles without a source."""
     sources: list[str] = []
     for j in import_jobs:
         s = j.source or ("pubmed" if j.kind in (None, "import", "citations") else None)
@@ -325,11 +325,11 @@ def identified_parts(articles, import_jobs) -> tuple[list[str], bool]:
 def render_svg(
     c: dict, lang: str = "fr", sources: list[str] | None = None, lists: bool | None = None
 ) -> str:
-    """Diagramme PRISMA 2020 (colonne principale à gauche, exclusions à droite).
+    """PRISMA 2020 diagram (main column on the left, exclusions on the right).
 
-    ``sources``/``lists`` (``identified_parts``) : les sources réellement présentes dans le
-    libellé « identifiées » ; ``None``/``None`` (appelant historique) → libellé statique
-    (PubMed, listes importées)."""
+    ``sources``/``lists`` (``identified_parts``): the actually present sources in the
+    "identified" label; ``None``/``None`` (historical caller) → static label
+    (PubMed, imported lists)."""
     L = LABELS.get(lang, LABELS["en"])
 
     def n(k: str) -> str:
@@ -361,7 +361,7 @@ def render_svg(
         'markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#334155"/></marker></defs>',
         f'<rect width="740" height="{height}" fill="#ffffff"/>',
     ]
-    # bandes de phase (étiquettes verticales)
+    # phase bands (vertical labels)
     for name, y0, y1 in (
         (L["ident"], rows[0], rows[0] + _H),
         (L["screen"], rows[1], rows[3] + _H),
@@ -423,14 +423,15 @@ def render_svg(
 
 
 def svg_to_pdf(svg: str) -> bytes:
-    """PDF (1 page vectorielle) du diagramme produit par ``render_svg``.
+    """PDF (1 vector page) of the diagram produced by ``render_svg``.
 
-    Ne lit que les éléments que ``render_svg`` écrit : rect, text (éventuellement pivoté de -90°),
-    line (avec pointe de flèche si ``marker-end``). Police Helvetica (WinAnsi : accents FR/DE/ES).
+    Only reads the elements ``render_svg`` writes: rect, text (possibly rotated -90°),
+    line (with arrowhead if ``marker-end``). Helvetica font (WinAnsi: FR/DE/ES accents).
     """
     import xml.etree.ElementTree as ET
 
-    root = ET.fromstring(svg)
+    # ElementTree resolves no external entities (no XXE); svg size is bounded upstream.
+    root = ET.fromstring(svg)  # nosec B314
     vb = [float(v) for v in root.get("viewBox", "0 0 740 800").split()]
     width, height = vb[2], vb[3]
     ns = "{http://www.w3.org/2000/svg}"

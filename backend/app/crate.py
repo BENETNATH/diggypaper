@@ -1,10 +1,10 @@
-"""Export RO-Crate 1.1 d'un projet : matière première (articles, textes, PDF) + résultats + méthode.
+"""RO-Crate 1.1 export of a project: raw material (articles, texts, PDFs) + results + method.
 
-Structure du zip :
-  ro-crate-metadata.json   graphe JSON-LD (projet, articles, auteurs, modèles, actions)
-  README.md · project.json (question, champs, requêtes d'import, modèles + empreintes, prompt)
-  extraction.csv · results.xlsx   tableau d'extraction final
-  articles/<clé>/metadata.json · fulltext.md (ou abstract.md) · fulltext.pdf (si conservé)
+Zip layout:
+ro-crate-metadata.json   JSON-LD graph (project, articles, authors, models, actions)
+README.md · project.json (question, fields, import queries, models + fingerprints, prompt)
+extraction.csv · results.xlsx   final extraction table
+articles/<key>/metadata.json · fulltext.md (or abstract.md) · fulltext.pdf (if kept)
 """
 
 from __future__ import annotations
@@ -28,16 +28,16 @@ _FORMULA_START = ("=", "+", "-", "@", "\t", "\r")
 
 
 def neutralize(v):
-    """Texte libre exporté vers un tableur : une apostrophe devant tout ce qui serait lu comme
-    une formule (injection CSV/XLSX : =DDE(...), =HYPERLINK(...), @SUM…)."""
+    """Free text exported to a spreadsheet: an apostrophe prefixed to anything that would be
+    read as a formula (CSV/XLSX injection: =DDE(...), =HYPERLINK(...), @SUM…)."""
     return "'" + v if isinstance(v, str) and v.startswith(_FORMULA_START) else v
 
 
 def article_key(a) -> str:
-    """Nom de dossier stable : pmid-123, sinon doi, sinon identifiant natif, sinon UUID.
+    """Stable folder name: pmid-123, else doi, else native id, else UUID.
 
-    Le DOI est préféré à l'identifiant natif : c'est l'identité inter-sources la plus stable
-    (le même papier pubmed + europepmc retombe sur la même clé)."""
+    The DOI is preferred over the native id: it is the most stable cross-source identity
+    (the same paper in pubmed + europepmc lands on the same key)."""
     if a.pmid:
         return f"pmid-{re.sub(r'[^0-9A-Za-z]', '', a.pmid)}"
     if a.doi:
@@ -49,7 +49,7 @@ def article_key(a) -> str:
 
 
 def assign_keys(articles) -> dict:
-    """{article.id: clé} unique (suffixe -2, -3… en cas de collision)."""
+    """{article.id: key}, unique (suffix -2, -3… on collision)."""
     seen: dict[str, int] = {}
     out = {}
     for a in articles:
@@ -64,7 +64,7 @@ def sha256_json(obj) -> str:
 
 
 def fulltext_markdown(a) -> str:
-    """Titre + abstract + sections du texte intégral, en Markdown."""
+    """Title + abstract + full text sections, in Markdown."""
     out = [f"# {a.title or a.pmid or a.id}", ""]
     if a.abstract:
         out += ["## Abstract", "", a.abstract, ""]
@@ -74,7 +74,7 @@ def fulltext_markdown(a) -> str:
 
 
 def article_record(a, key: str, pred, annos: list, fields: list[dict]) -> dict:
-    """metadata.json : identifiants, bibliographie, réponses IA (avec certitudes) et humaines."""
+    """metadata.json: identifiers, bibliography, AI answers (with confidences) and human answers."""
     au = a.authors or []
     dec = (pred.decision_json or {}) if pred else {}
     conf = dec.get("field_confidence") or {}
@@ -124,7 +124,7 @@ def article_record(a, key: str, pred, annos: list, fields: list[dict]) -> dict:
 
 
 def extraction_csv(articles, keys: dict, preds: dict, annos: dict, fields: list[dict]) -> bytes:
-    """Tableau d'extraction plat (une ligne par article), UTF-8 avec BOM pour Excel."""
+    """Flat extraction table (one row per article), UTF-8 with BOM for Excel."""
     head = [
         "key",
         "pmid",
@@ -161,7 +161,7 @@ def extraction_csv(articles, keys: dict, preds: dict, annos: dict, fields: list[
 
 
 def project_info(project, fields, import_jobs, inf_job, models: dict, prompt) -> dict:
-    """project.json : tout ce qu'il faut pour refaire l'analyse (requêtes, modèles, prompt)."""
+    """project.json: everything needed to redo the analysis (queries, models, prompt)."""
 
     def model_info(name, stage):
         snap = (inf_job.model_info or {}).get(stage)
@@ -227,7 +227,7 @@ def _slug(text: str) -> str:
 
 
 def build_graph(project, articles, keys: dict, files: dict, info: dict, now: str) -> dict:
-    """Graphe JSON-LD RO-Crate. ``files`` : {clé d'article: [chemins de fichiers présents]}."""
+    """RO-Crate JSON-LD graph. ``files``: {article key: [file paths present]}."""
     top = ["README.md", "project.json", "extraction.csv", "results.xlsx"]
     top += ["references.ris", "references.bib", "prisma.svg"]
     mime = {

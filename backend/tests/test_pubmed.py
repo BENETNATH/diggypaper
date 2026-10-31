@@ -10,7 +10,7 @@ from app.pubmed import NCBIError, fetch_metadata, fetch_methods, fetch_pmids, se
 
 @pytest.fixture(autouse=True)
 def _no_sleep(monkeypatch):
-    """Pas de vrai sleep en tests (throttle NCBI 3/10 req/s)."""
+    """No real sleep in tests (NCBI throttle 3/10 req/s)."""
 
     async def _noop(_delay: float) -> None:
         return None
@@ -52,7 +52,7 @@ async def test_search_volume_sends_api_key():
 
 
 async def test_fetch_pmids_default_retmax_is_configured_cap():
-    """M1 : retmax par défaut = plafond d'import de l'instance."""
+    """M1: default retmax = the instance's import cap."""
 
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/entrez/eutils/esearch.fcgi"
@@ -64,7 +64,7 @@ async def test_fetch_pmids_default_retmax_is_configured_cap():
 
 
 async def test_fetch_pmids_never_asks_more_than_the_ncbi_window(monkeypatch):
-    """Une requête esearch est bornée par la limite NCBI (9 999), quel que soit le plafond."""
+    """An esearch request is bounded by the NCBI limit (9 999), whatever the cap."""
     from app.core.config import get_settings
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -86,11 +86,11 @@ async def test_fetch_pmids_sends_api_key():
         assert await fetch_pmids("cancer", "my-key", http) == ["1"]
 
 
-# --- retry sur erreur transitoire (m5) ---
+# --- retry on transient error (m5) ---
 
 
 async def test_esearch_retry_on_503_then_success():
-    """m5 : 503 transitoire → retry (2 max) puis succès (3 appels au total)."""
+    """m5: transient 503 -> retry (max 2) then success (3 calls total)."""
     calls = {"n": 0}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -105,10 +105,10 @@ async def test_esearch_retry_on_503_then_success():
 
 
 async def test_esearch_retry_exhausted_raises():
-    """m5 : 503 persistant → lève après 2 retries (3 appels au total).
+    """m5: persistent 503 -> raises after 2 retries (3 calls total).
 
-    C-1 : l'exception est NCBIError (message propre, sans l'URL ni la clé), pas
-    httpx.HTTPStatusError (dont le str() contient l'URL complète avec api_key).
+    C-1: the exception is NCBIError (clean message, no URL nor key), not
+    httpx.HTTPStatusError (whose str() contains the full URL with api_key).
     """
     calls = {"n": 0}
 
@@ -126,7 +126,7 @@ async def test_esearch_retry_exhausted_raises():
 
 
 async def test_esearch_retry_on_429_honours_retry_after(monkeypatch):
-    """429 (plafond de débit NCBI dépassé) → retry après « Retry-After », pas un échec de lot."""
+    """429 (NCBI rate cap exceeded) -> retry after "Retry-After", not a batch failure."""
     waits: list[float] = []
 
     async def _record(delay: float) -> None:
@@ -148,7 +148,7 @@ async def test_esearch_retry_on_429_honours_retry_after(monkeypatch):
 
 
 async def test_retry_after_is_capped(monkeypatch):
-    """Un Retry-After absurde ne parque pas le worker : attente plafonnée, puis NCBIError."""
+    """An absurd Retry-After does not strand the worker: capped wait, then NCBIError."""
     waits: list[float] = []
 
     async def _record(delay: float) -> None:
@@ -196,7 +196,7 @@ async def test_fetch_methods_503_raises_ncbi_error():
 
 
 async def test_efetch_retry_on_timeout():
-    """m5 : timeout transitoire → retry puis succès."""
+    """m5: transient timeout -> retry then success."""
     calls = {"n": 0}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -212,7 +212,7 @@ async def test_efetch_retry_on_timeout():
 
 
 async def test_no_retry_on_parse_error():
-    """m5 : erreur de parsing (XML invalide) → pas de retry (1 seul appel)."""
+    """m5: parsing error (invalid XML) -> no retry (single call)."""
     calls = {"n": 0}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -225,11 +225,11 @@ async def test_no_retry_on_parse_error():
     assert calls["n"] == 1
 
 
-# --- limite de taille XML (I5) ---
+# --- XML size limit (I5) ---
 
 
 async def test_xml_size_limit_metadata():
-    """I5 : payload XML efetch > 10 Mo → refusé (défense en profondeur)."""
+    """I5: efetch XML payload > 10 MB -> refused (defense in depth)."""
     big = "<PubmedArticleSet><x>" + "A" * (10 * 1024 * 1024 + 1) + "</x></PubmedArticleSet>"
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -241,7 +241,7 @@ async def test_xml_size_limit_metadata():
 
 
 async def test_xml_size_limit_methods():
-    """I5 : payload XML PMC OA > 10 Mo → refusé."""
+    """I5: PMC OA XML payload > 10 MB -> refused."""
     big = "<PMCPublication><x>" + "A" * (10 * 1024 * 1024 + 1) + "</x></PMCPublication>"
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -254,9 +254,9 @@ async def test_xml_size_limit_methods():
 
 # --- fetch_metadata ---
 
-# Structure réelle PubMed (vérifiée 2026-10-12 sur efetch) :
-# - PMID est enfant direct de MedlineCitation (PAS dans Article).
-# - ArticleIdList est dans PubmedData (sibling de MedlineCitation, PAS dedans).
+# Real PubMed structure (verified 2026-10-12 on efetch):
+# - PMID is a direct child of MedlineCitation (NOT in Article).
+# - ArticleIdList is in PubmedData (sibling of MedlineCitation, NOT inside it).
 _EFETCH_XML = """<?xml version="1.0"?>
 <PubmedArticleSet>
   <PubmedArticle>
@@ -341,8 +341,8 @@ async def test_fetch_metadata_empty_list():
 
 # --- fetch_methods ---
 
-# Full-text PMC en JATS (tags minuscules : sec/title/p) — vérifié 2026-10-12
-# sur efetch db=pmc (l'ancien oa.fcgi est obsolète, 404 systématique).
+# PMC full text in JATS (lowercase tags: sec/title/p) — verified 2026-10-12
+# on efetch db=pmc (the old oa.fcgi is obsolete, systematic 404).
 _PMC_XML = """<?xml version="1.0"?>
 <pmc-articleset>
   <article>
@@ -453,7 +453,7 @@ def test_sections_drop_latex_and_mark_display_formulas():
 
 
 async def test_fetch_all_pmids_splits_queries_over_the_ncbi_window(monkeypatch):
-    """Au-delà de la fenêtre NCBI, la requête est découpée par date : tout est récupéré."""
+    """Beyond the NCBI window, the request is split by date: everything is retrieved."""
     import re
     from datetime import date
 
@@ -461,7 +461,7 @@ async def test_fetch_all_pmids_splits_queries_over_the_ncbi_window(monkeypatch):
     from app.pubmed import fetch_all_pmids
 
     monkeypatch.setattr(pubmed, "PUBMED_WINDOW", 5)
-    # 40 articles étalés sur 40 jours consécutifs de 2021 (pmid = 1000 + jour)
+    # 40 articles spread over 40 consecutive days of 2021 (pmid = 1000 + day)
     records = {str(1000 + d): date(2021, 1, 1).toordinal() + d for d in range(40)}
 
     def in_range(term: str) -> list[str]:
@@ -487,7 +487,7 @@ async def test_fetch_all_pmids_splits_queries_over_the_ncbi_window(monkeypatch):
 
 
 async def test_fetch_all_pmids_bisection_uses_user_date_bounds(monkeypatch):
-    """Bornes utilisateur : la bissection démarre dans [date_from, date_to] (pas today+366)."""
+    """User bounds: the bisection starts within [date_from, date_to] (not today+366)."""
     import re
     from datetime import date
 
@@ -540,7 +540,7 @@ async def test_fetch_all_pmids_bisection_uses_user_date_bounds(monkeypatch):
 
 
 async def test_fetch_all_pmids_only_date_from_keeps_default_hi(monkeypatch):
-    """Une seule borne (date_from) : la borne haute retombe sur today+366 (≥ today)."""
+    """Single bound (date_from): the high bound falls back to today+366 (≥ today)."""
     import re
     from datetime import date, timedelta
 
@@ -578,7 +578,7 @@ async def test_fetch_all_pmids_only_date_from_keeps_default_hi(monkeypatch):
 
 
 async def test_fetch_all_pmids_only_date_to_keeps_default_lo(monkeypatch):
-    """Une seule borne (date_to) : la borne basse de racine reste 1800/01/01."""
+    """Single bound (date_to): the root low bound stays 1800/01/01."""
     import re
     from datetime import date
 
@@ -615,7 +615,7 @@ async def test_fetch_all_pmids_only_date_to_keeps_default_lo(monkeypatch):
 
 
 async def test_fetch_all_pmids_user_dates_cap_keeps_most_recent(monkeypatch):
-    """Cap limit sur le chemin de bissection : on garde les plus récents de la plage."""
+    """limit cap on the bisection path: keep the newest of the range."""
     import re
     from datetime import date
 
@@ -653,7 +653,7 @@ async def test_fetch_all_pmids_user_dates_cap_keeps_most_recent(monkeypatch):
 
 
 async def test_fetch_all_pmids_no_dates_unchanged_bounds(monkeypatch):
-    """Sans bornes : la bissection démarre de 1800/01/01 → today+366 (comportement actuel)."""
+    """No bounds: the bisection starts from 1800/01/01 -> today+366 (current behavior)."""
     import re
     from datetime import date, timedelta
 
@@ -690,8 +690,8 @@ async def test_fetch_all_pmids_no_dates_unchanged_bounds(monkeypatch):
 
 
 async def test_fetch_all_pmids_shortcut_with_dates_single_bounded_esearch(monkeypatch):
-    """Chemin direct (count <= fenêtre) avec bornes : un seul esearch borné, retmax =
-    min(count, limit), ordre NCBI non inversé."""
+    """Direct path (count <= window) with bounds: a single bounded esearch, retmax =
+    min(count, limit), NCBI order not reversed."""
     from datetime import date
 
     from app import pubmed
@@ -721,8 +721,8 @@ async def test_fetch_all_pmids_shortcut_with_dates_single_bounded_esearch(monkey
 
 
 async def test_fetch_all_pmids_shortcut_query_with_dp_still_bounded(monkeypatch):
-    """Query contenant déjà [dp] + bornes : le chemin direct ANDe aussi les bornes utilisateur
-    (intersection, comme les feuillets de la bissection) — spec 2026-10-29 §7."""
+    """Query already containing [dp] + bounds: the direct path ANDs the user bounds too
+    (intersection, like the bisection leaves) — spec 2026-10-29 §7."""
     from datetime import date
 
     from app import pubmed
@@ -750,7 +750,7 @@ async def test_fetch_all_pmids_shortcut_query_with_dp_still_bounded(monkeypatch)
 
 
 def test_term_bounded_ands_user_bounds_even_if_query_has_dp():
-    """Racine commune (compte esearch + chemin direct) : bornes toujours ANDées."""
+    """Common root (esearch count + direct path): bounds always ANDed."""
     from datetime import date
 
     from app.pubmed import _term_bounded
@@ -760,8 +760,8 @@ def test_term_bounded_ands_user_bounds_even_if_query_has_dp():
 
 
 async def test_fetch_all_pmids_bisection_query_with_dp_keeps_leaf_subrange(monkeypatch):
-    """Query avec [dp] + bornes : les feuillets gardent le sous-intervalle [dp] dans les bornes
-    utilisateur (mécanique de bissection inchangée, convergence bornée)."""
+    """Query with [dp] + bounds: the leaves keep the [dp] sub-interval within the user
+    bounds (bisection mechanics unchanged, bounded convergence)."""
     import re
     from datetime import date
 

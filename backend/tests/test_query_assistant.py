@@ -1,4 +1,4 @@
-"""Assistant de requête PubMed : prompt, vérification par PubMed (volume, termes, rappel), route."""
+"""PubMed query assistant: prompt, verification by PubMed (volume, terms, recall), route."""
 
 import httpx
 import pytest
@@ -63,7 +63,7 @@ async def test_check_query_reports_volume_unknown_terms_and_recall():
         out = await qa.check_query("sleep AND memory", None, seeds, h)
     assert out["count"] == 1234 and out["translation"].startswith('"sleep"[MeSH Terms]')
     assert out["not_found"] == ["Fake Heading[MeSH Terms]"] and out["too_long"] is False
-    # 3 PMID connus (111, 222, 333 via DOI) + 1 DOI introuvable ; la requête en retrouve 2
+    # 3 known PMIDs (111, 222, 333 via DOI) + 1 unfindable DOI; the query finds 2 of them
     assert out["recall"]["total"] == 4 and out["recall"]["found"] == 2
     assert out["recall"]["missing"] == ["333", "10.1000/unknown"]
 
@@ -93,7 +93,7 @@ async def test_assistant_route(client, session, researcher_user, do_login, monke
     d = r.json()
     assert d["query"] == "(sleep[tiab]) AND memory[tiab]" and d["check"]["count"] == 42
     assert "sommeil et mémoire" in seen["prompt"]
-    # dernier message de l'assistant, modèle inconnu : refusés
+    # last message of the assistant, unknown model: refused
     bad = {**body, "messages": [{"role": "assistant", "content": "x"}]}
     assert (await client.post(url, json=bad)).status_code == 422
     assert (await client.post(url, json={**body, "model": "Nope"})).status_code == 422
@@ -110,7 +110,7 @@ async def test_assistant_route(client, session, researcher_user, do_login, monke
         "check": None,
     }
 
-    # Usage détourné : le texte libre hors sujet ne sort jamais
+    # Misuse: off-topic free text never comes out
     essay = "Here is a long essay about something else. " * 20
     for out in (
         {"reply": essay, "query": None},  # réponse hors sujet
@@ -127,7 +127,7 @@ async def test_assistant_route(client, session, researcher_user, do_login, monke
         assert (
             d["refused"] is True and d["reply"] == "" and d["query"] is None and d["check"] is None
         )
-    # limites d'entrée : message trop long, conversation trop longue
+    # input limits: message too long, conversation too long
     long = {"model": "Mdl", "messages": [{"role": "user", "content": "x" * 1001}]}
     assert (await client.post(url, json=long)).status_code == 422
     many = {"model": "Mdl", "messages": [{"role": "user", "content": "a"}] * 9}
@@ -180,5 +180,5 @@ async def test_assistant_route_non_pubmed_source_checks_volume_only(
     d = r.json()
     assert d["query"] == "(sleep) AND memory" and d["check"] == {"count": 7, "too_long": False}
     assert "Europe PMC" in seen["system"]
-    # source inconnue → 422 (pas de crash)
+    # unknown source -> 422 (no crash)
     assert (await client.post(url, json={**body, "source": "crossref"})).status_code == 422

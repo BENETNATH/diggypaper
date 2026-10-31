@@ -1,5 +1,5 @@
-"""Phase 2 multi-sources : ``source`` dans l'API (spec 2026-10-29-sources-phase2-identite D6)
-— 100 % offline."""
+"""Phase 2 multi-sources: ``source`` in the API (spec 2026-10-29-sources-phase2-identite D6)
+— 100% offline."""
 
 import uuid
 from unittest.mock import MagicMock
@@ -30,7 +30,7 @@ def _mock_delay(monkeypatch) -> MagicMock:
 async def test_import_source_defaults_to_pubmed_and_is_forwarded(
     client, researcher_user, do_login, monkeypatch
 ):
-    """POST /import sans ``source`` → la tâche reçoit source='pubmed'."""
+    """POST /import without ``source`` -> the task receives source='pubmed'."""
     pid = await _project(client, do_login)
     delay = _mock_delay(monkeypatch)
     resp = await client.post(f"/api/v1/projects/{pid}/import", json={"query": "cancer"})
@@ -39,7 +39,7 @@ async def test_import_source_defaults_to_pubmed_and_is_forwarded(
 
 
 async def test_import_unknown_source_422(client, researcher_user, do_login, monkeypatch):
-    """Source absente du registre d'adapters → 422, aucune tâche lancée."""
+    """Source absent from the adapter registry -> 422, no task started."""
     pid = await _project(client, do_login)
     delay = _mock_delay(monkeypatch)
     resp = await client.post(
@@ -50,7 +50,7 @@ async def test_import_unknown_source_422(client, researcher_user, do_login, monk
 
 
 async def test_query_volume_unknown_source_422(client, researcher_user, do_login, monkeypatch):
-    """query-volume partage la validation de ``source`` (même modèle) : 422 sans appel réseau."""
+    """query-volume shares the ``source`` validation (same model): 422 without network call."""
     import app.api.v1.projects as projects_api
 
     pid = await _project(client, do_login)
@@ -66,7 +66,7 @@ async def test_query_volume_unknown_source_422(client, researcher_user, do_login
 
 
 async def test_jobs_list_exposes_source(client, session, researcher_user, do_login):
-    """GET /jobs : la source de chaque import (null pour un import de références)."""
+    """GET /jobs: the source of each import (null for a reference import)."""
     pid = await _project(client, do_login)
     session.add_all(
         [
@@ -92,7 +92,7 @@ async def test_jobs_list_exposes_source(client, session, researcher_user, do_log
 async def test_article_payloads_expose_source_and_native_id(
     client, session, researcher_user, do_login
 ):
-    """Liste des articles et détail : ``source`` + ``native_id`` (null pour l'ancien)."""
+    """Article list and detail: ``source`` + ``native_id`` (null for old ones)."""
     pid = await _project(client, do_login)
     art = Article(
         project_id=uuid.UUID(pid), pmid="42", source="pubmed", native_id="42", title="New"
@@ -114,7 +114,7 @@ async def test_article_payloads_expose_source_and_native_id(
 
 @pytest.fixture(autouse=True)
 def _no_epmc_sleep(monkeypatch):
-    """Pas de vrai sleep en tests (throttle EPMC sur query-volume)."""
+    """No real sleep in tests (EPMC throttle on query-volume)."""
 
     async def _noop(_delay: float) -> None:
         return None
@@ -124,7 +124,7 @@ def _no_epmc_sleep(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def _no_openalex_sleep(monkeypatch):
-    """Pas de vrai sleep en tests (throttle OpenAlex sur query-volume)."""
+    """No real sleep in tests (OpenAlex throttle on query-volume)."""
 
     async def _noop(_delay: float) -> None:
         return None
@@ -133,7 +133,7 @@ def _no_openalex_sleep(monkeypatch):
 
 
 async def test_query_volume_europepmc(client, researcher_user, do_login, monkeypatch):
-    """source='europepmc' → /search EPMC (aucun appel NCBI), bornes dates portées."""
+    """source='europepmc' -> EPMC /search (no NCBI call), date bounds carried."""
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     pid = await _project(client, do_login)
     import app.api.v1.projects as projects_api
@@ -191,7 +191,7 @@ async def test_query_volume_europepmc_error_502(client, researcher_user, do_logi
 
 
 async def test_query_volume_openalex(client, researcher_user, do_login, monkeypatch):
-    """source='openalex' → /works OpenAlex (aucun appel NCBI/EPMC), count dans ``meta``."""
+    """source='openalex' -> OpenAlex /works (no NCBI/EPMC call), count in ``meta``."""
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     pid = await _project(client, do_login)
     import app.api.v1.projects as projects_api

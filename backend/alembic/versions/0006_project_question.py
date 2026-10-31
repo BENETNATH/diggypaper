@@ -20,7 +20,7 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    # Nouveau backend ONNX_LOCAL : le CHECK de l'enum doit l'accepter.
+    # New ONNX_LOCAL backend: the enum CHECK must accept it.
     op.execute("ALTER TABLE model_registry DROP CONSTRAINT IF EXISTS backendtype")
     op.execute(
         "ALTER TABLE model_registry ADD CONSTRAINT backendtype CHECK "

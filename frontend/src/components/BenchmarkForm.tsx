@@ -36,8 +36,8 @@ import { Checkbox, Field, Input, Select, Textarea } from "@/components/ui/Field"
 const newSeed = (): number => Math.floor(Math.random() * 1e9);
 
 /**
- * Formulaire « Nouveau benchmark » : banc d'essai (lot d'une recherche, idéalement un sous-lot de
- * mise au point), modèles, variantes de prompt, options de gold, estimation du nombre d'appels.
+ * "New benchmark" form: test bench (batch of a search, ideally a fine-tuning sub-batch),
+ * models, prompt variants, gold options, estimate of the number of calls.
  */
 export function BenchmarkForm({
   projectId,
@@ -59,13 +59,13 @@ export function BenchmarkForm({
 
   const initial = searches.find((s) => s.is_default) ?? searches[0];
   const [searchId, setSearchId] = useState<string>(
-    // Une recherche de mise au point existante est le banc d'essai naturel ; sinon la recherche courante.
+    // An existing fine-tuning search is the natural test bench; otherwise the current search.
     () => searches.find((s) => s.kind === "tuning")?.id ?? defaultSearchId ?? initial?.id ?? ""
   );
   const bench = searches.find((s) => s.id === searchId);
   const lot = bench?.lot_size ?? 0;
 
-  // Sous-lot de mise au point.
+  // Fine-tuning sub-batch.
   const [tuning, setTuning] = useState(false);
   const [sel, setSel] = useState<Selection>({});
   const [selCount, setSelCount] = useState<number | null>(null);
@@ -84,7 +84,7 @@ export function BenchmarkForm({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Références du gold de la recherche choisie (celles du lot seules comptent, le serveur filtre).
+  // Gold references of the chosen search (only the batch's count, the server filters).
   useEffect(() => {
     if (!searchId) return;
     let stale = false;
@@ -123,7 +123,7 @@ export function BenchmarkForm({
   }
 
   function startTuning() {
-    // On tire dans le lot d'une recherche ordinaire (jamais dans un autre sous-lot) ; modifiable ci-dessous.
+    // We draw from the batch of an ordinary search (never from another sub-batch); editable below.
     const origin = bench && bench.kind === "standard" && !bench.is_default ? bench.id : undefined;
     setSel({ from_search_id: origin, sample_n: DEFAULT_TUNING_N, seed: newSeed() });
     setTuningName(t("tuningDefaultName", { date: new Date().toLocaleDateString() }));
@@ -194,7 +194,7 @@ export function BenchmarkForm({
       <p className="mb-4 text-sm text-muted">{t("concept")}</p>
       <form
         onSubmit={handleRun}
-        // Entrée dans un champ (nom, filtres du sous-lot) ne doit pas lancer le benchmark.
+        // Typing in a field (name, sub-batch filters) must not launch the benchmark.
         onKeyDown={(e) => {
           if (e.key === "Enter" && e.target instanceof HTMLInputElement) e.preventDefault();
         }}
@@ -245,7 +245,7 @@ export function BenchmarkForm({
           )}
         </section>
 
-        {/* 2. Modèles */}
+        {/* 2. Models */}
         <section className="flex flex-col gap-2">
           <h3 className="text-sm font-semibold text-foreground">2. {t("models")}</h3>
           {models.length === 0 && (
@@ -268,7 +268,7 @@ export function BenchmarkForm({
           </div>
         </section>
 
-        {/* 3. Variantes de prompt */}
+        {/* 3. Prompt variants */}
         <section className="flex flex-col gap-3">
           <h3 className="text-sm font-semibold text-foreground">3. {t("variantsTitle")}</h3>
           <p className="text-xs text-muted">{t("variantsHint")}</p>
@@ -358,7 +358,7 @@ export function BenchmarkForm({
           {examples && <p className="text-xs text-muted">{t("examplesHint")}</p>}
         </section>
 
-        {/* 5. Estimation et lancement */}
+        {/* 5. Estimation and launch */}
         <section className="flex flex-col gap-2">
           <p className="text-sm text-foreground" role="status">
             <b>{t("estimate", { calls, lot, models: selected.length, variants: Math.max(1, drafts.length) })}</b>

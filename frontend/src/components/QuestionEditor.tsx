@@ -16,7 +16,7 @@ const SECTION_KINDS = [
   "other",
 ];
 
-/** Exemple proposé (jamais appliqué sans clic) ; le texte de la question est traduit. */
+/** Suggested example (never applied without a click); the question text is translated. */
 const SUGGESTED_FIELDS: SchemaField[] = [
   { key: "use_ai_behavior", label: "Uses AI behavior analysis", type: "boolean" },
   {
@@ -39,7 +39,7 @@ const slug = (s: string) =>
     .replace(/^(\d)/, "f_$1")
     .slice(0, 40);
 
-/** Éditeur contrôlé : question, champs de réponse, parties de texte lues par les modèles. */
+/** Controlled editor: question, answer fields, text parts read by the models. */
 export function QuestionEditor({
   question,
   fields,
@@ -70,10 +70,10 @@ export function QuestionEditor({
         if (optionsText !== undefined) next.options = optionsText.split(",").map((o) => o.trim());
         if (rest.label !== undefined && f.key.startsWith("new_")) next.key = slug(rest.label) || f.key;
         if (rest.type === "choice" && !next.options?.length) next.options = ["YES", "NO"];
-        // Un item à choix n'a que l'exactitude (pas de rappel / précision).
+        // A choice item only has accuracy (no recall / precision).
         if (next.type === "choice" && next.primary) next.metric = "accuracy";
         if (next.type === "text") {
-          delete next.primary; // le critère de classement est un item booléen ou à choix
+          delete next.primary; // the ranking criterion is a boolean or choice item
           delete next.metric;
         }
         return next;
@@ -81,7 +81,7 @@ export function QuestionEditor({
     });
   }
 
-  /** Un seul critère de classement : le choisir retire l'ancien ; `null` n'en garde aucun. */
+  /** A single ranking criterion: choosing one removes the old one; `null` keeps none. */
   function setPrimary(i: number | null) {
     set({
       fields: fields.map((f, j) => {

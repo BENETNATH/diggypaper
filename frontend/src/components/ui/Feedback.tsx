@@ -1,6 +1,6 @@
 import { ReactNode } from "react";
 
-/** État vide : raison + prochaine action (frontend-design-pro). */
+/** Empty state: reason + next action (frontend-design-pro). */
 export function EmptyState({
   title,
   hint,
@@ -19,7 +19,7 @@ export function EmptyState({
   );
 }
 
-/** Bannière d'erreur lisible : icône + texte (pas couleur seule), role=alert. */
+/** Readable error banner: icon + text (not color alone), role=alert. */
 export function ErrorBanner({
   message,
   onRetry,
@@ -49,8 +49,8 @@ export function ErrorBanner({
 }
 
 /**
- * Skeleton de chargement (frontend-design-pro : skeleton > spinner).
- * `rows` = nombre de lignes simulées ; `height` = hauteur d'une ligne.
+ * Loading skeleton (frontend-design-pro: skeleton > spinner).
+ * `rows` = number of simulated lines; `height` = height of a line.
  */
 export function Skeleton({
   rows = 3,
@@ -70,7 +70,7 @@ export function Skeleton({
   );
 }
 
-/** Spinner de chargement (usage ponctuel ; skeleton de préférence pour les listes). */
+/** Loading spinner (occasional use; skeleton preferred for lists). */
 export function Spinner({ label }: { label?: string }) {
   return (
     <div
@@ -83,7 +83,7 @@ export function Spinner({ label }: { label?: string }) {
   );
 }
 
-/** Toast de succès (auto-dismiss, role=status). */
+/** Success toast (auto-dismiss, role=status). */
 export function Toast({
   message,
   onDismiss,
@@ -108,7 +108,7 @@ export function Toast({
   );
 }
 
-/** Barre de progression (valeur connue) ou indéterminée (value=null). */
+/** Progress bar (known value) or indeterminate (value=null). */
 export function ProgressBar({ value, label }: { value: number | null; label?: string }) {
   const pct = value === null ? null : Math.max(0, Math.min(100, Math.round(value)));
   return (

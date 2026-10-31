@@ -49,14 +49,14 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-# F7 : limites anti brute-force par IP (15 min) — voir app/api/ratelimit.py.
+# F7: anti brute-force limits per IP (15 min) - see app/api/ratelimit.py.
 LOGIN_RATE_LIMIT = 10
 REGISTER_RATE_LIMIT = 5
 INVITE_RATE_LIMIT = 20
 
 
 def _rate_limit_dependency(scope: str, limit: int):
-    """Fabrique une dépendance FastAPI : 429 rate_limited si la limite par IP est dépassée (F7)."""
+    """Builds a FastAPI dependency: 429 rate_limited if the per-IP limit is exceeded (F7)."""
 
     async def dependency(request: Request) -> None:
         ip = get_client_ip(request)
@@ -70,15 +70,15 @@ def _rate_limit_dependency(scope: str, limit: int):
 
 class InviteRequest(BaseModel):
     email: EmailStr
-    # m4 : language restreint aux langues supportées (422 si invalide).
+    # m4: language restricted to supported languages (422 if invalid).
     language: Literal["fr", "en", "de", "es"] | None = None
-    # Admin : le compte créé pourra créer des projets (« créateur »).
+    # Admin: the created account will be able to create projects ("creator").
     can_create_projects: bool = True
 
 
 class RegisterRequest(BaseModel):
     token: str
-    # F6 : politique de mot de passe — minimum 8 caractères (422 sinon).
+    # F6: password policy - minimum 8 characters (422 otherwise).
     password: str = Field(min_length=8)
     full_name: str | None = None
 
@@ -104,7 +104,7 @@ class UserOut(BaseModel):
 
 @router.get("/config")
 async def public_config() -> dict:
-    """Réglages publics (page de connexion) : lien vers la politique de confidentialité."""
+    """Public settings (login page): link to the privacy policy."""
     return {"privacy_url": get_settings().privacy_url or None}
 
 
@@ -119,7 +119,7 @@ async def invite(
     mailer: Annotated[Mailer | None, Depends(get_mailer)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> Response:
-    """Admin : génère un JWT d'invitation (7 j) et envoie l'email avec le lien d'inscription."""
+    """Admin: generates an invitation JWT (7 d) and sends the email with the registration link."""
     language = payload.language or default_lang()
     inv = await upsert_invitation(
         db, payload.email, language, admin.id, can_create_projects=payload.can_create_projects
@@ -137,10 +137,10 @@ async def invite(
 
 
 async def _commit_user(db: AsyncSession) -> None:
-    """m1 : commit avec catcher IntegrityError (TOCTOU register) → 409, pas 500.
+    """m1: commit with an IntegrityError catcher (TOCTOU register) -> 409, not 500.
 
-    Le check `existing` plus haut ne couvre pas la course 2-registers-concurrents :
-    si le commit viole la contrainte unique email, on renvoie 409 proprement.
+    The `existing` check above does not cover the two-concurrent-registers race:
+    if the commit violates the unique email constraint, we return 409 cleanly.
     """
     try:
         await db.commit()
@@ -157,7 +157,7 @@ async def _commit_user(db: AsyncSession) -> None:
 async def register(
     payload: RegisterRequest, db: Annotated[AsyncSession, Depends(get_db)]
 ) -> UserOut:
-    """Crée le compte à partir d'un JWT d'invitation valide (role RESEARCHER)."""
+    """Creates the account from a valid invitation JWT (role RESEARCHER)."""
     try:
         claims = decode_invite_token(payload.token)
     except pyjwt.PyJWTError:
@@ -190,7 +190,7 @@ async def register(
     )
     db.add(user)
     await db.flush()
-    # Invitation à un projet : le compte rejoint directement ce projet.
+    # Invitation to a project: the account joins that project directly.
     try:
         project_id = uuid.UUID(claims["project_id"]) if claims.get("project_id") else None
         role = ProjectMemberRole(claims.get("role", "ANNOTATOR"))
@@ -214,14 +214,14 @@ async def login(
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> Response:
-    """Login : cookie JWT httpOnly/Secure + 200 {user} ; 403 consent_required si non accepté."""
+    """Login: httpOnly/Secure JWT cookie + 200 {user}; 403 consent_required if not accepted."""
     settings = get_settings()
     user = (
         await db.execute(select(User).where(func.lower(User.email) == payload.email.lower()))
     ).scalar_one_or_none()
     if user is None:
-        # m3 : oracle de timing — on vérifie un hash factice pour égaliser le temps
-        # de réponse (user existe / n'existe pas).
+        # m3: timing oracle - we verify a dummy hash to equalize the
+        # response time (user exists / does not exist).
         await asyncio.to_thread(verify_password, payload.password, DUMMY_HASH)
         raise HTTPException(status_code=401, detail=t(request.state.lang, "invalid_credentials"))
     if not await asyncio.to_thread(verify_password, payload.password, user.hashed_password):
@@ -234,8 +234,8 @@ async def login(
         user.data_consent_given = True
         await db.commit()
     response = JSONResponse({"user": UserOut.model_validate(user).model_dump(mode="json")})
-    # secure=True UNIQUEMENT en HTTPS (flag COOKIE_SECURE) : sur HTTP un cookie
-    # Secure n'est jamais envoyé par le navigateur → tous les appels auth 401.
+    # secure=True ONLY on HTTPS (COOKIE_SECURE flag): on HTTP a Secure
+    # cookie is never sent by the browser -> all auth calls 401.
     response.set_cookie(
         key=ACCESS_TOKEN_COOKIE,
         value=create_access_token(user),
@@ -264,7 +264,7 @@ async def update_me(
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> UserOut:
-    """Profil : nom affiché et langue préférée."""
+    """Profile: display name and preferred language."""
     if payload.full_name is not None:
         user.full_name = payload.full_name.strip() or None
     if payload.language_preference is not None:
@@ -298,7 +298,7 @@ async def change_password(
 
 @router.post("/logout", status_code=204)
 async def logout(request: Request, db: Annotated[AsyncSession, Depends(get_db)]) -> Response:
-    """Déconnexion : révoque le JWT (token_version) et efface le cookie httpOnly."""
+    """Logout: revokes the JWT (token_version) and clears the httpOnly cookie."""
     try:
         user = await _load_user(request, db)
         user.token_version = (user.token_version or 0) + 1

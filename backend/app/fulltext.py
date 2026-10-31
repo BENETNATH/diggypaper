@@ -1,9 +1,9 @@
-"""Texte intégral hors PMC : sources ouvertes légales (open access, préprints).
+"""Full text outside PMC: legal open sources (open access, preprints).
 
-Ordre : full text JATS Europe PMC (par PMCID, trouvé via le PMID si besoin) → PDF ouverts
-listés par Unpaywall puis OpenAlex (versions éditeur, manuscrit accepté, préprint
-bioRxiv/medRxiv/arXiv…). Les articles réellement payants sans copie ouverte restent
-sans texte intégral (abstract seul) ; aucune source pirate.
+Order: Europe PMC JATS full text (by PMCID, found via the PMID if needed) → open
+PDFs listed by Unpaywall then OpenAlex (editor versions, accepted manuscript,
+bioRxiv/medRxiv/arXiv preprints). Articles truly paywalled with no open copy stay
+without full text (abstract only); no pirate source.
 """
 
 from __future__ import annotations
@@ -52,13 +52,13 @@ _STOP = ("references", "bibliography", "acknowledg")
 
 
 def pdf_to_sections(data: bytes) -> list[dict]:
-    """Texte d'un PDF → [{title, kind, text}] découpé aux titres usuels (IMRaD)."""
+    """PDF text → [{title, kind, text}] split at the usual headings (IMRaD)."""
     from pypdf import PdfReader
 
     reader = PdfReader(io.BytesIO(data))
     lines: list[str] = []
     for page in reader.pages[:MAX_PDF_PAGES]:
-        # NUL interdit dans JSONB Postgres ("unsupported Unicode escape sequence")
+        # NUL is forbidden in Postgres JSONB ("unsupported Unicode escape sequence")
         lines += (page.extract_text() or "").replace("\x00", "").splitlines()
     sections: list[dict] = []
     title, buf = "", []
@@ -108,7 +108,7 @@ async def _epmc_xml(pmcid: str, http: httpx.AsyncClient) -> list[dict]:
 async def _epmc_ids(
     pmid: str | None, http: httpx.AsyncClient, doi: str | None = None
 ) -> tuple[str | None, str | None]:
-    """(pmcid, doi) connus d'Europe PMC pour ce PMID (ou, sans PMID, ce DOI)."""
+    """(pmcid, doi) known to Europe PMC for this PMID (or, without PMID, this DOI)."""
     if pmid:
         query = f"EXT_ID:{pmid} AND SRC:MED"
     elif doi and '"' not in doi:
@@ -126,7 +126,7 @@ async def _epmc_ids(
 async def _pdf_candidates(
     pmid: str | None, doi: str | None, email: str, http: httpx.AsyncClient
 ) -> list[tuple[str, str]]:
-    """[(url PDF, version)] : Unpaywall puis OpenAlex, versions finales d'abord."""
+    """[(PDF url, version)]: Unpaywall then OpenAlex, final versions first."""
     found: list[tuple[str, str]] = []
     if doi:
         up = await _get_json(http, f"{UNPAYWALL}/{quote(doi, safe='/')}", {"email": email})
@@ -148,8 +148,8 @@ async def _pdf_candidates(
 
 
 async def _download_pdf(url: str, http: httpx.AsyncClient) -> bytes | None:
-    """PDF ouvert ; les redirections sont suivies à la main, chaque saut doit rester public
-    (une URL fournie par Unpaywall/OpenAlex ne doit pas mener au réseau interne)."""
+    """Open PDF; redirects are followed by hand, each hop must stay public
+    (a URL provided by Unpaywall/OpenAlex must not lead to the internal network)."""
     try:
         for _ in range(MAX_REDIRECTS + 1):
             try:
@@ -176,13 +176,13 @@ async def _download_pdf(url: str, http: httpx.AsyncClient) -> bytes | None:
 
 
 async def store_pdf(session: AsyncSession, article_id, data: bytes) -> None:
-    """Conserve le PDF de l'article (un seul ; remplace l'ancien). Pas de commit."""
+    """Keeps the article's PDF (single one; replaces the old one). No commit."""
     await session.execute(delete(ArticleFile).where(ArticleFile.article_id == article_id))
     session.add(ArticleFile(article_id=article_id, data=data))
 
 
 def pmc_not_archived(sections: list[dict]) -> bool:
-    """Le « corps » renvoyé par PMC n'est que l'avis d'un préprint non archivable."""
+    """The "body" returned by PMC is just the notice of a non-archivable preprint."""
     return not long_enough(sections) and any(
         "do not permit archiving in pmc" in (s.get("text") or "").lower() for s in sections
     )
@@ -208,8 +208,8 @@ def _words(text: str) -> list[str]:
 
 
 def doi_in(text: str, doi: str | None) -> bool:
-    """Ce DOI figure-t-il EXACTEMENT dans le texte (pas comme préfixe d'un autre DOI) ? Tolère un
-    retour à la ligne entre deux caractères du DOI."""
+    """Does this DOI appear EXACTLY in the text (not as a prefix of another DOI)? Tolerates a
+    line break between two characters of the DOI."""
     if not doi:
         return False
     pattern = r"\s?".join(re.escape(c) for c in doi.strip().lower())
@@ -217,10 +217,11 @@ def doi_in(text: str, doi: str | None) -> bool:
 
 
 def pdf_matches_article(title: str | None, doi: str | None, sections: list[dict]) -> bool | None:
-    """Le texte extrait est-il bien celui de cet article ? True / False / None (invérifiable).
+    """Is the extracted text really that of this article? True / False / None (unverifiable).
 
-    Les mots significatifs du titre doivent figurer (≥ 80 %) en tête du document ; à défaut, le
-    DOI de l'article en tête de document suffit (titre à symboles, grec, mal extrait…).
+    The significant words of the title must appear (≥ 80%) at the top of the document;
+    failing that, the article's DOI at the top of the document suffices (symbol titles,
+    Greek, badly extracted…).
     """
     head = " ".join(s["text"] for s in sections)[:HEAD_CHARS]
     wanted = {w for w in _words(title or "") if len(w) >= 3 and w not in _STOPWORDS}
@@ -232,9 +233,10 @@ def pdf_matches_article(title: str | None, doi: str | None, sections: list[dict]
 
 
 def match_scores(sections: list[dict], candidates: list[tuple]) -> list[tuple[float, object]]:
-    """Articles candidats (id, titre, doi) classés par ressemblance avec ce PDF, meilleurs d'abord.
+    """Candidate articles (id, title, doi) ranked by similarity to this PDF, best first.
 
-    2.0 = le DOI de l'article est en tête du document ; sinon, part des mots du titre retrouvés."""
+    2.0 = the article's DOI is at the top of the document; otherwise, fraction of
+    title words found."""
     head = " ".join(s["text"] for s in sections)[:HEAD_CHARS]
     words = set(_words(head))
     scored = []
@@ -249,7 +251,7 @@ def match_scores(sections: list[dict], candidates: list[tuple]) -> list[tuple[fl
 
 
 async def apply_uploaded_pdf(session, art, sections: list[dict], data: bytes) -> None:
-    """Adopte ce PDF comme texte intégral de l'article (dépôt manuel). Pas de commit."""
+    """Adopts this PDF as the article's full text (manual upload). No commit."""
     art.sections, art.fulltext_source = sections, "pdf:upload"
     art.fulltext_note, art.fulltext_url = None, None
     await store_pdf(session, art.id, data)
@@ -264,7 +266,7 @@ async def find_open_fulltext(
     http: httpx.AsyncClient,
     title: str | None = None,
 ) -> tuple[list[dict], str | None, str | None, bytes | None]:
-    """Texte intégral en sources ouvertes → (sections, source, url, pdf) ou 4 × vide."""
+    """Full text via open sources → (sections, source, url, pdf) or 4 × empty."""
     epmc_pmcid, epmc_doi = await _epmc_ids(pmid, http, doi) if not (pmcid and doi) else (None, None)
     pmcid, doi = pmcid or epmc_pmcid, doi or epmc_doi
     if pmcid:
@@ -290,7 +292,8 @@ async def find_open_fulltext(
 
 
 async def refresh_article_metadata(session: AsyncSession, art, http: httpx.AsyncClient) -> None:
-    """Relit la notice PubMed (PMCID/DOI/titre/résumé/biblio ayant pu changer : préprint publié)."""
+    """Re-reads the PubMed record (PMCID/DOI/title/abstract/biblio may have
+    changed: published preprint)."""
     from app.pubmed import fetch_metadata
     from app.settings.service import get_setting
     from app.tasks import _biblio
@@ -312,9 +315,9 @@ async def refresh_article_metadata(session: AsyncSession, art, http: httpx.Async
 async def complete_article(
     session: AsyncSession, art, email: str, http: httpx.AsyncClient
 ) -> str | None:
-    """Cherche le texte intégral de cet article ; source trouvée, ou None (rien n'est modifié).
+    """Seeks this article's full text; found source, or None (nothing is modified).
 
-    Un texte déposé à la main (``pdf:upload``) n'est jamais écrasé par une recherche automatique.
+    A manually uploaded text (``pdf:upload``) is never overwritten by an automatic search.
     """
     if art.fulltext_source == "pdf:upload" and long_enough(art.sections or []):
         return None

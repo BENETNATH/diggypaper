@@ -1,12 +1,12 @@
-"""Routes d'annotation (MODULE 5) — viewer d'annotation mobile-first.
+"""Annotation routes (MODULE 5) - mobile-first annotation viewer.
 
-- GET  /projects/{project_id}/articles/{article_id}            : article seul (methods_text)
-- GET  /projects/{project_id}/articles/{article_id}/prediction : prédiction la plus récente
-- POST /projects/{project_id}/articles/{article_id}/annotation : soumission d'annotation
+- GET  /projects/{project_id}/articles/{article_id}            : article alone (methods_text)
+- GET  /projects/{project_id}/articles/{article_id}/prediction : most recent prediction
+- POST /projects/{project_id}/articles/{article_id}/annotation : annotation submission
 
-Authorization : ``_require_project_member`` → 403 si l'user n'est pas membre du
-projet (LEAD/ANNOTATOR) et n'est pas ADMIN global. L'article doit appartenir au
-projet (404 sinon) — pas de fuite inter-projets.
+Authorization: ``_require_project_member`` -> 403 if the user is not a
+member of the project (LEAD/ANNOTATOR) and not a global ADMIN. The article must belong
+to the project (404 otherwise) - no cross-project leakage.
 """
 
 import asyncio
@@ -39,7 +39,7 @@ router = APIRouter(prefix="/projects", tags=["annotations"])
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 UserDep = Annotated[User, Depends(get_current_user)]
 
-# Schéma d'annotation (spec §5) — mêmes clés que le gold dataset.
+# Annotation schema (spec \u00a75) - same keys as the gold dataset.
 _AnimalSex = Literal["MALE_ONLY", "FEMALE_ONLY", "BOTH_SEXES", "UNSPECIFIED"]
 
 
@@ -57,10 +57,10 @@ class AnnotationCreate(BaseModel):
 async def _require_article(
     db: AsyncSession, project_id: uuid.UUID, article_id: uuid.UUID, user: User
 ) -> Article:
-    """Charge l'article ; 403/404 si pas membre du projet, 404 si l'article n'y est pas.
+    """Loads the article; 403/404 if not a member of the project, 404 if the article is not in it.
 
-    Le 403 (non membre) est levé AVANT toute vérification de l'article : un
-    non-membre ne peut pas énumérer les articles d'un projet.
+    The 403 (non-member) is raised BEFORE any check of the article: a
+    non-member cannot enumerate the articles of a project.
     """
     project = await _require_project_member(db, project_id, user)
     article = await db.get(Article, article_id)
@@ -70,7 +70,7 @@ async def _require_article(
 
 
 async def _scope(db: AsyncSession, project_id: uuid.UUID, search_id: uuid.UUID | None) -> Search:
-    """Recherche demandée (par défaut la recherche initiale) : question, items, parties de texte."""
+    """Requested search (default the initial search): question, items, text sections."""
     project = await db.get(Project, project_id)
     return await get_search(db, project, search_id)
 
@@ -84,7 +84,7 @@ def _article_payload(a: Article, kinds: list[str] | None = None) -> dict:
         "title": a.title,
         "abstract": a.abstract,
         "methods_text": a.methods_text,
-        # Texte fourni aux modèles = parties choisies pour le projet (cf. text_sections).
+        # Text given to the models = sections chosen for the project (cf. text_sections).
         "text": compose_text(a, kinds),
         "has_fulltext": bool(a.sections),
         "fulltext_source": a.fulltext_source,
@@ -119,8 +119,8 @@ async def get_article(
     user: UserDep,
     search: uuid.UUID | None = None,
 ) -> dict:
-    """Article seul (avec methods_text) pour le viewer d'annotation ; le texte « fourni aux
-    modèles » suit les parties de la recherche."""
+    """Article alone (with methods_text) for the annotation viewer; the text "given to
+    the models" follows the sections of the search."""
     article = await _require_article(db, project_id, article_id, user)
     scope = await _scope(db, project_id, search)
     return _article_payload(article, scope.text_sections)
@@ -137,9 +137,9 @@ async def search_fulltext(
     user: UserDep,
     search: uuid.UUID | None = None,
 ) -> dict:
-    """Relance la recherche du texte intégral de CET article (sources ouvertes), après avoir
-    relu sa notice PubMed (un préprint publié change de PMCID/DOI/titre). Un texte déposé à la
-    main n'est pas écrasé. Renvoie ``{found, source, article}``."""
+    """Re-runs the full-text search of THIS article (open sources), after
+    re-reading its PubMed record (a published preprint changes PMCID/DOI/title). A
+    manually deposited text is not overwritten. Returns ``{found, source, article}``."""
     import httpx
 
     from app import fulltext as ft
@@ -170,9 +170,10 @@ async def search_fulltext(
 async def match_fulltext_pdf(
     project_id: uuid.UUID, request: Request, db: DbDep, user: UserDep
 ) -> dict:
-    """Dépôt en lot : un PDF dont l'article n'est pas désigné. On retrouve l'article du projet
-    qu'il représente (DOI ou titre en tête de document) et on lui attache ce texte. Un seul
-    candidat net est requis : 404 ``no_match`` sinon, 409 ``ambiguous`` si plusieurs."""
+    """Batch deposit: a PDF whose article is not designated. We find the article of the
+    project it represents (DOI or title at the top of the document) and attach this text
+    to it. A single clear candidate is required: 404 ``no_match`` otherwise, 409
+    ``ambiguous`` if several."""
     from app.api.v1.projects import _require_lead_or_admin
     from app.fulltext import (
         MAX_PDF_BYTES,
@@ -224,11 +225,11 @@ async def upload_fulltext(
     force: bool = False,
     search: uuid.UUID | None = None,
 ) -> dict:
-    """Dépôt manuel du PDF d'un article (accès institutionnel) : corps = octets du PDF.
+    """Manual deposit of an article's PDF (institutional access): body = PDF bytes.
 
-    Le texte est extrait et découpé en sections ; il remplace le texte intégral existant.
-    Le PDF doit être celui de l'article (titre, à défaut DOI, en tête de document) : sinon 422
-    ``pdf_mismatch``, sauf ``force=true`` (scan, titre illisible…).
+    The text is extracted and cut into sections; it replaces the existing full text.
+    The PDF must be the article's one (title, or DOI if no title, at the top of the document):
+    otherwise 422 ``pdf_mismatch``, except with ``force=true`` (scan, unreadable title...).
     """
     from app.fulltext import (
         MAX_PDF_BYTES,
@@ -270,11 +271,11 @@ async def get_prediction(
     user: UserDep,
     search: uuid.UUID | None = None,
 ) -> dict | None:
-    """Prédiction la plus récente de l'article dans cette recherche (null si aucune)."""
+    """Most recent prediction of the article in this search (null if none)."""
     article = await _require_article(db, project_id, article_id, user)
     scope = await _scope(db, project_id, search)
     if scope.kind == "blind":
-        # Échantillon à l'aveugle : prédiction visible seulement après la relecture de l'user.
+        # Blind sample: prediction visible only after the user's re-read.
         mine = (
             await db.execute(
                 select(HumanAnnotation.id)
@@ -318,8 +319,8 @@ async def get_annotation(
     user: UserDep,
     search: uuid.UUID | None = None,
 ) -> dict | None:
-    """Dernière relecture humaine de l'article dans cette recherche (réponses + relecteur +
-    statut), null si aucune."""
+    """Last human re-read of the article in this search (answers + re-reader +
+    status), null if none."""
     article = await _require_article(db, project_id, article_id, user)
     scope = await _scope(db, project_id, search)
     if scope.kind == "blind":  # aveugle : seulement SA relecture, jamais celle d'un autre relecteur
@@ -350,7 +351,7 @@ async def get_annotation(
 
 
 def _review_status(decision: dict, prediction: ArticlePrediction | None) -> str:
-    """VALIDATED = réponses de l'IA inchangées ; CORRECTED = modifiées ; MANUAL = sans IA."""
+    """VALIDATED = AI answers unchanged; CORRECTED = modified; MANUAL = without AI."""
     pred = (prediction.decision_json or {}) if prediction else {}
     keys = [k for k in decision if k not in _META_KEYS and k in pred]
     if not prediction or not pred:
@@ -368,16 +369,16 @@ async def create_annotation(
     search: uuid.UUID | None = None,
     blind: bool = False,
 ) -> dict:
-    """Soumet une annotation humaine pour la recherche ``search`` (``blind`` : faite sans voir la
-    prédiction du modèle, cf. échantillon à l'aveugle).
+    """Submits a human annotation for the search ``search`` (``blind``: done without seeing
+    the model's prediction, cf. blind sample).
 
-    Le payload est stocké dans ``decision_json`` (schéma spec §5) ; le
-    ``reasoning_summary`` est aussi conservé dans ``notes`` (colonne Text).
+    The payload is stored in ``decision_json`` (schema spec \u00a75); the
+    ``reasoning_summary`` is also kept in ``notes`` (Text column).
     """
     article = await _require_article(db, project_id, article_id, user)
     scope = await _scope(db, project_id, search)
     if scope.fields is not None:
-        # Schéma propre à la recherche : champs définis + clés standard optionnelles.
+        # Search-specific schema: defined fields + optional standard keys.
         errors = validate_decision(project_fields(scope), payload)
         if errors:
             raise HTTPException(status_code=422, detail=errors)

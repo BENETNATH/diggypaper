@@ -1,9 +1,9 @@
-"""Tests des routes d'annotation (app/api/v1/annotations.py) — MODULE 5, 100 % offline.
+"""Tests for the annotation routes (app/api/v1/annotations.py) — MODULE 5, 100% offline.
 
-Endpoints du viewer d'annotation :
-- GET  /projects/{project_id}/articles/{article_id}            (article seul + methods_text)
-- GET  /projects/{project_id}/articles/{article_id}/prediction (prédiction de l'article)
-- POST /projects/{project_id}/articles/{article_id}/annotation (soumission annotation)
+Annotation viewer endpoints:
+- GET  /projects/{project_id}/articles/{article_id}            (article alone + methods_text)
+- GET  /projects/{project_id}/articles/{article_id}/prediction (the article's prediction)
+- POST /projects/{project_id}/articles/{article_id}/annotation (annotation submission)
 """
 
 import uuid
@@ -89,7 +89,7 @@ async def test_get_article_404_not_found(client, session, researcher_user, do_lo
 
 
 async def test_get_article_404_foreign_project(client, session, researcher_user, do_login):
-    """Article d'un autre projet → 404 (pas de fuite inter-projets)."""
+    """Article from another project → 404 (no cross-project leak)."""
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     project, _ = await _make_project_with_article(session, researcher_user)
     other = Project(title="Other", created_by=researcher_user.id)
@@ -141,8 +141,9 @@ async def test_get_prediction_returns_prediction(client, session, researcher_use
 async def test_get_prediction_exposes_model_identifier_and_version(
     client, session, researcher_user, do_login
 ):
-    """Traçabilité (spec 2026-10-29-tracabilite-modele-version §4) : identifiant et version du
-    modèle figés à la prédiction ; ancienne prédiction → clés présentes à null."""
+    """Traceability (spec 2026-10-29-tracabilite-modele-version §4): the model's
+    identifier and version
+    frozen at prediction time; old prediction → keys present, set to null."""
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     project, article = await _make_project_with_article(session, researcher_user)
     p = await _make_prediction(session, article)
@@ -157,7 +158,7 @@ async def test_get_prediction_exposes_model_identifier_and_version(
 
 
 async def test_get_prediction_returns_latest(client, session, researcher_user, do_login):
-    """Plusieurs prédictions → la plus récente (created_at) est renvoyée."""
+    """Several predictions → the most recent one (created_at) is returned."""
     from datetime import datetime
 
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
@@ -182,9 +183,9 @@ async def test_get_prediction_returns_latest(client, session, researcher_user, d
 
 
 async def test_get_prediction_nulls_last(client, session, researcher_user, do_login):
-    """Prédiction ancienne (created_at NULL) + récente → la récente est renvoyée.
+    """Old prediction (created_at NULL) + recent → the recent one is returned.
 
-    Garantit un comportement cohérent SQLite/PostgreSQL (NULLS LAST en DESC).
+    Guarantees consistent SQLite/PostgreSQL behavior (NULLS LAST in DESC).
     """
     from datetime import UTC, datetime
 
@@ -192,9 +193,9 @@ async def test_get_prediction_nulls_last(client, session, researcher_user, do_lo
 
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     project, article = await _make_project_with_article(session, researcher_user)
-    # Ancienne prédiction (created_at NULL, comme les lignes pré-migration).
-    # Le server_default (CURRENT_TIMESTAMP) remplirait la colonne via l'ORM ;
-    # on la remet à NULL par UPDATE SQL après commit.
+    # Old prediction (created_at NULL, like pre-migration rows).
+    # The server_default (CURRENT_TIMESTAMP) would fill the column via the ORM;
+    # it is reset to NULL by a SQL UPDATE after commit.
     old = ArticlePrediction(article_id=article.id, model_used="legacy-model")
     new = ArticlePrediction(
         article_id=article.id,
@@ -203,7 +204,7 @@ async def test_get_prediction_nulls_last(client, session, researcher_user, do_lo
     )
     session.add_all([old, new])
     await session.commit()
-    # Le format stocké en SQLite est sans tirets (32 hex) → on utilise .hex.
+    # The format stored in SQLite is dashless (32 hex) → .hex is used.
     await session.execute(
         text("UPDATE article_predictions SET created_at = NULL WHERE id = :pid"),
         {"pid": old.id.hex},
@@ -215,7 +216,7 @@ async def test_get_prediction_nulls_last(client, session, researcher_user, do_lo
 
 
 async def test_get_prediction_null_when_absent(client, session, researcher_user, do_login):
-    """Pas de prédiction → 200 avec null (le viewer pré-remplit à vide)."""
+    """No prediction → 200 with null (the viewer pre-fills empty)."""
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     project, article = await _make_project_with_article(session, researcher_user)
     resp = await client.get(f"/api/v1/projects/{project.id}/articles/{article.id}/prediction")
@@ -275,7 +276,7 @@ async def test_create_annotation(client, session, researcher_user, do_login):
 async def test_create_annotation_stores_reasoning_in_notes(
     client, session, researcher_user, do_login
 ):
-    """reasoning_summary est conservé dans ``notes`` (colonne Text dédiée)."""
+    """reasoning_summary is kept in ``notes`` (dedicated Text column)."""
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     project, article = await _make_project_with_article(session, researcher_user)
     resp = await client.post(

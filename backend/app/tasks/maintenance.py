@@ -1,4 +1,4 @@
-"""Tâche périodique d'entretien (celery beat, toutes les 6 h) : cf. ``app.maintenance``."""
+"""Periodic maintenance task (celery beat, every 6 h): cf. ``app.maintenance``."""
 
 import asyncio
 import logging

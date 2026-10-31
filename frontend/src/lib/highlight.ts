@@ -1,10 +1,10 @@
 /**
- * Logique de surlignage des preuves (EvidenceHighlighter).
+ * Evidence highlighting logic (EvidenceHighlighter).
  *
- * Trouve les occurrences exactes des `evidence_quotes` dans le texte Methods et
- * renvoie une liste de segments (texte + surligné) pour le rendu `<mark>`.
+ * Finds the exact occurrences of the `evidence_quotes` in the Methods text and
+ * returns a list of segments (text + highlighted) for the `<mark>` render.
  *
- * Pure et testable (pas de DOM).
+ * Pure and testable (no DOM).
  */
 
 export interface Segment {
@@ -18,8 +18,8 @@ interface Range {
 }
 
 /**
- * Trouve toutes les occurrences d'une citation dans le texte (matching exact,
- * sensible à la casse — les `evidence_quotes` sont des extraits verbatim).
+ * Finds all occurrences of a quote in the text (exact matching,
+ * case-sensitive — the `evidence_quotes` are verbatim excerpts).
  */
 function findOccurrences(text: string, quote: string): Range[] {
   if (!quote) return [];
@@ -29,13 +29,13 @@ function findOccurrences(text: string, quote: string): Range[] {
     const idx = text.indexOf(quote, from);
     if (idx === -1) break;
     ranges.push({ start: idx, end: idx + quote.length });
-    from = idx + 1; // occurrences chevauchantes autorisées
+    from = idx + 1; // overlapping occurrences allowed
   }
   return ranges;
 }
 
 /**
- * Fusionne les plages triées (chevauchements + adjacences).
+ * Merges the sorted ranges (overlaps + adjacencies).
  */
 function mergeRanges(ranges: Range[]): Range[] {
   if (ranges.length === 0) return [];
@@ -54,10 +54,10 @@ function mergeRanges(ranges: Range[]): Range[] {
 }
 
 /**
- * Découpe le texte en segments (surlignés / non surlignés) selon les citations.
+ * Splits the text into segments (highlighted / not) according to the quotes.
  *
- * - Citations vides ou absentes → un seul segment non surligné (le texte entier).
- * - Texte vide → un segment vide non surligné.
+ * - Empty or missing quotes → a single unhighlighted segment (the whole text).
+ * - Empty text → an empty unhighlighted segment.
  */
 export function highlightSegments(text: string, quotes: string[] | null | undefined): Segment[] {
   if (!text) return [{ text: "", highlighted: false }];
@@ -82,13 +82,13 @@ export function highlightSegments(text: string, quotes: string[] | null | undefi
   return segments;
 }
 
-/** Texte sélectionné → extrait à ajouter (rogné) ; null s'il est trop court pour être une preuve. */
+/** Selected text → excerpt to add (trimmed); null if it is too short to be evidence. */
 export function cleanQuote(selected: string, max = 1000): string | null {
   const q = selected.trim().slice(0, max).trim();
   return q.length >= 3 ? q : null;
 }
 
-/** Ajoute ``quote`` à la liste sans doublon (ordre conservé). */
+/** Adds ``quote`` to the list without duplicates (order preserved). */
 export function addQuote(quotes: string[], quote: string): string[] {
   return quotes.includes(quote) ? quotes : [...quotes, quote];
 }

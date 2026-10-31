@@ -1,4 +1,4 @@
-"""i18n : résolution de langue (Accept-Language) + catalogue de messages (fr/en/de/es)."""
+"""i18n: language resolution (Accept-Language) + message catalog (fr/en/de/es)."""
 
 import json
 from pathlib import Path
@@ -16,7 +16,7 @@ _MESSAGES: dict[str, dict[str, str]] = json.loads(
 
 
 def default_lang() -> str:
-    """Langue par défaut de l'instance (``DEFAULT_LANGUAGE`` dans .env), ``en`` si invalide."""
+    """Instance default language (``DEFAULT_LANGUAGE`` in .env), ``en`` if invalid."""
     from app.core.config import get_settings
 
     lang = get_settings().default_language.strip().lower()
@@ -24,10 +24,10 @@ def default_lang() -> str:
 
 
 def _parse_qvalue(part: str) -> tuple[str, float] | None:
-    """Parse une entrée Accept-Language (RFC 4647) → (code, q) ou None si invalide.
+    """Parses an Accept-Language entry (RFC 4647) → (code, q) or None if invalid.
 
-    - code : partie avant le premier ';' (ou le tout), région retirée, minuscule.
-    - q : défaut 1.0 ; q=0 → (code, 0.0) ; q invalide (non numérique) → None.
+    - code: the part before the first ';' (or all of it), region removed, lowercase.
+    - q: default 1.0; q=0 → (code, 0.0); invalid q (non-numeric) → None.
     """
     part = part.strip()
     if not part:
@@ -50,10 +50,10 @@ def _parse_qvalue(part: str) -> tuple[str, float] | None:
 
 
 def resolve_lang(accept_language: str | None) -> str:
-    """Choisit la langue la plus pertinente parmi fr/en/de/es (fallback en).
+    """Chooses the most relevant language among fr/en/de/es (fallback en).
 
-    Parse les q-values (RFC 4647) : tri par q décroissant, puis par ordre
-    d'apparition en cas d'égalité. q=0 et codes inconnus sont ignorés.
+    Parses the q-values (RFC 4647): sorted by descending q, then by order of
+    appearance on a tie. q=0 and unknown codes are ignored.
     """
     candidates: list[tuple[float, int, str]] = []
     if accept_language:
@@ -68,21 +68,21 @@ def resolve_lang(accept_language: str | None) -> str:
                 continue
             candidates.append((q, index, code))
     if candidates:
-        # q décroissant, puis ordre d'apparition (index croissant).
+        # descending q, then order of appearance (ascending index).
         candidates.sort(key=lambda c: (-c[0], c[1]))
         return candidates[0][2]
     return default_lang()
 
 
 def t(lang: str, key: str, **params: str) -> str:
-    """Traduit une clé ; fallback en, puis la clé elle-même si absente."""
+    """Translates a key; fallback en, then the key itself if absent."""
     table = _MESSAGES.get(lang, _MESSAGES[FALLBACK_LANG])
     template = table.get(key, _MESSAGES[FALLBACK_LANG].get(key, key))
     return template.format(**params) if params else template
 
 
 class I18nMiddleware(BaseHTTPMiddleware):
-    """Stocke la langue résolue dans request.state.lang pour les routes."""
+    """Stores the resolved language in request.state.lang for the routes."""
 
     async def dispatch(self, request: Request, call_next) -> Response:
         request.state.lang = resolve_lang(request.headers.get("accept-language"))

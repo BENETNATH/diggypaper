@@ -6,7 +6,7 @@ import { useTranslations } from "next-intl";
 import { getStorageStatus, DiskStatus } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 
-/** Bandeau pour l'administrateur quand le disque du serveur est presque plein. */
+/** Banner for the administrator when the server disk is almost full. */
 export function StorageAlert() {
   const t = useTranslations("storage");
   const { user } = useAuth();

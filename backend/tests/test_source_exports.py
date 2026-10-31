@@ -1,5 +1,5 @@
-"""Phase 2 multi-sources : la source de chaque article / import dans les exports (XLSX, RIS,
-BibTeX, RO-Crate) et à l'import d'un crate (spec 2026-10-29-sources-phase2-identite §4)."""
+"""Phase 2 multi-sources: the source of each article / import in the exports (XLSX, RIS,
+BibTeX, RO-Crate) and at crate import (spec 2026-10-29-sources-phase2-identite §4)."""
 
 import csv
 import io
@@ -48,8 +48,8 @@ def _articles(pid) -> list[Article]:
 
 
 async def test_xlsx_results_source_columns(client, session, researcher_user, do_login):
-    """Résultats : « Source » (libellé lisible) et « Identifiant source » juste après le lien
-    texte intégral ; vides pour un article ancien sans source."""
+    """Results: "Source" (readable label) and "Source identifier" right after the full text
+    link; empty for an old article without source."""
     pid = await _project(client, do_login)
     session.add_all(_articles(pid))
     await session.commit()
@@ -66,8 +66,8 @@ async def test_xlsx_results_source_columns(client, session, researcher_user, do_
 
 
 async def test_xlsx_projet_sheet_import_sources(client, session, researcher_user, do_login):
-    """Projet : chaque import mentionne sa source ; un ancien job de recherche sans source dit
-    « non enregistrée » ; un import de références (sources mêlées) renvoie au détail par article."""
+    """Project: each import mentions its source; an old search job without source says
+    "not recorded"; a reference import (mixed sources) points to the per-article detail."""
     pid = await _project(client, do_login)
     session.add_all(
         [
@@ -104,7 +104,7 @@ async def test_xlsx_projet_sheet_import_sources(client, session, researcher_user
 
 
 async def test_ris_db_tag_and_bibtex_source_field(client, session, researcher_user, do_login):
-    """RIS : tag DB = nom de la source ; BibTeX : champ ``source`` lisible ; rien sans source."""
+    """RIS: DB tag = source name; BibTeX: readable ``source`` field; nothing without source."""
     pid = await _project(client, do_login)
     session.add_all(_articles(pid))
     await session.commit()
@@ -118,8 +118,8 @@ async def test_ris_db_tag_and_bibtex_source_field(client, session, researcher_us
 
 
 async def test_crate_exports_source_and_job_source(session, tmp_path):
-    """RO-Crate : metadata.json et extraction.csv portent source + native_id ; project.json
-    donne la source de chaque import ; le graphe nomme l'import par sa source."""
+    """RO-Crate: metadata.json and extraction.csv carry source + native_id; project.json
+    gives the source of each import; the graph names the import by its source."""
     project = Project(title="Crate", question="Q ?")
     session.add(project)
     await session.flush()
@@ -159,8 +159,8 @@ async def test_crate_exports_source_and_job_source(session, tmp_path):
 
 
 async def test_crate_import_restores_source_and_defaults_old_crates(engine, session, tmp_path):
-    """Import d'un crate : source + native_id restaurés ; crate ancien sans source → pubmed/PMID
-    si PMID, sinon rien."""
+    """Crate import: source + native_id restored; old crate without source -> pubmed/PMID
+    if PMID, otherwise nothing."""
     metas = {
         "doi-10-1-y": {
             "doi": "10.1/y",
@@ -196,7 +196,7 @@ async def test_crate_import_restores_source_and_defaults_old_crates(engine, sess
 
 
 def test_source_label_and_name():
-    """Libellés (module pur ``app.sources``) : nom de la source et identifiant lisible."""
+    """Labels (pure ``app.sources`` module): source name and readable identifier."""
     from app.sources import source_label, source_name
 
     assert source_name("pubmed") == "PubMed" and source_name("crossref") == "Crossref"

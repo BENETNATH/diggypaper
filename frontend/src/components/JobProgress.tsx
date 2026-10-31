@@ -7,9 +7,9 @@ import { etaSeconds, formatDuration, pushSample, ratePerSecond, Sample } from "@
 export type Segments = { accepted: number; rejected: number; review: number };
 
 /**
- * Avancement d'une tâche, sobre : une ligne d'information (n / total, %, temps restant, vitesse),
- * une fine barre — découpée en validés / écartés / à relire quand on les connaît —, une légende.
- * `inline` : une seule ligne très compacte pour l'en-tête du projet ; sinon version détaillée.
+ * Progress of a task, sober: one line of info (n / total, %, time remaining, speed),
+ * a thin bar — split into accepted / set aside / to re-review when known —, a legend.
+ * `inline`: a single very compact line for the project header; otherwise detailed version.
  */
 export function JobProgress({
   done,
@@ -26,7 +26,7 @@ export function JobProgress({
   title?: ReactNode;
   action?: ReactNode;
   hint?: ReactNode;
-  /** Une seule ligne très compacte (en-tête de projet) : texte, mini-jauge, actions. */
+  /** A single very compact line (project header): text, mini-gauge, actions. */
   inline?: boolean;
 }) {
   const t = useTranslations("progress");
@@ -38,7 +38,7 @@ export function JobProgress({
     last.current = done;
     setSamples((s) => pushSample(s, Date.now(), done));
   }, [done]);
-  // Le temps passe même sans nouvelle donnée : on rafraîchit l'estimation toutes les 5 s.
+  // Time passes even without new data: we refresh the estimate every 5 s.
   useEffect(() => {
     const id = setInterval(() => setSamples((s) => pushSample(s, Date.now(), last.current)), 5000);
     return () => clearInterval(id);

@@ -3,8 +3,8 @@
 import { ReactNode, useEffect, useRef, useState } from "react";
 
 /**
- * Menu déroulant : un bouton qui ouvre une liste d'actions. Se ferme au clic extérieur, à Échap et
- * après le choix d'une action (``closeOnClick``). Clavier : Échap ; le focus reste sur le bouton.
+ * Dropdown menu: a button that opens a list of actions. Closes on outside click, on Escape and
+ * after choosing an action (``closeOnClick``). Keyboard: Escape; the focus stays on the button.
  */
 export function Menu({
   label,

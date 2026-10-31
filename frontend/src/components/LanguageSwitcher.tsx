@@ -11,7 +11,7 @@ const LANGS: { code: string; label: string }[] = [
   { code: "es", label: "Español" },
 ];
 
-/** Cookie lu par next-intl (cf. i18n.ts) : la langue d'interface suit le navigateur. */
+/** Cookie read by next-intl (cf. i18n.ts): the interface language follows the browser. */
 export const LOCALE_COOKIE = "DP_LOCALE";
 
 export function readLocaleCookie(): string | null {
@@ -23,7 +23,7 @@ export function writeLocaleCookie(lang: string): void {
   document.cookie = `${LOCALE_COOKIE}=${lang}; path=/; max-age=31536000; samesite=lax`;
 }
 
-/** Sélecteur de langue de la barre de navigation : change l'interface et, si connecté, le profil. */
+/** Language selector of the navigation bar: changes the interface and, if signed in, the profile. */
 export function LanguageSwitcher({ className = "" }: { className?: string }) {
   const locale = useLocale();
   const { user } = useAuth();
@@ -34,7 +34,7 @@ export function LanguageSwitcher({ className = "" }: { className?: string }) {
       try {
         await updateProfile({ language_preference: lang });
       } catch {
-        /* préférence non enregistrée : la langue reste appliquée via le cookie */
+        /* preference not saved: the language stays applied via the cookie */
       }
     }
     window.location.reload();

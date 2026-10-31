@@ -1,4 +1,4 @@
-"""Note « pas de texte intégral » (préprint non archivable dans PMC…)
+""" "No full text" note (preprint not archivable in PMC...)
 
 Revision ID: 0019
 Revises: 0018

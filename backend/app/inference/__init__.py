@@ -1,11 +1,11 @@
-"""InferenceService — client OpenAI-compatible ``/v1/chat/completions`` (Module 3/4).
+"""InferenceService — OpenAI-compatible ``/v1/chat/completions`` client (Module 3/4).
 
-Le wire format est le JSON messages standard (Ollama / llama.cpp / vLLM l'exposent).
-Le format ChatML de la spec §5 est le CONTENU des prompts (system_prompt +
-user_prompt avec ``{methods_text}`` substitué), pas le format sur le fil.
+The wire format is standard JSON messages (exposed by Ollama / llama.cpp / vLLM).
+The spec §5 ChatML format is the CONTENT of the prompts (system_prompt +
+user_prompt with ``{methods_text}`` substituted), not the wire format.
 
-Les erreurs sont assainies (pas d'URL ni de secret dans le message), comme
-``NCBIError`` dans ``app/pubmed``.
+Errors are sanitized (no URL or secret in the message), like ``NCBIError`` in
+``app/pubmed``.
 """
 
 from __future__ import annotations
@@ -30,11 +30,11 @@ _DIGEST = re.compile(r"^(sha256:)?[0-9a-f]{64}$")
 
 
 class InferenceError(Exception):
-    """Erreur d'inférence assainie (message court, sans URL ni secret)."""
+    """Sanitized inference error (short message, no URL or secret)."""
 
 
 class OpenAICompatibleService:
-    """Client minimal ``/v1/chat/completions`` (JSON messages, réponse JSON)."""
+    """Minimal ``/v1/chat/completions`` client (JSON messages, JSON response)."""
 
     def __init__(
         self,
@@ -55,22 +55,22 @@ class OpenAICompatibleService:
         self._extra_body = extra_body or {}  # backends locaux ; les clés fixes priment
         # Ollama local : endpoint natif /api/chat (l'endpoint /v1 ignore options, ex. num_ctx).
         self._native_ollama = native_ollama
-        # Modèle renvoyé par la dernière réponse lue (traçabilité de la version servie).
+        # Model returned by the last response read (traceability of the served version).
         self.served_model: str | None = None
 
     async def infer(self, model: str, system_prompt: str, user_prompt: str) -> dict:
-        """Appelle le modèle et renvoie l'objet JSON parsé (spec §5).
+        """Calls the model and returns the parsed JSON object (spec §5).
 
-        Lève ``InferenceError`` si la réponse n'est pas un JSON valide, en cas de
-        timeout ou d'erreur HTTP (message sans l'URL).
+        Raises ``InferenceError`` if the response is not valid JSON, on timeout
+        or HTTP error (message without the URL).
         """
         headers = {"Content-Type": "application/json"}
         if self._api_key:
             headers["Authorization"] = f"Bearer {self._api_key}"
         if self._native_ollama:
-            # Endpoint natif : root sans le suffixe /v1 ; think en racine, paramètres
-            # d'échantillonnage dans ``options`` (la température en racine est ignorée),
-            # format "json" (pas response_format, inconnu du natif).
+            # Native endpoint: root without the /v1 suffix; think at the root, sampling
+            # parameters in ``options`` (temperature at the root is ignored),
+            # format "json" (not response_format, unknown to the native one).
             url = f"{self._base_url.removesuffix('/v1')}/api/chat"
             opts = self._extra_body.get("options")
             opts = opts if isinstance(opts, dict) else {}  # réglage libre : pas de TypeError
@@ -82,7 +82,7 @@ class OpenAICompatibleService:
                 ],
                 "stream": False,
                 "format": "json",
-                # température fixe : prime sur le réglage ; num_ctx & co. conservés
+                # fixed temperature: wins over the setting; num_ctx & co. kept
                 "options": {**opts, "temperature": 0.0},
             }
         else:
@@ -98,9 +98,9 @@ class OpenAICompatibleService:
             }
         body = {**self._extra_body, **body}  # corps fixe : jamais écrasé par le réglage
         if self._public_only:
-            # Revérifié à CHAQUE appel (pas seulement à l'enregistrement) : une réécriture DNS
-            # après coup ne mène plus au réseau interne.
-            # ponytail: fenêtre résolution→connexion non fermée ; épingler l'IP si besoin.
+            # Re-verified at EVERY call (not only at registration): a later DNS
+            # rewrite no longer leads to the internal network.
+            # ponytail: resolution→connection window not closed; pin the IP if needed.
             from app.model_access import check_public_url
 
             try:
@@ -137,24 +137,24 @@ class OpenAICompatibleService:
 
 
 def clean_meta(v, limit: int = 200) -> str | None:
-    """Chaîne relevée chez un tiers : ``str`` seulement, sans caractères de contrôle, tronquée."""
+    """String collected from a third party: ``str`` only, no control characters, truncated."""
     if not isinstance(v, str):
         return None
     return _CONTROL_CHARS.sub("", v).strip()[:limit] or None
 
 
 def ollama_ref(identifier: str) -> str:
-    """Référence Ollama normalisée : tag « :latest » implicite si le dernier segment n'en a pas."""
+    """Normalized Ollama reference: implicit ":latest" tag if the last segment has none."""
     return identifier if ":" in identifier.rsplit("/", 1)[-1] else f"{identifier}:latest"
 
 
 def public_model_ref(backend: str | None, identifier: str) -> tuple[str | None, str | None]:
-    """(identifiant, endpoint) publiables. ``OPENAI_API`` : ``<url>#<modèle>`` → partie modèle +
-    ``scheme://hôte[:port]`` (jamais userinfo, chemin, query ni fragment) ; sinon l'identifiant."""
+    """Publishable (identifier, endpoint). ``OPENAI_API``: ``<url>#<model>`` → model part +
+    ``scheme://host[:port]`` (never userinfo, path, query or fragment); else the identifier."""
     if backend != "OPENAI_API":
         return identifier, None
-    # Ligne héritée à plusieurs « # » : URL = avant le PREMIER, modèle = après le DERNIER
-    # (un fragment ne doit jamais devenir le nom du modèle).
+    # Inherited line with several "#": URL = before the FIRST one, model = after the LAST one
+    # (a fragment must never become the model name).
     if "#" in identifier:
         url, name = identifier.split("#", 1)[0], identifier.rsplit("#", 1)[1]
     else:
@@ -171,12 +171,12 @@ def public_model_ref(backend: str | None, identifier: str) -> tuple[str | None, 
 
 
 async def model_snapshot(model, service, name: str | None = None) -> dict | None:
-    """Instantané d'un modèle du registre pour la traçabilité : ``{name, backend, identifier,
-    version}`` (+ ``endpoint`` pour OPENAI_API, détails Ollama).
+    """Snapshot of a registry model for traceability: ``{name, backend, identifier,
+    version}`` (+ ``endpoint`` for OPENAI_API, Ollama details).
 
-    Version : digest des poids pour Ollama (``GET /api/tags``, relevé une fois), sinon ``None``
-    (la version servie est lue sur les réponses). Best-effort : n'échoue jamais.
-    # ponytail: digest relevé au démarrage du job ; un re-pull en cours de job n'est pas détecté.
+    Version: weights digest for Ollama (``GET /api/tags``, read once), else ``None``
+    (the served version is read from the responses). Best-effort: never fails.
+    # ponytail: digest read at job start; a re-pull mid-job is not detected.
     """
     if model is None and not name:
         return None
@@ -229,7 +229,7 @@ async def model_snapshot(model, service, name: str | None = None) -> dict | None
 
 
 async def unload_ollama(base_url: str, model: str, http: httpx.AsyncClient | None = None) -> None:
-    """Libère la RAM d'un modèle Ollama (keep_alive=0) ; best-effort, jamais bloquant."""
+    """Frees an Ollama model's RAM (keep_alive=0); best-effort, never blocking."""
     root = base_url.rstrip("/").removesuffix("/v1")
     owned = http is None
     client = http or httpx.AsyncClient(timeout=10)
@@ -243,7 +243,7 @@ async def unload_ollama(base_url: str, model: str, http: httpx.AsyncClient | Non
 
 
 async def get_inference_timeout(db) -> float:
-    """``inference_timeout`` (DB > env) : valeur finie et > 0, sinon 120 s (+ warning)."""
+    """``inference_timeout`` (DB > env): finite value > 0, else 120 s (+ warning)."""
     raw = await get_setting(db, "inference_timeout")
     if raw:
         try:
@@ -257,7 +257,7 @@ async def get_inference_timeout(db) -> float:
 
 
 def model_lock_key(backend_type: str, identifier: str) -> str:
-    """Clé Redis du lock par modèle (une génération à la fois par modèle local)."""
+    """Redis key of the per-model lock (one generation at a time per local model)."""
     return f"inference:lock:{backend_type}:{identifier}"
 
 
@@ -265,16 +265,16 @@ async def make_inference_service(
     db,
     http: httpx.AsyncClient | None = None,
 ) -> OpenAICompatibleService:
-    """Fabrique le service par défaut depuis system_settings (DB > env, secrets chiffrés).
+    """Builds the default service from system_settings (DB > env, encrypted secrets).
 
-    ``llm_api_base_url`` (défaut ``http://localhost:11434/v1`` via ``DEFAULTS``),
-    ``llm_api_key`` (secret, optionnel), ``inference_timeout`` (cf.
-    ``get_inference_timeout``) et ``llm_extra_body`` (corps JSON additionnel ; None ou
-    invalide → corps vide).
+    ``llm_api_base_url`` (default ``http://localhost:11434/v1`` via ``DEFAULTS``),
+    ``llm_api_key`` (secret, optional), ``inference_timeout`` (cf.
+    ``get_inference_timeout``) and ``llm_extra_body`` (additional JSON body; None or
+    invalid → empty body).
 
-    Ce service ne sert qu'aux backends locaux (jamais à un modèle ``OPENAI_API``, qui a son
-    propre service) : Ollama natif (``/api/chat``) par défaut ; ``infer_with`` décide PAR
-    APPEL (copie en ``/v1`` pour llama.cpp, vLLM, …).
+    This service only serves local backends (never an ``OPENAI_API`` model, which has
+    its own service): native Ollama (``/api/chat``) by default; ``infer_with`` decides
+    PER CALL (copy to ``/v1`` for llama.cpp, vLLM, …).
     """
     base_url = await get_setting(db, "llm_api_base_url")
     api_key = await get_setting(db, "llm_api_key")
@@ -305,12 +305,12 @@ async def warmup(
     model_identifier: str,
     model=None,
 ) -> None:
-    """Absorbe le cold start (chargement des poids) avant la boucle d'inférence.
+    """Absorbs the cold start (weights loading) before the inference loop.
 
-    Le premier appel réel d'un job paie le téléchargement/chargement du modèle
-    dans Ollama ; sans ce ping, c'est le premier article qui dépasse le timeout.
-    Best-effort : un échec de warmup ne doit pas tuer le job (le premier appel
-    réel relèvera l'erreur, assainie).
+    A job's first real call pays for the model download/loading in Ollama;
+    without this ping, the first article would exceed the timeout.
+    Best-effort: a warmup failure must not kill the job (the first real call
+    will raise the error, sanitized).
     """
     try:
         await infer_with(
@@ -332,16 +332,16 @@ async def infer_with(
     name: str | None = None,
     meta: dict | None = None,
 ):
-    """Appelle un modèle génératif du registre.
+    """Calls a generative model from the registry.
 
-    ``meta`` (optionnel) reçoit, après un appel réussi, ``served_model`` : le champ ``model``
-    renvoyé par le service réellement appelé (traçabilité de la version).
+    ``meta`` (optional) receives, after a successful call, ``served_model``: the ``model`` field
+    returned by the service actually called (version traceability).
 
-    ``OPENAI_API`` : identifiant ``<url>#<modèle>`` + clé chiffrée propres au modèle ;
-    sinon le service par défaut (réglage ``llm_api_base_url``) : natif ``/api/chat`` pour
-    Ollama (ou sans modèle), ``/v1`` pour les autres backends locaux (copie du service).
-    ``served_model`` est écrit sur le service par défaut (Ollama / sans modèle) : sans danger,
-    car ce service est construit par job / requête / run de banc d'essai et utilisé en séquence.
+    ``OPENAI_API``: the model's own ``<url>#<model>`` identifier + encrypted key;
+    else the default service (``llm_api_base_url`` setting): native ``/api/chat`` for
+    Ollama (or no model), ``/v1`` for the other local backends (copy of the service).
+    ``served_model`` is written on the default service (Ollama / no model): safe,
+    because that service is built per job / request / test-bench run and used in sequence.
     """
     if model is not None and model.backend_type == "OPENAI_API":
         url, _, name = model.model_identifier.partition("#")

@@ -1,4 +1,4 @@
-"""Entretien : alerte disque (admins), projets inactifs (avertir puis supprimer), « Conserver »."""
+"""Maintenance: disk alert (admins), inactive projects (warn then delete), "Keep"."""
 
 import os
 import uuid
@@ -98,14 +98,14 @@ async def test_inactive_project_warned_then_deleted_unless_active(session, expor
     assert to == lead.email and "Vieux projet" in subject and f"/projects/{project.id}" in body
     assert (await session.get(Project, fresh.id)).retention_warned_at is None
 
-    # Pendant le délai de grâce : rien de plus (ni second e-mail, ni suppression)
+    # During the grace period: nothing more (no second email, no deletion)
     assert await maintenance.retention_sweep(session, mailer, now + timedelta(days=5)) == {
         "warned": 0,
         "deleted": 0,
     }
     assert len(mailer.sent) == 1
 
-    # Activité après l'avertissement : on repart de zéro, pas de suppression
+    # Activity after the warning: restart from scratch, no deletion
     session.add(ImportJob(project_id=project.id, query="q", created_at=now + timedelta(days=6)))
     await session.commit()
     out = await maintenance.retention_sweep(session, mailer, now + timedelta(days=20))

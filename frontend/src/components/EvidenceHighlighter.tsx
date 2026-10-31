@@ -5,22 +5,22 @@ import { useTranslations } from "next-intl";
 import { cleanQuote, highlightSegments } from "@/lib/highlight";
 
 interface EvidenceHighlighterProps {
-  /** Texte de l'article. */
+  /** Text of the article. */
   text: string;
-  /** Extraits verbatim à surligner (ceux du formulaire : réponse du modèle ou ajoutés à la main). */
+  /** Verbatim excerpts to highlight (the form's: model answer or added by hand). */
   quotes: string[] | null | undefined;
-  /** Classe Tailwind du `<mark>` (bicolore). */
+  /** Tailwind class of the `<mark>` (two-color). */
   markClassName?: string;
-  /** Si fourni : un « + » flottant apparaît sur le texte sélectionné et ajoute l'extrait. */
+  /** If provided: a floating "+" appears on the selected text and adds the excerpt. */
   onAdd?: (quote: string) => void;
-  /** Extrait à révéler (cliquée dans le formulaire) : le texte scrolle sur son surlignage.
-   *  `n` est un nonce pour relancer le scroll sur le même extrait. */
+  /** Excerpt to reveal (clicked in the form): the text scrolls to its highlight.
+   *  `n` is a nonce to retrigger the scroll on the same excerpt. */
   focus?: { quote: string; n: number } | null;
 }
 
 /**
- * Surligne les extraits exacts dans le texte avec une balise `<mark>`. Sélectionner du texte fait
- * apparaître un petit « + » : un clic l'ajoute aux extraits de preuve de l'annotation.
+ * Highlights the exact excerpts in the text with a `<mark>` tag. Selecting text makes
+ * a small "+" appear: a click adds it to the annotation's evidence excerpts.
  */
 export function EvidenceHighlighter({
   text,
@@ -33,17 +33,17 @@ export function EvidenceHighlighter({
   const box = useRef<HTMLDivElement>(null);
   const [pick, setPick] = useState<{ quote: string; x: number; y: number } | null>(null);
 
-  // Clic sur un extrait du formulaire : le document scrolle sur son surlignage,
-  // qui clignote quelques instants (la citation est verbatim, on la cherche dans
-  // le texte des <mark> ; premier match si elle apparaît plusieurs fois).
-  // Sur mobile le panneau document apparaît dans le même rendu (onglet) : on
-  // retente au frame suivant tant que le <mark> n'a pas de boîte (height = 0).
-  // Le scroll est calculé explicitement sur l'ancêtre scrollable (la section) :
-  // le div de contenu ne scrolle pas, et scrollIntoView({block:"center"}) se
-  // mettait à calculer par rapport à la fenêtre en pleine réorganisation du
-  // layout, laissant le surlignage bas du panneau au lieu de le centrer.
-  // Tant que le flash est visible, on recentre si le contenu se réflowe
-  // (ex. image du texte qui termine de charger et pousse le surlignage).
+  // Click on an excerpt from the form: the document scrolls to its highlight,
+  // which blinks for a while (the quote is verbatim, we look for it in
+  // the <mark> text; first match if it appears several times).
+  // On mobile the document panel appears in the same render (tab): we
+  // retry on the next frame until the <mark> has a box (height = 0).
+  // The scroll is computed explicitly on the scrollable ancestor (the section):
+  // the content div does not scroll, and scrollIntoView({block:"center"}) used
+  // to compute relative to the window amid layout reflow, leaving the highlight
+  // at the bottom of the panel instead of centering it.
+  // While the flash is visible, we re-center if the content reflows
+  // (e.g. a text image that finishes loading and pushes the highlight).
   useEffect(() => {
     if (!focus) return;
     let raf = 0;
@@ -66,11 +66,11 @@ export function EvidenceHighlighter({
       const scroller = findScroller(el);
       const boxRect = scroller.getBoundingClientRect();
       const markRect = target.getBoundingClientRect();
-      // Centre le mark dans le panneau, indépendamment de la position de la page.
+      // Centers the mark in the panel, regardless of the page position.
       const offset = markRect.top - boxRect.top + scroller.scrollTop;
       const targetTop = offset - scroller.clientHeight / 2 + markRect.height / 2;
       scroller.scrollTo({ top: targetTop, behavior: "smooth" });
-      // Panneau lui-même hors de la fenêtre (mobile) : on le ramène dans le viewport.
+      // The panel itself outside the window (mobile): we bring it into the viewport.
       if (boxRect.top < 0 || boxRect.bottom > window.innerHeight) {
         window.scrollBy({ top: boxRect.top, behavior: "smooth" });
       }
@@ -93,7 +93,7 @@ export function EvidenceHighlighter({
       done = true;
       let lastOffset = center(el, target);
       target.classList.add("evidence-flash");
-      // Ré-centrage si le mark a dérivé (reflow : image qui charge).
+      // Re-centering if the mark drifted (reflow: image loading).
       const settle = () => {
         const cur = box.current;
         if (!cur || !target.isConnected || !target.classList.contains("evidence-flash")) return;
@@ -159,7 +159,7 @@ export function EvidenceHighlighter({
       {onAdd && pick && (
         <button
           type="button"
-          // mousedown ne doit pas effacer la sélection avant le clic
+          // mousedown must not clear the selection before the click
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => {
             onAdd(pick.quote);

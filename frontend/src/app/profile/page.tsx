@@ -24,7 +24,7 @@ function ProfileContent() {
   useEffect(() => {
     if (user) {
       setName(user.full_name ?? "");
-      setLang(locale); // langue réellement affichée (pas celle enregistrée à l'invitation)
+      setLang(locale); // language actually displayed (not the one stored at invitation)
     }
   }, [user, locale]);
 
@@ -45,7 +45,7 @@ function ProfileContent() {
       await updateProfile({ full_name: name, language_preference: lang });
       document.cookie = `DP_LOCALE=${lang}; path=/; max-age=31536000; samesite=lax`;
       await refresh();
-      if (lang !== locale) window.location.reload(); // applique la langue
+      if (lang !== locale) window.location.reload(); // applies the language
     }, t("saved"));
   }
 

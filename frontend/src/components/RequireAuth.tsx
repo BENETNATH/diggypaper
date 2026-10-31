@@ -6,8 +6,8 @@ import { useAuth } from "@/lib/auth";
 import { Spinner } from "@/components/ui/Feedback";
 
 /**
- * Garde d'authentification : redirige vers /login si l'user n'est pas connecté.
- * Affiche un spinner pendant le chargement de l'user courant.
+ * Auth guard: redirects to /login if the user is not signed in.
+ * Shows a spinner while the current user is loading.
  */
 export function RequireAuth({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();

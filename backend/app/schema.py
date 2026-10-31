@@ -1,10 +1,10 @@
-"""Schéma de réponse par projet : la question posée aux modèles + ses champs.
+"""Per-project answer schema: the question posed to the models + its fields.
 
-``Project.fields`` NULL = schéma historique (``DEFAULT_FIELDS`` + clés standard de
-la spec §5). Sinon : liste de champs ``{key, label, type, options?}`` définie par
-le chef de projet. Types : ``boolean``, ``choice`` (options), ``text``.
-Les clés standard ``confidence_score``, ``evidence_quotes``, ``reasoning_summary``
-sont toujours demandées au modèle (triage + surlignage).
+``Project.fields`` NULL = historical schema (``DEFAULT_FIELDS`` + standard keys of
+spec §5). Otherwise: a list of ``{key, label, type, options?}`` fields defined by
+the project lead. Types: ``boolean``, ``choice`` (options), ``text``.
+The standard keys ``confidence_score``, ``evidence_quotes``, ``reasoning_summary``
+are always asked of the model (triage + highlighting).
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ def project_fields(project) -> list[dict]:
 
 
 def check_fields(fields: list[dict]) -> list[dict]:
-    """Valide la définition des champs (PATCH projet) ; lève ValueError."""
+    """Validates the field definition (project PATCH); raises ValueError."""
     if not fields:
         raise ValueError("at least one field is required")
     seen: set[str] = set()
@@ -67,7 +67,7 @@ def check_fields(fields: list[dict]) -> list[dict]:
 
 
 def validate_decision(fields: list[dict], data: dict) -> list[str]:
-    """Erreurs de validation d'une décision (gold / annotation) selon les champs."""
+    """Validation errors of a decision (gold / annotation) according to the fields."""
     errors = []
     for f in fields:
         v = data.get(f["key"])
@@ -89,7 +89,7 @@ def validate_decision(fields: list[dict], data: dict) -> list[str]:
 
 
 def build_system_prompt(question: str | None, fields: list[dict]) -> str:
-    """System prompt généré : question + schéma JSON exact demandé au modèle."""
+    """Generated system prompt: question + exact JSON schema asked of the model."""
     lines = []
     for f in fields:
         if f["type"] == "boolean":
@@ -123,7 +123,7 @@ def build_system_prompt(question: str | None, fields: list[dict]) -> str:
 
 
 def compute_metrics(fields: list[dict], prediction: dict, truth: dict) -> dict:
-    """Accuracy = fraction des champs exacts ; P/R/F1 sur evidence_quotes (comme avant)."""
+    """Accuracy = fraction of exact fields; P/R/F1 on evidence_quotes (as before)."""
     keys = [f["key"] for f in fields]
     exact = sum(1 for k in keys if _norm(prediction.get(k)) == _norm(truth.get(k)))
     accuracy = exact / len(keys)

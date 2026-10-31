@@ -1,24 +1,24 @@
-"""Client OpenAlex Works API (adapter source n°3, spec 2026-10-29-sources-phase4a D1).
+"""OpenAlex Works API client (source adapter n°3, spec 2026-10-29-sources-phase4a D1).
 
-Source **métadonnées seulement** : ``fetch_fulltext`` renvoie toujours ``None`` (→
-``fulltext_note="metadata_only"`` côté pipeline, jamais de texte intégré).
+**Metadata-only** source: ``fetch_fulltext`` always returns ``None`` (→
+``fulltext_note="metadata_only"`` on the pipeline side, never full text).
 
-Usage-based depuis fév. 2026 : sans clé, budget IP partagé gratuit ($0.10/jour,
-``meta.notice`` dans chaque réponse) ; avec la config sécrète ``openalex_api_key``,
-budget dédié (paramètre ``api_key``). Rate limit signalé par 429 → retry backoff +
-throttle **par process** à 1 appel/s (pas de limiteur Redis, même choix que
-``app.pubmed`` / ``app.europepmc`` — un worker d'ingestion dédié, un import à la fois
-par projet).
+Usage-based since Feb 2026: without a key, shared free IP budget ($0.10/day,
+``meta.notice`` in every response); with the secret config ``openalex_api_key``,
+dedicated budget (``api_key`` parameter). Rate limit signaled by 429 → backoff
+retry + **per-process** throttle at 1 call/s (no Redis limiter, same choice as
+``app.pubmed`` / ``app.europepmc`` — one dedicated ingestion worker, one import
+at a time per project).
 
-``httpx.AsyncClient`` injecté (pas créé en dur) pour le mock en tests ; ``_sleep``
-mocké en tests. Erreurs : ``OpenAlexError`` propre (SANS l'URL — le message ne doit
-jamais fuiter dans ``job.error`` / logs).
+``httpx.AsyncClient`` injected (not hardcoded) for mocking in tests; ``_sleep``
+mocked in tests. Errors: clean ``OpenAlexError`` (WITHOUT the URL — the message
+must never leak into ``job.error`` / logs).
 
-Bornes dates : dans ``filter`` (``from_publication_date:…`` /
-``to_publication_date:…``), **jamais** paramètres de requête (400 sinon) ;
-``meta.count`` est porté par chaque réponse (pas d'appel count séparé). Pas de
-filtre par identifiant de work (``filter=id:…`` → 400) → ``fetch_metadata`` fait un
-``GET /works/{id}`` par id.
+Date bounds: in ``filter`` (``from_publication_date:…`` /
+``to_publication_date:…``), **never** as query parameters (400 otherwise);
+``meta.count`` is carried by every response (no separate count call). No
+filter by work id (``filter=id:…`` → 400) → ``fetch_metadata`` does a
+``GET /works/{id}`` per id.
 """
 
 import asyncio
@@ -36,22 +36,22 @@ OALEX_BASE = "https://api.openalex.org/works"
 _ID_PREFIX = "https://openalex.org/"
 _DOI_PREFIX = "https://doi.org/"
 
-#: Intervalle minimum entre deux appels OpenAlex (s) : budget IP partagé sans clé.
+#: Minimum interval between two OpenAlex calls (s): shared IP budget, keyless.
 _INTERVAL = 1.0
 
-#: Retry sur erreur transitoire (429 / 5xx / timeout), backoff simple (s) — pattern app.europepmc.
+#: Retry on transient error (429 / 5xx / timeout), simple backoff (s) — app.europepmc pattern.
 _RETRIES = 2
 _RETRY_BACKOFF_SECONDS = 1.0
 
-#: Taille de page d'itération (OpenAlex admet per_page ≤ 200).
+#: Iteration page size (OpenAlex allows per_page ≤ 200).
 _PAGE_SIZE = 200
 
-#: Mocké en tests (pas de vrai sleep).
+#: Mocked in tests (no real sleep).
 _sleep = asyncio.sleep
 
 
 class OpenAlexError(Exception):
-    """Erreur OpenAlex propre (message SANS l'URL) — même rôle que ``NCBIError``/``EpmcError``."""
+    """Clean OpenAlex error (message WITHOUT the URL) — same role as ``NCBIError``/``EpmcError``."""
 
 
 def _raise_for_status(resp: httpx.Response) -> None:
@@ -66,7 +66,7 @@ async def _throttle() -> None:
 async def _get_with_retry(
     http: httpx.AsyncClient, url: str, params: dict | None = None
 ) -> httpx.Response:
-    """GET OpenAlex avec retry sur erreur transitoire (429 / 5xx / timeout), backoff simple."""
+    """OpenAlex GET with retry on transient error (429 / 5xx / timeout), simple backoff."""
     for attempt in range(_RETRIES + 1):
         try:
             resp = await http.get(url, params=params)
@@ -83,7 +83,7 @@ async def _get_with_retry(
 
 
 def _bounds_filter(bornes: DateBounds) -> str | None:
-    """Bornes dates → terme ``filter`` (OpenAlex n'en accepte pas en paramètre de requête)."""
+    """Date bounds → ``filter`` term (OpenAlex does not accept them as query parameters)."""
     terms: list[str] = []
     if bornes.date_from is not None:
         terms.append(f"from_publication_date:{bornes.date_from:%Y-%m-%d}")
@@ -93,15 +93,15 @@ def _bounds_filter(bornes: DateBounds) -> str | None:
 
 
 def _bare_id(value: str | None) -> str | None:
-    """Dernier segment de chemin d'une URL d'identifiant (``ids.pmid`` / ``ids.pmcid``
-    sont des URL) → valeur nue pour l'identité et le rattachement DOI."""
+    """Last path segment of an identifier URL (``ids.pmid`` / ``ids.pmcid``
+    are URLs) → bare value for the identity and the DOI attach."""
     if not value:
         return None
     return value.rstrip("/").rsplit("/", 1)[-1] or None
 
 
 def _rebuild_abstract(inverted: dict | None) -> str | None:
-    """``abstract_inverted_index`` (mot → positions 0-based) → texte (tri par position)."""
+    """``abstract_inverted_index`` (word → 0-based positions) → text (sorted by position)."""
     if not inverted:
         return None
     positions: list[tuple[int, str]] = []
@@ -113,7 +113,7 @@ def _rebuild_abstract(inverted: dict | None) -> str | None:
 
 
 def _parse_work(w: dict) -> dict:
-    """Un record work → dict meta du pipeline (clés du contrat + ``fulltext_note``)."""
+    """One work record → pipeline meta dict (contract keys + ``fulltext_note``)."""
     meta: dict = {
         "native_id": (w.get("id") or "").removeprefix(_ID_PREFIX) or None,
         "title": w.get("display_name"),
@@ -141,13 +141,13 @@ def _parse_work(w: dict) -> dict:
 
 
 class OpenAlexAdapter:
-    """Adapter source OpenAlex (n°3) : ``SourceAdapter`` sur la Works API.
+    """OpenAlex source adapter (n°3): ``SourceAdapter`` over the Works API.
 
-    ``api_key`` (config sécrète ``openalex_api_key``) : envoyée en paramètre
-    ``api_key`` si posée (budget dédié) ; sans clé, pool IP gratuit. Le count de
-    ``search_volume`` est porté par chaque réponse (``meta.count``) ; ``iter_ids``
-    ne refait jamais d'appel de count (pagination par page, ``sort`` plus récents
-    d'abord).
+    ``api_key`` (secret config ``openalex_api_key``): sent as the ``api_key``
+    parameter when set (dedicated budget); without a key, free IP pool. The
+    ``search_volume`` count is carried by every response (``meta.count``);
+    ``iter_ids`` never makes another count call (page pagination, ``sort``
+    most recent first).
     """
 
     def __init__(self, http: httpx.AsyncClient, api_key: str | None = None) -> None:
@@ -200,7 +200,7 @@ class OpenAlexAdapter:
                     seen.setdefault(wid)
                     if len(seen) >= limit:
                         break
-            # page fetchée complète (page × per_page couvre le count) ou vide → fin
+            # fully fetched page (page × per_page covers the count) or empty → done
             if not results or page * per_page >= count:
                 break
             page += 1
@@ -212,7 +212,7 @@ class OpenAlexAdapter:
             return []
         metas: list[dict] = []
         for wid in ids:
-            # Pas de filtre par id de work (400) : l'objet unique, un appel par id.
+            # No filter by work id (400): the unique object, one call per id.
             await _throttle()
             resp = await _get_with_retry(self._http, f"{OALEX_BASE}/{wid}", self._key_params())
             w = resp.json()

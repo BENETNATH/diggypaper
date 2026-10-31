@@ -57,12 +57,12 @@ async def anonymize(
     user: Annotated[User, Depends(get_current_user_or_anonymized)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> Response:
-    """Anonymise le user dans une transaction : PII effacée, annotations conservées via hash.
+    """Anonymizes the user in a transaction: PII erased, annotations kept via hash.
 
-    Idempotent (F2) : si déjà anonymisé, renvoie 204 sans rien changer.
+    Idempotent (F2): if already anonymized, returns 204 without changing anything.
     """
     if user.anonymized_hash is not None:
-        # Déjà anonymisé → idempotent, on ne touche à rien.
+        # Already anonymized -> idempotent, we touch nothing.
         return Response(status_code=204)
     settings = get_settings()
     anonymized_hash = hashlib.sha256((settings.anon_salt + user.email).encode("utf-8")).hexdigest()
@@ -85,7 +85,7 @@ async def export_data(
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> ExportData:
-    """Export JSON des données du compte (sans hashed_password ni champs sensibles)."""
+    """JSON export of the account's data (without hashed_password or sensitive fields)."""
     memberships = (
         (await db.execute(select(ProjectMember).where(ProjectMember.user_id == user.id)))
         .scalars()

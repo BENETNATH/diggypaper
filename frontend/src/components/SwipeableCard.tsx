@@ -4,21 +4,21 @@ import { ReactNode } from "react";
 import { useSwipeable } from "react-swipeable";
 
 interface SwipeableCardProps {
-  /** Contenu de la carte. */
+  /** Content of the card. */
   children: ReactNode;
-  /** Appelé quand le swipe est à droite (Valider). */
+  /** Called when the swipe is to the right (Accept). */
   onSwipeRight?: () => void;
-  /** Appelé quand le swipe est à gauche (Rejeter). */
+  /** Called when the swipe is to the left (Reject). */
   onSwipeLeft?: () => void;
-  /** Seuil de swipe (px). */
+  /** Swipe threshold (px). */
   threshold?: number;
-  /** Classes Tailwind de la carte. */
+  /** Tailwind classes of the card. */
   className?: string;
 }
 
 /**
- * Carte swipeable (MODULE 5) : glisser à droite = Valider, glisser à gauche =
- * Rejeter. Utilise `react-swipeable` (gestes tactiles + souris).
+ * Swipeable card (MODULE 5): swipe right = Accept, swipe left =
+ * Reject. Uses `react-swipeable` (touch gestures + mouse).
  */
 export function SwipeableCard({
   children,

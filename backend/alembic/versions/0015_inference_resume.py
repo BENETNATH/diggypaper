@@ -1,4 +1,4 @@
-"""inference_jobs.resume_after : reprise d'une analyse interrompue
+"""inference_jobs.resume_after: resuming an interrupted analysis
 
 Revision ID: 0015
 Revises: 0014

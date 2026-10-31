@@ -22,8 +22,8 @@ const SIZES: Record<string, string> = {
 };
 
 /**
- * Bouton cohérent (design-system : API variant/size/disabled stable).
- * Cibles ≥ 32 px (AA), focus visible, motion 120ms ease-out, reduced-motion respecté.
+ * Consistent button (design-system: stable variant/size/disabled API).
+ * Targets ≥ 32 px (AA), visible focus, 120ms ease-out motion, reduced-motion respected.
  */
 export function Button({
   variant = "primary",

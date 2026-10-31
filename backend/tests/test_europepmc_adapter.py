@@ -47,7 +47,7 @@ def _no_sleep(monkeypatch):
 
 
 async def test_search_volume_params_and_count(monkeypatch):
-    """``/search`` resultType=lite, pageSize=1, query bornée ; hitCount → int."""
+    """``/search`` resultType=lite, pageSize=1, bounded query; hitCount → int."""
     seen: dict = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -64,11 +64,13 @@ async def test_search_volume_params_and_count(monkeypatch):
     assert seen["resultType"] == "lite"
     assert seen["pageSize"] == "1"
     assert "FIRST_PDATE" not in seen["query"]
-    assert "sort" not in seen  # le count ne trie pas (503 EBI de 2026-10-31 sur toute requête triée)
+    assert (
+        "sort" not in seen
+    )  # le count ne trie pas (503 EBI de 2026-10-31 sur toute requête triée)
 
 
 async def test_search_volume_date_bounds(monkeypatch):
-    """Bornes → FIRST_PDATE:[lo TO hi] ANDée ; bornes ouvertes → query brute."""
+    """Bounds → FIRST_PDATE:[lo TO hi] ANDed; open bounds → raw query."""
     seen: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -92,7 +94,7 @@ async def test_search_volume_date_bounds(monkeypatch):
 
 
 async def test_iter_ids_cursor_pagination():
-    """cursorMark=* → nextCursorMark → 2ᵉ page → fin ; tri plus récents d'abord ; dédoublonné."""
+    """cursorMark=* → nextCursorMark → 2nd page → done; sorted newest first; deduplicated."""
     calls: list[dict] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -115,8 +117,8 @@ async def test_iter_ids_cursor_pagination():
 
 
 async def test_iter_ids_falls_back_to_unsorted_when_sort_503s():
-    """EBI renvoie 503 sur les requêtes triées (incident 2026-10-31) : repli sans tri, l'import
-    passe malgré tout (ordre arbitraire) ; sans 503, le tri reste demandé."""
+    """EBI returns 503 on sorted requests (incident 2026-10-31): fallback without sort, the import
+    still goes through (arbitrary order); without 503, the sort is still requested."""
     calls: list[bool] = []  # True si l'appel portait sort
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -133,13 +135,13 @@ async def test_iter_ids_falls_back_to_unsorted_when_sort_503s():
         ad = EuropePMCAdapter(http, None)
         ids = [i async for i in ad.iter_ids("q", DateBounds(), limit=10)]
     assert ids == ["W1", "W2"]
-    # count (sans tri) → page 1 avec tri (3 tentatives : 2 retries internes + 1) → repli sans tri
+    # count (no sort) → page 1 with sort (3 attempts) → fallback without sort
     assert calls == [False, True, True, True, False]
 
 
 async def test_iter_ids_limit_and_cached_count():
-    """Cap ``limit`` (les plus récents d'abord) ; count caché de ``search_volume`` réutilisé
-    (un seul appel de count), sinon un fallback ``pageSize=1``."""
+    """``limit`` cap (newest first); the hidden count from ``search_volume`` reused
+    (a single count call), otherwise a ``pageSize=1`` fallback."""
     n_counts = 0
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -190,7 +192,7 @@ NOTICE = {
 
 
 async def test_fetch_metadata_mapping():
-    """``id`` → native_id, champs mappés ; clés absentes si la notice n'a pas la valeur."""
+    """``id`` → native_id, mapped fields; keys absent if the record lacks the value."""
 
     def handler(request: httpx.Request) -> httpx.Response:
         p = request.url.params
@@ -219,7 +221,7 @@ async def test_fetch_metadata_mapping():
 
 
 async def test_fetch_metadata_chunking_and_empty():
-    """250 ids → tranches de 100 ; ``[]`` → ``[]`` sans appel."""
+    """250 ids → chunks of 100; ``[]`` → ``[]`` without a call."""
     n_calls: list[int] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -268,7 +270,7 @@ async def test_fetch_fulltext_unavailable_404():
 
 
 async def test_fetch_fulltext_size_limit():
-    """XML > 10 Mo → EpmcError (le XML n'est jamais retourné ni loggé)."""
+    """XML > 10 MB → EpmcError (the XML is never returned nor logged)."""
     big = "<article>" + "x" * (11 * 1024 * 1024) + "</article>"
 
     def handler(_request: httpx.Request) -> httpx.Response:
@@ -279,11 +281,11 @@ async def test_fetch_fulltext_size_limit():
             await EuropePMCAdapter(http, None).fetch_fulltext("W123")
 
 
-# --- throttle / retry / erreurs assainies --------------------------------------
+# --- throttle / retry / sanitized errors --------------------------------------
 
 
 async def test_throttle_and_retry_503(monkeypatch):
-    """Sleep entre chaque appel ; 503 → retry backoff ; 503 persistant → EpmcError."""
+    """Sleep between each call; 503 → retry backoff; persistent 503 → EpmcError."""
     sleeps: list[float] = []
 
     async def _rec(delay: float) -> None:
@@ -314,7 +316,7 @@ async def test_throttle_and_retry_503(monkeypatch):
 
 
 async def test_errors_sanitized():
-    """403 → EpmcError('HTTP 403') : jamais l'URL dans le message (logs / job.error)."""
+    """403 → EpmcError('HTTP 403'): never the URL in the message (logs / job.error)."""
 
     def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(403, text="forbidden")

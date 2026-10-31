@@ -1,18 +1,18 @@
-"""Client Europe PMC REST (adapter source n°2, spec 2026-10-29-sources-phase3).
+"""Europe PMC REST client (source adapter n°2, spec 2026-10-29-sources-phase3).
 
-API gratuite sans clé, rate limit par IP faible et non documenté (503 après de
-courtes rafales, observé 2026-10-29 depuis une IP datacenter) → throttle **par
-process** à 1 appel/s (pas de limiteur Redis, même choix que ``app.pubmed`` :
-contrainte de déploiement — un worker d'ingestion dédié, un import à la fois par
-projet).
+Free keyless API, weak and undocumented per-IP rate limit (503 after short
+bursts, observed 2026-10-29 from a datacenter IP) → **per-process** throttle
+at 1 call/s (no Redis limiter, same choice as ``app.pubmed``: deployment
+constraint — one dedicated ingestion worker, one import at a time per
+project).
 
-``httpx.AsyncClient`` injecté (pas créé en dur) pour le mock en tests ; ``_sleep``
-mocké en tests. Erreurs : ``EpmcError`` propre (SANS l'URL — le message ne doit
-jamais fuiter dans ``job.error`` / logs), retry backoff sur 503/timeout.
+``httpx.AsyncClient`` injected (not hardcoded) for mocking in tests; ``_sleep``
+mocked in tests. Errors: clean ``EpmcError`` (WITHOUT the URL — the message must
+never leak into ``job.error`` / logs), backoff retry on 503/timeout.
 
-Plein texte : ``GET /{id}/fullTextXML`` renvoie du JATS — le parseur est réutilisé
-tel quel depuis ``app.pubmed`` (``_extract_methods``/``_extract_sections``),
-contrainte d'architecture (aucun nouveau parseur).
+Full text: ``GET /{id}/fullTextXML`` returns JATS — the parser is reused
+as-is from ``app.pubmed`` (``_extract_methods``/``_extract_sections``),
+architecture constraint (no new parser).
 """
 
 import asyncio
@@ -29,25 +29,25 @@ logger = logging.getLogger(__name__)
 
 EPMC_BASE = "https://www.ebi.ac.uk/europepmc/webservices/rest"
 
-#: Intervalle minimum entre deux appels EPMC (s) : rate limit par IP, sans clé.
+#: Minimum interval between two EPMC calls (s): per-IP rate limit, keyless.
 _INTERVAL = 1.0
 
-#: Retry sur erreur transitoire (503 / timeout), backoff simple (s) — pattern app.pubmed.
+#: Retry on transient error (503 / timeout), simple backoff (s) — app.pubmed pattern.
 _RETRIES = 2
 _RETRY_BACKOFF_SECONDS = 1.0
 
-#: Taille de page d'itération (EPMC admet pageSize ≤ 1000).
+#: Iteration page size (EPMC allows pageSize ≤ 1000).
 _PAGE_SIZE = 1000
 
-#: Taille de tranche de ``fetch_metadata`` (query ``id:(… OR …)``).
+#: Chunk size of ``fetch_metadata`` (query ``id:(… OR …)``).
 _METADATA_CHUNK = 100
 
-#: Mocké en tests (pas de vrai sleep).
+#: Mocked in tests (no real sleep).
 _sleep = asyncio.sleep
 
 
 class EpmcError(Exception):
-    """Erreur EPMC propre (message SANS l'URL) — même rôle que ``NCBIError``."""
+    """Clean EPMC error (message WITHOUT the URL) — same role as ``NCBIError``."""
 
 
 def _raise_for_status(resp: httpx.Response) -> None:
@@ -62,7 +62,7 @@ async def _throttle() -> None:
 async def _get_with_retry(
     http: httpx.AsyncClient, url: str, params: dict | None = None
 ) -> httpx.Response:
-    """GET EPMC avec retry sur erreur transitoire (503 / timeout), backoff simple."""
+    """EPMC GET with retry on transient error (503 / timeout), simple backoff."""
     for attempt in range(_RETRIES + 1):
         try:
             resp = await http.get(url, params=params)
@@ -84,10 +84,10 @@ def _check_xml_size(resp: httpx.Response) -> None:
 
 
 def _term_bounded(query: str, bornes: DateBounds) -> str:
-    """Requête bornée par date de première publication (``FIRST_PDATE``).
+    """Query bounded by first-publication date (``FIRST_PDATE``).
 
-    Les bornes sont toujours ANDées, même si la query contient déjà une borne date
-    (même sémantique que ``app.pubmed._term_bounded``) ; sans bornes : query brute."""
+    The bounds are always AND-ed, even if the query already contains a date bound
+    (same semantics as ``app.pubmed._term_bounded``); without bounds: raw query."""
     if bornes.date_from is None and bornes.date_to is None:
         return query
     lo = bornes.date_from or date(1800, 1, 1)
@@ -96,12 +96,12 @@ def _term_bounded(query: str, bornes: DateBounds) -> str:
 
 
 def _first(lst: list | None) -> str | None:
-    """Première valeur non vide d'une liste EPMC, sinon None."""
+    """First non-empty value of an EPMC list, else None."""
     return next((v for v in (lst or []) if v), None)
 
 
 def _parse_result(r: dict) -> dict:
-    """Une notice ``resultType=core`` → dict meta du pipeline (clés de la spec D1)."""
+    """One ``resultType=core`` record → pipeline meta dict (spec D1 keys)."""
     fulltext_id = _first((r.get("fullTextIdList") or {}).get("fullTextId"))
     readers = (r.get("fullTextUrlList") or {}).get("fullTextUrl") or []
     fulltext_url = next(
@@ -136,11 +136,11 @@ def _parse_result(r: dict) -> dict:
 
 
 class EuropePMCAdapter:
-    """Adapter source Europe PMC (n°2) : ``SourceAdapter`` sur le REST EPMC.
+    """Europe PMC source adapter (n°2): ``SourceAdapter`` over the EPMC REST.
 
-    ``api_key`` est ignoré (API sans clé) mais capté pour la signature de fabrique
-    commune ``(client, api_key)``. Le count de ``search_volume`` est caché et
-    réutilisé par ``iter_ids`` (le pipeline appelle toujours l'un avant l'autre).
+    ``api_key`` is ignored (keyless API) but captured for the common factory
+    signature ``(client, api_key)``. The ``search_volume`` count is cached and
+    reused by ``iter_ids`` (the pipeline always calls one before the other).
     """
 
     def __init__(self, http: httpx.AsyncClient, api_key: str | None = None) -> None:
@@ -177,8 +177,9 @@ class EuropePMCAdapter:
                     self._http, term, min(_PAGE_SIZE, limit - len(seen)), cursor, sort=use_sort
                 )
             except EpmcError as exc:
-                # 2026-10-31 : EBI renvoyait 503 uniquement quand ``sort`` était passé — repli sans
-                # tri (ordre arbitraire) pour que l'import passe ; le tri revient dès que EBI est OK.
+                # 2026-10-31: EBI returned 503 only when ``sort`` was passed —
+                # fallback without sorting (arbitrary order) so the import goes
+                # through; sorting returns once EBI is OK.
                 if use_sort and str(exc) == "HTTP 503":
                     use_sort = False
                     data = await _search(
@@ -204,9 +205,11 @@ class EuropePMCAdapter:
         for start in range(0, len(ids), _METADATA_CHUNK):
             chunk = ids[start : start + _METADATA_CHUNK]
             query = "id:(" + " OR ".join(f'"{i}"' for i in chunk) + ")"
-            # ``sort=False`` : l'ordre est sans intérêt pour un fetch par identifiants (et le 503
-            # EBI de 2026-10-31 frappait toute requête portant ``sort``).
-            data = await _search(self._http, query, len(chunk), None, result_type="core", sort=False)
+            # ``sort=False``: order is irrelevant for an id-based fetch (and the 2026-10-31
+            # EBI 503 hit every request carrying ``sort``).
+            data = await _search(
+                self._http, query, len(chunk), None, result_type="core", sort=False
+            )
             for r in (data.get("resultList") or {}).get("result") or []:
                 if r.get("id"):
                     metas.append(_parse_result(r))
@@ -218,7 +221,7 @@ class EuropePMCAdapter:
         try:
             resp = await _get_with_retry(self._http, f"{EPMC_BASE}/{id}/fullTextXML")
         except EpmcError as exc:
-            # pas de texte (record non-OA) → « non disponible » côté pipeline
+            # no text (non-OA record) → "not available" on the pipeline side
             if str(exc) in ("HTTP 404", "HTTP 403"):
                 return None
             raise
@@ -237,10 +240,10 @@ async def _search(
     result_type: str = "lite",
     sort: bool = True,
 ) -> dict:
-    """Une requête ``/search`` (throttle + retry) → le JSON (hitCount, resultList…).
+    """One ``/search`` request (throttle + retry) → the JSON (hitCount, resultList…).
 
-    ``sort=False`` pour les appels de count : le tri est inutile (le hitCount ne dépend pas de
-    l'ordre) et le 2026-10-31 l'endpoint EPMC renvoyait 503 uniquement quand ``sort`` était passé.
+    ``sort=False`` for count calls: sorting is useless (hitCount does not depend on
+    order) and on 2026-10-31 the EPMC endpoint returned 503 only when ``sort`` was passed.
     """
     await _throttle()
     params: dict = {

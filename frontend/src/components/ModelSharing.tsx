@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { Input, Select } from "@/components/ui/Field";
 import { Badge } from "@/components/ui/Card";
 
-/** Qui peut utiliser ce modèle : utilisateurs (par e-mail) et projets (leurs LEAD). */
+/** Who can use this model: users (by e-mail) and projects (their LEAD). */
 export function ModelSharing({ modelId }: { modelId: string }) {
   const t = useTranslations("models");
   const [shares, setShares] = useState<ModelShare[]>([]);

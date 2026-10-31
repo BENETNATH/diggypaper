@@ -8,8 +8,8 @@ import {
 } from "react";
 
 /**
- * Wrapper label + champ + aide + erreur (WCAG : association implicite via <label>,
- * erreur identifiée par texte ET icône — pas par la couleur seule, SC 1.4.1).
+ * Wrapper label + field + help + error (WCAG: implicit association via <label>,
+ * error identified by text AND icon — not by color alone, SC 1.4.1).
  */
 export function Field({
   label,

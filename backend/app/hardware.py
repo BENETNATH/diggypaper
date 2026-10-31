@@ -1,7 +1,7 @@
-"""Ressources du serveur (CPU, RAM, GPU) et modèles conseillés pour le tri.
+"""Server resources (CPU, RAM, GPU) and recommended models for the triage.
 
-Lecture de /proc et des cgroups : le conteneur du backend voit le noyau de l'hôte. Les débits
-sont des ordres de grandeur (CPU récent) à confirmer avec un benchmark sur le serveur.
+Reading /proc and cgroups: the backend container sees the host's kernel. Throughputs
+are orders of magnitude (recent CPU) to confirm with a benchmark on the server.
 """
 
 from __future__ import annotations
@@ -18,9 +18,9 @@ def _read(path: str) -> str:
 
 
 def detect() -> dict:
-    """{cores, ram_gb, avx, avx2, avx512, gpu} ; ``gpu`` = périphérique NVIDIA visible.
+    """{cores, ram_gb, avx, avx2, avx512, gpu}; ``gpu`` = visible NVIDIA device.
 
-    RAM lue dans /proc/meminfo : celle de l'hôte (pas le plafond du conteneur backend).
+    RAM read from /proc/meminfo: the host's (not the backend container's cap).
     """
     flags: set[str] = set()
     for line in _read("/proc/cpuinfo").splitlines():
@@ -40,8 +40,8 @@ def detect() -> dict:
     }
 
 
-# (tag Ollama, RAM nécessaire en Go, clé de libellé). Modèles « instruct » sans mode réflexion :
-# un modèle qui raisonne avant de répondre multiplie le temps par article.
+# (Ollama tag, required RAM in Go, label key). "instruct" models with no reflection
+# mode: a model that reasons before answering multiplies the time per article.
 _TINY = ("qwen2.5:3b-instruct", 3, "tiny")
 _SMALL = ("qwen3:4b-instruct-2507-q4_K_M", 4, "small")
 _GEMMA = ("gemma3:4b", 5, "small")
@@ -50,7 +50,7 @@ _GPU = ("gemma3:12b", 10, "gpu")
 
 
 def recommend(hw: dict) -> dict:
-    """Profil du serveur et modèles conseillés (du plus recommandé au moins recommandé)."""
+    """Server profile and recommended models (most to least recommended)."""
     ram = hw["ram_gb"]
     if hw["gpu"]:
         profile, models = "gpu", [_GPU, _MOE if ram >= 32 else _SMALL]

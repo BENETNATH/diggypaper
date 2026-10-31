@@ -1,27 +1,27 @@
-"""Celery tasks : importation PubMed (Module 2).
+"""Celery tasks: PubMed import (Module 2).
 
-Pattern d'exécution (C1/C2, validé empiriquement) :
+Execution pattern (C1/C2, empirically validated):
 
-- Le task Celery reste **sync** (prefork).
-- Il exécute le core async (``_import_pubmed``) dans un **thread dédié** via
-  ``asyncio.run`` : pas de boucle en cours dans ce thread → fonctionne en mode
-  eager (boucle FastAPI en cours dans le thread appelant) comme en prod
-  prefork (pas de réutilisation d'un engine asyncpg lié à une boucle fermée).
-- Le core crée son **propre engine par run** (depuis ``DATABASE_URL``, lu à
-  l'appel) et le **dispose** en fin de run. Si ``session_factory`` est injecté
-  (tests), il ne crée pas d'engine.
-- Le client httpx est créé par le core (timeout explicite, m4) et fermé en
-  ``finally``.
-- Les exceptions du thread sont propagées au task (le job Celery passe en
-  FAILED ; le job import_jobs est marqué FAILED, le projet redevient DRAFT).
+- The Celery task stays **sync** (prefork).
+- It runs the async core (``_import_pubmed``) in a **dedicated thread** via
+  ``asyncio.run``: no loop in flight in that thread → works in eager mode
+  (FastAPI loop in flight in the calling thread) as in prod prefork (no
+  reuse of an asyncpg engine bound to a closed loop).
+- The core creates its **own engine per run** (from ``DATABASE_URL``, read at
+  call time) and **disposes** it at the end of the run. If ``session_factory``
+  is injected (tests), it does not create an engine.
+- The httpx client is created by the core (explicit timeout, m4) and closed
+  in ``finally``.
+- Thread exceptions are propagated to the task (the Celery job goes FAILED;
+  the import_jobs job is marked FAILED, the project becomes DRAFT again).
 
-Sémantique des statuts projet (m10) : import démarre → PROCESSING ; succès
-(y compris corpus vide) → FROZEN ; échec → DRAFT. ``COMPLETED`` est réservé au
-MODULE 4 (inférence terminée).
+Project status semantics (m10): import starts → PROCESSING; success (including
+an empty corpus) → FROZEN; failure → DRAFT. ``COMPLETED`` is reserved for
+MODULE 4 (inference done).
 
-TOCTOU (m11) : entre les deux appels esearch (``search_volume`` puis
-``fetch_pmids``), le corpus PubMed peut changer — acceptable : l'import est un
-instantané, le count est indicatif (le résultat persiste ``total_count`` réel).
+TOCTOU (m11): between the two esearch calls (``search_volume`` then
+``fetch_pmids``), the PubMed corpus can change — acceptable: the import is a
+snapshot, the count is indicative (the result persists the real ``total_count``).
 """
 
 import asyncio
@@ -79,9 +79,9 @@ from app.sources import DateBounds, SourceAdapter
 
 logger = logging.getLogger(__name__)
 
-#: Langue PubMed (libellé) → code ISO.
-#: m3 : une langue hors en/fr/de/es garde son libellé brut (pas de forçage
-#: 'en') — la colonne ``articles.original_language`` est un VARCHAR libre.
+#: PubMed language (label) → ISO code.
+#: m3: a language outside en/fr/de/es keeps its raw label (no forced
+#: 'en') — the ``articles.original_language`` column is a free-form VARCHAR.
 _LANGUAGE_MAP = {
     "english": "en",
     "french": "fr",
@@ -89,7 +89,7 @@ _LANGUAGE_MAP = {
     "spanish": "es",
 }
 
-#: Registre des sources de recherche : code → fabrique ``(client, api_key) -> SourceAdapter``.
+#: Search sources registry: code → factory ``(client, api_key) -> SourceAdapter``.
 ADAPTERS = {
     "pubmed": PubMedAdapter,
     "europepmc": EuropePMCAdapter,
@@ -97,7 +97,7 @@ ADAPTERS = {
     "hal": HalAdapter,
 }
 
-#: Setting de clé API par source (les autres sources n'en utilisent pas).
+#: Per-source API key setting (the other sources use none).
 _SOURCE_KEY_SETTING = {"openalex": "openalex_api_key"}
 
 
@@ -105,27 +105,27 @@ def _source_key_setting(source: str) -> str:
     return _SOURCE_KEY_SETTING.get(source, "ncbi_api_key")
 
 
-#: Taille des lots efetch (pmids par requête).
+#: efetch batch size (pmids per request).
 _EFETCH_BATCH = 100
 
-#: Hook de test : si défini, le core l'utilise au lieu de créer son propre
-#: engine depuis DATABASE_URL (le wrapper Celery n'a pas de paramètre de
-#: session — le hook permet d'exercer le vrai chemin thread+asyncio.run en
-#: tests avec l'engine SQLite de test).
+#: Test hook: if set, the core uses it instead of creating its own
+#: engine from DATABASE_URL (the Celery wrapper has no session parameter —
+#: the hook exercises the real thread+asyncio.run path in tests with the
+#: test SQLite engine).
 _session_factory_override: async_sessionmaker[AsyncSession] | None = None
 
-#: C-1 : masque la clé NCBI dans les messages d'erreur (job.error + log serveur)
-#: — ``api_key=…`` dans l'URL httpx (défense en profondeur : NCBIError est déjà
-#: propre, ça couvre les autres exceptions).
+#: C-1: masks the NCBI key in error messages (job.error + server log)
+#: — ``api_key=…`` in the httpx URL (defense in depth: NCBIError is already
+#: clean, this covers the other exceptions).
 _API_KEY_RE = re.compile(r"api_key=[^&\s'\"<>]*")
 
 
 def _sanitize_error(exc: BaseException) -> str:
-    """C-1 : message d'erreur propre pour ``job.error`` + log serveur.
+    """C-1: clean error message for ``job.error`` + server log.
 
-    - ``NCBIError`` → son message (déjà sans URL ni clé).
-    - sinon → ``str(exc)`` filtré (``api_key=…`` masqué par regex), tronqué à
-      500 caractères (pas de traceback brut avec l'URL).
+    - ``NCBIError`` → its message (already without URL or key).
+    - else → filtered ``str(exc)`` (``api_key=…`` masked by regex), truncated to 500
+      characters (no raw traceback with the URL).
     """
     if isinstance(exc, NCBIError):
         return str(exc) or type(exc).__name__
@@ -134,7 +134,7 @@ def _sanitize_error(exc: BaseException) -> str:
 
 
 def _map_language(language: str | None) -> str:
-    """Code ISO si connu, sinon le libellé PubMed brut (m3) ; ``en`` si absent."""
+    """ISO code if known, else the raw PubMed label (m3); ``en`` if absent."""
     if not language:
         return "en"
     label = language.strip()
@@ -142,7 +142,7 @@ def _map_language(language: str | None) -> str:
 
 
 def _biblio(meta: dict) -> dict:
-    """Métadonnées bibliographiques d'un article PubMed (journal, date, auteurs, types)."""
+    """Bibliographic metadata of a PubMed article (journal, date, authors, types)."""
     date = meta.get("pub_date")
     return {
         "journal": meta.get("journal"),
@@ -159,19 +159,19 @@ def _chunks(items: list, size: int):
 
 
 def _make_session_factory():
-    """Engine par run (C2) : créé depuis DATABASE_URL (env, lu à l'appel).
+    """Engine per run (C2): created from DATABASE_URL (env, read at call time).
 
-    Le run dispose l'engine en fin (``_import_pubmed``) : pas de réutilisation
-    d'un engine lié à une boucle d'événements fermée.
+    The run disposes the engine at the end (``_import_pubmed``): no reuse of
+    an engine bound to a closed event loop.
     """
     url = os.environ.get("DATABASE_URL", _IMPORT_TIME_DATABASE_URL)
     engine = make_engine(url)
     return engine, async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
-#: File Celery des tâches qui parlent à NCBI : un seul worker la consomme, avec
-#: ``--concurrency=1`` — le throttle de ``app.pubmed`` est par process (3 req/s sans clé,
-#: 10 avec), donc plusieurs process le multiplieraient au-delà du plafond NCBI.
+#: Celery queue of the tasks that talk to NCBI: a single worker consumes it, with
+#: ``--concurrency=1`` — the ``app.pubmed`` throttle is per process (3 req/s keyless,
+#: 10 with), so several processes would multiply it beyond the NCBI ceiling.
 INGEST_QUEUE = "ingest"
 
 
@@ -185,15 +185,15 @@ def import_pubmed_task(
     date_to: date | None = None,
     source: str = "pubmed",
 ) -> dict:
-    """Wrapper sync Celery : exécute le core async dans un thread dédié (C1/C2).
+    """Sync Celery wrapper: runs the async core in a dedicated thread (C1/C2).
 
-    ``asyncio.run`` tourne dans le thread worker (pas de boucle en cours dans
-    ce thread) : OK en mode eager (boucle FastAPI en cours dans le thread
-    appelant) comme en prod prefork. Les exceptions du thread sont relevées
-    dans le thread principal (le job Celery passe en FAILED).
+    ``asyncio.run`` runs in the worker thread (no loop in flight in that thread):
+    OK in eager mode (FastAPI loop in flight in the calling thread) as in prod
+    prefork. Thread exceptions are raised in the main thread (the Celery job goes
+    FAILED).
 
-    ``current_task`` est thread-local (stack Celery) : l'id du job est lu dans
-    le thread appelant, avant de spawn le thread worker.
+    ``current_task`` is thread-local (Celery stack): the job id is read in the
+    calling thread, before spawning the worker thread.
     """
     job_id = current_task.request.id
     result: dict = {}
@@ -222,7 +222,7 @@ def import_pubmed_task(
     thread.join()
     if error is not None:
         raise error
-    # Texte intégral manquant (hors PMC) : enchaîné automatiquement, en tâche séparée.
+    # Missing full text (outside PMC): chained automatically, as a separate task.
     if result.get("imported") and not celery_app.conf.task_always_eager:
         complete_fulltext_task.delay(project_id)
     return result
@@ -241,20 +241,20 @@ async def _import_pubmed(
     adapter: SourceAdapter | None = None,
     source: str = "pubmed",
 ) -> dict:
-    """Core async de l'import PubMed (ou, avec ``refs``, d'une liste de références).
+    """Async core of the PubMed import (or, with ``refs``, of a references list).
 
-    - ``session_factory`` injectable (tests) ; sinon le core crée son propre
-      engine par run (DATABASE_URL) et le dispose en fin (C2).
-    - ``http`` injectable (tests) ; sinon ``httpx.AsyncClient(timeout=60.0)``
-      (m4), fermé en ``finally``.
-    - ``adapter`` (Phase 1) : contrat ``SourceAdapter`` ; ``None`` → celui de ``source`` dans
-      ``ADAPTERS`` (construit dans ``_do_import``). Non utilisé par les chemins refs/citations.
-    - ``job_id`` : id Celery du task (persisté dans import_jobs, M3).
-    - Sémantique des statuts projet (m10) : démarrage → PROCESSING ; succès
-      (y compris corpus vide) → FROZEN ; échec → DRAFT.
-    - Erreur partielle (un pmid échoue) → log, continuer, ne pas bloquer.
-    - Renvoie ``{"imported", "failed", "total_count", "truncated"}`` (M1 :
-      ``total_count`` = count réel NCBI, pas ``len(pmids)``).
+    - ``session_factory`` injectable (tests); else the core creates its own engine per
+      run (DATABASE_URL) and disposes it at the end (C2).
+    - ``http`` injectable (tests); else ``httpx.AsyncClient(timeout=60.0)`` (m4), closed
+      in ``finally``.
+    - ``adapter`` (Phase 1): ``SourceAdapter`` contract; ``None`` → that of ``source`` in
+      ``ADAPTERS`` (built in ``_do_import``). Not used by the refs/citations paths.
+    - ``job_id``: Celery id of the task (persisted in import_jobs, M3).
+    - Project status semantics (m10): start → PROCESSING; success (including an
+      empty corpus) → FROZEN; failure → DRAFT.
+    - Partial error (one pmid fails) → log, continue, do not block.
+    - Returns ``{"imported", "failed", "total_count", "truncated"}`` (M1:
+      ``total_count`` = real NCBI count, not ``len(pmids)``).
     """
     if session_factory is None:
         session_factory = _session_factory_override
@@ -274,14 +274,14 @@ async def _import_pubmed(
             project = await session.get(Project, project_uuid)
             if project is None:
                 raise LookupError(f"project not found: {project_id}")
-            # M2 : garde d'état — seul un projet DRAFT peut être importé
-            # (l'API renvoie 409 ; c'est la garde TOCTOU côté task).
+            # M2: state guard — only a DRAFT project can be imported
+            # (the API returns 409; this is the TOCTOU guard on the task side).
             if project.status == ProjectStatus.PROCESSING:
                 raise LookupError(f"project {project_id} is already PROCESSING")
-            # Un import peut compléter un corpus existant : en cas d'échec on y revient.
+            # An import can complete an existing corpus: on failure we revert to it.
             previous = project.status
 
-            # M3 : le job est persisté (query + statut + résultat/erreur).
+            # M3: the job is persisted (query + status + result/error).
             job = ImportJob(
                 project_id=project.id,
                 query=query,
@@ -328,15 +328,15 @@ async def _do_import(
     adapter: SourceAdapter | None = None,
     source: str = "pubmed",
 ) -> dict:
-    """Corps de l'import : esearch → efetch par lots → insertion (m6 : commit par batch)."""
+    """Import body: esearch → efetch in batches → insertion (m6: commit per batch)."""
     api_key = await get_setting(session, _source_key_setting(source))
     if adapter is None:
         if source not in ADAPTERS:
             raise LookupError("unknown source")
         adapter = ADAPTERS[source](client, api_key)
     bounds = DateBounds(date_from, date_to)
-    # m11 : TOCTOU entre les deux esearch (count puis idlist) — acceptable,
-    # l'import est un instantané ; ``total_count`` est le count réel.
+    # m11: TOCTOU between the two esearch calls (count then idlist) — acceptable,
+    # the import is a snapshot; ``total_count`` is the real count.
     count = await adapter.search_volume(query, bounds)
     if count == 0:
         return await _finish_success(
@@ -345,7 +345,7 @@ async def _do_import(
             job,
             {"imported": 0, "failed": 0, "fulltext": 0, "total_count": 0, "truncated": False},
         )
-    # Cap absent → le défaut de l'adapter (``_esearch_max()``), comme avant.
+    # Cap absent → the adapter's default (``_esearch_max()``), as before.
     pmids = [nid async for nid in adapter.iter_ids(query, bounds)]
     truncated = count > _esearch_max()
     if truncated:
@@ -364,11 +364,11 @@ async def _do_import(
     fulltext = 0
     duplicates_doi = 0
     done = 0
-    # DOIs portés par des notices de CE import : un second DOI identique est sauté (pas
-    # rattaché — le rattachement n'a de cible que des lignes existantes).
+    # DOIs carried by records of THIS import: a second identical DOI is skipped (not
+    # attached — attachment only targets existing rows).
     import_dois: set[str] = set()
-    # DOI normalisé → identités (source, native_id) déjà dans le projet : un DOI porté par
-    # une autre identité EXISTANTE est rattaché (archi § 3), pas ré-inséré.
+    # Normalized DOI → identities (source, native_id) already in the project: a DOI carried
+    # by an EXISTING other identity is attached (archi § 3), not re-inserted.
     doi_owners: dict[str, set] = {}
     for doi, src, nid in (
         await session.execute(
@@ -381,7 +381,7 @@ async def _do_import(
             doi_owners.setdefault(key, set()).add((src, nid))
 
     async def progress() -> None:
-        # Lisible par GET /jobs pendant le RUNNING (barre de l'écran d'import).
+        # Readable by GET /jobs while RUNNING (import screen progress bar).
         job.result_json = {
             "phase": "importing",
             "done": done,
@@ -418,13 +418,13 @@ async def _do_import(
                     identity, doi = (source, native_id), clean_doi(meta.get("doi"))
                     others = doi_owners.get(doi, set()) - {identity} if doi else set()
                     if others:
-                        # DOI porté par une autre identité existante (archi § 3) : rattachement à
-                        # la ligne (champs vides + plein texte si absent) — pas de doublon.
+                        # DOI carried by another existing identity (archi § 3): attachment to the
+                        # row (empty fields + full text if absent) — no duplicate.
                         await _link_doi_article(session, project.id, meta, others, client, adapter)
                         duplicates_doi += 1
                     elif doi and doi in import_dois:
-                        # Une notice de ce même import porte déjà le DOI : saut (pas de
-                        # plein texte pour rien) — comportement phase 2.
+                        # A record of this same import already carries the DOI: skip (no
+                        # full text for nothing) — phase 2 behavior.
                         duplicates_doi += 1
                     else:
                         inserted, has_text = await _insert_article(
@@ -435,7 +435,7 @@ async def _do_import(
                             fulltext += has_text
                             if doi:
                                 import_dois.add(doi)
-                        # sinon : doublon (re-import) → ni importé ni échec (M2)
+                        # else: duplicate (re-import) → neither imported nor failed (M2)
                 except Exception:
                     logger.exception("article insert failed for %s %s", source, native_id)
                     failed += 1
@@ -464,14 +464,14 @@ async def _do_import_refs(
     client: httpx.AsyncClient,
     finish=None,
 ) -> dict:
-    """Liste de références (DOI, PMID, titres…) → articles du corpus.
+    """References list (DOI, PMID, titles…) → corpus articles.
 
-    ``finish`` (coroutine, optionnelle) : appelée avant la clôture du job, son résultat (dict) est
-    ajouté au résultat (ex. recherche créée sur les nouveaux articles).
+    ``finish`` (coroutine, optional): called before the job closes, its result (dict) is
+    added to the result (e.g. search created on the new articles).
 
-    Résolution : PMID connu (ou trouvé via Europe PMC par DOI / titre exact) → notice PubMed
-    complète ; sinon Crossref (DOI) ; sinon les métadonnées du fichier. Le texte intégral est
-    cherché ensuite (``complete_fulltext_task``), comme après un import PubMed.
+    Resolution: known PMID (or found via Europe PMC by DOI / exact title) → full
+    PubMed record; else Crossref (DOI); else the file's metadata. The full text is
+    sought afterwards (``complete_fulltext_task``), like after a PubMed import.
     """
     api_key = await get_setting(session, "ncbi_api_key")
     email = (
@@ -482,7 +482,7 @@ async def _do_import_refs(
     refs = dedupe(refs)
     truncated = len(refs) > _esearch_max()
     refs = refs[: _esearch_max()]
-    # Déjà dans le corpus (re-import) : ignoré, comme les doublons PubMed.
+    # Already in the corpus (re-import): ignored, like PubMed duplicates.
     rows = (
         await session.execute(
             select(Article.pmid, Article.doi, Article.title).where(Article.project_id == project.id)
@@ -543,7 +543,7 @@ async def _do_import_refs(
                 else:
                     if not meta.get("doi"):
                         meta["doi"] = e["doi"]
-                    # identifiant natif : PMID (pubmed), DOI normalisé (crossref), rien (file)
+                    # native identifier: PMID (pubmed), normalized DOI (crossref), nothing (file)
                     native_ids = {"pubmed": meta.get("pmid"), "crossref": clean_doi(meta["doi"])}
                     meta |= {
                         "source": source,
@@ -583,11 +583,11 @@ async def _do_import_refs(
 async def _do_import_citations(
     session: AsyncSession, project: Project, job: ImportJob, opts: dict, client: httpx.AsyncClient
 ) -> dict:
-    """Chaînage de citations : références / citants des articles de départ → corpus.
+    """Citation chaining: references / citing papers of the seed articles → corpus.
 
-    ``opts`` : seeds (PMID), direction, min_overlap, max_candidates, search_id (recherche dont la
-    question est reprise). Les candidats les plus liés aux graines entrent d'abord ; une recherche
-    est créée sur les nouveaux articles, prête à être analysée avec le modèle.
+    ``opts``: seeds (PMID), direction, min_overlap, max_candidates, search_id (search whose
+    question is reused). The candidates most linked to the seeds enter first; a search
+    is created on the new articles, ready to be analyzed with the model.
     """
     seeds = [str(p) for p in opts["seeds"]]
 
@@ -655,7 +655,7 @@ async def _do_import_citations(
 
 
 async def _file_meta(e: dict, email: str, client: httpx.AsyncClient) -> tuple[dict | None, str]:
-    """Métadonnées hors PubMed : Crossref (DOI) complété par le fichier ; sinon le fichier seul."""
+    """Non-PubMed metadata: Crossref (DOI) completed by the file; else the file alone."""
     cr = await crossref(e["doi"], email, client) if e["doi"] else None
     src = cr or e
     if cr is None and e["doi"] and not e["title"]:
@@ -678,12 +678,12 @@ async def _file_meta(e: dict, email: str, client: httpx.AsyncClient) -> tuple[di
 async def _fulltext_for(
     meta: dict, adapter: SourceAdapter | None, client: httpx.AsyncClient
 ) -> tuple[str | None, list[dict], str, str | None, str | None] | None:
-    """Plein texte de la notice → ``(methods, sections, source, url, note)`` ou ``None``.
+    """Full text of the record → ``(methods, sections, source, url, note)`` or ``None``.
 
-    Id du plein texte : ``fulltext_id`` (source non-PubMed, ex. Europe PMC : JATS, label et
-    URL de la notice, pas d'heuristique) sinon ``pmcid`` (PubMed : heuristique préprint non
-    archivable + URL PMC). ``adapter=None`` (chemin défaut refs/citations) : seul le chemin
-    ``pmcid`` fonctionne (fonction module-level ``fetch_fulltext``)."""
+    Full-text id: ``fulltext_id`` (non-PubMed source, e.g. Europe PMC: JATS, label and
+    URL of the record, no heuristic) else ``pmcid`` (PubMed: non-archivable-preprint
+    heuristic + PMC URL). ``adapter=None`` (default refs/citations path): only the
+    ``pmcid`` path works (module-level ``fetch_fulltext`` function)."""
     fulltext_id = meta.get("fulltext_id") or meta.get("pmcid")
     if not fulltext_id:
         return None
@@ -699,8 +699,8 @@ async def _fulltext_for(
             methods, sections = (None, []) if result is None else result
         else:
             methods, sections = await fetch_fulltext(fulltext_id, client)
-        # Préprint non archivable dans PMC : le « corps » n'est qu'un avis de 2 lignes.
-        # Trop court pour être un article : on le laisse à la complétion (autres sources).
+        # Non-archivable preprint in PMC: the "body" is just a 2-line notice.
+        # Too short to be an article: left to completion (other sources).
         pmc_url = f"https://pmc.ncbi.nlm.nih.gov/articles/{fulltext_id}/"
         if long_enough(sections):
             return methods, sections, "pmc", pmc_url, None
@@ -712,8 +712,8 @@ async def _fulltext_for(
 
 
 def _apply_fulltext(target: dict | Article, ft: tuple) -> None:
-    """Pose le plein texte ``(methods, sections, source, url, note)`` sur une notice
-    (``values``, dict) ou une ligne existante (``Article``, rattachement DOI)."""
+    """Sets the full text ``(methods, sections, source, url, note)`` on a record
+    (``values``, dict) or an existing row (``Article``, DOI attachment)."""
     methods, sections, source, url, note = ft
 
     def set_(key: str, value) -> None:
@@ -739,12 +739,12 @@ async def _insert_article(
     client: httpx.AsyncClient,
     adapter: SourceAdapter | None = None,
 ) -> tuple[bool, bool]:
-    """INSERT ... ON CONFLICT DO NOTHING (M2) → (inséré, full text présent).
+    """INSERT ... ON CONFLICT DO NOTHING (M2) → (inserted, full text present).
 
-    Sans cible de conflit : toute violation d'unicité (PMID ou triplet source/native_id) est
-    ignorée. Phase 1 : le plein texte passe par ``adapter`` s'il est injecté, sinon la
-    fonction module-level ``fetch_fulltext`` (chemin défaut : refs, citations,
-    tests existants).
+    No conflict target: any uniqueness violation (PMID or source/native_id triplet) is
+    ignored. Phase 1: the full text goes through ``adapter`` if injected, else the
+    module-level ``fetch_fulltext`` function (default path: refs, citations,
+    existing tests).
     """
     source = meta.get("source") or ("pubmed" if meta.get("pmid") else None)
     values = {
@@ -765,7 +765,7 @@ async def _insert_article(
     if ft := await _fulltext_for(meta, adapter, client):
         _apply_fulltext(values, ft)
     elif note := meta.get("fulltext_note"):
-        # source métadonnées seulement (OpenAlex) : note explicite, pas de plein texte
+        # metadata-only source (OpenAlex): explicit note, no full text
         values["fulltext_note"] = note
     insert = _pg_insert if session.get_bind().dialect.name == "postgresql" else _sqlite_insert
     stmt = insert(Article).values(**values).on_conflict_do_nothing()
@@ -781,12 +781,12 @@ async def _link_doi_article(
     client: httpx.AsyncClient,
     adapter: SourceAdapter | None,
 ) -> None:
-    """Rattachement DOI (archi § 3) : la notice entrante complète les champs VIDES de la
-    ligne existante (première en ``Article.id`` parmi les identités porteuses du DOI).
+    """DOI attachment (archi § 3): the incoming record fills the EMPTY fields of the
+    existing row (first by ``Article.id`` among the identities carrying the DOI).
 
-    Une valeur existante non vide n'est jamais écrasée ; l'identité de la ligne existante
-    (``source``/``native_id``/``origin``/``origin_ref``/``origin_seeds``) est intacte ;
-    le plein texte est cherché seulement si la ligne n'en a pas."""
+    An existing non-empty value is never overwritten; the identity of the existing row
+    (``source``/``native_id``/``origin``/``origin_ref``/``origin_seeds``) is intact;
+    the full text is sought only if the row has none."""
     conds = [and_(Article.source == s, Article.native_id == n) for s, n in owners]
     row = (
         await session.execute(
@@ -819,7 +819,7 @@ async def _link_doi_article(
 async def _finish_success(
     session: AsyncSession, project: Project, job: ImportJob, result: dict
 ) -> dict:
-    """Succès (m10) : projet FROZEN + job COMPLETED (result_json)."""
+    """Success (m10): project FROZEN + job COMPLETED (result_json)."""
     project.status = ProjectStatus.FROZEN
     job.status = ImportJobStatus.COMPLETED
     job.result_json = result
@@ -835,10 +835,10 @@ async def _record_failure(
     exc: Exception,
     restore: ProjectStatus = ProjectStatus.DRAFT,
 ) -> None:
-    """Échec (m10) : job FAILED (error assainie, C-1) + projet redevient DRAFT — best effort.
+    """Failure (m10): job FAILED (sanitized error, C-1) + project becomes DRAFT again — best effort.
 
-    C-1 : ``job.error`` et le log serveur utilisent ``_sanitize_error`` (pas de
-    traceback brut avec l'URL ni la clé NCBI).
+    C-1: ``job.error`` and the server log use ``_sanitize_error`` (no raw
+    traceback with the URL or the NCBI key).
     """
     error = _sanitize_error(exc)
     logger.error("import failed (project %s): %s", project.id, error)
@@ -853,11 +853,11 @@ async def _record_failure(
         logger.exception("failed to record import job failure")
 
 
-# --- Complément de texte intégral (sources ouvertes) -------------------------
+# --- Full text completion (open sources) -------------------------------------
 
 
 async def backfill_metadata(session: AsyncSession, project_id: uuid.UUID, client) -> int:
-    """Journal / date / auteurs des articles importés avant leur prise en charge (efetch)."""
+    """Journal / date / authors of the articles before their import (efetch)."""
     arts = [
         a
         for a in (await session.execute(select(Article).where(Article.project_id == project_id)))
@@ -886,7 +886,7 @@ async def backfill_metadata(session: AsyncSession, project_id: uuid.UUID, client
 
 @celery_app.task(name="diggypaper.complete_fulltext", queue=INGEST_QUEUE)
 def complete_fulltext_task(project_id: str) -> dict:
-    """Wrapper sync Celery (même schéma que l'import) : thread dédié + asyncio.run."""
+    """Sync Celery wrapper (same schema as the import): dedicated thread + asyncio.run."""
     job_id = current_task.request.id
     out: dict = {}
     error: BaseException | None = None
@@ -909,7 +909,7 @@ def complete_fulltext_task(project_id: str) -> dict:
 async def _complete_fulltext(
     project_id: str, session_factory=None, http: httpx.AsyncClient | None = None, job_id=None
 ) -> dict:
-    """Cherche (sources ouvertes) le texte intégral des articles qui n'en ont pas."""
+    """Seeks (open sources) the full text of the articles that do not have one."""
     session_factory = session_factory or _session_factory_override
     if session_factory is not None:
         factory, engine = session_factory, None

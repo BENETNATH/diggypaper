@@ -1,8 +1,8 @@
-"""Équipe d'un projet : liste des membres, invitation par e-mail, retrait.
+"""Team of a project: listing of the members, invitation by e-mail, removal.
 
-L'invitation d'une adresse inconnue envoie un lien d'inscription (JWT 7 j portant le projet
-et le rôle) ; une adresse déjà inscrite est ajoutée directement. Si l'e-mail ne part pas
-(SMTP absent/en panne), le lien est renvoyé pour que le LEAD le transmette lui-même.
+Inviting an unknown address sends a registration link (JWT 7 d carrying the project
+and the role); an already registered address is added directly. If the e-mail does not go out
+(SMTP absent/down), the link is returned for the LEAD to transmit it himself.
 """
 
 import logging
@@ -95,7 +95,7 @@ async def invite_member(
             )
         )
         await db.commit()
-        # Réponse identique pour un compte existant ou non (pas d'énumération des comptes).
+        # Same response whether the account exists or not (no enumeration of accounts).
         status, lang = "invited", existing.language_preference.value
         link = f"{settings.app_base_url}/projects/{project_id}"
         kind = "project_added"

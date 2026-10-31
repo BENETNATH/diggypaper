@@ -1,8 +1,8 @@
-"""Assistant de requête PubMed : un modèle propose une requête à partir d'un texte libre.
+"""PubMed query assistant: a model proposes a query from free text.
 
-Le modèle ne fait que proposer ; la requête est ensuite VÉRIFIÉE par PubMed (volume, traduction,
-termes inconnus) et, si on donne des articles attendus (DOI / PMID), on mesure combien elle en
-retrouve : c'est la validation standard d'une stratégie de recherche, indépendante du modèle.
+The model only proposes; the query is then VERIFIED by PubMed (volume, translation,
+unknown terms) and, if expected articles are given (DOI / PMID), we measure how many it
+retrieves: this is the standard validation of a search strategy, independent of the model.
 """
 
 from __future__ import annotations
@@ -21,44 +21,63 @@ MAX_REPLY = 600  # explication jointe à une requête valide
 MAX_QUESTION = 300  # question de clarification (quand il n'y a pas encore de requête)
 REFUSED = "REFUSED"
 
-#: Règles syntaxiques propres à chaque moteur (le reste du prompt est commun).
+#: Syntax rules specific to each engine (the rest of the prompt is shared).
 _SOURCE_RULES = {
     "pubmed": (
-        "- Valid PubMed syntax only: Boolean operators AND / OR / NOT in capitals, parentheses, quotes for \\\n"
+        "- Valid PubMed syntax only: Boolean operators AND / OR / NOT in capitals, "
+        "parentheses, quotes for \\\n"
         "phrases, field tags such as [tiab], [MeSH Terms], [pt], [dp].\n"
-        "- Combine, for each concept, the MeSH heading AND free-text synonyms in [tiab] (singular/plural, \\\n"
-        "spelling variants, abbreviations, truncation with *). Join the synonyms of a concept with OR, the \\\n"
+        "- Combine, for each concept, the MeSH heading AND free-text synonyms in [tiab] "
+        "(singular/plural, \\\n"
+        "spelling variants, abbreviations, truncation with *). Join the synonyms of a "
+        "concept with OR, the \\\n"
         "concepts with AND.\n"
-        "- Use only MeSH headings you are sure exist. Never invent one: when unsure, use [tiab] terms."
+        "- Use only MeSH headings you are sure exist. Never invent one: when unsure, "
+        "use [tiab] terms."
     ),
     "europepmc": (
-        "- Valid Europe PMC syntax only: Boolean operators AND / OR / NOT in capitals, parentheses, quotes for \\\n"
-        "phrases, field names such as TITLE_ABSTRACT:, ABSTRACT:, TITLE:, AUTHOR: (colon, no brackets).\n"
-        "- Combine, for each concept, free-text synonyms in TITLE_ABSTRACT (singular/plural, spelling \\\n"
-        "variants, abbreviations, truncation with *). Join the synonyms of a concept with OR, the concepts \\\n"
+        "- Valid Europe PMC syntax only: Boolean operators AND / OR / NOT in capitals, "
+        "parentheses, quotes for \\\n"
+        "phrases, field names such as TITLE_ABSTRACT:, ABSTRACT:, TITLE:, AUTHOR: "
+        "(colon, no brackets).\n"
+        "- Combine, for each concept, free-text synonyms in TITLE_ABSTRACT "
+        "(singular/plural, spelling \\\n"
+        "variants, abbreviations, truncation with *). Join the synonyms of a "
+        "concept with OR, the concepts \\\n"
         "with AND.\n"
-        "- Do NOT use PubMed field tags like [tiab] or [MeSH Terms]: Europe PMC does not understand them."
+        "- Do NOT use PubMed field tags like [tiab] or [MeSH Terms]: Europe PMC does "
+        "not understand them."
     ),
     "openalex": (
-        "- ONE plain relevance query for the OpenAlex works search: keywords and quoted phrases only.\n"
-        "- NO Boolean operators, NO field tags, NO wildcards or parentheses: the OpenAlex search box does not \\\n"
-        "support them. Cover each concept with its own words or phrase; prefer the most specific wording.\n"
+        "- ONE plain relevance query for the OpenAlex works search: keywords and "
+        "quoted phrases only.\n"
+        "- NO Boolean operators, NO field tags, NO wildcards or parentheses: the "
+        "OpenAlex search box does not \\\n"
+        "support them. Cover each concept with its own words or phrase; prefer the "
+        "most specific wording.\n"
         "- Keep it short (a dozen terms or less): it is a text search, not a strategy."
     ),
     "hal": (
-        "- Valid Solr syntax only: Boolean operators AND / OR / NOT in capitals, parentheses, quotes for phrases. \\\n"
+        "- Valid Solr syntax only: Boolean operators AND / OR / NOT in capitals, "
+        "parentheses, quotes for phrases. \\\n"
         "No field tags.\n"
-        "- Combine, for each concept, synonyms and variants (singular/plural, abbreviations, truncation with *). \\\n"
+        "- Combine, for each concept, synonyms and variants (singular/plural, "
+        "abbreviations, truncation with *). \\\n"
         "Join the synonyms of a concept with OR, the concepts with AND."
     ),
 }
 
-#: Nom lisible du moteur dans le prompt (le moteur est aussi dans la phrase de refus).
-_SOURCE_NAMES = {"pubmed": "PubMed", "europepmc": "Europe PMC", "openalex": "OpenAlex", "hal": "HAL"}
+#: Readable engine name in the prompt (the engine is also in the refusal sentence).
+_SOURCE_NAMES = {
+    "pubmed": "PubMed",
+    "europepmc": "Europe PMC",
+    "openalex": "OpenAlex",
+    "hal": "HAL",
+}
 
 
 def system_prompt(source: str) -> str:
-    """Prompt de l'assistant pour le moteur donné (défaut PubMed)."""
+    """Assistant prompt for the given engine (default PubMed)."""
     name = _SOURCE_NAMES.get(source, "PubMed")
     rules = _SOURCE_RULES.get(source, _SOURCE_RULES["pubmed"])
     return f"""You are an expert medical librarian who writes {name} search strategies for \
@@ -82,12 +101,12 @@ Answer ONLY with a JSON object: {{"reply": "<explanation or question>", "query":
 or null}}"""
 
 
-#: Compatibilité : le prompt PubMed d'origine (tests, appels existants).
+#: Compatibility: the original PubMed prompt (tests, existing calls).
 SYSTEM_PROMPT = system_prompt("pubmed")
 
 
 def build_prompt(messages: list[dict]) -> str:
-    """Conversation → texte du tour (les modèles sont appelés en un seul message)."""
+    """Conversation → turn text (models are called in a single message)."""
     lines = ["<conversation>"]
     for m in messages[-MAX_MESSAGES:]:
         who = "User" if m["role"] == "user" else "Assistant"
@@ -98,7 +117,7 @@ def build_prompt(messages: list[dict]) -> str:
 
 
 def clean_query(raw) -> str | None:
-    """La requête du modèle, sans balises de code parasites ; None si absente."""
+    """The model's query, without stray code tags; None if absent."""
     if not isinstance(raw, str):
         return None
     q = re.sub(r"^```[a-z]*|```$", "", raw.strip(), flags=re.M).strip().strip("`")
@@ -110,10 +129,10 @@ _BOOL = re.compile(r"\b(AND|OR|NOT)\b")
 
 
 def looks_like_query(q: str, source: str = "pubmed", raw: object = None) -> bool:
-    """Une requête contient des balises de champ ([tiab], [MeSH Terms]…) ou des opérateurs en
-    majuscules ; de la prose (réponse hors sujet glissée dans « query ») n'en a pas. OpenAlex fait
-    exception : sa « requête » est un texte simple, donc on n'attend ni opérateur ni balise
-    (une seule ligne courte suffit — ``raw`` : le texte brut, avant normalisation des espaces)."""
+    """A query contains field tags ([tiab], [MeSH Terms]…) or uppercase operators;
+    prose (an off-topic answer slipped into "query") does not. OpenAlex is the
+    exception: its "query" is plain text, so neither operator nor tag is expected
+    (a single short line suffices — ``raw``: the raw text, before space normalization)."""
     if len(q) > MAX_QUERY * 2:
         return False
     if source == "openalex":
@@ -122,11 +141,12 @@ def looks_like_query(q: str, source: str = "pubmed", raw: object = None) -> bool
 
 
 def constrain(answer: dict, source: str = "pubmed") -> dict:
-    """Réponse du modèle bornée à son rôle : {reply, query, refused}.
+    """Model answer bounded to its role: {reply, query, refused}.
 
-    Le modèle est un modèle général : l'invite lui interdit tout autre usage, mais seule la forme
-    de la sortie est garantie par le serveur. Hors requête valide, le texte libre se limite à une
-    courte question de clarification ; tout le reste est remplacé par un refus.
+    The model is a general model: the prompt forbids any other use, but only the
+    shape of the output is guaranteed by the server. Outside a valid query, free
+    text is limited to a short clarification question; everything else is replaced
+    by a refusal.
     """
     reply = str(answer.get("reply") or "").strip()
     raw_query = answer.get("query")
@@ -142,15 +162,15 @@ def constrain(answer: dict, source: str = "pubmed") -> dict:
 
 
 def parse_seeds(text: str) -> list[dict]:
-    """DOI / PMID collés, un par ligne (mêmes règles que l'import de références)."""
+    """Pasted DOI / PMID, one per line (same rules as the references import)."""
     return parse_references(text)[1] if text.strip() else []
 
 
 async def check_query(query: str, api_key: str | None, seeds: list[dict], http: httpx.AsyncClient):
-    """{count, translation, not_found, too_long, recall?} pour une requête proposée.
+    """{count, translation, not_found, too_long, recall?} for a proposed query.
 
-    ``recall`` (si des articles attendus sont donnés) : {total, found, missing} — les articles
-    attendus que la requête retrouve, et ceux qu'elle rate.
+    ``recall`` (if expected articles are given): {total, found, missing} — the
+    expected articles the query retrieves, and the ones it misses.
     """
     out = {"too_long": len(query) > MAX_QUERY}
     out |= await explain_query(query, api_key, http)

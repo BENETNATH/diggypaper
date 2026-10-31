@@ -1,4 +1,4 @@
-"""Analyses programmées (recherche 2 lancée quand la recherche 1 a fini) + question figée."""
+"""Scheduled analyses (search 2 started when search 1 is done) + frozen question."""
 
 from unittest.mock import MagicMock
 
@@ -75,7 +75,7 @@ async def test_scheduled_search_waits_then_starts_on_results(client, session, co
     prompt = await session.get(PromptTemplate, job.prompt_template_id)
     assert "Quel outil ?" in prompt.system_prompt and prompt.system_prompt.endswith("Only mice.")
     assert initial.id != search.id
-    # une seule analyse à la fois : rien d'autre ne part tant que celle-ci tourne
+    # one analysis at a time: nothing else starts while this one runs
     assert await start_ready(session, project) is None
     act = (await client.get(f"{base}/inference", params={"active": "true"})).json()["job"]
     assert act["id"] == job_id  # le job actif du projet, quelle que soit la recherche affichée
@@ -87,11 +87,11 @@ async def test_scheduled_on_same_lot_and_failures(client, session, corpus, start
     await session.commit()
     base = f"/api/v1/projects/{project.id}"
     await _finish_initial_analysis(session, project)
-    # origine déjà analysée + même lot (aucun critère) : l'analyse démarre tout de suite
+    # origin already analyzed + same batch (no criteria): the analysis starts right away
     r = await client.post(f"{base}/searches", json={"schedule": {"model": "Mdl"}})
     assert r.status_code == 201 and started.call_count == 1
     assert r.json()["schedule_state"] == "started" and r.json()["lot_size"] == 4
-    # sélection vide : la programmation échoue proprement
+    # empty selection: the scheduling fails cleanly
     session.add(
         InferenceJob(
             project_id=project.id,
@@ -111,7 +111,7 @@ async def test_scheduled_on_same_lot_and_failures(client, session, corpus, start
         r.json()["schedule_state"] == "failed"
         and r.json()["schedule"]["error"] == "empty_selection"
     )
-    # modèle inconnu : refusé à la création
+    # unknown model: refused at creation
     r = await client.post(f"{base}/searches", json={"schedule": {"model": "Nope"}})
     assert r.status_code == 422
 
@@ -121,7 +121,7 @@ async def test_question_is_locked_once_the_search_has_results(client, session, c
     url = f"/api/v1/projects/{project.id}"
     assert (await client.patch(url, json={"question": "Autre ?"})).status_code == 409
     assert (await client.patch(url, json={"text_sections": ["methods"]})).status_code == 200
-    # une recherche sans résultat se modifie librement
+    # a search with no results is freely editable
     new = await client.post(f"{url}/searches", json={"selection": {"status": "AUTO_ACCEPTED"}})
     sid = new.json()["id"]
     ok = await client.patch(f"{url}?search={sid}", json={"question": "Autre ?"})

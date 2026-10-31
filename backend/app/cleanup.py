@@ -1,8 +1,9 @@
-"""Suppression de projets (lignes en cascade FK + zips d'export) et de comptes.
+"""Project deletion (FK cascading rows + export zips) and account deletion.
 
-Règle : un compte invité (ni ADMIN ni créateur de projets) sans aucun projet n'a plus de
-raison d'exister (il consommerait des ressources sans rien faire) ; il est supprimé dès qu'il
-perd sa dernière appartenance. Les créateurs et les admins ne sont jamais supprimés ainsi.
+Rule: an invited account (neither ADMIN nor project creator) with no project
+left has no reason to exist (it would consume resources doing nothing); it is
+deleted as soon as it loses its last membership. Creators and admins are never
+deleted this way.
 """
 
 from __future__ import annotations
@@ -28,7 +29,7 @@ from app.db.models import (
 
 
 async def delete_user(db: AsyncSession, user: User) -> None:
-    """Supprime le compte ; ses annotations restent, anonymisées (hash). Commit à l'appelant."""
+    """Deletes the account; its annotations remain, anonymized (hashed). Commit is the caller's."""
     anon = hashlib.sha256((get_settings().anon_salt + user.email).encode("utf-8")).hexdigest()
     await db.execute(
         update(HumanAnnotation)
@@ -42,7 +43,7 @@ async def delete_user(db: AsyncSession, user: User) -> None:
 async def purge_orphans(
     db: AsyncSession, user_ids: list[uuid.UUID] | None = None, keep: tuple = ()
 ) -> int:
-    """Supprime les comptes invités sans projet (parmi ``user_ids``, ou tous). Commit appelant."""
+    """Deletes invited accounts with no project (among ``user_ids``, or all). Commit: caller."""
     q = select(User).where(
         User.role != UserRole.ADMIN,
         User.can_create_projects.is_not(True),
@@ -59,10 +60,10 @@ async def purge_orphans(
 
 
 async def delete_projects(db: AsyncSession, project_ids: list, keep: tuple = ()) -> int:
-    """Supprime ces projets : les FK ON DELETE CASCADE vident articles, PDF, jobs, partages…
+    """Deletes these projects: the ON DELETE CASCADE FKs empty articles, PDFs, jobs, shares…
 
-    Les zips d'export (hors base) sont effacés ici, et les membres restés sans projet sont
-    supprimés (sauf ``keep``). Commit à la charge de l'appelant.
+    The export zips (outside the database) are erased here, and members left without
+    a project are deleted (except ``keep``). Commit is the caller's responsibility.
     """
     if not project_ids:
         return 0

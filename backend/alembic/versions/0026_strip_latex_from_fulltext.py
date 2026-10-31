@@ -1,10 +1,10 @@
-"""Retire le LaTeX (préambule \\documentclass…) des textes intégraux PMC déjà importés
+"""Removes LaTeX (preamble \\documentclass...) from already-imported PMC full texts
 
 Revision ID: 0026
 Revises: 0025
 Create Date: 2026-10-17 19:00:00.000000
 
-Les formules JATS contiennent une copie LaTeX (``tex-math``) qui était concaténée au texte.
+JATS formulas contain a LaTeX copy (``tex-math``) that was concatenated to the text.
 """
 
 import json

@@ -1,6 +1,6 @@
-"""Phase 3 multi-sources : pipeline Europe PMC + plein texte par ``fulltext_id``
-(spec 2026-10-29-sources-phase3 D2) — 100 % offline (fake adapter, conventions
-``test_sources``)."""
+"""Phase 3 multi-sources: Europe PMC pipeline + full text by ``fulltext_id``
+(spec 2026-10-29-sources-phase3 D2) — 100% offline (fake adapter,
+``test_sources`` conventions)."""
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -44,8 +44,8 @@ async def _jobs(engine, project_id) -> list[ImportJob]:
 
 
 async def test_europepmc_import_sets_identity_and_fulltext(engine):
-    """Import ``europepmc`` : source/native_id posés, ``pmid`` quand la notice en porte un,
-    plein texte JATS via ``fulltext_id`` (label + URL de la notice)."""
+    """``europepmc`` import: source/native_id set, ``pmid`` when the record carries one,
+    JATS full text via ``fulltext_id`` (label + record URL)."""
     project = await _make_project(engine)
     fake = FakeSourceAdapter(
         volume=2,
@@ -78,14 +78,14 @@ async def test_europepmc_import_sets_identity_and_fulltext(engine):
     assert w1.fulltext_url == "https://europepmc.org/article/MED/34335492"
     w2 = by_nid["W2"]
     assert (w2.source, w2.pmid) == ("europepmc", None)
-    # le plein texte n'est demandé QUE pour le record OA, par son fulltext_id
+    # full text is requested ONLY for the OA record, by its fulltext_id
     assert [c[1] for c in fake.calls if c[0] == "fetch_fulltext"] == ["PMC99999"]
     job = (await _jobs(engine, project.id))[0]
     assert job.source == "europepmc"
 
 
 async def test_europepmc_non_oa_no_fulltext_call(engine):
-    """Notice sans ``fulltext_id`` (non-OA) : aucun appel plein texte, pas de note."""
+    """Record without ``fulltext_id`` (non-OA): no full-text call, no note."""
     project = await _make_project(engine)
     fake = FakeSourceAdapter(
         volume=1,

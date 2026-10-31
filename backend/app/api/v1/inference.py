@@ -1,10 +1,10 @@
-"""Routes inférence massive (MODULE 4, lot 5).
+"""Massive inference routes (MODULE 4, lot 5).
 
-Lecture (statut) : membre du projet. Trigger : LEAD du projet, rate limiting par
-IP + garde « un job PENDING/RUNNING par projet » + garde « projet FROZEN ».
+Read (status): member of the project. Trigger: LEAD of the project, rate limiting per
+IP + "one PENDING/RUNNING job per project" guard + "FROZEN project" guard.
 
-Le statut du dernier job + les statistiques clés sont exposés via
-``GET /projects/{id}/inference`` (notifications in-app par polling).
+The status of the last job + the key statistics are exposed via
+``GET /projects/{id}/inference`` (in-app notifications by polling).
 """
 
 import uuid
@@ -87,10 +87,10 @@ def _job_payload(job: InferenceJob) -> dict:
 async def trigger_inference(
     project_id: uuid.UUID, payload: InferenceCreate, db: DbDep, user: UserDep
 ) -> dict:
-    """Trigger l'inférence massive (task Celery). 202 {job_id, status}."""
+    """Triggers the massive inference (Celery task). 202 {job_id, status}."""
     project = await _require_project_member(db, project_id, user)
     await _require_lead(db, project_id, user)
-    # Garde : le corpus doit être FROZEN (reproductibilité, spec MODULE 2/4).
+    # Guard: the corpus must be FROZEN (reproducibility, spec MODULE 2/4).
     if project.status not in (ProjectStatus.FROZEN, ProjectStatus.COMPLETED):
         raise HTTPException(status_code=409, detail="project corpus not frozen")
     scope = await get_search(db, project, payload.search_id)
@@ -102,8 +102,8 @@ async def trigger_inference(
         prompt = await db.get(PromptTemplate, payload.prompt_template_id)
         if prompt is None or prompt.project_id != project_id:
             raise HTTPException(status_code=422, detail="prompt template not in this project")
-    # Le modèle est référencé par nom (model_used) : vérifie qu'il est enregistré.
-    # Seuls les modèles accessibles à ce LEAD dans ce projet sont lançables (ressources).
+    # The model is referenced by name (model_used): check that it is registered.
+    # Only the models accessible to this LEAD in this project are launchable (resources).
     if not await usable_models(db, user, [payload.model], project_id):
         raise HTTPException(status_code=422, detail="unknown model")
     if payload.prefilter_model and not await usable_models(
@@ -167,8 +167,8 @@ CANCELLED = "cancelled"  # job.error d'une analyse arrêtée à la main (statut 
 
 @router.post("/{project_id}/inference/cancel")
 async def cancel_inference(project_id: uuid.UUID, db: DbDep, user: UserDep) -> dict:
-    """Arrête l'analyse en cours (ou en attente). Les articles déjà analysés sont conservés ;
-    « Reprendre » continue plus tard. L'article en cours de traitement se termine d'abord."""
+    """Stops the analysis in progress (or pending). Already-analyzed articles are kept;
+    "Resume" continues later. The article being processed finishes first."""
     await _require_project_member(db, project_id, user)
     await _require_lead(db, project_id, user)
     job = (
@@ -205,10 +205,10 @@ async def get_inference(
     search: uuid.UUID | None = None,
     active: bool = False,
 ) -> dict:
-    """Statut du dernier job d'inférence de la recherche + statistiques (notifications in-app).
+    """Status of the last inference job of the search + statistics (in-app notifications).
 
-    ``active`` : le job en cours du projet (toutes recherches), sinon ``{"job": null}`` — une seule
-    analyse à la fois par projet."""
+    ``active``: the project's job in progress (all searches), else ``{"job": null}`` - one
+    analysis at a time per project."""
     project = await _require_project_member(db, project_id, user)
     scope = await get_search(db, project, search)
     where = (

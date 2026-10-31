@@ -22,13 +22,13 @@ down_revision: str | Sequence[str] | None = "0001"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-# JSON portable : JSON générique (SQLite), JSONB sur PostgreSQL.
+# Portable JSON: plain JSON (SQLite), JSONB on PostgreSQL.
 JSONB = sa.JSON().with_variant(postgresql.JSONB(), "postgresql")
 
 
-# --- UUID par défaut côté base (même pattern que 0001) -----------------
-# SQLite rejette `DEFAULT gen_random_uuid()` (fonction inconnue) : le défaut est
-# compilé par dialecte, exactement comme dans app/db/models.py.
+# --- DB-side default UUID (same pattern as 0001) -----------------
+# SQLite rejects `DEFAULT gen_random_uuid()` (unknown function): the default is
+# compiled per dialect, exactly like in app/db/models.py.
 class _UuidGenExpr(ClauseElement):
     __visit_name__ = "uuid_gen_expr"
 
@@ -49,8 +49,8 @@ def _uuid_default() -> DefaultClause:
 
 def upgrade() -> None:
     """Upgrade schema."""
-    # M3 (lot 4A) : table import_jobs — persiste la requête PubMed + le statut
-    # du job + le résultat/erreur (MODULE 6 : reproductibilité).
+    # M3 (lot 4A): import_jobs table - persists the PubMed query + job
+    # status + result/error (MODULE 6: reproducibility).
     op.create_table(
         "import_jobs",
         sa.Column("id", sa.Uuid(), server_default=_uuid_default(), nullable=False),
@@ -86,18 +86,18 @@ def upgrade() -> None:
     )
     op.create_index("ix_import_jobs_project_id", "import_jobs", ["project_id"])
 
-    # m3 (lot 4A) : articles.original_language → VARCHAR libre (pas un enum) —
-    # les langues hors en/fr/de/es gardent leur libellé PubMed brut (pas de
-    # forçage 'en'). La CHECK `languagecode` est retirée.
+    # m3 (lot 4A): articles.original_language -> free VARCHAR (not an enum) -
+    # languages outside en/fr/de/es keep their raw PubMed label (no
+    # forcing 'en'). The `languagecode` CHECK is removed.
     if op.get_bind().dialect.name == "postgresql":
         op.drop_constraint("languagecode", "articles", type_="check")
     else:
-        # SQLite : la CHECK est dans le DDL de la colonne → batch (recreate).
+        # SQLite: the CHECK is in the column DDL -> batch (recreate).
         with op.batch_alter_table("articles") as batch_op:
             batch_op.drop_constraint("languagecode", type_="check")
 
-    # M2 (lot 4A) : dédoublonnage au re-import — un seul article par
-    # (project_id, pmid), pmid non NULL (index unique partiel).
+    # M2 (lot 4A): dedup on re-import - one article per
+    # (project_id, pmid), pmid non NULL (partial unique index).
     op.create_index(
         "uq_articles_project_pmid",
         "articles",
@@ -116,7 +116,7 @@ def downgrade() -> None:
         postgresql_where=sa.text("pmid IS NOT NULL"),
         sqlite_where=sa.text("pmid IS NOT NULL"),
     )
-    # m3 : restaurer la CHECK enum sur original_language.
+    # m3: restore the enum CHECK on original_language.
     if op.get_bind().dialect.name == "postgresql":
         op.create_check_constraint(
             "languagecode", "articles", "original_language IN ('fr', 'en', 'de', 'es')"

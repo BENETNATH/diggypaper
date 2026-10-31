@@ -1,5 +1,5 @@
-"""Recherches : plusieurs questions par projet, lots dérivés des résultats d'une autre recherche,
-résultats / relectures / analyses rattachés à chacune."""
+"""Searches: several questions per project, batches derived from another search's results,
+results / re-reads / analyses attached to each one."""
 
 import re
 import uuid
@@ -28,7 +28,7 @@ FIELDS = [{"key": "ai", "label": "AI", "type": "boolean"}]
 
 @pytest.fixture
 async def corpus(session, researcher_user, client, do_login):
-    """Projet LEAD avec 4 articles ; recherche initiale : ai=oui pour A1, A2 ; non pour A3, A4."""
+    """LEAD project with 4 articles; initial search: ai=yes for A1, A2; no for A3, A4."""
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     project = Project(title="P", created_by=researcher_user.id, question="Q ?", fields=FIELDS)
     session.add(project)
@@ -87,16 +87,16 @@ async def test_derive_search_from_answers_and_scope_results(client, session, cor
     s = r.json()
     parent = (await client.get(f"{base}/searches")).json()["items"][0]["name"]
     assert s["lot_size"] == 2 and s["predicted"] == 0 and s["parent"]["name"] == parent
-    # sans nom : AAMMJJ-n, n suivant dans le projet
+    # no name: AAMMJJ-n, next n in the project
     auto = await client.post(f"{base}/searches", json={"selection": sel})
     assert auto.status_code == 201 and auto.json()["name"] == parent[:7] + "2"
     assert s["question"] == "Quel outil ?" and s["parent_spec"] == {"answers": {"ai": True}}
-    # la liste d'une recherche = son lot ; les résultats de l'autre ne s'y mélangent pas
+    # a search's list = its batch; the other's results do not mix in
     assert await titles(client, project, search=s["id"]) == ["A1", "A2"]
     assert await titles(client, project) == ["A1", "A2", "A3", "A4"]
     items = (await client.get(f"{base}/articles", params={"search": s["id"]})).json()["items"]
     assert all(i["prediction_status"] is None for i in items)  # aucune prédiction ici
-    # une relecture dans la nouvelle recherche ne touche pas la recherche initiale
+    # a re-read in the new search does not touch the initial search
     r = await client.post(
         f"{base}/articles/{arts[0].id}/annotation", params={"search": s["id"]}, json={"ai": False}
     )
@@ -125,15 +125,15 @@ async def test_selection_sample_reviewed_and_errors(client, session, corpus):
     assert await titles(client, project, search=a["id"]) == await titles(
         client, project, search=b["id"]
     )
-    # sélection vide : refusée
+    # empty selection: refused
     r = await client.post(
         f"{base}/searches", json={"name": "X", "selection": {"ids": [str(uuid.uuid4())]}}
     )
     assert r.status_code == 422
-    # 'confidence' bornée
+    # 'confidence' bounded
     sel = {"confidence_min": 0.5}
     assert (await client.post(f"{base}/searches/preview", json=sel)).json() == {"count": 2}
-    # suppression : la recherche initiale est protégée
+    # deletion: the initial search is protected
     sid = (await client.get(f"{base}/searches")).json()["items"][0]["id"]
     assert (await client.delete(f"{base}/searches/{sid}")).status_code == 409
     assert (await client.delete(f"{base}/searches/{a['id']}")).status_code == 204
@@ -147,7 +147,7 @@ async def test_non_lead_cannot_create_and_foreign_search_is_404(
     session.add(other)
     await session.commit()
     base = f"/api/v1/projects/{project.id}"
-    # une recherche d'un autre projet n'est pas atteignable par ce projet
+    # a search from another project is not reachable from this one
     from app.searches import default_search
 
     foreign = await default_search(session, other)
@@ -204,7 +204,7 @@ async def test_inference_runs_only_on_the_search_lot(engine, session, corpus, fa
         .all()
     )
     assert len(preds) == 2
-    # les résultats de la recherche initiale sont intacts (4 prédictions sans search_id)
+    # the initial search's results are intact (4 predictions without search_id)
     legacy = (
         (
             await session.execute(
@@ -220,12 +220,12 @@ async def test_inference_runs_only_on_the_search_lot(engine, session, corpus, fa
 async def test_gold_from_reviews_any_member_with_source_link(client, session, corpus):
     project, arts = corpus
     base = f"/api/v1/projects/{project.id}"
-    # relecture de A1 (corrigée : le modèle disait oui, le relecteur dit non), puis de A2 (validée)
+    # re-read of A1 (corrected: the model said yes, the re-reader says no), then of A2 (validated)
     await client.post(f"{base}/articles/{arts[0].id}/annotation", json={"ai": False})
     await client.post(f"{base}/articles/{arts[1].id}/annotation", json={"ai": True})
     r = await client.post(f"{base}/gold/from-reviews", json={})
     assert r.status_code == 201 and r.json() == {"added": 2, "updated": 0, "skipped": 0}
-    # idempotent : pas de doublon
+    # idempotent: no duplicate
     assert (await client.post(f"{base}/gold/from-reviews", json={})).json()["added"] == 0
     items = (await client.get(f"{base}/gold")).json()["items"]
     by = {i["article_title"]: i for i in items}
@@ -233,7 +233,7 @@ async def test_gold_from_reviews_any_member_with_source_link(client, session, co
     src = by["A1"]["source"]
     assert src["status"] == "CORRECTED" and src["by"] and src["annotation_id"] and not src["blind"]
     assert by["A2"]["source"]["status"] == "VALIDATED" and not by["A1"]["stale"]
-    # la relecture change ensuite : le gold reste figé mais signale qu'il est obsolète
+    # the re-read then changes: the gold stays frozen but flags itself as stale
     import asyncio
 
     await asyncio.sleep(1.1)  # SQLite : created_at à la seconde
@@ -244,7 +244,7 @@ async def test_gold_from_reviews_any_member_with_source_link(client, session, co
     assert r.json()["updated"] == 2
     by = {i["article_title"]: i for i in (await client.get(f"{base}/gold")).json()["items"]}
     assert by["A1"]["ground_truth_json"]["ai"] is True and not by["A1"]["stale"]
-    # on retire une référence
+    # remove a reference
     assert (await client.delete(f"{base}/gold/{by['A2']['id']}")).status_code == 204
 
 
@@ -286,7 +286,7 @@ async def test_blind_sample_hides_predictions_until_reviewed(client, session, co
         )
     ).json()
     assert s["kind"] == "blind" and s["lot_size"] == 2
-    # une prédiction existe dans cette recherche : invisible avant relecture
+    # a prediction exists in this search: invisible before re-reading
     lot = await titles(client, project, search=s["id"])
     art = next(a for a in arts if a.title in lot)
     session.add(
@@ -311,7 +311,7 @@ async def test_blind_sample_hides_predictions_until_reviewed(client, session, co
         .one()
     )
     assert ann.blind is True
-    # versée au gold, la relecture est marquée « à l'aveugle »
+    # once merged into the gold, the re-read is marked "blind"
     await client.post(f"{base}/gold/from-reviews", json={}, params={"search": s["id"]})
     item = (await client.get(f"{base}/gold", params={"search": s["id"]})).json()["items"][0]
     assert item["source"]["blind"] is True
@@ -359,7 +359,7 @@ async def test_blind_search_hides_model_and_other_reviewers_everywhere(
             )
         )
     await session.commit()
-    # le LEAD relit A1 ; un annotateur n'en voit RIEN : ni IA, ni réponse du LEAD
+    # the LEAD re-reads A1; an annotator sees NOTHING: no AI, no LEAD answer
     await client.post(
         f"{base}/articles/{arts[0].id}/annotation", params={"search": s["id"]}, json={"ai": False}
     )
@@ -368,7 +368,7 @@ async def test_blind_search_hides_model_and_other_reviewers_everywhere(
     items = (await client.get(f"{base}/articles", params={"search": s["id"]})).json()["items"]
     assert items and all(i["answers"] == [] and i["prediction_status"] is None for i in items)
     assert all(i["confidence"] is None and i["review"] is None for i in items)
-    # filtres et sélections ne servent pas d'oracle
+    # filters and selections are not an oracle
     assert (
         await client.get(f"{base}/articles", params={"search": s["id"], "answers": '{"ai": true}'})
     ).status_code == 422
@@ -378,10 +378,10 @@ async def test_blind_search_hides_model_and_other_reviewers_everywhere(
         f"{base}/searches/preview", json={"from_search_id": s["id"], "answers": {"ai": True}}
     )
     assert r.status_code == 422
-    # la relecture d'un autre n'est pas préremplie
+    # another's re-read is not pre-filled
     got = await client.get(f"{base}/articles/{arts[0].id}/annotation", params={"search": s["id"]})
     assert got.json() is None
-    # après SA relecture, l'IA devient visible pour cet article
+    # after THEIR re-read, the AI becomes visible for this article
     await client.post(
         f"{base}/articles/{arts[0].id}/annotation", params={"search": s["id"]}, json={"ai": True}
     )
@@ -525,11 +525,11 @@ async def test_quick_text_search_on_title_authors_pmid_and_doi(client, session, 
     assert (await found("100%"))[0] == ["Rat 100% sure_thing"]  # % littéral, pas un joker
     assert (await found("sure_t"))[0] == ["Rat 100% sure_thing"]  # _ littéral
     assert (await found("a%"))[0] == []  # pas de joker
-    # total (pagination) et filtres combinés
+    # total (pagination) and combined filters
     assert (await found("   "))[1] == 4  # que des espaces : pas de filtre
     r = await client.get(f"{base}/articles", params={"q": "mouse", "status": "AUTO_ACCEPTED"})
     assert r.json()["total"] == 1
-    # utilisable pour dériver une recherche et pour les références
+    # usable to derive a search and for references
     n = (await client.post(f"{base}/searches/preview", json={"q": "zebrafish"})).json()
     assert n == {"count": 1}
     ris = await client.get(f"{base}/export.ris", params={"q": "zebrafish"})
@@ -577,11 +577,11 @@ async def test_quick_search_ignores_accents_and_case(client, session, corpus):
     assert await found("100%") == []  # % et _ restent littéraux
 
 
-# --- traçabilité modèle + version (spec 2026-10-29-tracabilite-modele-version §4) ---
+# --- model traceability + version (spec 2026-10-29-tracabilite-modele-version §4) ---
 
 
 async def test_blind_prediction_model_version_only_after_own_review(client, session, corpus):
-    """Aveugle : ni la prédiction ni son modèle/version avant SA relecture ; ensuite oui."""
+    """Blind: neither the prediction nor its model/version before their re-read; afterwards yes."""
     project, arts = corpus
     base = f"/api/v1/projects/{project.id}"
     s = await _blind_search(client, project, n=1)
@@ -609,7 +609,7 @@ async def test_blind_prediction_model_version_only_after_own_review(client, sess
 
 
 async def test_search_summary_last_job_model_version(client, session, corpus):
-    """Dernière analyse d'une recherche : modèle principal ET sa version (instantané du job)."""
+    """Last analysis of a search: main model AND its version (job snapshot)."""
     project, _ = corpus
     session.add(
         InferenceJob(
@@ -636,8 +636,8 @@ async def test_search_summary_last_job_model_version(client, session, corpus):
 async def test_blind_search_export_hides_model_identifier_and_version(
     client, session, corpus, tmp_path
 ):
-    """Export d'une recherche aveugle (XLSX + extraction.csv du RO-Crate) : colonnes modèle,
-    identifiant et version vides — la traçabilité ne contourne pas l'aveugle."""
+    """Export of a blind search (XLSX + RO-Crate extraction.csv): model,
+    identifier and version columns empty — traceability does not bypass the blind."""
     import csv
     import io
     import zipfile

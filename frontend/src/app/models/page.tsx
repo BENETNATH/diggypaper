@@ -40,7 +40,7 @@ function ModelsContent() {
   const [caps, setCaps] = useState<ModelCapabilities | null>(null);
   const [ext, setExt] = useState({ name: "", base_url: "", model: "", api_key: "" });
   const [extMsg, setExtMsg] = useState<{ ok: boolean; text: string } | null>(null);
-  // Résultat du « Test » par modèle installé : "running" ou {ok, error?}
+  // "Test" result per installed model: "running" or {ok, error?}
   const [modelTests, setModelTests] = useState<Record<string, "running" | { ok: boolean; error?: string }>>({});
 
   const load = useCallback(async () => {
@@ -56,7 +56,7 @@ function ModelsContent() {
       setDetected(o.items.filter((m) => !m.registered));
       setPulls(o.pulls);
     } catch {
-      /* Ollama injoignable : la liste des modèles installés reste utilisable */
+      /* Ollama unreachable: the list of installed models stays usable */
     }
   }, [isAdmin, t]);
 
@@ -64,7 +64,7 @@ function ModelsContent() {
     void load();
   }, [load]);
 
-  // Un seul panneau de suivi : on interroge tant qu'un téléchargement tourne.
+  // A single tracking panel: we poll while a download is running.
   const running = Object.entries(pulls).filter(([, p]) => p.state === "running");
   const failed = Object.entries(pulls).filter(([, p]) => p.state === "error");
   useEffect(() => {
@@ -227,7 +227,7 @@ function ModelsContent() {
       </Card>
 
       <Card title={t("addTitle")}>
-        {/* La partie interne (Ollama) n'a de sens que pour l'admin : le reste des utilisateurs ne voit que l'ajout externe. */}
+        {/* The internal part (Ollama) only makes sense for the admin: the other users only see the external add. */}
         {isAdmin && caps && (
           <section>
             <h3 className="mb-2 text-sm font-semibold text-foreground">{t("addInternal")}</h3>

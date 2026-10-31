@@ -29,7 +29,7 @@ def test_compose_text_selection_and_fallback():
     t = compose_text(a, ["results", "abstract"])
     assert "res" in t and "abs" in t and "meth" not in t
     assert "intro" in compose_text(a, ["all"])
-    # pas de full text : repli methods_text puis abstract
+    # no full text: fallback methods_text then abstract
     assert compose_text(_art(methods_text="M"), ["results"]) == "M"
     assert compose_text(_art(), None) == "abs"
     tpl = "{article_text}|{methods_text}"

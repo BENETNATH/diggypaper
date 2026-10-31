@@ -1,7 +1,7 @@
-"""Export RO-Crate en tâche de fond : zip écrit dans EXPORT_DIR, e-mail à la fin.
+"""Background RO-Crate export: zip written to EXPORT_DIR, email at the end.
 
-Même schéma que l'inférence : wrapper Celery sync → thread + ``asyncio.run``. Les zips de
-plus de 7 jours sont purgés à chaque nouvel export.
+Same schema as inference: sync Celery wrapper → thread + ``asyncio.run``. Zips
+older than 7 days are purged at each new export.
 """
 
 import asyncio
@@ -30,7 +30,7 @@ _session_factory_override: async_sessionmaker[AsyncSession] | None = None
 
 @celery_app.task(name="diggypaper.export_crate")
 def export_task(export_job_id: str) -> dict:
-    """Wrapper sync Celery : le core async tourne dans un thread dédié."""
+    """Sync Celery wrapper: the async core runs in a dedicated thread."""
     out: dict = {}
     error: BaseException | None = None
 
@@ -50,7 +50,7 @@ def export_task(export_job_id: str) -> dict:
 
 
 async def _purge(session: AsyncSession, directory: Path) -> None:
-    """Supprime les exports de plus de KEEP_DAYS jours (lignes + fichiers)."""
+    """Deletes exports older than KEEP_DAYS days (rows + files)."""
     cutoff = datetime.now(UTC) - timedelta(days=KEEP_DAYS)
     old = (
         (await session.execute(select(ExportJob).where(ExportJob.created_at < cutoff)))
@@ -65,7 +65,7 @@ async def _purge(session: AsyncSession, directory: Path) -> None:
 
 
 async def _notify(session: AsyncSession, job: ExportJob, project: Project, ok: bool, stats: dict):
-    """E-mail au demandeur, dans sa langue (best-effort : jamais bloquant)."""
+    """Email to the requester, in their language (best-effort: never blocking)."""
     try:
         user = await session.get(User, job.user_id) if job.user_id else None
         mailer = await _inf._make_mailer(session)

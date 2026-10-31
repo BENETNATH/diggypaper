@@ -18,7 +18,7 @@ class Base(DeclarativeBase):
 
 
 def _unaccent(text):
-    """Sans accents (SQLite des tests) : l'équivalent de ``immutable_unaccent`` de PostgreSQL."""
+    """Accent-free (test SQLite): the equivalent of PostgreSQL's ``immutable_unaccent``."""
     if text is None:
         return None
     return "".join(c for c in unicodedata.normalize("NFKD", text) if not unicodedata.combining(c))
@@ -26,8 +26,8 @@ def _unaccent(text):
 
 @event.listens_for(Engine, "connect")
 def _register_sqlite_functions(dbapi_connection, _record) -> None:
-    # La recherche rapide utilise ``immutable_unaccent`` (fonction PostgreSQL, migration 0028) ;
-    # SQLite (tests) reçoit la même fonction en Python.
+    # Quick search uses ``immutable_unaccent`` (PostgreSQL function, migration 0028);
+    # SQLite (tests) gets the same function in Python.
     create = getattr(dbapi_connection, "create_function", None)
     if create is not None:
         create("immutable_unaccent", 1, _unaccent, deterministic=True)

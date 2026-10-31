@@ -1,7 +1,7 @@
-"""Routes Gold Dataset (gold_articles) — Module 3.
+"""Gold Dataset routes (gold_articles) - Module 3.
 
-Lecture : membre du projet. Écriture : LEAD du projet.
-``ground_truth_json`` doit contenir les clés du schéma spec §5.
+Read: member of the project. Write: LEAD of the project.
+``ground_truth_json`` must contain the keys of the schema spec \u00a75.
 """
 
 import uuid
@@ -31,7 +31,7 @@ router = APIRouter(prefix="/projects", tags=["gold"])
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 UserDep = Annotated[User, Depends(get_current_user)]
 
-# Clés obligatoires du schéma d'annotation (spec §5).
+# Required keys of the annotation schema (spec \u00a75).
 _GROUND_TRUTH_KEYS = {
     "use_ai_behavior",
     "animal_sex",
@@ -47,7 +47,7 @@ class GoldCreate(BaseModel):
 
 
 class GoldFromReviews(BaseModel):
-    """Ajoute au gold les relectures humaines (dernière relecture de chaque article)."""
+    """Adds the human re-reads to the gold (last re-read of each article)."""
 
     article_ids: list[uuid.UUID] | None = None  # None : tous les articles relus de la recherche
     refresh: bool = False  # remplace la copie des articles déjà au gold par la relecture actuelle
@@ -75,7 +75,7 @@ def _validate_ground_truth(gt: dict, project=None) -> None:
 
 
 def _snapshot(ann: HumanAnnotation, fields: list[dict]) -> dict:
-    """Copie figée d'une relecture : réponses aux items + pertinence, preuves, raisonnement."""
+    """Frozen copy of a re-read: answers to the items + relevance, evidence, reasoning."""
     d = ann.decision_json or {}
     out = {f["key"]: d.get(f["key"]) for f in fields}
     out["confidence_score"] = d.get("confidence_score", 1.0)
@@ -96,7 +96,7 @@ def _payload(
     names: dict,
     latest: HumanAnnotation | None,
 ) -> dict:
-    """Une ligne du gold : réponses, lien vers sa fiche source, relecteur, obsolescence."""
+    """One gold line: answers, link to its source card, re-reader, obsolescence."""
     d = (ann.decision_json or {}) if ann else {}
     stale = bool(
         latest is not None
@@ -134,7 +134,7 @@ async def _names(db: AsyncSession, user_ids: set) -> dict:
 
 
 async def _items(db: AsyncSession, project, scope, rows) -> list[dict]:
-    """Lignes du gold + relecture source, relecteurs, dernière relecture (pour « obsolète »)."""
+    """Gold lines + source re-read, re-readers, last re-read (for "obsolete")."""
     fields = project_fields(scope)
     anns = {}
     ann_ids = [g.source_annotation_id for g, _ in rows if g.source_annotation_id]
@@ -169,7 +169,7 @@ async def create_gold(
     user: UserDep,
     search: uuid.UUID | None = None,
 ) -> dict:
-    """Saisie manuelle d'une référence (LEAD). Préférer « Ajouter au gold » depuis une relecture."""
+    """Manual entry of a reference (LEAD). Prefer "Add to gold" from a re-read."""
     project = await _require_project_member(db, project_id, user)
     await _require_lead(db, project_id, user)
     scope = await get_search(db, project, search)
@@ -205,10 +205,10 @@ async def gold_from_reviews(
     user: UserDep,
     search: uuid.UUID | None = None,
 ) -> dict:
-    """Ajoute au gold standard la dernière relecture humaine des articles (tout membre).
+    """Adds the last human re-read of the articles to the gold standard (any member).
 
-    La référence est une copie figée des réponses du relecteur, avec un lien vers sa fiche. Un
-    article déjà au gold n'est pas dupliqué (``refresh`` : on met sa copie à jour)."""
+    The reference is a frozen copy of the re-reader's answers, with a link to its card. An
+    article already in the gold is not duplicated (``refresh``: its copy is updated)."""
     project = await _require_project_member(db, project_id, user)
     scope = await get_search(db, project, search)
     fields = project_fields(scope)
@@ -245,7 +245,7 @@ async def gold_from_reviews(
             )
             added += 1
         elif payload.refresh and (is_lead or g.added_by == user.id):
-            # pas de réécriture de la référence d'un autre (sauf LEAD) : saisie manuelle, relecteur
+            # no overwriting of someone else's reference (except LEAD): manual entry, re-reader
             g.ground_truth_json, g.source_annotation_id = _snapshot(ann, fields), ann.id
             updated += 1
         else:
@@ -268,7 +268,7 @@ async def _reviewed_ids(db: AsyncSession, scope) -> list:
 async def list_gold(
     project_id: uuid.UUID, db: DbDep, user: UserDep, search: uuid.UUID | None = None
 ) -> dict:
-    """Références valables pour la recherche (celles de toute recherche de même question)."""
+    """References valid for the search (those of every search with the same question)."""
     project = await _require_project_member(db, project_id, user)
     scope = await get_search(db, project, search)
     rows = (
@@ -284,7 +284,7 @@ async def list_gold(
 
 @router.delete("/{project_id}/gold/{gold_id}", status_code=204)
 async def delete_gold(project_id: uuid.UUID, gold_id: uuid.UUID, db: DbDep, user: UserDep) -> None:
-    """Retire une référence du gold (LEAD, ou la personne qui l'avait ajoutée)."""
+    """Removes a reference from the gold (LEAD, or the person who had added it)."""
     await _require_project_member(db, project_id, user)
     g = await db.get(GoldArticle, gold_id)
     if g is None or g.project_id != project_id:

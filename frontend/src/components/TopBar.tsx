@@ -5,7 +5,7 @@ import { useAuth } from "@/lib/auth";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { useTranslations } from "next-intl";
 
-/** Barre de navigation supérieure (desktop). */
+/** Top navigation bar (desktop). */
 export function TopBar() {
   const t = useTranslations("nav");
   const { user, logout } = useAuth();

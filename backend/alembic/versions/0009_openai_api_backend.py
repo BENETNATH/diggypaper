@@ -1,4 +1,4 @@
-"""model_registry : backend OPENAI_API (URL + clé chiffrée + modèle d'une API externe)
+"""model_registry: OPENAI_API backend (URL + encrypted key + model of an external API)
 
 Revision ID: 0009
 Revises: 0008

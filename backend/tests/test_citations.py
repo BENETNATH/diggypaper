@@ -1,4 +1,4 @@
-"""Chaînage de citations : liens (iCite mocké), classement, endpoint, import et recherche créée."""
+"""Citation chaining: links (mocked iCite), ranking, endpoint, import and created search."""
 
 import httpx
 import pytest
@@ -75,7 +75,7 @@ async def test_import_citations_adds_candidates_and_creates_search(engine):
         result = await _import_pubmed(
             str(project.id), "citations", session_factory=factory, http=http, options=opts
         )
-    # candidats : 11 (1 graine), 20 (2), 21 (1) hors corpus ; 10 est déjà dans le corpus
+    # candidates: 11 (1 seed), 20 (2), 21 (1) outside the corpus; 10 is already in the corpus
     assert result["imported"] == 3 and result["candidates"] == 4 and result["search_id"]
     async with factory() as s:
         new = (await s.execute(select(Article).where(Article.origin == "citation"))).scalars().all()

@@ -16,7 +16,7 @@ const PER_PAGE = 25;
 const same = (a: unknown, b: unknown): boolean =>
   String(a ?? "").trim().toLowerCase() === String(b ?? "").trim().toLowerCase();
 
-/** Réponses d'une décision : un item par ligne, en rouge quand elles s'écartent de la référence. */
+/** Answers of a decision: one item per row, in red when they deviate from the reference. */
 function Answers({
   decision,
   gold,
@@ -49,8 +49,8 @@ function Answers({
 }
 
 /**
- * Articles d'un benchmark, désaccords d'abord : la réponse de chaque (modèle, variante) côte à côte
- * avec la référence du gold quand elle existe.
+ * Articles of a benchmark, disagreements first: each (model, variant)'s answer side by side
+ * with the gold reference when it exists.
  */
 export function BenchmarkDisagreements({
   projectId,

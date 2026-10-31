@@ -42,7 +42,7 @@ async def _create_project(client, title: str = "P1") -> str:
 
 
 async def _seed_benchmark_prereqs(session, project_id: str) -> tuple[str, str]:
-    """Crée prompt + modèle + 1 gold article ; renvoie (prompt_id, model_name)."""
+    """Creates prompt + model + 1 gold article; returns (prompt_id, model_name)."""
     project = await session.get(Project, uuid.UUID(project_id))
     prompt = PromptTemplate(
         project_id=project.id,
@@ -92,7 +92,7 @@ def _mock_benchmark_task(monkeypatch, state: str = "PENDING"):
 
 
 async def test_trigger_benchmark_lead(client, session, researcher_user, do_login, monkeypatch):
-    """LEAD du projet : 202 {run_id, status} + run PERSISTÉ en base."""
+    """Project LEAD: 202 {run_id, status} + run PERSISTED in the DB."""
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     project_id = await _create_project(client)
     prompt_id, model_name = await _seed_benchmark_prereqs(session, project_id)
@@ -113,7 +113,7 @@ async def test_trigger_benchmark_lead(client, session, researcher_user, do_login
 
 
 async def test_trigger_benchmark_admin(client, session, admin_user, do_login, monkeypatch):
-    """ADMIN global : autorisé même sans membership."""
+    """Global ADMIN: allowed even without membership."""
     other = await _make_user(session, "other@lab.fr", UserRole.RESEARCHER, "other-pass-123")
     project = Project(title="Foreign", created_by=other.id)
     session.add(project)
@@ -139,7 +139,7 @@ async def test_trigger_benchmark_non_lead_403(client, session, researcher_user, 
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     project_id = await _create_project(client)
     prompt_id, model_name = await _seed_benchmark_prereqs(session, project_id)
-    # le créateur est LEAD ; on le dégrade en ANNOTATOR
+    # the creator is LEAD; demote them to ANNOTATOR
     member = await session.get(ProjectMember, (uuid.UUID(project_id), researcher_user.id))
     member.role_in_project = ProjectMemberRole.ANNOTATOR
     await session.commit()
@@ -186,7 +186,7 @@ async def test_trigger_benchmark_unknown_prompt_422(client, session, researcher_
 async def test_trigger_benchmark_prompt_other_project_422(
     client, session, researcher_user, do_login
 ):
-    """Prompt d'un autre projet → 422 (pas de cross-project)."""
+    """Prompt from another project → 422 (no cross-project)."""
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     project_id = await _create_project(client)
     await _seed_benchmark_prereqs(session, project_id)
@@ -216,7 +216,7 @@ async def test_trigger_benchmark_unknown_model_422(client, session, researcher_u
 
 
 async def test_trigger_benchmark_duplicate_models_422(client, session, researcher_user, do_login):
-    """Doublon dans models → 422 (len(models) != len(set))."""
+    """Duplicate in models → 422 (len(models) != len(set))."""
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     project_id = await _create_project(client)
     prompt_id, model_name = await _seed_benchmark_prereqs(session, project_id)
@@ -248,7 +248,7 @@ async def test_trigger_benchmark_no_gold_422(client, session, researcher_user, d
 
 
 async def test_trigger_benchmark_active_run_409(client, session, researcher_user, do_login):
-    """Un run PENDING/RUNNING existant → 409 (un benchmark par projet)."""
+    """An existing PENDING/RUNNING run → 409 (one benchmark per project)."""
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     project_id = await _create_project(client)
     prompt_id, model_name = await _seed_benchmark_prereqs(session, project_id)
@@ -273,7 +273,7 @@ async def test_trigger_benchmark_active_run_409(client, session, researcher_user
 async def test_trigger_benchmark_rate_limit_6th_429(
     client, session, researcher_user, do_login, monkeypatch
 ):
-    """6e trigger même IP → 429 (limite 5/15min)."""
+    """6th trigger same IP → 429 (limit 5/15min)."""
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     project_id = await _create_project(client)
     prompt_id, model_name = await _seed_benchmark_prereqs(session, project_id)
@@ -284,7 +284,7 @@ async def test_trigger_benchmark_rate_limit_6th_429(
             json={"prompt_template_id": prompt_id, "models": [model_name]},
         )
         assert resp.status_code == 202, f"trigger {i + 1} devrait passer"
-        # on passe le run en COMPLETED pour ne pas bloquer sur la garde 409
+        # move the run to COMPLETED so the 409 guard does not block
         runs = (
             (
                 await session.execute(
@@ -382,7 +382,7 @@ async def test_get_benchmark_404(client, session, researcher_user, do_login):
 
 
 async def test_get_benchmark_other_project_404(client, session, researcher_user, do_login):
-    """Run d'un autre projet → 404 (pas de fuite cross-project)."""
+    """Run from another project → 404 (no cross-project leak)."""
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     project_id = await _create_project(client)
     other = await _make_user(session, "other@lab.fr", UserRole.RESEARCHER, "other-pass-123")

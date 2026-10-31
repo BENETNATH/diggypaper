@@ -1,8 +1,8 @@
-"""Fuite d'identifiant de modèle OPENAI_API (spec specs/2026-10-29-fuite-identifiant-modele.md).
+"""OPENAI_API model identifier leak (spec specs/2026-10-29-fuite-identifiant-modele.md).
 
-Un ``model_identifier`` OPENAI_API vaut ``<base_url>#<modèle>`` : la base URL ne doit jamais
-porter de secret (userinfo, query, fragment) et ne sort JAMAIS telle quelle du serveur — ni pour
-le propriétaire, ni pour les destinataires d'un partage. 100 % offline.
+An OPENAI_API ``model_identifier`` is ``<base_url>#<model>``: the base URL must never
+carry a secret (userinfo, query, fragment) and never leaves the server as-is — neither for
+the owner, nor for the recipients of a share. 100% offline.
 """
 
 import importlib.util
@@ -19,7 +19,7 @@ from tests.conftest import _make_user
 
 API = "/api/v1"
 SECRETS_DETAIL = "base_url must not contain credentials, query or fragment"
-# Ligne héritée : userinfo + port + segment de chemin porteur d'un jeton + query secrète.
+# Inherited row: userinfo + port + path segment carrying a token + secret query
 LEGACY = "https://bob:pw-SECRET@api.x.test:8443/v1/tok-PATHSECRET?key=SECRET-Q#gpt-4o"
 SECRET_BITS = ("SECRET", "pw-", "bob:", "key=", "tok-PATH", "/v1")
 
@@ -34,7 +34,7 @@ BAD_URLS = {
 
 @pytest.fixture
 def public_urls(monkeypatch):
-    """Pas de DNS en test : toute URL est « publique » (contrôle SSRF neutralisé)."""
+    """No DNS in tests: every URL is "public" (SSRF check neutralized)."""
     monkeypatch.setattr("app.api.v1.models.check_public_url", lambda url: None)
 
 
@@ -58,7 +58,7 @@ async def _login(client, email, password):
 
 @contextmanager
 def _http(calls: list):
-    """Transport httpx global mocké : enregistre toute requête sortante."""
+    """Mocked global httpx transport: records every outgoing request."""
 
     def handler(req: httpx.Request) -> httpx.Response:
         calls.append(str(req.url))
@@ -81,14 +81,14 @@ def _item(resp, name):
     return next(m for m in resp.json()["items"] if m["name"] == name)
 
 
-# --- 1. Rejet à l'enregistrement / la mise à jour ------------------------------------------
+# --- 1. Rejection at registration / update ------------------------------------------
 
 
 @pytest.mark.parametrize("kind", list(BAD_URLS))
 async def test_register_external_rejects_url_secrets_admin(
     client, session, admin_user, do_login, kind
 ):
-    """Admin (pas de contrôle SSRF) : 422 quand même, détail fixe, secret jamais renvoyé."""
+    """Admin (no SSRF check): 422 anyway, fixed detail, secret never returned."""
     await do_login("admin@lab.fr", "admin-pass-123")
     r = await client.post(
         f"{API}/models/external",
@@ -113,7 +113,7 @@ async def test_register_external_rejects_url_secrets_non_admin(client, session, 
 
 
 async def test_register_external_rejects_hash_in_model_name(client, session, admin_user, do_login):
-    """« # » est le séparateur URL/modèle : interdit dans le nom du modèle (un seul « # »)."""
+    """ "#" is the URL/model separator: forbidden in the model name (only one "#")."""
     await do_login("admin@lab.fr", "admin-pass-123")
     r = await client.post(
         f"{API}/models/external",
@@ -140,7 +140,7 @@ async def test_external_test_rejects_url_secrets_before_any_call(
 
 
 async def test_create_model_openai_api_rejects_url_secrets(client, session, admin_user, do_login):
-    """POST /models (admin) est l'autre porte d'entrée d'une ligne OPENAI_API."""
+    """POST /models (admin) is the other entry point of an OPENAI_API row."""
     await do_login("admin@lab.fr", "admin-pass-123")
     for url in BAD_URLS.values():
         r = await client.post(
@@ -181,7 +181,7 @@ async def test_patch_openai_identifier_rejects_secrets_and_bad_format(
     assert (ok.json()["model_identifier"], ok.json()["endpoint"]) == ("gpt-5", "https://api.y.test")
 
 
-# --- 2. Masquage en sortie (lignes héritées déjà en base) ----------------------------------
+# --- 2. Masking on output (inherited rows already in the DB) ----------------------------------
 
 
 async def test_register_payload_is_masked(client, session, admin_user, do_login):
@@ -200,7 +200,7 @@ async def test_register_payload_is_masked(client, session, admin_user, do_login)
     assert (body["model_identifier"], body["endpoint"]) == ("gpt-4o", "https://api.x.test:8443")
     _assert_no_secret(r.text)
     row = (await session.execute(select(ModelRegistry))).scalar_one()
-    # stockage intact : l'appel au fournisseur garde le chemin complet
+    # storage intact: the call to the provider keeps the full path
     assert row.model_identifier == "https://api.x.test:8443/v1/tok-PATHSECRET#gpt-4o"
 
 
@@ -233,7 +233,7 @@ async def test_legacy_row_with_secrets_masked_in_every_payload(
     r = await client.get(f"{API}/models")
     _assert_no_secret(r.text)
     shared_view = _item(r, "Legacy")
-    # jamais plus que le propriétaire
+    # never more than the owner
     assert {k: v for k, v in shared_view.items() if k != "mine"} == {
         k: v for k, v in owner_view.items() if k != "mine"
     }
@@ -288,7 +288,7 @@ async def test_local_backends_payload_unchanged(client, session, admin_user, do_
     assert (item["model_identifier"], item["endpoint"]) == ("kev:q4", None)
 
 
-# --- 3. Garde : chemin heureux et SSRF inchangés ---------------------------------------------
+# --- 3. Guard: happy path and SSRF unchanged ---------------------------------------------
 
 
 async def test_clean_url_with_path_still_registers_and_ssrf_unchanged(

@@ -15,7 +15,7 @@ import { ErrorBanner, ProgressBar, Skeleton } from "@/components/ui/Feedback";
 const th = "px-2 py-1 text-right font-normal";
 const td = "px-2 py-1.5 text-right tabular-nums";
 
-/** Carte d'un benchmark : en-tête, progression, puis (au dépliage) classement, détails et désaccords. */
+/** Card of a benchmark: header, progress, then (on expansion) ranking, details and disagreements. */
 export function BenchmarkRunCard({
   projectId,
   run,
@@ -26,7 +26,7 @@ export function BenchmarkRunCard({
   projectId: string;
   run: BenchmarkRun;
   search?: SearchInfo;
-  /** Recherche à analyser ensuite (la recherche courante, pas forcément le sous-lot du benchmark). */
+  /** Search to analyze next (the current search, not necessarily the benchmark's sub-batch). */
   analysisSearchId?: string;
   onStop: (runId: string) => void;
 }) {
@@ -39,11 +39,11 @@ export function BenchmarkRunCard({
   const [open, setOpen] = useState(false);
   const [results, setResults] = useState<BenchmarkResult[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [detail, setDetail] = useState<string | null>(null); // clé de la ligne dépliée
+  const [detail, setDetail] = useState<string | null>(null); // key of the expanded row
   const [busy, setBusy] = useState<string | null>(null);
-  const saved = useRef<Record<string, string>>({}); // prompts déjà enregistrés (évite les doublons)
+  const saved = useRef<Record<string, string>>({}); // prompts already saved (avoids duplicates)
 
-  // Les résultats ne sont lus qu'au dépliage, et relus quand le statut change (fin du run).
+  // The results are read only on expansion, and re-read when the status changes (end of the run).
   useEffect(() => {
     if (!open || active) return;
     let stale = false;
@@ -61,7 +61,7 @@ export function BenchmarkRunCard({
   const crit = primaryParts(ranked.find((r) => r.details?.primary)?.details?.primary, fields);
   const withAgreement = ranked.some((r) => r.details?.agreement != null);
 
-  /** Identifiant du prompt à utiliser pour analyser : le prompt enregistré, ou la variante libre enregistrée à la volée. */
+  /** ID of the prompt to use for analyzing: the saved prompt, or the free variant saved on the fly. */
   async function promptFor(r: BenchmarkResult): Promise<string | undefined> {
     const v = run.variants?.find((x) => x.name === r.variant);
     if (!v) return run.prompt_template_id ?? undefined;

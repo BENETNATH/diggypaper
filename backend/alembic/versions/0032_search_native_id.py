@@ -1,14 +1,14 @@
-"""Recherche rapide : l'identifiant natif (native_id) entre dans le blob.
+"""Quick search: the native identifier (native_id) joins the blob.
 
 Revision ID: 0032
 Revises: 0031
 Create Date: 2026-10-29 17:00:00.000000
 
-Phase 3 multi-sources : les articles hors PubMed portent leur identifiant natif
-(W…, doi normalisé…) dans ``native_id``. ``search_blob()`` (app/api/v1/projects.py)
-l'inclut après le ``pmid`` : l'index trigramme 0028 est recréé sur la nouvelle
-expression (sinon il ne sert plus). PG-only, comme 0028 (extensions pg_trgm /
-unaccent).
+Phase 3 multi-sources: non-PubMed articles carry their native identifier
+(W..., normalized doi...) in ``native_id``. ``search_blob()`` (app/api/v1/projects.py)
+includes it after ``pmid``: the 0028 trigram index is recreated on the new
+expression (otherwise it is useless). PG-only, like 0028 (pg_trgm /
+unaccent extensions).
 """
 
 from collections.abc import Sequence
@@ -20,7 +20,7 @@ down_revision: str | Sequence[str] | None = "0031"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-# Doit rester identique à ``search_blob()`` (app/api/v1/projects.py).
+# Must stay identical to ``search_blob()`` (app/api/v1/projects.py).
 _BLOB = (
     "lower(immutable_unaccent(coalesce(title, '') || ' ' || coalesce(journal, '') || ' ' || "
     "coalesce(pmid, '') || ' ' || coalesce(native_id, '') || ' ' || coalesce(doi, '') || ' ' || "

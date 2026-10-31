@@ -1,4 +1,4 @@
-"""articles : lien public vers le texte intégral / PDF
+"""articles: public link to the full text / PDF
 
 Revision ID: 0012
 Revises: 0011
@@ -20,7 +20,7 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     op.add_column("articles", sa.Column("fulltext_url", sa.String(), nullable=True))
-    # textes déjà récupérés via PMC : lien reconstruit depuis le PMCID
+    # texts already fetched via PMC: link rebuilt from the PMCID
     op.execute(
         "UPDATE articles SET fulltext_url = "
         "'https://pmc.ncbi.nlm.nih.gov/articles/' || pmcid || '/' "

@@ -1,6 +1,6 @@
-"""Routes Prompt Studio (prompt_templates) — Module 3.
+"""Prompt Studio routes (prompt_templates) - Module 3.
 
-Lecture : membre du projet. Écriture (création/édition) : LEAD du projet.
+Read: member of the project. Write (creation/editing): LEAD of the project.
 """
 
 import uuid
@@ -109,8 +109,8 @@ async def create_prompt(
 async def ensure_prompt(
     db: AsyncSession, project, search=None, extra: str | None = None
 ) -> PromptTemplate:
-    """Prompt généré depuis la question + items de la recherche (par défaut ceux du projet) ;
-    réutilise l'identique, sinon nouvelle version. ``extra`` : consigne du responsable."""
+    """Prompt generated from the question + items of the search (default the project's);
+    reuses the identical one, else a new version. ``extra``: instruction from the lead."""
     src = search or project
     system = build_system_prompt(src.question, project_fields(src))
     if extra and extra.strip():
@@ -143,7 +143,7 @@ async def ensure_prompt(
 async def generate_prompt(
     project_id: uuid.UUID, db: DbDep, user: UserDep, search: uuid.UUID | None = None
 ) -> dict:
-    """Génère (ou retrouve) le prompt d'une recherche depuis sa question et ses items."""
+    """Generates (or finds back) the prompt of a search from its question and its items."""
     project = await _require_project_member(db, project_id, user)
     await _require_lead(db, project_id, user)
     scope = await get_search(db, project, search)

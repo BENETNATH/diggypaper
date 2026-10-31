@@ -1,4 +1,4 @@
-"""Tests de la task benchmark (app/tasks/benchmark.py) — 100 % offline."""
+"""Tests for the benchmark task (app/tasks/benchmark.py) — 100% offline."""
 
 import pytest
 from sqlalchemy import select
@@ -18,7 +18,7 @@ from app.tasks.benchmark import _run_benchmark
 
 
 class FakeInference:
-    """Inference mockée : renvoie une prédiction fixe."""
+    """Mocked inference: returns a fixed prediction."""
 
     def __init__(self, prediction: dict):
         self._prediction = prediction
@@ -85,7 +85,7 @@ async def test_run_benchmark_completes(engine, session):
     assert result["results"][0]["model_name"] == "Kev-4B"
     assert result["results"][0]["f1_score"] == 1.0
     assert fake.calls == 1
-    # run passé COMPLETED
+    # run moved to COMPLETED
     await session.refresh(run)
     assert run.status == BenchmarkStatus.COMPLETED
 
@@ -151,7 +151,7 @@ async def test_run_benchmark_no_gold_raises(engine, session):
 
 
 async def test_run_benchmark_inference_failure_marks_failed(engine, session, monkeypatch):
-    """make_inference_service échoue → run FAILED (pas bloqué en RUNNING)."""
+    """make_inference_service fails → run FAILED (not stuck in RUNNING)."""
     import app.tasks.benchmark as bench
 
     project = Project(title="P", created_by=None)
@@ -186,7 +186,7 @@ async def test_run_benchmark_inference_failure_marks_failed(engine, session, mon
 
 
 class RecordingInference(FakeInference):
-    """Mémorise les prompts système reçus (variantes, exemples du gold)."""
+    """Remembers the system prompts received (variants, gold examples)."""
 
     def __init__(self, prediction: dict):
         super().__init__(prediction)
@@ -239,7 +239,7 @@ async def test_benchmark_variants_store_predictions_and_agreement(engine, sessio
     assert (
         set(out) == {"strict", "libre"} and out["strict"]["f1_score"] is None
     )  # pas de gold demandé
-    # accord entre variantes mesuré sans référence
+    # agreement between variants measured without a reference
     from app.db.models import BenchmarkResult
 
     results = (await session.execute(select(BenchmarkResult))).scalars().all()

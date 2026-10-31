@@ -8,7 +8,7 @@ import { ErrorBanner } from "@/components/ui/Feedback";
 
 const MAX_BYTES = 5_000_000;
 
-/** Corpus à partir d'une liste de références : DOI/PMID collés ou fichier Zotero (BibTeX, RIS, CSL JSON, CSV). */
+/** Corpus from a list of references: pasted DOI/PMID or a Zotero file (BibTeX, RIS, CSL JSON, CSV). */
 export function ReferencesImport({ projectId, onStarted }: { projectId: string; onStarted: () => void }) {
   const t = useTranslations("import");
   const [content, setContent] = useState("");

@@ -1,6 +1,6 @@
 import { ReactNode } from "react";
 
-/** Carte de contenu (tokens sémantiques, bordure + padding). */
+/** Content card (semantic tokens, border + padding). */
 export function Card({
   title,
   children,
@@ -31,8 +31,8 @@ const BADGE_COLORS: Record<string, string> = {
 };
 
 /**
- * Badge de statut. Le texte est porteur du sens (SC 1.4.1) ; la couleur est
- * complémentaire, jamais l'indicateur unique.
+ * Status badge. The text carries the meaning (SC 1.4.1); the color is
+ * complementary, never the sole indicator.
  */
 export function Badge({
   color = "gray",
@@ -50,7 +50,7 @@ export function Badge({
   );
 }
 
-/** Couleur de badge selon un statut de job/projet. */
+/** Badge color according to a job/project status. */
 export function statusColor(status: string): keyof typeof BADGE_COLORS {
   switch (status) {
     case "COMPLETED":

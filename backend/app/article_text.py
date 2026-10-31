@@ -1,7 +1,7 @@
-"""Texte d'un article fourni aux modèles : parties choisies par projet.
+"""Article text fed to the models: parts chosen per project.
 
-``kinds`` (``Project.text_sections``) : abstract, introduction, methods, results,
-discussion, conclusion, other, ou ``all`` (tout le full text). Défaut : methods.
+``kinds`` (``Project.text_sections``): abstract, introduction, methods, results,
+discussion, conclusion, other, or ``all`` (whole full text). Default: methods.
 """
 
 from __future__ import annotations
@@ -9,7 +9,7 @@ from __future__ import annotations
 KINDS = ("abstract", "introduction", "methods", "results", "discussion", "conclusion", "other")
 DEFAULT_KINDS = ["methods"]
 
-# Mots-clés de titre (minuscules) → kind ; premier match gagne.
+# Title keywords (lowercase) → kind; first match wins.
 _TITLE_KINDS = (
     ("introduction", ("introduction", "background")),
     ("methods", ("method", "material", "méthode", "patients and", "experimental procedures")),
@@ -28,7 +28,7 @@ def classify_title(title: str | None) -> str:
 
 
 def compose_text(article, kinds: list[str] | None = None) -> str:
-    """Concatène les parties demandées ; repli sur methods_text puis abstract si vide."""
+    """Concatenates the requested parts; falls back to methods_text, then abstract, if empty."""
     kinds = kinds or DEFAULT_KINDS
     sections = article.sections or []
     parts: list[str] = []
@@ -55,5 +55,5 @@ def fill_prompt(template: str | None, article, kinds: list[str] | None = None) -
 
 
 def title_abstract(article) -> str:
-    """Texte de l'étage 1 (pré-filtre) : titre + abstract."""
+    """Stage 1 (prefilter) text: title + abstract."""
     return "\n".join(x for x in (article.title, article.abstract) if x)

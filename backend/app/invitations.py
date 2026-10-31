@@ -1,4 +1,4 @@
-"""Invitations d'inscription suivies en base : liste admin, renvoi, révocation."""
+"""Registration invitations tracked in the database: admin list, resend, revocation."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ async def upsert_invitation(
     role: str | None = None,
     can_create_projects: bool = False,
 ) -> Invitation:
-    """Invitation en attente pour (e-mail, projet) : réutilisée si elle existe, sinon créée."""
+    """Pending invitation for (email, project): reused if it exists, else created."""
     inv = (
         (
             await db.execute(
@@ -48,7 +48,7 @@ async def upsert_invitation(
 
 
 async def render_invitation(db: AsyncSession, inv: Invitation) -> tuple[str, str, str]:
-    """(objet, corps, lien d'inscription) de l'e-mail, dans la langue de l'invité."""
+    """(subject, body, registration link) of the email, in the invitee's language."""
     token = create_invite_token(
         inv.email,
         inv.language,

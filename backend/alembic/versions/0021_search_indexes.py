@@ -1,4 +1,4 @@
-"""Index des clés de recherche (listes par recherche, cascades) + un gold par (recherche, article)
+"""Search key indexes (lists per search, cascades) + one gold per (search, article)
 
 Revision ID: 0021
 Revises: 0020

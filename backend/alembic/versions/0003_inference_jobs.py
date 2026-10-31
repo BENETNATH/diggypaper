@@ -22,11 +22,11 @@ down_revision: str | Sequence[str] | None = "0002"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-# JSON portable : JSON générique (SQLite), JSONB sur PostgreSQL.
+# Portable JSON: plain JSON (SQLite), JSONB on PostgreSQL.
 JSONB = sa.JSON().with_variant(postgresql.JSONB(), "postgresql")
 
 
-# --- UUID par défaut côté base (même pattern que 0001/0002) --------------
+# --- DB-side default UUID (same pattern as 0001/0002) --------------
 class _UuidGenExpr(ClauseElement):
     __visit_name__ = "uuid_gen_expr"
 
@@ -47,9 +47,9 @@ def _uuid_default() -> DefaultClause:
 
 def upgrade() -> None:
     """Upgrade schema."""
-    # MODULE 4 (lot 5) : table inference_jobs — persiste le statut du job
-    # d'inférence massive + les statistiques clés (MODULE 6 : reproductibilité,
-    # notifications in-app par polling).
+    # MODULE 4 (lot 5): inference_jobs table - persists the massive-inference job
+    # status + key statistics (MODULE 6: reproducibility,
+    # in-app notifications via polling).
     op.create_table(
         "inference_jobs",
         sa.Column("id", sa.Uuid(), server_default=_uuid_default(), nullable=False),

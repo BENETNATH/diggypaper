@@ -1,4 +1,4 @@
-"""Retire les « textes intégraux » PMC trop courts (avis de préprint non archivé)
+"""Removes PMC "full texts" too short (non-archived preprint notices)
 
 Revision ID: 0018
 Revises: 0017

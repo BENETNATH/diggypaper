@@ -1,9 +1,9 @@
-"""Celery app : broker + result backend Redis (env ``REDIS_URL``).
+"""Celery app: Redis broker + result backend (env ``REDIS_URL``).
 
-Les tasks sont déclarées dans ``app.tasks`` (qui importe ce module) — pas ici,
-pour éviter un import circulaire. ``task_always_eager`` est piloté par l'env
-``CELERY_EAGER`` (défaut ``False``) : ``True`` en tests pour exécution inline
-sans broker.
+Tasks are declared in ``app.tasks`` (which imports this module), not here, to
+avoid a circular import. ``task_always_eager`` is driven by the ``CELERY_EAGER``
+env var (default ``False``): ``True`` in tests for inline execution without a
+broker.
 """
 
 import os
@@ -22,13 +22,13 @@ celery_app.conf.update(
     task_acks_late=True,
     worker_prefetch_multiplier=1,
     task_always_eager=CELERY_EAGER,
-    # acks_late + visibility_timeout Redis (défaut 1 h) : une analyse CPU plus longue serait
-    # redélivrée et tournerait en double. 24 h couvre les plus gros corpus.
+    # acks_late + Redis visibility_timeout (default 1 h): a longer CPU analysis would be
+    # redelivered and run twice. 24 h covers the largest corpora.
     broker_transport_options={"visibility_timeout": 24 * 3600},
-    # 0 / absent = pas de limite ; sinon la tâche échoue proprement au bout de N secondes.
+    # 0 / absent = no limit; otherwise the task fails cleanly after N seconds.
     task_soft_time_limit=int(os.environ.get("TASK_SOFT_TIME_LIMIT", "0")) or None,
-    # Enregistre les tasks : le worker charge app.celery_app.celery_app, il faut
-    # lui importer explicitement les modules de tâches (sinon "unregistered task").
+    # Registers the tasks: the worker loads app.celery_app.celery_app, so its task
+    # modules must be imported explicitly (otherwise "unregistered task").
     include=[
         "app.tasks",
         "app.tasks.benchmark",
@@ -38,17 +38,17 @@ celery_app.conf.update(
         "app.tasks.maintenance",
         "app.tasks.notify",
     ],
-    # Beat intégré au worker (un seul worker) : alerte disque + projets inactifs.
+    # Beat built into the worker (single worker): disk alert + inactive projects.
     beat_schedule={
         "maintenance": {"task": "diggypaper.maintenance", "schedule": 6 * 3600.0},
     },
 )
 
 
-# --- Récupération au démarrage du worker --------------------------------------
-# Un redémarrage du worker tue les tâches en cours : leurs jobs resteraient « RUNNING »
-# à vie et l'interface tournerait dans le vide. Au démarrage, ceux qui tournaient sont
-# déclarés interrompus (les jobs PENDING restent en file et seront traités).
+# --- Worker startup recovery --------------------------------------------------
+# A worker restart kills the tasks in flight: their jobs would stay "RUNNING"
+# forever and the UI would spin in the void. At startup, the ones that were
+# running are marked interrupted (PENDING jobs stay queued and will be processed).
 from celery.signals import worker_ready  # noqa: E402
 
 _INTERRUPTED = "Interrompu par un redémarrage du serveur : relancez l'opération."
@@ -103,7 +103,7 @@ async def _mark_interrupted(engine=None) -> int:
                 .values(status=BenchmarkStatus.FAILED)
             )
             n += r.rowcount or 0
-            # Import interrompu : le projet redevient importable (le re-import dédoublonne).
+            # Interrupted import: the project becomes importable again (re-import deduplicates).
             busy = select(ImportJob.project_id).where(
                 ImportJob.status.in_([ImportJobStatus.PENDING, ImportJobStatus.RUNNING])
             )
@@ -131,17 +131,17 @@ def _recover_interrupted_jobs(**_kwargs) -> None:
 
     log = logging.getLogger(__name__)
 
-    # F5 : même contrôle qu'au démarrage de l'API. Le worker chiffre/déchiffre les clés en
-    # base : il ne doit pas tourner avec les secrets de dev. Jamais bloquant (l'API, qui
-    # refuse de démarrer, reste la référence) — un log explicite vaut mieux qu'une trace
-    # au premier déchiffrement.
+    # F5: same check as at API startup. The worker encrypts/decrypts keys in the
+    # database: it must not run with dev secrets. Never blocking (the API, which
+    # refuses to start, stays the reference) — an explicit log beats a traceback
+    # at the first decryption.
     try:
         validate_settings(get_settings())
     except Exception as exc:  # noqa: BLE001
         log.error("secrets invalides côté worker : %s", exc)
 
-    # Un seul worker exécute la récupération : avec deux workers (principal + ingestion),
-    # celui qui démarre marquerait FAILED les jobs RUNNING de l'autre.
+    # One worker performs the recovery: with two workers (main + ingestion), the
+    # one starting up would mark the other's RUNNING jobs FAILED.
     if os.environ.get("RECOVER_INTERRUPTED", "1").strip().lower() in {"0", "false", "no"}:
         log.info("récupération des jobs interrompus désactivée (RECOVER_INTERRUPTED=0)")
         return

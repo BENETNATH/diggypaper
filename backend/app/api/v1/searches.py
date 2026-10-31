@@ -1,7 +1,7 @@
-"""Recherches d'un projet : une question (ses items) posée à un lot d'articles.
+"""Searches of a project: a question (with its items) asked to a batch of articles.
 
-Plusieurs recherches par projet, sur le même lot ou sur un lot dérivé des résultats d'une autre
-(« les articles où la recherche 1 a répondu oui »). Lecture : membre. Écriture : LEAD.
+Several searches per project, on the same batch or on a batch derived from another's results
+("the articles where search 1 answered yes"). Read: member. Write: LEAD.
 """
 
 import random
@@ -50,8 +50,8 @@ UserDep = Annotated[User, Depends(get_current_user)]
 
 
 class Selection(BaseModel):
-    """Quels articles : tout, ou ceux qui répondent à des critères (sur les résultats d'une
-    recherche), un tirage aléatoire, ou une liste. Critères cumulés (ET)."""
+    """Which articles: all, or those that answer to criteria (on the results of a
+    search), a random draw, or a list. Criteria accumulate (AND)."""
 
     from_search_id: uuid.UUID | None = (
         None  # recherche dont on filtre les résultats (déf. initiale)
@@ -71,8 +71,8 @@ class Selection(BaseModel):
 
 
 class ScheduleIn(BaseModel):
-    """Analyse programmée : démarre quand la recherche d'origine (``selection.from_search_id``) a
-    fini ; le lot = ses résultats filtrés par ``selection``, ou son lot si aucun critère."""
+    """Scheduled analysis: starts when the origin search (``selection.from_search_id``) has
+    finished; the batch = its results filtered by ``selection``, or its batch if no criteria."""
 
     model: str = Field(min_length=1)
     prefilter_model: str | None = None
@@ -85,7 +85,7 @@ class SearchCreate(BaseModel):
     fields: list[dict] | None = None
     text_sections: list[str] | None = None
     read_windows: int | None = Field(default=None, ge=1, le=32)
-    # standard ; tuning (mise au point : compare variantes) ; blind (échantillon relu à l'aveugle)
+    # standard; tuning (fine-tuning: compare variants); blind (blind re-read sample)
     kind: Literal["standard", "tuning", "blind"] = "standard"
     selection: Selection = Selection()
     schedule: ScheduleIn | None = None  # programmer l'analyse après la recherche d'origine
@@ -110,7 +110,7 @@ def _is_all(sel: Selection) -> bool:
 
 
 async def select_articles(db: AsyncSession, project: Project, sel: Selection) -> list[uuid.UUID]:
-    """Identifiants des articles du projet qui répondent à ``sel`` (ordre stable)."""
+    """Identifiers of the project's articles that answer to ``sel`` (stable order)."""
     import json
 
     src = await get_search(db, project, sel.from_search_id)
@@ -276,8 +276,8 @@ async def list_searches(project_id: uuid.UUID, db: DbDep, user: UserDep) -> dict
 
 @router.get("/{project_id}/overview")
 async def project_overview(project_id: uuid.UUID, db: DbDep, user: UserDep) -> dict:
-    """Vue d'ensemble : chiffres globaux du corpus (articles distincts, toutes recherches
-    confondues) et état de chaque recherche."""
+    """Overview: global corpus figures (distinct articles, all searches
+    together) and state of each search."""
     project = await _require_project_member(db, project_id, user)
     await default_search(db, project)
     await db.commit()
@@ -332,7 +332,7 @@ async def project_overview(project_id: uuid.UUID, db: DbDep, user: UserDep) -> d
 async def preview_selection(
     project_id: uuid.UUID, sel: Selection, db: DbDep, user: UserDep
 ) -> dict:
-    """Combien d'articles répondent à cette sélection (avant de créer la recherche)."""
+    """How many articles answer to this selection (before creating the search)."""
     project = await _require_project_member(db, project_id, user)
     return {"count": len(await select_articles(db, project, sel))}
 
@@ -341,8 +341,8 @@ async def preview_selection(
 async def create_search(
     project_id: uuid.UUID, payload: SearchCreate, db: DbDep, user: UserDep
 ) -> dict:
-    """Crée une recherche. Sa question et ses items par défaut sont ceux de la recherche dont on
-    dérive le lot (``selection.from_search_id``), sinon ceux de la recherche initiale."""
+    """Creates a search. Its default question and items are those of the search the batch is
+    derived from (``selection.from_search_id``), else those of the initial search."""
     project = await _require_project_member(db, project_id, user)
     await _require_lead_or_admin(db, project_id, user)
     sel = payload.selection
@@ -415,15 +415,15 @@ async def update_search(
 async def delete_search(
     project_id: uuid.UUID, search_id: uuid.UUID, db: DbDep, user: UserDep
 ) -> None:
-    """Supprime la recherche avec ses résultats, relectures, analyses et références. La recherche
-    initiale ne se supprime pas."""
+    """Deletes the search with its results, re-reads, analyses and references. The
+    initial search cannot be deleted."""
     project = await _require_project_member(db, project_id, user)
     await _require_lead_or_admin(db, project_id, user)
     s = await get_search(db, project, search_id)
     if s.is_default:
         raise HTTPException(status_code=409, detail="the initial search cannot be deleted")
-    # Le gold est partagé par les recherches de même question : on le rattache à l'une d'elles
-    # plutôt que de l'effacer avec cette recherche.
+    # The gold is shared by the searches with the same question: we attach it to one of them
+    # rather than erase it with this search.
     heir = (
         await db.execute(
             select(Search.id)

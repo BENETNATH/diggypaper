@@ -1,4 +1,4 @@
-"""Recherches : question + lot d'articles ; prédictions, relectures, analyses et gold rattachés
+"""Searches: question + article batch; predictions, re-reads, analyses and gold attached
 
 Revision ID: 0020
 Revises: 0019
@@ -22,8 +22,8 @@ depends_on: str | Sequence[str] | None = None
 
 
 def _hash(question, fields) -> str:
-    """Même empreinte que app.searches.definition_hash (figée ici : une migration ne dépend
-    pas du code courant)."""
+    """Same hash as app.searches.definition_hash (frozen here: a migration does not
+    depend on the current code)."""
     blob = json.dumps([(question or "").strip(), fields], sort_keys=True, ensure_ascii=False)
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:32]
 
@@ -137,7 +137,7 @@ def upgrade() -> None:
         sa.Column("added_by", sa.Uuid(), sa.ForeignKey("users.id", ondelete="SET NULL")),
     )
 
-    # Données existantes : une « Recherche initiale » par projet, sur tout le corpus.
+    # Existing data: one "Initial search" per project, over the whole corpus.
     bind = op.get_bind()
     projects = bind.execute(
         sa.text("SELECT id, question, fields, text_sections, read_windows FROM projects")

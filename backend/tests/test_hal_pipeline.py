@@ -49,9 +49,9 @@ async def _status(engine, project_id) -> ProjectStatus:
 
 
 async def test_hal_import_full_flow(engine):
-    """Import ``hal`` : source/native_id posés, plein texte PDF posé
-    (sections + fulltext_source/url) pour la notice avec fichier, note explicite
-    pour celle sans fichier ; fetch_fulltext appelé pour la seule URL connue."""
+    """``hal`` import: source/native_id set, PDF full text set
+    (sections + fulltext_source/url) for the record with file, explicit note
+    for the one without; fetch_fulltext called for the only known URL."""
     project = await _make_project(engine)
     fake = _fake()
     result = await _import(engine, project, fake)
@@ -74,7 +74,7 @@ async def test_hal_import_full_flow(engine):
 
 
 async def test_hal_reimport_same_identity_noop(engine):
-    """Réimport même identité : 0 inséré (ON CONFLICT), la note n'est pas écrasée."""
+    """Re-import same identity: 0 inserted (ON CONFLICT), the note is not overwritten."""
     project = await _make_project(engine)
     await _import(engine, project, _fake())
     result = await _import(engine, project, _fake())
@@ -84,8 +84,8 @@ async def test_hal_reimport_same_identity_noop(engine):
 
 
 async def test_hal_doi_link_completes_existing_row(engine):
-    """Work HAL portant le DOI d'une ligne existante sans plein texte : rattachement
-    — sections/fulltext_source complétés, identité intacte, ``duplicates_doi``."""
+    """HAL Work carrying the DOI of an existing fulltext-less row: attachment
+    — sections/fulltext_source completed, identity intact, ``duplicates_doi``."""
     project = await _make_project(
         engine,
         {

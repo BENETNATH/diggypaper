@@ -1,13 +1,13 @@
 /**
- * Logique de détection des gestes de swipe (MODULE 5).
+ * Swipe gesture detection logic (MODULE 5).
  *
- * Glisser à droite = Valider (accept), glisser à gauche = Rejeter (reject).
- * Pure et testable (pas de DOM).
+ * Swipe right = Accept, swipe left = Reject.
+ * Pure and testable (no DOM).
  */
 
 export type SwipeDirection = "left" | "right" | "none";
 
-/** Seuil minimal de déplacement horizontal (px) pour qualifier un swipe. */
+/** Minimum horizontal movement (px) to qualify as a swipe. */
 export const SWIPE_THRESHOLD = 50;
 
 export interface SwipePoint {
@@ -16,15 +16,15 @@ export interface SwipePoint {
 }
 
 /**
- * Détermine la direction du swipe à partir des points de départ et de fin.
+ * Determines the swipe direction from the start and end points.
  *
- * - Horizontal si |dx| > |dy| ET |dx| >= threshold.
- * - `right` si dx > 0, `left` si dx < 0, `none` sinon.
+ * - Horizontal if |dx| > |dy| AND |dx| >= threshold.
+ * - `right` if dx > 0, `left` if dx < 0, `none` otherwise.
  */
 export function detectSwipe(start: SwipePoint, end: SwipePoint, threshold = SWIPE_THRESHOLD): SwipeDirection {
   const dx = end.x - start.x;
   const dy = end.y - start.y;
   if (Math.abs(dx) < threshold) return "none";
-  if (Math.abs(dx) <= Math.abs(dy)) return "none"; // mouvement dominé par la verticale
+  if (Math.abs(dx) <= Math.abs(dy)) return "none"; // movement dominated by the vertical
   return dx > 0 ? "right" : "left";
 }

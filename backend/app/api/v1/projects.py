@@ -1,11 +1,11 @@
-"""Routes projets : création, détails, import PubMed, articles, jobs (Module 2).
+"""Project routes: creation, details, PubMed import, articles, jobs (Module 2).
 
-Authorization : ``_require_project_member`` → 403 si l'user n'est pas membre du
-projet (LEAD/ANNOTATOR) et n'est pas ADMIN global.
+Authorization: ``_require_project_member`` -> 403 if the user is not a member
+of the project (LEAD/ANNOTATOR) and not a global ADMIN.
 
-Les jobs d'import sont persistés dans la table ``import_jobs`` (M3) : la
-requête PubMed, le statut et le résultat/erreur y sont conservés (MODULE 6,
-reproductibilité). Pas de dict in-memory, pas d'appel ``AsyncResult`` bloquant.
+Import jobs are persisted in the ``import_jobs`` table (M3): the
+PubMed query, the status and the result/error are kept there (MODULE 6,
+reproducibility). No in-memory dict, no blocking ``AsyncResult`` call.
 """
 
 import json
@@ -59,14 +59,14 @@ router = APIRouter(prefix="/projects", tags=["projects"])
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 UserDep = Annotated[User, Depends(get_current_user)]
 
-# M-1/M-2 : rate limiting par IP (fenêtre 15 min) sur les endpoints NCBI — anti
-# DoS applicatif, même pattern que l'anti brute-force auth (F7).
+# M-1/M-2: rate limiting per IP (15-min window) on the NCBI endpoints -
+# application DoS guard, same pattern as the auth anti brute-force (F7).
 IMPORT_RATE_LIMIT = 5
 QUERY_VOLUME_RATE_LIMIT = 20
 
 
 class ProjectCreate(BaseModel):
-    # m8 : strip + refus du blanc (min_length après strip).
+    # m8: strip + refusal of blank (min_length after strip).
     title: str = Field(min_length=1)
     description: str | None = None
     default_language: LanguageCode = LanguageCode.EN
@@ -113,10 +113,10 @@ class ProjectUpdate(BaseModel):
 
 
 class ImportRequest(BaseModel):
-    # m8 : bornage de la requête PubMed (max 2000 caractères).
+    # m8: bounding of the PubMed query (max 2000 characters).
     query: str = Field(min_length=1, max_length=2000)
-    # Bornes optionnelles de date de publication (ISO YYYY-MM-DD) : ANDées dans le terme
-    # NCBI ([dp]) et bornes de la bissection des gros jeux (moins d'appels esearch).
+    # Optional publication date bounds (ISO YYYY-MM-DD): ANDed into the
+    # NCBI term ([dp]) and into the bisection bounds for large result sets (fewer esearch calls).
     date_from: date | None = None
     date_to: date | None = None
     source: str = "pubmed"  # base interrogée (registre des adapters)
@@ -139,7 +139,7 @@ class ImportRequest(BaseModel):
 
 
 def _make_http_client() -> httpx.AsyncClient:
-    """Client httpx pour les appels NCBI (timeout explicite, m4)."""
+    """httpx client for the NCBI calls (explicit timeout, m4)."""
     return httpx.AsyncClient(timeout=60.0)
 
 
@@ -164,7 +164,7 @@ def _human(reviews: dict, article_id) -> dict | None:
 
 
 def review_payload(ann: HumanAnnotation | None, user: User | None) -> dict | None:
-    """Dernière relecture humaine : qui, quand, statut (VALIDATED / CORRECTED / MANUAL)."""
+    """Last human re-read: who, when, status (VALIDATED / CORRECTED / MANUAL)."""
     if ann is None:
         return None
     return {
@@ -175,7 +175,7 @@ def review_payload(ann: HumanAnnotation | None, user: User | None) -> dict | Non
 
 
 async def latest_reviews(db: AsyncSession, article_ids: list, search: Search) -> dict:
-    """{article_id: (annotation la plus récente, relecteur)} de cette recherche."""
+    """{article_id: (most recent annotation, re-reader)} of this search."""
     out: dict = {}
     if not article_ids:
         return out
@@ -194,7 +194,7 @@ async def latest_reviews(db: AsyncSession, article_ids: list, search: Search) ->
 
 
 def biblio_payload(a: Article) -> dict:
-    """Date, journal, auteurs d'un article (premier / dernier auteur dérivés de la liste)."""
+    """Date, journal, authors of an article (first/last author derived from the list)."""
     authors = a.authors or []
     return {
         "source": a.source,
@@ -211,8 +211,8 @@ def biblio_payload(a: Article) -> dict:
 
 
 def _answers(src, decision: dict | None, human: dict | None = None) -> list[dict]:
-    """Réponses aux champs du projet : celles de la dernière relecture humaine quand elle existe
-    (``source`` = human, certitude absente), sinon celles du modèle avec leur certitude."""
+    """Answers to the project's fields: those of the last human re-read when it exists
+    (``source`` = human, confidence absent), else those of the model with their confidence."""
     human = human or {}
     if not decision and not human:
         return []
@@ -240,8 +240,8 @@ def _project_payload(
     fulltext_count: int | None = None,
     search: Search | None = None,
 ) -> dict:
-    """Le projet ; question, items et parties de texte sont ceux de ``search`` quand on le fournit
-    (chaque recherche a la sienne), sinon ceux du projet."""
+    """The project; question, items and text sections are those of ``search`` when given
+    (each search has its own), else those of the project."""
     src = search or project
     payload = {
         "id": str(project.id),
@@ -258,7 +258,7 @@ def _project_payload(
         "question_set": src.question is not None or src.fields is not None,
         "search_id": str(search.id) if search else None,
         "created_at": project.created_at.isoformat() if project.created_at else None,
-        # Suppression programmée pour inactivité (None : aucune)
+        # Scheduled deletion for inactivity (None: none)
         "retention_delete_on": (
             (
                 project.retention_warned_at
@@ -277,7 +277,7 @@ def _project_payload(
 
 @router.post("", status_code=201)
 async def create_project(payload: ProjectCreate, db: DbDep, user: UserDep) -> dict:
-    """Crée un projet ; le créateur devient LEAD dans project_members."""
+    """Creates a project; the creator becomes LEAD in project_members."""
     if not user.may_create_projects:
         raise HTTPException(status_code=403, detail="project creation not allowed")
     project = Project(
@@ -302,14 +302,14 @@ async def create_project(payload: ProjectCreate, db: DbDep, user: UserDep) -> di
 
 @router.get("")
 async def list_projects(db: DbDep, user: UserDep) -> dict:
-    """Liste des projets de l'user (membre) ; un ADMIN global voit tous les projets.
+    """List of the user's projects (member); a global ADMIN sees all projects.
 
-    Chaque item inclut ``role_in_project`` (LEAD/ANNOTATOR, None si l'admin n'en
-    est pas membre) et ``article_count`` — le frontend en a besoin pour la nav
-    et les permissions.
+    Each item includes ``role_in_project`` (LEAD/ANNOTATOR, None if the admin is
+    not a member) and ``article_count`` - the frontend needs them for the nav
+    and the permissions.
     """
-    # Memberships de l'user (project_id → role) : sert au filtrage (non-admin)
-    # ET au champ role_in_project (admin inclus, s'il est aussi membre).
+    # The user's memberships (project_id -> role): used for filtering (non-admin)
+    # AND for the role_in_project field (admin included, if also a member).
     memberships = (
         await db.execute(
             select(ProjectMember.project_id, ProjectMember.role_in_project).where(
@@ -356,13 +356,13 @@ async def list_projects(db: DbDep, user: UserDep) -> dict:
 async def get_project(
     project_id: uuid.UUID, db: DbDep, user: UserDep, search: uuid.UUID | None = None
 ) -> dict:
-    """Détails du projet (status, nb articles, created_by) ; question de la recherche ``search``
-    (par défaut : la recherche initiale).
+    """Project details (status, article count, created_by); question of the search ``search``
+    (default: the initial search).
 
-    ``role_in_project`` = le rôle de l'utilisateur courant (comme ``list_projects``) :
-    l'UI s'en sert pour les permissions (créer une recherche, inviter, retirer) —
-    sans lui, tout non-admin apparaît annotateur (bug 2026-10-30 : un LEAD invité
-    voyait « seul un chef de projet peut créer des recherches »)."""
+    ``role_in_project`` = the current user's role (like ``list_projects``):
+    the UI uses it for the permissions (create a search, invite, remove) -
+    without it, every non-admin appears annotator (bug 2026-10-30: an invited LEAD
+    saw "only a project lead can create searches")."""
     project = await _require_project_member(db, project_id, user)
     scope = await get_search(db, project, search)
     article_count = (
@@ -386,7 +386,7 @@ async def get_project(
 
 
 async def _has_results(db: AsyncSession, scope: Search) -> bool:
-    """La recherche a-t-elle des prédictions ou des relectures ?"""
+    """Does the search have predictions or re-reads?"""
     for model in (ArticlePrediction, HumanAnnotation):
         found = (
             await db.execute(select(model.id).where(in_search(model.search_id, scope)).limit(1))
@@ -404,8 +404,8 @@ async def update_project(
     user: UserDep,
     search: uuid.UUID | None = None,
 ) -> dict:
-    """Parties de texte, question et items de réponse (LEAD ou ADMIN) : ceux de la recherche
-    ``search`` (par défaut la recherche initiale, dont les réglages sont aussi ceux du projet)."""
+    """Text sections, question and answer items (LEAD or ADMIN): those of the search
+    ``search`` (default the initial search, whose settings are also the project's)."""
     project = await _require_project_member(db, project_id, user)
     scope = await get_search(db, project, search)
     if user.role != UserRole.ADMIN:
@@ -417,7 +417,8 @@ async def update_project(
         payload.fields if payload.fields is not None else scope.fields,
     )
     if new_hash != scope.definition_hash and await _has_results(db, scope):
-        # la question d'une recherche déjà analysée ou relue ne change plus : on en crée une autre
+        # the question of an already analyzed or re-read search no longer changes:
+        # we create another one
         raise HTTPException(status_code=409, detail="question_locked")
     targets = (
         [scope, project] if scope.is_default else [scope]
@@ -438,15 +439,15 @@ async def update_project(
 
 @router.delete("/{project_id}", status_code=204)
 async def delete_project(project_id: uuid.UUID, db: DbDep, user: UserDep) -> None:
-    """Supprime un projet (creator/LEAD/ADMIN) + cascade (articles, jobs, etc.).
+    """Deletes a project (creator/LEAD/ADMIN) + cascade (articles, jobs, etc.).
 
-    Le delete est fait en SQL direct (``DELETE FROM projects``) : les FK
-    ``project_id`` des tables liées sont ``ON DELETE CASCADE`` (modèle), donc la
-    base nettoie articles/jobs/members/etc. sans que l'ORM charge chaque
-    relation (plus rapide qu'un ``session.delete`` sur un gros projet).
+    The delete is done in direct SQL (``DELETE FROM projects``): the
+    ``project_id`` FKs of the linked tables are ``ON DELETE CASCADE`` (models), so
+    the database cleans up articles/jobs/members/etc. without the ORM loading each
+    relation (faster than a ``session.delete`` on a big project).
     """
     project = await _require_project_member(db, project_id, user)
-    # Seuls le creator, un LEAD, ou un ADMIN global peuvent supprimer.
+    # Only the creator, a LEAD, or a global ADMIN can delete.
     if user.role != UserRole.ADMIN and project.created_by != user.id:
         member = await db.get(ProjectMember, (project_id, user.id))
         if member is None or member.role_in_project != ProjectMemberRole.LEAD:
@@ -466,7 +467,7 @@ async def _require_lead_or_admin(db: AsyncSession, project_id: uuid.UUID, user: 
 
 
 async def _require_no_active_job(db: AsyncSession, project_id: uuid.UUID) -> None:
-    """M-2 : un import / une recherche de textes à la fois par projet (409 sinon)."""
+    """M-2: one import / one full-text search at a time per project (409 otherwise)."""
     active = (
         await db.execute(
             select(ImportJob.id)
@@ -489,14 +490,14 @@ async def _require_no_active_job(db: AsyncSession, project_id: uuid.UUID) -> Non
 async def trigger_import(
     project_id: uuid.UUID, payload: ImportRequest, db: DbDep, user: UserDep
 ) -> dict:
-    """Trigger l'import PubMed (task Celery). Renvoie 202 {job_id, status}.
+    """Triggers the PubMed import (Celery task). Returns 202 {job_id, status}.
 
-    m1 : en mode eager le job est déjà terminé → le statut renvoyé est le réel
-    (SUCCESS/FAILURE), pas toujours PENDING. M2 : 409 si le projet n'est pas
-    DRAFT/FROZEN/COMPLETED : un import COMPLÈTE le corpus (doublons ignorés) ; seul un
-    projet PROCESSING (import en cours) renvoie 409.
-    M-2 : 409 si un import_job PENDING/RUNNING existe déjà (un import par
-    projet à la fois, même en non-eager).
+    m1: in eager mode the job is already done -> the returned status is the real one
+    (SUCCESS/FAILURE), not always PENDING. M2: 409 if the project is not
+    DRAFT/FROZEN/COMPLETED: an import COMPLETES the corpus (duplicates ignored); only a
+    PROCESSING project (import in progress) returns 409.
+    M-2: 409 if an import_job PENDING/RUNNING already exists (one import per
+    project at a time, even in non-eager).
     """
     project = await _require_project_member(db, project_id, user)
     await _require_lead_or_admin(db, project_id, user)  # un import ramène jusqu'à 5 000 articles
@@ -532,10 +533,11 @@ class ReferencesRequest(BaseModel):
 async def import_references(
     project_id: uuid.UUID, payload: ReferencesRequest, db: DbDep, user: UserDep
 ) -> dict:
-    """Importe une liste de références (DOI/PMID, BibTeX, RIS, CSL JSON, CSV Zotero) comme corpus.
+    """Imports a list of references (DOI/PMID, BibTeX, RIS, CSL JSON, CSV Zotero) as the corpus.
 
-    ``dry_run`` : renvoie le format reconnu et les comptes, sans rien importer. Sinon tâche de
-    fond (progression via GET /jobs) ; le texte intégral est cherché ensuite automatiquement.
+    ``dry_run``: returns the recognized format and the counts, without importing
+    anything. Otherwise a background task (progress via GET /jobs); the full text is
+    searched automatically afterwards.
     """
     project = await _require_project_member(db, project_id, user)
     await _require_lead_or_admin(db, project_id, user)
@@ -567,8 +569,8 @@ async def import_references(
 
 @router.post("/{project_id}/keep")
 async def keep_project(project_id: uuid.UUID, db: DbDep, user: UserDep) -> dict:
-    """« Conserver ce projet » : compte comme une activité et annule l'avertissement de
-    suppression pour inactivité."""
+    """ "Keep this project": counts as an activity and cancels the deletion
+    warning for inactivity."""
     project = await _require_project_member(db, project_id, user)
     await _require_lead_or_admin(db, project_id, user)
     project.kept_at = datetime.now(UTC)
@@ -579,8 +581,8 @@ async def keep_project(project_id: uuid.UUID, db: DbDep, user: UserDep) -> dict:
 
 @router.post("/{project_id}/fulltext", status_code=202)
 async def complete_fulltext(project_id: uuid.UUID, db: DbDep, user: UserDep) -> dict:
-    """Cherche le texte intégral manquant dans les sources ouvertes (Europe PMC, Unpaywall,
-    OpenAlex, préprints). Tâche de fond ; progression via GET /jobs (kind=fulltext)."""
+    """Searches the missing full text in open sources (Europe PMC, Unpaywall,
+    OpenAlex, preprints). Background task; progress via GET /jobs (kind=fulltext)."""
     project = await _require_project_member(db, project_id, user)
     await _require_lead_or_admin(db, project_id, user)
     if project.status not in (ProjectStatus.FROZEN, ProjectStatus.COMPLETED):
@@ -597,10 +599,10 @@ async def complete_fulltext(project_id: uuid.UUID, db: DbDep, user: UserDep) -> 
 async def query_volume(
     project_id: uuid.UUID, payload: ImportRequest, db: DbDep, user: UserDep
 ) -> dict:
-    """Volume de résultats de la source demandée (défaut PubMed) pour la requête.
+    """Result volume of the requested source (default PubMed) for the query.
 
-    m-1 : erreur assainie de la source → 502 {error: <source>_unavailable} (pas de
-    500, pas de clé/URL dans la réponse ; le détail propre est loggé côté serveur).
+    m-1: sanitized source error -> 502 {error: <source>_unavailable} (no
+    500, no key/URL in the response; the clean detail is logged server-side).
     """
     await _require_project_member(db, project_id, user)
     if not payload.query.strip():
@@ -613,7 +615,7 @@ async def query_volume(
                 payload.query, DateBounds(payload.date_from, payload.date_to)
             )
     except NCBIError as exc:
-        # m-1 : le message NCBIError est propre (sans l'URL ni la clé) → loggé tel quel.
+        # m-1: the NCBIError message is clean (no URL, no key) -> logged as-is.
         logger.error("query-volume NCBI error: %s", exc)
         return JSONResponse(status_code=502, content={"error": "ncbi_unavailable"})
     except EpmcError as exc:
@@ -626,8 +628,8 @@ async def query_volume(
 
 
 def _answer_filters(search: Search, raw: str | None, pdec, hdec) -> list:
-    """Conditions SQL « réponse au champ X = valeur » (JSON ``{clé: valeur}``) : la réponse
-    de la dernière relecture humaine l'emporte sur celle du modèle."""
+    """SQL conditions "answer to field X = value" (JSON ``{key: value}``): the
+    last human re-read's answer wins over the model's."""
     if not raw:
         return []
     try:
@@ -642,7 +644,7 @@ def _answer_filters(search: Search, raw: str | None, pdec, hdec) -> list:
             raise HTTPException(status_code=422, detail=f"unknown field: {key}")
         if value is None or value == "":
             continue
-        # SQLite renvoie 1/0 pour les booléens
+        # SQLite returns 1/0 for booleans
         col = func.coalesce(cast(hdec.op("->>")(key), String), cast(pdec.op("->>")(key), String))
         if types[key] == "text":
             esc = str(value).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
@@ -656,13 +658,13 @@ def _answer_filters(search: Search, raw: str | None, pdec, hdec) -> list:
 
 
 def search_blob():
-    """Titre, journal, PMID, identifiant natif, DOI et auteurs en un seul texte sans accents
-    ni majuscules.
+    """Title, journal, PMID, native identifier, DOI and authors in a single accent-free
+    and lowercase text.
 
-    Même expression que l'index trigramme ``ix_articles_search_trgm`` (migrations 0028/0032) :
-    PostgreSQL s'en sert pour la recherche rapide, quel que soit le nombre d'articles. Les ``''``
-    sont inlinés (``literal_column``), pas des paramètres, sinon l'expression ne correspond plus
-    à l'index.
+    Same expression as the trigram index ``ix_articles_search_trgm`` (migrations 0028/0032):
+    PostgreSQL uses it for the quick search, whatever the number of articles. The ``''``
+    are inlined (``literal_column``), not parameters, otherwise the expression would no
+    longer match the index.
     """
     empty, space = literal_column("''"), literal_column("' '")
     parts = [
@@ -680,9 +682,9 @@ def search_blob():
 
 
 def text_conditions(q: str | None) -> list:
-    """Recherche rapide : chaque mot saisi doit figurer dans le titre, les auteurs, le journal,
-    un identifiant (PMID, identifiant natif) ou le DOI, sans tenir compte de la casse ni des
-    accents ; les mots se cumulent (ET)."""
+    """Quick search: each typed word must appear in the title, the authors, the journal,
+    an identifier (PMID, native identifier) or the DOI, case- and accent-insensitive;
+    the words accumulate (AND)."""
     conds = []
     blob = search_blob()
     for word in (q or "").split()[:8]:
@@ -706,10 +708,10 @@ def article_filter(
     q: str | None = None,
     fulltext: bool | None = None,
 ):
-    """Conditions de la liste des articles d'une recherche (statut IA + réponses) et
-    sous-requêtes associées : seuls comptent les résultats et relectures de CETTE recherche.
+    """Conditions of the article list of a search (AI status + answers) and the
+    associated sub-queries: only the results and re-reads of THIS search count.
 
-    → (where, pstatus, pconf, pdec, annotated). Partagé par la liste et les exports.
+    -> (where, pstatus, pconf, pdec, annotated). Shared by the list and the exports.
     """
 
     def latest(col):
@@ -750,8 +752,8 @@ def article_filter(
             Article.fulltext_source.is_not(None) if fulltext else Article.fulltext_source.is_(None)
         )
     if search.kind == "blind":
-        # Échantillon à l'aveugle : aucun critère ne doit révéler les réponses de l'IA ni celles
-        # des autres relecteurs (sinon le filtre sert d'oracle article par article).
+        # Blind sample: no criterion may reveal the AI's answers or
+        # those of the other re-readers (else the filter serves as a per-article oracle).
         if answers:
             raise HTTPException(status_code=422, detail="answers filter unavailable (blind)")
         if status in ("AUTO_ACCEPTED", "AUTO_REJECTED", "NEEDS_HUMAN_REVIEW"):
@@ -783,12 +785,12 @@ async def list_articles(
     q: Annotated[str | None, Query(max_length=200)] = None,
     fulltext: bool | None = None,
 ) -> dict:
-    """Articles du lot d'une recherche (par défaut la recherche initiale = tout le corpus) avec
-    le statut de leur dernière prédiction dans cette recherche.
+    """Articles of a search's batch (default the initial search = the whole corpus) with
+    the status of their last prediction in this search.
 
-    ``status`` filtre (``NONE`` = pas encore trié). ``answers`` = JSON ``{champ: valeur}`` :
-    filtre sur la réponse du modèle (booléen exact, option exacte, texte contenu).
-    Réponse : {items, total, page, per_page, stats} ; ``stats`` = articles par statut.
+    ``status`` filters (``NONE`` = not yet triaged). ``answers`` = JSON ``{field: value}``:
+    filter on the model's answer (exact boolean, exact option, contained text).
+    Response: {items, total, page, per_page, stats}; ``stats`` = articles by status.
     """
     project = await _require_project_member(db, project_id, user)
     scope = await get_search(db, project, search)
@@ -873,7 +875,7 @@ async def list_articles(
                 "fulltext_source": a.fulltext_source,
                 **biblio_payload(a),
                 "prediction_status": st if visible(a) else None,
-                # la pertinence de la relecture (curseur) remplace celle du modèle
+                # the re-read's relevance (cursor) replaces the model's
                 "confidence": (
                     (_human(reviews, a.id) or {}).get("confidence_score", conf)
                     if visible(a)
@@ -894,10 +896,9 @@ async def list_articles(
 
 @router.get("/{project_id}/jobs")
 async def list_jobs(project_id: uuid.UUID, db: DbDep, user: UserDep) -> dict:
-    """Statut des jobs d'import du projet (M3) : lu depuis ``import_jobs``.
+    """Status of the project's import jobs (M3): read from ``import_jobs``.
 
-    {jobs: [{id, task, status, query, result, error, created_at, completed_at}]}.
-    """
+    {jobs: [{id, task, status, query, result, error, created_at, completed_at}]}."""
     project = await _require_project_member(db, project_id, user)
     jobs = (
         (

@@ -67,7 +67,7 @@ async def test_create_gold_missing_key_422(client, session, researcher_user, do_
 async def test_create_gold_article_not_in_project_422(client, session, researcher_user, do_login):
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     project, _ = await _make_project_with_article(session, researcher_user)
-    # Article d'un autre projet.
+    # Article from another project.
     other = Project(title="Other", created_by=researcher_user.id)
     session.add(other)
     await session.commit()

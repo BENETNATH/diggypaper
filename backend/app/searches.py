@@ -1,8 +1,8 @@
-"""Recherches : résolution (par défaut ou explicite), lot d'articles, empreinte de la question.
+"""Searches: resolution (default or explicit), article lot, fingerprint of the question.
 
-Une recherche porte sa question, ses items et ses parties de texte ; ses prédictions, relectures,
-analyses et références lui sont rattachées. ``search_id IS NULL`` signifie « recherche par défaut
-du projet » (données antérieures aux recherches).
+A search carries its question, its items and its text parts; its predictions,
+re-reads, analyses and references are attached to it. ``search_id IS NULL`` means
+"the project's default search" (data predating searches).
 """
 
 from __future__ import annotations
@@ -20,13 +20,13 @@ from app.db.models import Article, GoldArticle, Project, Search, SearchArticle
 
 
 def definition_hash(question: str | None, fields: list[dict] | None) -> str:
-    """Empreinte de la définition (question + items) : mêmes réponses attendues, même référence."""
+    """Fingerprint of the definition (question + items): same expected answers, same reference."""
     blob = json.dumps([(question or "").strip(), fields], sort_keys=True, ensure_ascii=False)
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:32]
 
 
 async def default_search(db: AsyncSession, project: Project) -> Search:
-    """Recherche par défaut du projet (créée à la demande : tout le corpus, question du projet)."""
+    """The project's default search (created on demand: whole corpus, project question)."""
     s = (
         (
             await db.execute(
@@ -58,7 +58,7 @@ async def default_search(db: AsyncSession, project: Project) -> Search:
 async def next_search_name(
     db: AsyncSession, project_id: uuid.UUID, day: datetime | None = None
 ) -> str:
-    """Nom par défaut d'une recherche : ``AAMMJJ-n`` (jour de création, n = rang dans le projet)."""
+    """Default name of a search: ``YYMMDD-n`` (creation day, n = rank in the project)."""
     prefix = (day or datetime.now(UTC)).strftime("%y%m%d")
     taken = set(
         (await db.execute(select(Search.name).where(Search.project_id == project_id)))
@@ -74,7 +74,7 @@ async def next_search_name(
 async def get_search(
     db: AsyncSession, project: Project, search_id: uuid.UUID | None = None
 ) -> Search:
-    """La recherche demandée (404 si elle n'est pas de ce projet) ou la recherche par défaut."""
+    """The requested search (404 if it is not of this project) or the default search."""
     if search_id is None:
         return await default_search(db, project)
     s = await db.get(Search, search_id)
@@ -84,14 +84,14 @@ async def get_search(
 
 
 def in_search(col, search: Search):
-    """Condition « cette ligne appartient à la recherche » ; NULL = recherche par défaut."""
+    """Condition "this row belongs to the search"; NULL = default search."""
     if search.is_default:
         return or_(col == search.id, col.is_(None))
     return col == search.id
 
 
 def lot_condition(search: Search):
-    """Condition SQL sur ``Article`` : l'article fait partie du lot de la recherche."""
+    """SQL condition on ``Article``: the article is part of the search's lot."""
     if search.lot_all:
         return Article.project_id == search.project_id
     return and_(
@@ -108,9 +108,9 @@ async def lot_ids(db: AsyncSession, search: Search) -> list[uuid.UUID]:
 
 
 class ScopedProject:
-    """Le projet vu à travers une recherche : question, items, parties de texte et fenêtres de
-    lecture sont ceux de la recherche, le reste (titre, id, langue…) celui du projet. Permet de
-    passer une recherche aux exports et au RO-Crate sans changer leur code."""
+    """The project seen through a search: question, items, text parts and reading
+    windows are those of the search, the rest (title, id, language…) that of the
+    project. Lets you pass a search to the exports and RO-Crate without changing their code."""
 
     _OVERRIDES = ("question", "fields", "text_sections", "read_windows")
 
@@ -122,9 +122,9 @@ class ScopedProject:
 
 
 async def gold_condition(db: AsyncSession, project: Project, search: Search):
-    """Références (gold) qui valent pour cette recherche : celles de toute recherche du projet
-    dont la définition (question + items) est identique — la vérité dépend de la question, pas du
-    run. ``search_id`` NULL = recherche initiale."""
+    """References (gold) that hold for this search: those of any project search
+    with an identical definition (question + items) — the truth depends on the
+    question, not the run. ``search_id`` NULL = initial search."""
     same = select(Search.id).where(
         Search.project_id == project.id, Search.definition_hash == search.definition_hash
     )

@@ -1,7 +1,7 @@
-"""Exemples du gold dans le prompt (few-shot) : « éduquer » le modèle avec des cas vérifiés.
+"""Gold examples in the prompt (few-shot): "educate" the model with verified cases.
 
-Les articles servant d'exemples sont exclus de la validation (on ne note pas un modèle sur ce qu'on
-lui a montré).
+Articles serving as examples are excluded from validation (you do not score a model
+on what you showed it).
 """
 
 from __future__ import annotations
@@ -20,8 +20,8 @@ HEADER = (
 
 
 def pick_examples(gold: dict, k: int, seed: int = 0) -> list:
-    """k ids d'articles du gold {article_id: vérité}, équilibrés entre pertinents et non pertinents
-    quand c'est possible, choix reproductible."""
+    """k gold article ids {article_id: truth}, balanced between relevant and non-relevant
+    when possible, reproducible choice."""
     if k <= 0 or not gold:
         return []
     rng = random.Random(seed)
@@ -38,7 +38,7 @@ def pick_examples(gold: dict, k: int, seed: int = 0) -> list:
 
 
 def examples_block(articles: dict, gold: dict, ids: list, fields: list[dict], kinds=None) -> str:
-    """Bloc de texte à ajouter au prompt système : un exemple par article (texte + réponse)."""
+    """Text block to add to the system prompt: one example per article (text + answer)."""
     parts = []
     for i in ids:
         a, g = articles.get(i), gold.get(i)

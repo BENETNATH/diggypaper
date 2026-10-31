@@ -1,4 +1,4 @@
-"""searches.schedule / schedule_state (analyses programmées à la suite d'une autre recherche)
+"""searches.schedule / schedule_state (scheduled analyses following another search)
 
 Revision ID: 0027
 Revises: 0026

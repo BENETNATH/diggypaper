@@ -1,16 +1,16 @@
-"""Rate limiting in-memory par IP (F7) — anti brute-force sur login/register/invite.
+"""In-memory rate limiting per IP (F7) - anti brute-force on login/register/invite.
 
-Limiteur par fenêtre glissante de 15 min : dict ip → deque de timestamps (monotonic),
-purge des entrées > 15 min. Dépasser la limite → 429 {"detail": "rate_limited"}.
+15-min sliding window limiter: dict ip -> deque of timestamps (monotonic),
+purge of entries older than 15 min. Exceeding the limit -> 429 {"detail": "rate_limited"}.
 
-Limite par endpoint (par IP) :
+Limit per endpoint (per IP):
   - login    : 10 req / 15 min
   - register :  5 req / 15 min
   - invite   : 20 req / 15 min
 
-NOTE (multi-workers) : l'état est in-memory par processus, donc la limite est
-appliquée par worker. En production, la mitigation robuste est nginx limit_req
-(ou un store partagé type Redis) ; ce limiteur est un filet de sécurité applicatif.
+NOTE (multi-workers): state is in-memory per process, so the limit is
+applied per worker. In production, the robust mitigation is nginx limit_req
+(or a shared store like Redis); this limiter is an application-level safety net.
 """
 
 import time
@@ -18,18 +18,18 @@ from collections import defaultdict, deque
 
 WINDOW_SECONDS = 15 * 60
 
-# ip → deque de timestamps (time.monotonic). Global par processus.
+# ip -> deque of timestamps (time.monotonic). Global per process.
 _buckets: dict[str, deque[float]] = defaultdict(deque)
 
 
 def _purge(bucket: deque[float], now: float) -> None:
-    """Retire les timestamps hors de la fenêtre de 15 min."""
+    """Removes timestamps outside the 15-min window."""
     while bucket and now - bucket[0] > WINDOW_SECONDS:
         bucket.popleft()
 
 
 def is_rate_limited(key: str, limit: int, now: float | None = None) -> bool:
-    """True si `key` a déjà ≥ `limit` requêtes dans la fenêtre de 15 min."""
+    """True if `key` already has >= `limit` requests in the 15-min window."""
     now = time.monotonic() if now is None else now
     bucket = _buckets[key]
     _purge(bucket, now)
@@ -37,7 +37,7 @@ def is_rate_limited(key: str, limit: int, now: float | None = None) -> bool:
 
 
 def record(key: str, now: float | None = None) -> None:
-    """Enregistre une requête pour `key` (après purge de la fenêtre)."""
+    """Records a request for `key` (after purging the window)."""
     now = time.monotonic() if now is None else now
     bucket = _buckets[key]
     _purge(bucket, now)
@@ -45,5 +45,5 @@ def record(key: str, now: float | None = None) -> None:
 
 
 def reset() -> None:
-    """Vide tous les compteurs (utilisé par les tests)."""
+    """Clears all counters (used by the tests)."""
     _buckets.clear()

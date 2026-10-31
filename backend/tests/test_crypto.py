@@ -1,4 +1,4 @@
-"""Tests du chiffrement AES-256-GCM (app/core/crypto.py, Module 7)."""
+"""Tests for AES-256-GCM encryption (app/core/crypto.py, Module 7)."""
 
 import base64
 
@@ -22,12 +22,12 @@ def test_ciphertext_differs_from_plaintext():
 
 
 def test_random_nonce_different_ciphertexts():
-    """Nonce aléatoire → 2 chiffrages du même plaintext donnent des ciphertexts distincts."""
+    """Random nonce → two encryptions of the same plaintext give distinct ciphertexts."""
     assert crypto.encrypt_secret("same") != crypto.encrypt_secret("same")
 
 
 def test_tamper_raises():
-    """1 octet modifié (tag GCM) → exception d'authentification."""
+    """1 byte modified (GCM tag) → authentication exception."""
     ct = bytearray(crypto.encrypt_secret("tamper-me"))
     ct[-1] ^= 0x01
     with pytest.raises(InvalidTag):
@@ -35,15 +35,15 @@ def test_tamper_raises():
 
 
 def test_invalid_key_fail_fast():
-    """Clé absente / mal formée → fail-fast (ValueError)."""
+    """Missing / malformed key → fail-fast (ValueError)."""
     with pytest.raises(ValueError):
         crypto._parse_key("")
     with pytest.raises(ValueError):
         crypto._parse_key("not-a-valid-key!!")
-    # 64 chars mais non hexadécimal → base64 invalide (caractères illégaux).
+    # 64 chars but not hexadecimal → invalid base64 (illegal characters).
     with pytest.raises(ValueError):
         crypto._parse_key("!" * 64)
-    # Longueur décodée != 32 octets.
+    # Decoded length != 32 bytes.
     with pytest.raises(ValueError):
         crypto._parse_key(base64.b64encode(b"short").decode())
 
@@ -61,6 +61,6 @@ def test_valid_base64_key():
 
 
 def test_validate_settings_rejects_dev_key():
-    """F5 : la valeur de dev connue d'ENCRYPTION_KEY est refusée au démarrage."""
+    """F5: the known dev value of ENCRYPTION_KEY is refused at startup."""
     with pytest.raises(RuntimeError, match="ENCRYPTION_KEY"):
         validate_settings(Settings(encryption_key="dev-encryption-key-change-me-0000000000"))

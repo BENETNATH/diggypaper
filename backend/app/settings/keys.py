@@ -1,17 +1,17 @@
-"""Clés de settings connues (Module 7) : secret ou non, et valeurs par défaut.
+"""Known settings keys (Module 7): secret or not, and default values.
 
-Les secrets sont chiffrés AES-256-GCM en base (``is_secret=True``) ; les autres
-valeurs sont stockées en clair UTF-8 (``is_secret=False``).
+Secrets are encrypted AES-256-GCM in the database (``is_secret=True``); the other
+values are stored as plain UTF-8 (``is_secret=False``).
 """
 
 import os
 
-#: Clés chiffrées (jamais renvoyées en clair à l'API).
+#: Encrypted keys (never returned in clear to the API).
 SECRET_KEYS: frozenset[str] = frozenset(
     {"ncbi_api_key", "llm_api_key", "smtp_password", "zotero_api_key", "openalex_api_key"}
 )
 
-#: Clés stockées en clair (non sensibles).
+#: Keys stored in clear (non-sensitive).
 NON_SECRET_KEYS: frozenset[str] = frozenset(
     {
         "llm_api_base_url",
@@ -27,18 +27,18 @@ NON_SECRET_KEYS: frozenset[str] = frozenset(
     }
 )
 
-#: Toutes les clés acceptées par l'API settings.
+#: All keys accepted by the settings API.
 KNOWN_KEYS: frozenset[str] = SECRET_KEYS | NON_SECRET_KEYS
 
-#: Valeurs par défaut appliquées quand la clé n'est pas définie en base.
-# LLM_API_BASE_URL (env) : en Docker, pointer vers le service « ollama » du compose.
-# LLM_TIMEOUT_SECONDS (env) : timeout par appel d'inférence — à augmenter sur CPU
-# (cold start Ollama : chargement des poids + prefill peuvent dépasser 120 s).
-# LLM_EXTRA_BODY (env) : corps JSON additionnel des requêtes LLM (ex.
-# {"think": false, "options": {"num_ctx": 16384}}), appliqué uniquement aux
-# backends locaux ; None ou invalide → corps vide. num_ctx à ajuster par
-# déploiement (16384 par défaut ; 32768 jouable sur GPU) — Ollama ne signale
-# pas la troncature du prompt, un num_ctx suffisant est la seule contre-mesure.
+#: Default values applied when the key is not defined in the database.
+# LLM_API_BASE_URL (env): in Docker, point to the compose's "ollama" service.
+# LLM_TIMEOUT_SECONDS (env): timeout per inference call — raise it on CPU
+# (Ollama cold start: weights loading + prefill can exceed 120 s).
+# LLM_EXTRA_BODY (env): additional JSON body of the LLM requests (e.g.
+# {"think": false, "options": {"num_ctx": 16384}}), applied only to local
+# backends; None or invalid → empty body. num_ctx to adjust per deployment
+# (default 16384; 32768 workable on GPU) — Ollama does not signal prompt
+# truncation, a sufficient num_ctx is the only countermeasure.
 DEFAULTS: dict[str, str | None] = {
     "llm_api_base_url": os.environ.get("LLM_API_BASE_URL", "http://localhost:11434/v1"),
     "inference_timeout": os.environ.get("LLM_TIMEOUT_SECONDS", "120"),
@@ -47,5 +47,5 @@ DEFAULTS: dict[str, str | None] = {
 
 
 def is_secret(key: str) -> bool:
-    """True si la clé doit être chiffrée en base."""
+    """True if the key must be encrypted in the database."""
     return key in SECRET_KEYS

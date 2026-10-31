@@ -1,20 +1,20 @@
 /**
- * Logique pure des recherches d'un projet (sans React ni réseau : testable).
+ * Pure logic of a project's searches (no React, no network: testable).
  *
- * Une recherche = une question posée à un lot d'articles. La recherche courante est portée par
- * `?search=<id>` dans l'URL, sinon par sessionStorage (`diggy:search:{projectId}`), sinon
- * absente (= recherche initiale du projet).
+ * A search = a question posed to a batch of articles. The current search is carried by
+ * `?search=<id>` in the URL, otherwise by sessionStorage (`diggy:search:{projectId}`), otherwise
+ * absent (= the project's initial search).
  */
 import type { PredictionFilter, SearchInfo, Selection } from "@/lib/api";
 
 export const searchStoreKey = (projectId: string): string => `diggy:search:${projectId}`;
-/** Sélection préremplie transmise de la page Articles à la page Recherches. */
+/** Prefilled selection passed from the Articles page to the Searches page. */
 export const prefillStoreKey = (projectId: string): string => `diggy:newsearch:${projectId}`;
-/** Filtres de la liste d'articles, mémorisés par projet ET par recherche. */
+/** Article list filters, remembered per project AND per search. */
 export const articlesStoreKey = (projectId: string, searchId?: string): string =>
   `diggy:articles:${projectId}${searchId ? `:${searchId}` : ""}`;
 
-/** L'URL l'emporte sur la mémoire de l'onglet ; aucun des deux = recherche initiale. */
+/** The URL wins over the tab memory; neither = initial search. */
 export function resolveSearchId(
   fromUrl: string | null | undefined,
   stored: string | null | undefined
@@ -22,7 +22,7 @@ export function resolveSearchId(
   return fromUrl || stored || undefined;
 }
 
-/** Ajoute (ou remplace) `search=` dans une URL interne, sans toucher au fragment. */
+/** Adds (or replaces) `search=` in an internal URL, without touching the fragment. */
 export function withSearch(href: string, searchId?: string): string {
   if (!searchId) return href;
   const [rest, hash] = href.split("#");
@@ -32,14 +32,14 @@ export function withSearch(href: string, searchId?: string): string {
   return `${path}?${params.toString()}${hash ? `#${hash}` : ""}`;
 }
 
-/** Recherche demandée, sinon la recherche initiale. */
+/** Requested search, otherwise the initial search. */
 export function currentSearch(searches: SearchInfo[] | null, searchId?: string): SearchInfo | undefined {
   return searches?.find((s) => (searchId ? s.id === searchId : s.is_default));
 }
 
 /**
- * Sélection d'articles : retire les critères vides pour ne garder que ceux qui comptent
- * (sans critère = tout le corpus ; critères cumulés).
+ * Article selection: drops empty criteria to keep only the meaningful ones
+ * (no criterion = whole corpus; criteria are cumulative).
  */
 export function cleanSelection(sel: Selection): Selection {
   const out: Selection = {};
@@ -60,7 +60,7 @@ export function cleanSelection(sel: Selection): Selection {
   return out;
 }
 
-/** Sélection correspondant aux filtres de la page Articles (statut + réponses) de la recherche courante. */
+/** Selection matching the current search's Articles page filters (status + answers). */
 export function selectionFromFilters(
   filter: PredictionFilter | "ALL" | undefined,
   answers: Record<string, string | boolean>,
@@ -77,7 +77,7 @@ export function selectionFromFilters(
   });
 }
 
-/** Recherche initiale jamais utilisée (aucune analyse, relecture ni tâche) : simple contenant du
- * corpus, à ne pas montrer comme une recherche tant qu'aucune analyse n'a été lancée. */
+/** Initial search never used (no analysis, re-review or task): just a container of the
+ * corpus, not to be shown as a search until an analysis has been run. */
 export const isUntouched = (s: SearchInfo): boolean =>
   s.is_default && s.predicted === 0 && s.reviewed === 0 && !s.last_job;

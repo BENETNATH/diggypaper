@@ -45,7 +45,7 @@ async def test_anonymize_removes_pii_and_preserves_annotations(
     ).hexdigest()
     assert u.email.startswith("anonymized-")
     assert u.email.endswith("@invalid.local")
-    # m5 : 12 hex (pas 8) pour l'email anonymisé.
+    # m5: 12 hex (not 8) for the anonymized email.
     assert re.fullmatch(r"anonymized-[0-9a-f]{12}@invalid\.local", u.email)
     assert u.hashed_password == ""
     assert u.full_name is None
@@ -67,18 +67,18 @@ async def test_anonymize_makes_login_impossible(client, researcher_user, do_logi
 
 
 async def test_anonymized_user_old_token_rejected(client, researcher_user, do_login):
-    """F2 : après anonymisation, l'ancien access token est rejeté (401 'Account anonymized')."""
+    """F2: after anonymization, the old access token is rejected (401 'Account anonymized')."""
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     resp = await client.delete("/api/v1/users/me/anonymize")
     assert resp.status_code == 204
-    # L'ancien cookie (access token) est toujours dans le jar du client.
+    # The old cookie (access token) is still in the client jar.
     resp = await client.get("/api/v1/auth/me")
     assert resp.status_code == 401
     assert resp.json()["detail"] == "Account anonymized"
 
 
 async def _fresh_user_and_annotation(engine):
-    """Requête dans une session fraîche (même engine in-memory) → état DB réel."""
+    """Request in a fresh session (same in-memory engine) → real DB state."""
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
@@ -89,10 +89,10 @@ async def _fresh_user_and_annotation(engine):
 
 
 async def test_anonymize_is_idempotent(client, engine, session, researcher_user, do_login):
-    """F2 : double anonymisation → 204, anonymized_hash et annotator_hash inchangés.
+    """F2: double anonymization → 204, anonymized_hash and annotator_hash unchanged.
 
-    Les re-queries passent par une session fraîche (même engine in-memory) pour lire
-    l'état DB réel, indépendamment de l'identity map de la session partagée.
+    The re-queries go through a fresh session (same in-memory engine) to read the
+    real DB state, independently of the shared session's identity map.
     """
     user = researcher_user
     await _seed_researcher_data(session, user)
@@ -113,7 +113,7 @@ async def test_anonymize_is_idempotent(client, engine, session, researcher_user,
 
 
 async def test_anonymized_admin_cannot_invite(client, admin_user, mock_mailer, do_login):
-    """F2 : un admin anonymisé ne peut plus inviter (401)."""
+    """F2: an anonymized admin can no longer invite (401)."""
     await do_login("admin@lab.fr", "admin-pass-123")
     resp = await client.delete("/api/v1/users/me/anonymize")
     assert resp.status_code == 204
@@ -123,7 +123,7 @@ async def test_anonymized_admin_cannot_invite(client, admin_user, mock_mailer, d
 
 
 async def test_anonymize_demotes_role_to_researcher(client, session, admin_user, do_login):
-    """F2 : l'anonymisation dégrade le rôle à RESEARCHER (plus d'accès admin résiduel)."""
+    """F2: anonymization downgrades the role to RESEARCHER (no residual admin access)."""
     await do_login("admin@lab.fr", "admin-pass-123")
     resp = await client.delete("/api/v1/users/me/anonymize")
     assert resp.status_code == 204

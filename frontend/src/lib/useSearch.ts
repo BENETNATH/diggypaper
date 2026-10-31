@@ -6,7 +6,7 @@ import { listSearches, SearchInfo } from "@/lib/api";
 import { currentSearch, resolveSearchId, searchStoreKey } from "@/lib/search";
 
 const SEARCHES_EVENT = "diggy:searches";
-/** Prévient les `useSearches` montés (sélecteur du layout) que la liste des recherches a changé. */
+/** Tells the mounted `useSearches` (layout selector) that the search list changed. */
 export const notifySearchesChanged = (): void => {
   window.dispatchEvent(new Event(SEARCHES_EVENT));
 };
@@ -23,14 +23,14 @@ export function storeSearchId(projectId: string, searchId: string): void {
   try {
     sessionStorage.setItem(searchStoreKey(projectId), searchId);
   } catch {
-    /* stockage indisponible : la sélection ne survit qu'à travers l'URL */
+    /* storage unavailable: the selection survives only through the URL */
   }
 }
 
 /**
- * Recherche courante du projet : `?search=` dans l'URL, sinon mémoire de l'onglet, sinon
- * `undefined` (= recherche initiale). Les pages client ne sont montées qu'après l'authentification
- * (pas de rendu serveur), donc la lecture du sessionStorage au rendu est sûre.
+ * Current search of the project: `?search=` in the URL, otherwise tab memory, otherwise
+ * `undefined` (= initial search). Client pages mount only after authentication
+ * (no server rendering), so reading sessionStorage at render is safe.
  */
 export function useSearchId(projectId: string): string | undefined {
   const fromUrl = useSearchParams().get("search");
@@ -40,20 +40,20 @@ export function useSearchId(projectId: string): string | undefined {
   return resolveSearchId(fromUrl, readStored(projectId));
 }
 
-/** Recherches du projet (null tant que non chargées) + la courante ; `refreshKey` change → relecture. */
+/** Project searches (null until loaded) + the current one; `refreshKey` changes → re-read. */
 export function useSearches(projectId: string, searchId?: string, refreshKey?: string) {
   const [searches, setSearches] = useState<SearchInfo[] | null>(null);
   const reload = useCallback(
     () =>
       listSearches(projectId)
         .then(setSearches)
-        .catch(() => setSearches((s) => s ?? [])), // liste indisponible : les pages ne restent pas en attente
+        .catch(() => setSearches((s) => s ?? [])), // list unavailable: the pages do not stay pending
     [projectId]
   );
   useEffect(() => {
     void reload();
   }, [reload, refreshKey]);
-  // Une autre partie de l'écran a créé / renommé / supprimé une recherche.
+  // Another part of the screen created / renamed / deleted a search.
   useEffect(() => {
     window.addEventListener(SEARCHES_EVENT, reload);
     return () => window.removeEventListener(SEARCHES_EVENT, reload);
@@ -62,8 +62,8 @@ export function useSearches(projectId: string, searchId?: string, refreshKey?: s
 }
 
 /**
- * Change de recherche courante : mémorise le choix et réécrit l'URL courante avec `?search=`
- * (l'article ouvert n'est pas forcément dans le lot de la nouvelle recherche : on l'oublie).
+ * Changes the current search: remembers the choice and rewrites the current URL with `?search=`
+ * (the opened article may not be in the new search's batch: we drop it).
  */
 export function useSelectSearch(projectId: string): (searchId: string) => void {
   const router = useRouter();

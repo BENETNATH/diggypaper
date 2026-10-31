@@ -1,8 +1,8 @@
-"""Enrichir le corpus par chaînage de citations : références et citants des articles de départ.
+"""Enrich the corpus by citation chaining: references and citing articles of the seed articles.
 
-Les graines sont des articles du projet (une sélection, comme pour créer une recherche), sans
-analyse préalable. Les candidats les plus liés aux graines entrent dans le corpus avec leur
-origine ; une recherche est créée sur eux, à analyser ensuite avec le modèle pour garder ou écarter.
+The seeds are articles of the project (a selection, like when creating a search), with no
+prior analysis. The candidates most linked to the seeds enter the corpus with their
+origin; a search is created over them, to analyze later with the model to keep or discard.
 """
 
 import uuid
@@ -46,7 +46,7 @@ class CitationRequest(BaseModel):
 
 
 async def _seeds(db: AsyncSession, project, sel: Selection) -> tuple[list[str], int]:
-    """(PMID des graines, nombre d'articles sélectionnés) ; 422 si trop de graines."""
+    """(PMIDs of the seeds, number of selected articles); 422 if too many seeds."""
     ids = await select_articles(db, project, sel)
     pmids = [
         p
@@ -68,8 +68,8 @@ async def _seeds(db: AsyncSession, project, sel: Selection) -> tuple[list[str], 
 async def expand_by_citations(
     project_id: uuid.UUID, payload: CitationRequest, db: DbDep, user: UserDep
 ) -> dict:
-    """``dry_run`` : combien de candidats (par seuil de recouvrement). Sinon tâche de fond :
-    import des meilleurs candidats + recherche créée sur eux (id dans le résultat du job)."""
+    """``dry_run``: how many candidates (per overlap threshold). Otherwise a background task:
+    import of the best candidates + search created over them (id in the job's result)."""
     project = await _require_project_member(db, project_id, user)
     await _require_lead_or_admin(db, project_id, user)
     seeds, selected = await _seeds(db, project, payload.selection)

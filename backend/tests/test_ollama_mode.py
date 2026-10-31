@@ -1,4 +1,4 @@
-"""Tests du flag de déploiement Ollama (app/ollama_mode.py) — lecture env, normalisation."""
+"""Tests for the Ollama deployment flag (app/ollama_mode.py) — env reading, normalization."""
 
 from app import ollama_mode
 
@@ -11,7 +11,7 @@ def test_ollama_mode_absent_defaults_docker(monkeypatch):
 
 
 def test_ollama_mode_invalid_defaults_docker_with_warning(monkeypatch, caplog):
-    """Valeur invalide → docker + warning ; valeur vide → docker SANS warning."""
+    """Invalid value -> docker + warning; empty value -> docker WITHOUT warning."""
     monkeypatch.setenv("OLLAMA_MODE", "banana")
     assert ollama_mode.resolve_mode() == "docker"
     assert any(r.levelname == "WARNING" and "banana" in r.message for r in caplog.records)
@@ -22,7 +22,7 @@ def test_ollama_mode_invalid_defaults_docker_with_warning(monkeypatch, caplog):
 
 
 def test_ollama_mode_case_and_space_normalized(monkeypatch):
-    """Casse et espaces normalisés (strip + lower)."""
+    """Case and spaces normalized (strip + lower)."""
     monkeypatch.setenv("OLLAMA_MODE", " HOST ")
     assert ollama_mode.resolve_mode() == "host"
     monkeypatch.setenv("OLLAMA_MODE", "Off")

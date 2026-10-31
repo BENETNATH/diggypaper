@@ -1,5 +1,5 @@
-"""Phase 3 multi-sources : l'identifiant natif (``native_id``) dans la recherche rapide
-(spec 2026-10-29-sources-phase3 D5) — 100 % offline."""
+"""Phase 3 multi-sources: the native identifier (``native_id``) in the fast search
+(spec 2026-10-29-sources-phase3 D5) — 100% offline."""
 
 import uuid
 from pathlib import Path
@@ -10,7 +10,7 @@ BACKEND = Path(__file__).parent.parent
 
 
 async def test_search_blob_includes_native_id(client, session, researcher_user, do_login):
-    """Un article EPMC sans PMID/DOI est trouvable par son ``native_id`` (``W123``)."""
+    """An EPMC article without PMID/DOI is findable by its ``native_id`` (``W123``)."""
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     resp = await client.post("/api/v1/projects", json={"title": "Native search"})
     print("DBG", resp.status_code, resp.text)
@@ -30,8 +30,8 @@ async def test_search_blob_includes_native_id(client, session, researcher_user, 
 
 
 def test_migration_0032_recreates_trgm_index():
-    """0032 (down 0031) est la tête ; l'expression recreate = 0028 + ``native_id`` après
-    ``pmid`` (sinon l'index ne sert plus) ; PG-only (no-op SQLite)."""
+    """0032 (down 0031) is the head; the recreate expression = 0028 + ``native_id`` after
+    ``pmid`` (otherwise the index serves no purpose); PG-only (no-op SQLite)."""
     from alembic.config import Config
     from alembic.script import ScriptDirectory
 
