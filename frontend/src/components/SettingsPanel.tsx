@@ -54,14 +54,6 @@ const GROUPS: { titleKey: string; helpKey?: string; fields: FieldDef[] }[] = [
     helpKey: "contactHelp",
     fields: [{ key: "contact_email", labelKey: "contactEmail", type: "text" }],
   },
-  {
-    titleKey: "zotero",
-    helpKey: "zoteroHelp",
-    fields: [
-      { key: "zotero_group_id", labelKey: "zoteroGroup", type: "text" },
-      { key: "zotero_api_key", labelKey: "zoteroKey", secret: true, type: "text" },
-    ],
-  },
 ];
 
 /**

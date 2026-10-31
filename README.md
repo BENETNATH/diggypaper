@@ -214,7 +214,7 @@ Voir [`.env.example`](.env.example) (racine) pour la liste complète.
 **Frontend** (env de build) : `NEXT_PUBLIC_API_ORIGIN`, `NEXT_PUBLIC_API_BASE`.
 
 **Géré en base (chiffré)** : `llm_api_base_url`, `llm_api_key`,
-`ncbi_api_key`, `zotero_*`, `smtp_*` — via l'API settings ou l'UI Paramètres.
+`ncbi_api_key`, `smtp_*` — via l'API settings ou l'UI Paramètres.
 
 > **Fail-fast** : le backend refuse de démarrer si `JWT_SECRET`, `ANON_SALT` ou
 > `ENCRYPTION_KEY` sont encore les valeurs de dev par défaut.

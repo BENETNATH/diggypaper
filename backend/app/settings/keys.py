@@ -8,7 +8,7 @@ import os
 
 #: Encrypted keys (never returned in clear to the API).
 SECRET_KEYS: frozenset[str] = frozenset(
-    {"ncbi_api_key", "llm_api_key", "smtp_password", "zotero_api_key", "openalex_api_key"}
+    {"ncbi_api_key", "llm_api_key", "smtp_password", "openalex_api_key"}
 )
 
 #: Keys stored in clear (non-sensitive).
@@ -22,7 +22,6 @@ NON_SECRET_KEYS: frozenset[str] = frozenset(
         "smtp_user",
         "smtp_from_email",
         "use_tls",
-        "zotero_group_id",
         "contact_email",
     }
 )
