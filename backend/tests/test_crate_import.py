@@ -104,8 +104,8 @@ async def _human_entries(session, project) -> tuple[list[dict], dict[str, bytes]
 
 
 async def test_crate_keeps_human_evidence_under_a_project_scoped_pseudonym(session, tmp_path):
-    """Each exported re-read keeps its identifier, its date, its quotes and a pseudonym
-    propre au projet ; ni e-mail ni identifiant de compte n'apparaissent dans les JSON/Markdown."""
+    """Each exported re-read keeps its identifier, its date, its quotes and a project-scoped
+    pseudonym; no e-mail or account identifier appears in the JSON/Markdown files."""
     _, project = await _exported_crate(session, tmp_path)
     user = (await session.execute(select(User).where(User.email == "lead@lab.fr"))).scalar_one()
     art = (await session.execute(select(Article).where(Article.pmid == "222"))).scalar_one()
