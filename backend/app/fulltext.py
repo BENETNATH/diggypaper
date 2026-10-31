@@ -250,12 +250,32 @@ def match_scores(sections: list[dict], candidates: list[tuple]) -> list[tuple[fl
     return sorted(scored, key=lambda t: -t[0])
 
 
+async def _apply_fulltext(
+    session: AsyncSession,
+    art,
+    sections: list[dict],
+    source: str | None,
+    url: str | None,
+    pdf: bytes | None,
+) -> None:
+    """Replaces the source atomically (text, PDF, methods); the commit stays with the caller."""
+    # Batch processing intercepts an error and commits the rest: this savepoint prevents keeping a
+    # half-replaced source (text from one source, PDF or methods from another).
+    async with session.begin_nested():
+        if pdf is not None:
+            await store_pdf(session, art.id, pdf)
+        else:  # JATS: the old PDF no longer matches the adopted text
+            await session.execute(delete(ArticleFile).where(ArticleFile.article_id == art.id))
+        art.sections, art.fulltext_source, art.fulltext_url = sections, source, url
+        art.fulltext_note = None
+        # No methods inherited from the old source: this text's, or none.
+        art.methods_text = " ".join(s["text"] for s in sections if s["kind"] == "methods") or None
+        await session.flush()
+
+
 async def apply_uploaded_pdf(session, art, sections: list[dict], data: bytes) -> None:
     """Adopts this PDF as the article's full text (manual upload). No commit."""
-    art.sections, art.fulltext_source = sections, "pdf:upload"
-    art.fulltext_note, art.fulltext_url = None, None
-    await store_pdf(session, art.id, data)
-    art.methods_text = " ".join(s["text"] for s in sections if s["kind"] == "methods") or None
+    await _apply_fulltext(session, art, sections, "pdf:upload", None, data)
 
 
 async def find_open_fulltext(
@@ -326,11 +346,5 @@ async def complete_article(
     )
     if not sections:
         return None
-    art.sections, art.fulltext_source, art.fulltext_url = sections, source, url
-    art.fulltext_note = None
-    if pdf:
-        await store_pdf(session, art.id, pdf)
-    art.methods_text = (
-        " ".join(s["text"] for s in sections if s["kind"] == "methods") or art.methods_text
-    )
+    await _apply_fulltext(session, art, sections, source, url, pdf)
     return source

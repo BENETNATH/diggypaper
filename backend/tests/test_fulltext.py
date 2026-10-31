@@ -1,9 +1,14 @@
 """Full text outside PMC: PDF → sections, Europe PMC / Unpaywall / OpenAlex chain (offline)."""
 
+from unittest.mock import AsyncMock
+
 import httpx
 import pytest
+from sqlalchemy import event, select
 
-from app.fulltext import find_open_fulltext, pdf_to_sections
+from app.article_text import compose_text, fill_prompt
+from app.db.models import Article, ArticleFile
+from app.fulltext import apply_uploaded_pdf, complete_article, find_open_fulltext, pdf_to_sections
 
 BODY = "lorem ipsum dolor sit amet " * 100
 
@@ -233,6 +238,175 @@ async def _lead_article(session, user, **art):
     session.add(a)
     await session.commit()
     return project, a
+
+
+@pytest.fixture
+async def article_with_pdf(session):
+    """Article already holding a source (preprint PDF, methods, note) to be replaced."""
+    art = Article(
+        pmid="123",
+        title=TITLE,
+        abstract="Current abstract",
+        sections=[{"title": "Methods", "kind": "methods", "text": "Prior methods"}],
+        methods_text="Prior methods",
+        fulltext_source="pdf:preprint",
+        fulltext_url="https://repo.org/prior.pdf",
+        fulltext_note="prior note",
+    )
+    session.add(art)
+    await session.flush()
+    session.add(ArticleFile(article_id=art.id, data=b"%PDF prior"))
+    await session.commit()
+    return art
+
+
+def _source_state(art):
+    return (
+        art.sections,
+        art.fulltext_source,
+        art.fulltext_url,
+        art.fulltext_note,
+        art.methods_text,
+    )
+
+
+async def _pdf_data(session, article_id):
+    rows = await session.scalars(
+        select(ArticleFile.data).where(ArticleFile.article_id == article_id)
+    )
+    return list(rows)
+
+
+@pytest.mark.parametrize("pdf", [None, b"%PDF replacement"], ids=["jats", "pdf"])
+@pytest.mark.parametrize("has_methods", [True, False], ids=["methods", "no-methods"])
+async def test_complete_article_replaces_entire_source(
+    session, article_with_pdf, monkeypatch, pdf, has_methods
+):
+    """The new source replaces everything: the old PDF does not survive a JATS text, and the
+    old source's methods are not inherited by a text that has none."""
+    art = article_with_pdf
+    sections = [{"title": "Results", "kind": "results", "text": BODY}]
+    if has_methods:
+        sections += [
+            {"title": "Methods", "kind": "methods", "text": "New methods"},
+            {"title": "More methods", "kind": "methods", "text": "Additional methods"},
+        ]
+    source = "europepmc" if pdf is None else "pdf:published"
+    url = "https://source.org/current"
+    monkeypatch.setattr(
+        "app.fulltext.find_open_fulltext", AsyncMock(return_value=(sections, source, url, pdf))
+    )
+
+    async with httpx.AsyncClient() as http:
+        assert await complete_article(session, art, "a@b.fr", http) == source
+    await session.commit()
+    await session.refresh(art)
+
+    methods = "New methods Additional methods" if has_methods else None
+    assert _source_state(art) == (sections, source, url, None, methods)
+    assert await _pdf_data(session, art.id) == ([] if pdf is None else [pdf])
+    assert "Prior methods" not in compose_text(art)
+    assert "Prior methods" not in fill_prompt("{article_text}|{methods_text}", art)
+    if not has_methods:
+        assert compose_text(art) == "Current abstract"
+        assert fill_prompt("{methods_text}", art) == ""
+
+
+async def test_uploaded_pdf_replaces_source_without_old_methods(session, article_with_pdf):
+    art = article_with_pdf
+    sections = [{"title": "Results", "kind": "results", "text": BODY}]
+    await apply_uploaded_pdf(session, art, sections, b"%PDF uploaded")
+    await session.commit()
+    await session.refresh(art)
+    assert _source_state(art) == (sections, "pdf:upload", None, None, None)
+    assert await _pdf_data(session, art.id) == [b"%PDF uploaded"]
+
+
+@pytest.mark.parametrize("pdf", [None, b"%PDF replacement"], ids=["jats", "pdf"])
+async def test_source_replacement_failure_rolls_back_even_if_caller_commits(
+    session, article_with_pdf, monkeypatch, pdf
+):
+    """An error during the replacement leaves the old source intact (text AND PDF), even if the
+    caller intercepts the error and then commits its progress."""
+    art = article_with_pdf
+    original = _source_state(art)
+    source = "europepmc" if pdf is None else "pdf:published"
+    # The PubMed notice can be refreshed independently of the full text.
+    art.title = "Updated bibliographic title"
+    monkeypatch.setattr(
+        "app.fulltext.find_open_fulltext",
+        AsyncMock(return_value=(_sec(BODY), source, "https://source.org/current", pdf)),
+    )
+
+    def fail_after_write(*_):
+        if art.fulltext_source == source:
+            raise RuntimeError("source write failed")
+
+    event.listen(session.sync_session, "after_flush_postexec", fail_after_write)
+    try:
+        async with httpx.AsyncClient() as http:
+            with pytest.raises(RuntimeError, match="source write failed"):
+                await complete_article(session, art, "a@b.fr", http)
+    finally:
+        event.remove(session.sync_session, "after_flush_postexec", fail_after_write)
+    # Le traitement en lot intercepte les erreurs, puis committe sa progression.
+    await session.commit()
+    await session.refresh(art)
+    assert art.title == "Updated bibliographic title"
+    assert _source_state(art) == original
+    assert await _pdf_data(session, art.id) == [b"%PDF prior"]
+
+
+async def test_batch_fulltext_continues_after_source_write_failure(
+    engine, session, article_with_pdf, monkeypatch, caplog
+):
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    from app.db.models import ImportJob, ImportJobStatus, Project
+    from app.tasks import _complete_fulltext
+
+    project = Project(title="Batch completion")
+    session.add(project)
+    await session.flush()
+    art = article_with_pdf
+    art.project_id = project.id
+    second = Article(project_id=project.id, pmid="124", title=TITLE)
+    session.add(second)
+    await session.commit()
+    original = _source_state(art)
+    monkeypatch.setattr("app.tasks.backfill_metadata", AsyncMock(return_value=0))
+    monkeypatch.setattr(
+        "app.fulltext.find_open_fulltext",
+        AsyncMock(return_value=(_sec(BODY), "europepmc", "https://source.org/current", None)),
+    )
+
+    def fail_first_write(_mapper, _connection, target):
+        if target.pmid == "123":
+            raise RuntimeError("first source write failed")
+
+    event.listen(Article, "after_update", fail_first_write)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        async with httpx.AsyncClient() as http:
+            result = await _complete_fulltext(str(project.id), session_factory=factory, http=http)
+    finally:
+        event.remove(Article, "after_update", fail_first_write)
+    assert result == {
+        "phase": "done",
+        "done": 2,
+        "total": 2,
+        "found": 1,
+        "sources": {"europepmc": 1},
+    }
+    assert "open fulltext failed for pmid 123" in caplog.text
+    assert "first source write failed" in caplog.text
+    await session.refresh(art)
+    await session.refresh(second)
+    assert _source_state(art) == original
+    assert await _pdf_data(session, art.id) == [b"%PDF prior"]
+    assert second.fulltext_source == "europepmc"
+    job = await session.scalar(select(ImportJob).where(ImportJob.project_id == project.id))
+    assert job.status == ImportJobStatus.COMPLETED
 
 
 async def test_upload_pdf_of_another_article_needs_force(

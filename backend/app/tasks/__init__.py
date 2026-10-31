@@ -962,10 +962,11 @@ async def _complete_fulltext(
             await session.commit()
             try:
                 for art in todo:
+                    pmid = art.pmid  # a rollback of a replacement can expire the ORM object
                     try:
                         source = await complete_article(session, art, email, client)
                     except Exception:
-                        logger.exception("open fulltext failed for pmid %s", art.pmid)
+                        logger.exception("open fulltext failed for pmid %s", pmid)
                         source = None
                     if source:
                         found += 1
