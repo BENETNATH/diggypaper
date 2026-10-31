@@ -71,6 +71,25 @@ async def test_list_models(client, session, admin_user, do_login):
     assert "Kev-4B" in names
 
 
+async def test_model_payload_internal_flag(client, session, admin_user, do_login):
+    await do_login("admin@lab.fr", "admin-pass-123")
+    for r in (
+        await client.post("/api/v1/models", json={"name": "Loc", "model_identifier": "kef/kev-4b"}),
+        await client.post(
+            "/api/v1/models",
+            json={"name": "Priv", "backend_type": "OPENAI_API", "model_identifier": "http://10.0.0.5/v1#m"},
+        ),
+        await client.post(
+            "/api/v1/models",
+            json={"name": "Pub", "backend_type": "OPENAI_API", "model_identifier": "https://api.openai.com/v1#gpt-4"},
+        ),
+    ):
+        assert r.status_code == 201, r.text
+    resp = await client.get("/api/v1/models")
+    internal = {m["name"]: m["internal"] for m in resp.json()["items"]}
+    assert internal == {"Loc": True, "Priv": True, "Pub": False}
+
+
 async def test_create_model_duplicate_409(client, session, admin_user, do_login):
     await do_login("admin@lab.fr", "admin-pass-123")
     await client.post("/api/v1/models", json={"name": "Kev-4B", "model_identifier": "kef/kev-4b"})

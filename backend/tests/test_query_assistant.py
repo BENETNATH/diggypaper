@@ -138,3 +138,47 @@ def test_constrain_keeps_valid_query_with_a_bounded_explanation():
     out = qa.constrain({"reply": "x" * 900, "query": '"sleep"[MeSH Terms] AND memory[tiab]'})
     assert out["refused"] is False and len(out["reply"]) == qa.MAX_REPLY and out["query"]
     assert qa.looks_like_query("(a OR b) AND c") and not qa.looks_like_query("write me a poem")
+
+
+def test_constrain_openalex_accepts_plain_text_and_rejects_paragraphs():
+    out = qa.constrain({"reply": "ok", "query": "sleep memory healthy adults"}, source="openalex")
+    assert out["refused"] is False and out["query"] == "sleep memory healthy adults"
+    out = qa.constrain({"reply": "ok", "query": "line one\nline two"}, source="openalex")
+    assert out["query"] is None
+    rules = qa.system_prompt("openalex").split("Rules for the query:")[1].split("- Do not add")[0]
+    assert "OpenAlex" in rules and "NO Boolean operators" in rules
+
+
+async def test_assistant_route_non_pubmed_source_checks_volume_only(
+    client, session, researcher_user, do_login, monkeypatch
+):
+    from app.api.v1 import query_assistant as route
+
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    pid = (await client.post("/api/v1/projects", json={"title": "P"})).json()["id"]
+    session.add(ModelRegistry(name="Mdl", model_identifier="x", owner_id=researcher_user.id))
+    await session.commit()
+    seen = {}
+
+    async def fake_model(model, service, system, prompt):
+        seen["system"] = system
+        return {"reply": "ok", "query": "(sleep) AND memory"}
+
+    async def fake_volume(self, query, bornes):
+        return 7
+
+    monkeypatch.setattr(route, "infer_with", fake_model)
+    monkeypatch.setattr(route.ADAPTERS["europepmc"], "search_volume", fake_volume)
+    url = f"/api/v1/projects/{pid}/query-assistant"
+    body = {
+        "model": "Mdl",
+        "source": "europepmc",
+        "messages": [{"role": "user", "content": "sommeil et mémoire"}],
+    }
+    r = await client.post(url, json=body)
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert d["query"] == "(sleep) AND memory" and d["check"] == {"count": 7, "too_long": False}
+    assert "Europe PMC" in seen["system"]
+    # source inconnue → 422 (pas de crash)
+    assert (await client.post(url, json={**body, "source": "crossref"})).status_code == 422

@@ -13,10 +13,14 @@ from app import query_assistant as qa
 from app.api.deps import get_current_user, get_db, rate_limit_user
 from app.api.v1.projects import _require_lead_or_admin, _require_project_member
 from app.db.models import User
+from app.europepmc import EpmcError
+from app.hal import HalError
 from app.inference import InferenceError, infer_with, make_inference_service
 from app.model_access import usable_models
+from app.openalex import OpenAlexError
 from app.pubmed import NCBIError
 from app.settings.service import get_setting
+from app.tasks import ADAPTERS, _source_key_setting
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/projects", tags=["query-assistant"])
@@ -32,8 +36,27 @@ class Message(BaseModel):
 
 class AssistRequest(BaseModel):
     model: str = Field(min_length=1)
+    source: Literal["pubmed", "europepmc", "openalex", "hal"] = "pubmed"
     messages: list[Message] = Field(min_length=1, max_length=qa.MAX_MESSAGES)
     seeds: str = Field(default="", max_length=20000)  # articles attendus : DOI / PMID, un par ligne
+
+
+async def _check_source(source: str, query: str, seeds: str, db: AsyncSession) -> dict:
+    """Vérifie la requête proposée auprès du moteur : PubMed (volume, traduction, termes inconnus,
+    rappel) ; les autres sources (volume seul). Erreur assainie → {error: <source>_unavailable}."""
+    api_key = await get_setting(db, _source_key_setting(source))
+    try:
+        async with httpx.AsyncClient(timeout=60) as http:
+            if source == "pubmed":
+                return await qa.check_query(query, api_key, qa.parse_seeds(seeds), http)
+            adapter = ADAPTERS[source](http, api_key)
+            return {
+                "count": await adapter.search_volume(query, None),
+                "too_long": len(query) > qa.MAX_QUERY,
+            }
+    except (NCBIError, EpmcError, OpenAlexError, HalError) as exc:
+        logger.error("query-assistant %s error: %s", source, exc)
+        return {"error": "ncbi_unavailable" if source == "pubmed" else f"{source}_unavailable"}
 
 
 @router.post(
@@ -41,8 +64,8 @@ class AssistRequest(BaseModel):
     dependencies=[Depends(rate_limit_user("query_assistant", 20))],
 )
 async def assist(project_id: uuid.UUID, payload: AssistRequest, db: DbDep, user: UserDep) -> dict:
-    """Le modèle propose une requête à partir de la conversation ; PubMed la vérifie (volume,
-    traduction, termes inconnus) et, avec des articles attendus, mesure combien elle en retrouve."""
+    """Le modèle propose une requête pour le moteur choisi ; la source le vérifie (volume, et pour
+    PubMed : traduction, termes inconnus, rappel sur les articles attendus)."""
     await _require_project_member(db, project_id, user)
     await _require_lead_or_admin(db, project_id, user)
     if payload.messages[-1].role != "user":
@@ -55,7 +78,7 @@ async def assist(project_id: uuid.UUID, payload: AssistRequest, db: DbDep, user:
     answer = None
     for attempt in range(2):  # un modèle qui raisonne répond parfois sans JSON : une seconde chance
         try:
-            answer = await infer_with(models[0], service, qa.SYSTEM_PROMPT, prompt)
+            answer = await infer_with(models[0], service, qa.system_prompt(payload.source), prompt)
             break
         except InferenceError as exc:
             if str(exc) != "invalid_json" or attempt == 1:
@@ -63,22 +86,14 @@ async def assist(project_id: uuid.UUID, payload: AssistRequest, db: DbDep, user:
     if not isinstance(answer, dict):
         raise HTTPException(status_code=502, detail="model_error:invalid_json")
     logger.info(
-        "query-assistant: user=%s project=%s model=%s msg=%r",
+        "query-assistant: user=%s project=%s model=%s source=%s msg=%r",
         user.id,
         project_id,
         payload.model,
+        payload.source,
         payload.messages[-1].content[:80],
     )
-    result = qa.constrain(answer) | {"check": None}
-    query = result["query"]
-    if query:
-        api_key = await get_setting(db, "ncbi_api_key")
-        try:
-            async with httpx.AsyncClient(timeout=60) as http:
-                result["check"] = await qa.check_query(
-                    query, api_key, qa.parse_seeds(payload.seeds), http
-                )
-        except NCBIError as exc:
-            logger.error("query-assistant NCBI error: %s", exc)
-            result["check"] = {"error": "ncbi_unavailable"}
+    result = qa.constrain(answer, payload.source) | {"check": None}
+    if result["query"]:
+        result["check"] = await _check_source(payload.source, result["query"], payload.seeds, db)
     return result

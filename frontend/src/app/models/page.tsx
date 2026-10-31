@@ -155,8 +155,8 @@ function ModelsContent() {
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-medium text-foreground">{m.name}</span>
-                    <Badge color={m.mine ? "green" : m.platform ? "yellow" : "gray"}>
-                      {m.mine ? t("ownMine") : m.platform ? t("ownPlatform") : t("ownShared")}
+                    <Badge color={m.mine ? "green" : m.internal ? "blue" : "gray"}>
+                      {m.mine ? t("ownMine") : m.internal ? t("internal") : t("external")}
                     </Badge>
                     {caps?.ollama.mode === "off" && m.backend_type === "OLLAMA" && (
                       <Badge color="gray">{t("offBadge")}</Badge>

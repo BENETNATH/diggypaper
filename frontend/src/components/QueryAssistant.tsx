@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { assistQuery, listModels, ModelInfo, QueryAssist } from "@/lib/api";
+import { sourceName } from "@/lib/source";
 import { Button } from "@/components/ui/Button";
 import { Select } from "@/components/ui/Field";
 import { ErrorBanner } from "@/components/ui/Feedback";
@@ -10,11 +11,20 @@ import { ErrorBanner } from "@/components/ui/Feedback";
 type Turn = { role: "user" | "assistant"; content: string; result?: QueryAssist };
 
 /**
- * Assistant de requête PubMed : on décrit sa recherche en texte libre, un modèle propose la requête.
- * Chaque proposition est vérifiée par PubMed (volume, termes inconnus) et, avec des articles
- * attendus (DOI / PMID), on voit combien elle en retrouve. Le modèle ne sert qu'à cela (borné côté serveur).
+ * Assistant de requête : on décrit sa recherche en texte libre, un modèle propose la requête dans
+ * la syntaxe du moteur choisi (`source`). Chaque proposition est vérifiée par la source (volume ;
+ * sur PubMed aussi : termes inconnus et, avec des articles attendus (DOI / PMID), combien elle en
+ * retrouve). Le modèle ne sert qu'à cela (borné côté serveur).
  */
-export function QueryAssistant({ projectId, onUse }: { projectId: string; onUse: (query: string) => void }) {
+export function QueryAssistant({
+  projectId,
+  source,
+  onUse,
+}: {
+  projectId: string;
+  source: string;
+  onUse: (query: string) => void;
+}) {
   const t = useTranslations("import");
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [model, setModel] = useState("");
@@ -48,7 +58,7 @@ export function QueryAssistant({ projectId, onUse }: { projectId: string; onUse:
         role: m.role,
         content: m.result?.query ? `${m.content}\nQuery: ${m.result.query}`.slice(0, 1000) : m.content,
       }));
-      const r = await assistQuery(projectId, { model, messages: messages.slice(-8), seeds });
+      const r = await assistQuery(projectId, { model, source, messages: messages.slice(-8), seeds });
       setTurns([...next, { role: "assistant", content: r.reply, result: r }]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "error");
@@ -71,6 +81,7 @@ export function QueryAssistant({ projectId, onUse }: { projectId: string; onUse:
           ))}
         </Select>
       </label>
+      {source === "pubmed" && (
       <details className="text-sm">
         <summary className="cursor-pointer font-medium text-foreground">{t("qaSeeds")}</summary>
         <p className="mb-1 mt-1 text-xs text-muted">{t("qaSeedsHint")}</p>
@@ -83,6 +94,7 @@ export function QueryAssistant({ projectId, onUse }: { projectId: string; onUse:
           className="w-full rounded border border-border bg-surface p-2 font-mono text-xs"
         />
       </details>
+      )}
       {turns.length > 0 && (
         <ul className="flex flex-col gap-3">
           {turns.map((m, i) => (
@@ -95,7 +107,7 @@ export function QueryAssistant({ projectId, onUse }: { projectId: string; onUse:
               ) : (
                 m.content && <p className="whitespace-pre-wrap text-foreground">{m.content}</p>
               )}
-              {m.result?.query && <Proposal result={m.result} onUse={onUse} />}
+              {m.result?.query && <Proposal result={m.result} source={source} onUse={onUse} />}
             </li>
           ))}
         </ul>
@@ -123,20 +135,34 @@ export function QueryAssistant({ projectId, onUse }: { projectId: string; onUse:
   );
 }
 
-function Proposal({ result, onUse }: { result: QueryAssist; onUse: (q: string) => void }) {
+function Proposal({
+  result,
+  source,
+  onUse,
+}: {
+  result: QueryAssist;
+  source: string;
+  onUse: (q: string) => void;
+}) {
   const t = useTranslations("import");
   const c = result.check;
+  const src = sourceName(source) ?? source;
   return (
     <div className="mt-2 flex flex-col gap-2">
       <pre className="whitespace-pre-wrap break-words rounded bg-surface p-2 font-mono text-xs text-foreground">
         {result.query}
       </pre>
       {c?.error ? (
-        <p className="text-xs text-warning">{t("qaNcbiDown")}</p>
+        <p className="text-xs text-warning">
+          {(() => {
+            const down = sourceName(c.error!.replace(/_unavailable$/, ""));
+            return down ? t("srcDown", { src: down }) : t("qaNcbiDown");
+          })()}
+        </p>
       ) : c ? (
         <div className="flex flex-col gap-1 text-xs">
           <p className="text-foreground">
-            {t("qaResults", { n: c.count ?? 0 })}
+            {t("qaResults", { n: c.count ?? 0, src })}
             {c.recall && (
               <span className={c.recall.found < c.recall.total ? "text-warning" : "text-success"}>
                 {" · "}
@@ -148,12 +174,12 @@ function Proposal({ result, onUse }: { result: QueryAssist; onUse: (q: string) =
             <p className="text-warning">{t("qaMissing", { list: c.recall.missing.join(", ") })}</p>
           )}
           {c.not_found && c.not_found.length > 0 && (
-            <p className="text-danger">{t("qaNotFound", { list: c.not_found.join(", ") })}</p>
+            <p className="text-danger">{t("qaNotFound", { list: c.not_found.join(", "), src })}</p>
           )}
           {c.too_long && <p className="text-danger">{t("qaTooLong")}</p>}
           {c.translation && (
             <details>
-              <summary className="cursor-pointer text-muted">{t("qaTranslation")}</summary>
+              <summary className="cursor-pointer text-muted">{t("qaTranslation", { src })}</summary>
               <p className="mt-1 break-words font-mono text-muted">{c.translation}</p>
             </details>
           )}

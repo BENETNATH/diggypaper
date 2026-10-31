@@ -19,7 +19,7 @@ import { RequireAuth } from "@/components/RequireAuth";
 import { ReferencesImport } from "@/components/ReferencesImport";
 import { CitationExpand } from "@/components/CitationExpand";
 import { QueryAssistant } from "@/components/QueryAssistant";
-import { sourceLabel } from "@/lib/source";
+import { sourceLabel, sourceName } from "@/lib/source";
 import { Button } from "@/components/ui/Button";
 import { Field, Input } from "@/components/ui/Field";
 import { Card, Badge, statusColor } from "@/components/ui/Card";
@@ -233,7 +233,9 @@ function ImportContent() {
       setVolume(r.count);
       setCap(r.max >= 1e9 ? Infinity : r.max);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "error");
+      const msg = err instanceof Error ? err.message : "error";
+      const name = sourceName(msg.replace(/_unavailable$/, ""));
+      setError(name ? t("srcDown", { src: name }) : msg);
     } finally {
       setChecking(false);
     }
@@ -345,7 +347,10 @@ function ImportContent() {
                     mode === m ? "bg-primary text-white" : "text-muted hover:text-foreground"
                   }`}
                 >
-                  {t(m === "pubmed" ? "modePubmed" : m === "refs" ? "modeRefs" : "modeCites")}
+                  {t(
+                    m === "pubmed" ? "modeSearch" : m === "refs" ? "modeRefs" : "modeCites",
+                    m === "pubmed" ? { src: sourceLabel(source, null, "") ?? "" } : undefined,
+                  )}
                 </button>
               ))}
             </div>
@@ -367,20 +372,20 @@ function ImportContent() {
               />
             ) : (
             <div className="flex flex-col gap-4">
-            {source === "pubmed" && (
-              <details className="rounded-lg border border-border p-3">
-                <summary className="cursor-pointer text-sm font-medium text-foreground">{t("qaTitle")}</summary>
-                <div className="mt-3">
-                  <QueryAssistant
-                    projectId={projectId}
-                    onUse={(q) => {
-                      setQuery(q);
-                      setVolume(null);
-                    }}
-                  />
-                </div>
-              </details>
-            )}
+            <details className="rounded-lg border border-border p-3">
+              <summary className="cursor-pointer text-sm font-medium text-foreground">{t("qaTitle")}</summary>
+              <div className="mt-3">
+                <QueryAssistant
+                  key={source}
+                  projectId={projectId}
+                  source={source}
+                  onUse={(q) => {
+                    setQuery(q);
+                    setVolume(null);
+                  }}
+                />
+              </div>
+            </details>
           <form onSubmit={handleCheckVolume} className="flex flex-col gap-4">
             {hasCorpus && <p className="text-sm text-muted">{t("addHint", { n: project?.article_count ?? 0 })}</p>}
             <fieldset className="flex flex-wrap gap-x-4 gap-y-1 text-sm">

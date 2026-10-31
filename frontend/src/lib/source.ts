@@ -10,6 +10,9 @@ const NAMES: Record<string, string> = {
 };
 const ID_KINDS: Record<string, string> = { pubmed: "PMID", crossref: "DOI" };
 
+/** Nom lisible d'une source (« europepmc » → « Europe PMC ») ; `null` si code inconnu. */
+export const sourceName = (code: string): string | null => NAMES[code] ?? null;
+
 export function sourceLabel(
   source: string | null | undefined,
   nativeId: string | null | undefined,

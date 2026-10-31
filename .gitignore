@@ -3,6 +3,9 @@
 .env.*
 !.env.example
 
+# tool caches
+.swival/
+
 # environnements et dépendances
 .venv/
 .node/

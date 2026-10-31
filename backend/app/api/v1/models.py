@@ -47,7 +47,7 @@ from app.inference import (
     ollama_ref,
     public_model_ref,
 )
-from app.model_access import access_filter, check_public_url, check_url_secrets
+from app.model_access import access_filter, check_public_url, check_url_secrets, is_internal_url
 from app.ollama_mode import COMPOSE_ROOT, MODE
 from app.settings.service import get_setting
 
@@ -141,6 +141,7 @@ def _payload(m: ModelRegistry, user: User | None = None) -> dict:
     return {
         "mine": user is not None and m.owner_id == user.id,
         "platform": m.owner_id is None,
+        "internal": m.backend_type != "OPENAI_API" or is_internal_url(endpoint),
         "id": str(m.id),
         "name": m.name,
         "backend_type": m.backend_type,

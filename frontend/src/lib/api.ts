@@ -231,6 +231,8 @@ export interface ModelInfo {
   mine?: boolean;
   /** Modèle de la plateforme (installé par un administrateur). */
   platform?: boolean;
+  /** Servi en interne (Ollama/LLaMA.cpp/Transformers, ou API sur réseau privé). */
+  internal?: boolean;
 }
 
 /** Matrice de confusion et métriques de la pertinence ou d'un item booléen. */
@@ -575,10 +577,15 @@ export interface QueryAssist {
   check: QueryCheck | null;
 }
 
-/** Assistant de requête PubMed : un modèle propose une requête, PubMed la vérifie. */
+/** Assistant de requête : un modèle propose une requête dans la syntaxe du moteur, la source la vérifie. */
 export async function assistQuery(
   projectId: string,
-  body: { model: string; messages: { role: "user" | "assistant"; content: string }[]; seeds: string }
+  body: {
+    model: string;
+    source?: string;
+    messages: { role: "user" | "assistant"; content: string }[];
+    seeds: string;
+  }
 ): Promise<QueryAssist> {
   return request<QueryAssist>(`/projects/${projectId}/query-assistant`, {
     method: "POST",

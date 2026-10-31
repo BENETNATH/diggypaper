@@ -64,6 +64,7 @@ async def test_search_volume_params_and_count(monkeypatch):
     assert seen["resultType"] == "lite"
     assert seen["pageSize"] == "1"
     assert "FIRST_PDATE" not in seen["query"]
+    assert "sort" not in seen  # le count ne trie pas (503 EBI de 2026-10-31 sur toute requête triée)
 
 
 async def test_search_volume_date_bounds(monkeypatch):
@@ -111,6 +112,29 @@ async def test_iter_ids_cursor_pagination():
     assert calls[1]["cursorMark"] == "*"
     assert calls[1]["sort"] == "FIRST_PDATE desc"
     assert len(calls) == 3  # count + page 1 + page 2
+
+
+async def test_iter_ids_falls_back_to_unsorted_when_sort_503s():
+    """EBI renvoie 503 sur les requêtes triées (incident 2026-10-31) : repli sans tri, l'import
+    passe malgré tout (ordre arbitraire) ; sans 503, le tri reste demandé."""
+    calls: list[bool] = []  # True si l'appel portait sort
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        p = dict(request.url.params)
+        sorted_call = "sort" in p
+        calls.append(sorted_call)
+        if sorted_call:
+            return httpx.Response(503, json={"errCode": 503, "errMsg": "unavailable"})
+        if "cursorMark" not in p:
+            return _search_resp(2, [])  # count
+        return _search_resp(2, [{"id": "W1"}, {"id": "W2"}])
+
+    async with _client(handler) as http:
+        ad = EuropePMCAdapter(http, None)
+        ids = [i async for i in ad.iter_ids("q", DateBounds(), limit=10)]
+    assert ids == ["W1", "W2"]
+    # count (sans tri) → page 1 avec tri (3 tentatives : 2 retries internes + 1) → repli sans tri
+    assert calls == [False, True, True, True, False]
 
 
 async def test_iter_ids_limit_and_cached_count():

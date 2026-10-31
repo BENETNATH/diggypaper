@@ -150,7 +150,7 @@ class EuropePMCAdapter:
 
     async def search_volume(self, query: str, bornes: DateBounds | None) -> int:
         b = bornes or DateBounds()
-        data = await _search(self._http, _term_bounded(query, b), 1, None)
+        data = await _search(self._http, _term_bounded(query, b), 1, None, sort=False)
         self._last_count = int(data.get("hitCount") or 0)
         return self._last_count
 
@@ -160,15 +160,32 @@ class EuropePMCAdapter:
         b = bornes or DateBounds()
         if self._last_count is None:
             self._last_count = int(
-                (await _search(self._http, _term_bounded(query, b), 1, None)).get("hitCount") or 0
+                (await _search(self._http, _term_bounded(query, b), 1, None, sort=False)).get(
+                    "hitCount"
+                )
+                or 0
             )
         # Cap absent → le plafond d'import (``_esearch_max()``), comme l'adapter PubMed.
         limit = limit or _esearch_max()
         term = _term_bounded(query, b)
         cursor = "*"
         seen: dict[str, None] = {}
+        use_sort = True
         while len(seen) < limit:
-            data = await _search(self._http, term, min(_PAGE_SIZE, limit - len(seen)), cursor)
+            try:
+                data = await _search(
+                    self._http, term, min(_PAGE_SIZE, limit - len(seen)), cursor, sort=use_sort
+                )
+            except EpmcError as exc:
+                # 2026-10-31 : EBI renvoyait 503 uniquement quand ``sort`` était passé — repli sans
+                # tri (ordre arbitraire) pour que l'import passe ; le tri revient dès que EBI est OK.
+                if use_sort and str(exc) == "HTTP 503":
+                    use_sort = False
+                    data = await _search(
+                        self._http, term, min(_PAGE_SIZE, limit - len(seen)), cursor, sort=False
+                    )
+                else:
+                    raise
             for r in (data.get("resultList") or {}).get("result") or []:
                 if rid := r.get("id"):
                     seen.setdefault(rid)
@@ -187,7 +204,9 @@ class EuropePMCAdapter:
         for start in range(0, len(ids), _METADATA_CHUNK):
             chunk = ids[start : start + _METADATA_CHUNK]
             query = "id:(" + " OR ".join(f'"{i}"' for i in chunk) + ")"
-            data = await _search(self._http, query, len(chunk), None, result_type="core")
+            # ``sort=False`` : l'ordre est sans intérêt pour un fetch par identifiants (et le 503
+            # EBI de 2026-10-31 frappait toute requête portant ``sort``).
+            data = await _search(self._http, query, len(chunk), None, result_type="core", sort=False)
             for r in (data.get("resultList") or {}).get("result") or []:
                 if r.get("id"):
                     metas.append(_parse_result(r))
@@ -216,16 +235,22 @@ async def _search(
     page_size: int,
     cursor: str | None,
     result_type: str = "lite",
+    sort: bool = True,
 ) -> dict:
-    """Une requête ``/search`` (throttle + retry) → le JSON (hitCount, resultList…)."""
+    """Une requête ``/search`` (throttle + retry) → le JSON (hitCount, resultList…).
+
+    ``sort=False`` pour les appels de count : le tri est inutile (le hitCount ne dépend pas de
+    l'ordre) et le 2026-10-31 l'endpoint EPMC renvoyait 503 uniquement quand ``sort`` était passé.
+    """
     await _throttle()
     params: dict = {
         "query": query,
         "format": "json",
         "resultType": result_type,
         "pageSize": page_size,
-        "sort": "FIRST_PDATE desc",
     }
+    if sort:
+        params["sort"] = "FIRST_PDATE desc"
     if cursor is not None:
         params["cursorMark"] = cursor
     resp = await _get_with_retry(http, f"{EPMC_BASE}/search", params)

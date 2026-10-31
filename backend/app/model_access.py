@@ -73,3 +73,23 @@ def check_url_secrets(url: str) -> None:
         raise ValueError("base_url is not a valid URL") from None
     if "@" in parts.netloc or "?" in url or "#" in url:
         raise ValueError("base_url must not contain credentials, query or fragment")
+
+
+def is_internal_url(url: str | None) -> bool:
+    """True si l'URL pointe sur localhost ou une IP non globale (réseau interne).
+
+    Pas de DNS : un nom de domaine est considéré externe (cohérent avec ``check_public_url``,
+    qui résout car il refuse ; ici on n'attend pas le réseau pour afficher un badge).
+    """
+    if not url:
+        return False
+    try:
+        host = (urlsplit(url.strip()).hostname or "").strip("[]").lower()
+    except ValueError:
+        return False
+    if host == "localhost":
+        return True
+    try:
+        return not ipaddress.ip_address(host).is_global
+    except ValueError:
+        return False
