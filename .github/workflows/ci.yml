@@ -21,10 +21,13 @@ jobs:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: backend/constraints.txt
-      # constraints.txt : versions testées (même fichier que l'image Docker)
+      # constraints.txt: tested versions (same file as the Docker image)
       - run: pip install -c constraints.txt -e ".[dev]"
       - run: ruff check .
       - run: ruff format --check .
+      - run: pip install bandit
+      # -ll: fail on Medium+ severity (the 9 Low findings are accepted)
+      - run: bandit -r app -ll
       - run: pytest -q
 
   frontend:
