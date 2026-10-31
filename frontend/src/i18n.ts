@@ -8,7 +8,7 @@ export const defaultLocale = (locales as readonly string[]).includes(envLocale) 
 
 export default getRequestConfig(async ({ requestLocale }) => {
   // Language: DP_LOCALE cookie (set only when the user picks a language in the profile), otherwise French.
-  let locale = (await requestLocale) ?? cookies().get("DP_LOCALE")?.value;
+  let locale = (await requestLocale) ?? (await cookies()).get("DP_LOCALE")?.value;
 
   if (!locale || !locales.includes(locale as (typeof locales)[number])) {
     locale = defaultLocale;
