@@ -803,14 +803,13 @@
     "shareUserLabel": "User:"
   },
   "question": {
-    "suggestion": "Suggestion",
+    "suggestion": "Example",
     "suggestionText": "Does the study use AI-based behavior analysis, and which animal sex is studied?",
-    "suggestionUse": "Use this suggestion",
+    "suggestionUse": "Use this example",
     "title": "Question and answer fields",
     "intro": "Describe what you are looking for in the articles. Models answer this question for each article, with supporting quotes.",
     "questionTitle": "The question",
     "questionLabel": "Question asked to each article",
-    "questionHint": "E.g. Does the study specify the sex of the animals used?",
     "fieldsTitle": "Answer fields",
     "fieldsHint": "Each field is a piece of information to extract (yes/no, choice, text). They drive the gold, the scores and the annotation.",
     "fieldLabel": "Label",

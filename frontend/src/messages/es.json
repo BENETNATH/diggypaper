@@ -803,14 +803,13 @@
     "shareUserLabel": "Usuario:"
   },
   "question": {
-    "suggestion": "Sugerencia",
+    "suggestion": "Ejemplo",
     "suggestionText": "¿El estudio usa análisis de comportamiento basado en IA y qué sexo de animales se estudia?",
-    "suggestionUse": "Usar esta sugerencia",
+    "suggestionUse": "Usar este ejemplo",
     "title": "Pregunta y campos de respuesta",
     "intro": "Describa lo que busca en los artículos. Los modelos responden a esta pregunta para cada artículo, con citas de apoyo.",
     "questionTitle": "La pregunta",
     "questionLabel": "Pregunta a cada artículo",
-    "questionHint": "Ej.: ¿El estudio indica el sexo de los animales usados?",
     "fieldsTitle": "Campos de respuesta",
     "fieldsHint": "Cada campo es un dato a extraer (sí/no, opción, texto). Rigen el gold, las métricas y la anotación.",
     "fieldLabel": "Etiqueta",

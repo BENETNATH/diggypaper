@@ -98,7 +98,7 @@ export function QuestionEditor({
 
   return (
     <div className="flex flex-col gap-5">
-      <Field label={t("questionLabel")} hint={t("questionHint")}>
+      <Field label={t("questionLabel")}>
         <Textarea rows={2} value={question} onChange={(e) => set({ question: e.target.value })} />
       </Field>
       {!question.trim() && !fields.length && (

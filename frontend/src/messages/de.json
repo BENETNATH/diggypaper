@@ -803,14 +803,13 @@
     "shareUserLabel": "Benutzer:"
   },
   "question": {
-    "suggestion": "Vorschlag",
+    "suggestion": "Beispiel",
     "suggestionText": "Nutzt die Studie eine KI-basierte Verhaltensanalyse, und welches Geschlecht der Tiere wird untersucht?",
-    "suggestionUse": "Vorschlag übernehmen",
+    "suggestionUse": "Beispiel übernehmen",
     "title": "Frage und Antwortfelder",
     "intro": "Beschreiben Sie, was Sie in den Artikeln suchen. Die Modelle beantworten die Frage für jeden Artikel mit Belegzitaten.",
     "questionTitle": "Die Frage",
     "questionLabel": "Frage an jeden Artikel",
-    "questionHint": "z. B. Gibt die Studie das Geschlecht der Tiere an?",
     "fieldsTitle": "Antwortfelder",
     "fieldsHint": "Jedes Feld ist eine zu extrahierende Information (Ja/Nein, Auswahl, Text). Sie steuern Gold, Scores und Annotation.",
     "fieldLabel": "Bezeichnung",
