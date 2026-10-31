@@ -110,7 +110,7 @@ async def test_doi_duplicate_other_identity_linked_fills_and_fulltext(engine):
         if path.endswith("efetch.fcgi"):
             if params.get("db") == "pmc":
                 assert params.get("id") == "PMC111"
-                # JATS suffisamment long pour passer ``long_enough``.
+                # JATS long enough to pass ``long_enough``.
                 return httpx.Response(
                     200,
                     text=(

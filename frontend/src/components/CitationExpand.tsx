@@ -1,19 +1,22 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { expandByCitations, listSearches, CitationPreview, SearchInfo, Selection } from "@/lib/api";
 import { cleanSelection } from "@/lib/search";
+import { useApiError } from "@/lib/errorMsg";
 import { ArticleSelector } from "@/components/ArticleSelector";
 import { Button } from "@/components/ui/Button";
 import { Select } from "@/components/ui/Field";
-import { ErrorBanner } from "@/components/ui/Feedback";
+import { EmptyState, ErrorBanner, Skeleton } from "@/components/ui/Feedback";
 
 type Direction = "backward" | "forward" | "both";
 
 /** Enrich the corpus by citations: references / citing articles of the chosen ones, without prior analysis. */
 export function CitationExpand({ projectId, onStarted }: { projectId: string; onStarted: () => void }) {
   const t = useTranslations("import");
+  const toError = useApiError();
   const [searches, setSearches] = useState<SearchInfo[] | null>(null);
   const [selection, setSelection] = useState<Selection>({});
   const [direction, setDirection] = useState<Direction>("both");
@@ -36,7 +39,7 @@ export function CitationExpand({ projectId, onStarted }: { projectId: string; on
     try {
       setPreview(await expandByCitations(projectId, body(), true));
     } catch (e) {
-      setError(e instanceof Error ? e.message : "error");
+      setError(toError(e));
     } finally {
       setBusy(false);
     }
@@ -50,13 +53,28 @@ export function CitationExpand({ projectId, onStarted }: { projectId: string; on
       setPreview(null);
       onStarted();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "error");
+      setError(toError(e));
     } finally {
       setBusy(false);
     }
   }
 
-  if (!searches) return null;
+  if (!searches) return <Skeleton rows={2} height="h-8" />;
+  if (searches.length === 0)
+    return (
+      <EmptyState
+        title={t("citNoSearchesTitle")}
+        hint={t("citNoSearchesHint")}
+        action={
+          <Link
+            href={`/projects/${projectId}/searches`}
+            className="text-sm font-medium text-primary hover:underline"
+          >
+            {t("citNoSearchesLink")} →
+          </Link>
+        }
+      />
+    );
   const atLeast = preview?.by_overlap[String(overlap)];
   return (
     <div className="flex flex-col gap-3">
@@ -118,6 +136,7 @@ export function CitationExpand({ projectId, onStarted }: { projectId: string; on
           <strong>{t("citAtLeast", { n: overlap, count: Math.min(atLeast ?? 0, maxCand) })}</strong>
         </p>
       )}
+      {preview && (atLeast ?? 0) === 0 && <p className="text-sm text-warning">{t("citNoCandidate")}</p>}
       <div className="flex flex-wrap gap-2">
         <Button type="button" variant="secondary" loading={busy && !preview} disabled={busy} onClick={estimate}>
           {t("citEstimate")}

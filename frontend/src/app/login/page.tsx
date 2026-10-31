@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useAuth } from "@/lib/auth";
-import { ApiError, getPublicConfig } from "@/lib/api";
+import { ApiError, getPublicConfig, requestPasswordReset } from "@/lib/api";
 import { readLocaleCookie, writeLocaleCookie } from "@/components/LanguageSwitcher";
 import { Button } from "@/components/ui/Button";
 import { Field, Input, Checkbox } from "@/components/ui/Field";
@@ -22,14 +22,36 @@ export default function LoginPage() {
   const [consent, setConsent] = useState(false);
   const [consentRequired, setConsentRequired] = useState(false);
   const [privacyUrl, setPrivacyUrl] = useState<string | null>(null);
+  const [configLoaded, setConfigLoaded] = useState(false);
 
   useEffect(() => {
     getPublicConfig()
       .then((c) => setPrivacyUrl(c.privacy_url))
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => setConfigLoaded(true));
   }, []);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [forgotOpen, setForgotOpen] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [forgotSent, setForgotSent] = useState(false);
+  const [forgotError, setForgotError] = useState<string | null>(null);
+  const [forgotLoading, setForgotLoading] = useState(false);
+
+  async function handleForgot(e: React.FormEvent) {
+    e.preventDefault();
+    setForgotError(null);
+    setForgotLoading(true);
+    try {
+      await requestPasswordReset(forgotEmail);
+      setForgotOpen(false);
+      setForgotSent(true); // generic message: never reveals whether the account exists
+    } catch (err) {
+      setForgotError(err instanceof Error ? err.message : t("unknownError"));
+    } finally {
+      setForgotLoading(false);
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -87,8 +109,9 @@ export default function LoginPage() {
           {/* GDPR consent: asked only once (the server remembers it). */}
           {consentRequired && (
             <>
+              {/* no privacy URL: do not cite a policy the user cannot read */}
               <Checkbox
-                label={t("consentLabel")}
+                label={configLoaded && !privacyUrl ? t("consentLabelNoPolicy") : t("consentLabel")}
                 checked={consent}
                 onChange={(e) => setConsent(e.target.checked)}
               />
@@ -106,6 +129,41 @@ export default function LoginPage() {
           <Link href="/register" className="text-center text-sm text-primary hover:underline">
             {t("registerWithCode")}
           </Link>
+          {/* Forgot password: inline form, generic result (never reveals existence). */}
+          {forgotSent && <p className="text-sm text-success">{t("forgotSent")}</p>}
+          {forgotError && (
+            <div>
+              <ErrorBanner message={forgotError} />
+            </div>
+          )}
+          {forgotOpen ? (
+            <form onSubmit={handleForgot} className="flex flex-col gap-2">
+              <Field label={t("email")}>
+                <Input
+                  type="email"
+                  value={forgotEmail}
+                  onChange={(e) => setForgotEmail(e.target.value)}
+                  required
+                  autoComplete="email"
+                />
+              </Field>
+              <Button type="submit" loading={forgotLoading}>
+                {t("forgotSend")}
+              </Button>
+            </form>
+          ) : (
+            <button
+              type="button"
+              className="text-center text-sm text-primary hover:underline"
+              onClick={() => {
+                setForgotOpen(true);
+                setForgotSent(false);
+                setForgotError(null);
+              }}
+            >
+              {t("forgotPassword")}
+            </button>
+          )}
         </form>
       </Card>
     </div>

@@ -1,4 +1,4 @@
-"""Tests des routes benchmark (app/api/v1/benchmarks.py) — 100 % offline."""
+"""Benchmark route tests (app/api/v1/benchmarks.py) — 100% offline."""
 
 import uuid
 from unittest.mock import MagicMock
@@ -135,7 +135,7 @@ async def test_trigger_benchmark_admin(client, session, admin_user, do_login, mo
 
 
 async def test_trigger_benchmark_non_lead_403(client, session, researcher_user, do_login):
-    """Membre ANNOTATOR (pas LEAD) → 403."""
+    """ANNOTATOR member (not LEAD) → 403."""
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     project_id = await _create_project(client)
     prompt_id, model_name = await _seed_benchmark_prereqs(session, project_id)

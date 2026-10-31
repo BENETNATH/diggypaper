@@ -1,4 +1,4 @@
-"""Tests des routes Gold Dataset (app/api/v1/gold.py) — 100 % offline."""
+"""Gold Dataset route tests (app/api/v1/gold.py) — 100% offline."""
 
 from app.db.models import Article, Project, ProjectMember, ProjectMemberRole
 

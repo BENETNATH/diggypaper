@@ -64,7 +64,7 @@ class PromptUpdate(BaseModel):
 
 
 async def _require_lead(db: AsyncSession, project_id: uuid.UUID, user: User) -> None:
-    """LEAD du projet (ou ADMIN global)."""
+    """The project's LEAD (or a global ADMIN)."""
     if user.role == UserRole.ADMIN:
         return
     member = await db.get(ProjectMember, (project_id, user.id))

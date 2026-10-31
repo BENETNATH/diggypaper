@@ -12,12 +12,15 @@ export function Menu({
   align = "right",
   closeOnClick = true,
   busy = false,
+  ariaLabel,
 }: {
   label: ReactNode;
   children: ReactNode;
   align?: "left" | "right";
   closeOnClick?: boolean;
   busy?: boolean;
+  /** Accessible name of the toggle button (for icon-only labels). */
+  ariaLabel?: string;
 }) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
@@ -41,6 +44,7 @@ export function Menu({
       <button
         type="button"
         aria-haspopup="menu"
+        aria-label={ariaLabel}
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
         className="inline-flex min-h-[32px] items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-1 text-sm font-medium text-foreground transition-colors hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"

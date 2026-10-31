@@ -46,6 +46,9 @@ function LotBar({ s }: { s: SearchInfo }) {
     { key: "rev", n: b.NEEDS_HUMAN_REVIEW ?? 0, cls: "bg-warning", label: t("legendReview") },
     { key: "rej", n: b.AUTO_REJECTED ?? 0, cls: "bg-danger", label: t("legendRejected") },
   ];
+  // The unanalyzed share is the bar background: name it in the legend only when non-zero.
+  const rest = lot - parts.reduce((a, p) => a + p.n, 0);
+  if (rest > 0) parts.push({ key: "na", n: rest, cls: "bg-surface-muted", label: t("legendUnanalysed") });
   return (
     <div className="flex flex-col gap-1">
       <div
@@ -88,7 +91,7 @@ function SearchRow({ s, projectId, isLead, hasCorpus }: { s: SearchInfo; project
             {s.schedule_state === "waiting" && <Badge color="gray">{t("scheduled")}</Badge>}
             {s.schedule_state === "failed" && <Badge color="red">{t("scheduleFailed")}</Badge>}
           </div>
-          <p className="mt-0.5 line-clamp-1 text-sm text-muted" title={s.question}>
+          <p className="mt-0.5 line-clamp-2 text-sm text-muted" title={s.question}>
             {s.question}
           </p>
           {s.schedule_state === "waiting" && s.parent && (
@@ -134,14 +137,14 @@ function SearchRow({ s, projectId, isLead, hasCorpus }: { s: SearchInfo; project
         )}
         <div className="flex gap-4 text-sm tabular-nums">
           {!blind && (
-            <span title={t("analysedPctHelp")}>
+            <span>
               <strong className="text-foreground">{analysedPct} %</strong>{" "}
-              <span className="text-xs text-muted">{t("analysedShort")}</span>
+              <span className="text-xs text-muted">{t("analysedShort")} {t("ofLot", { n: s.predicted, d: s.lot_size })}</span>
             </span>
           )}
-          <span title={t("reviewedPctHelp")}>
+          <span>
             <strong className="text-foreground">{reviewedPct} %</strong>{" "}
-            <span className="text-xs text-muted">{t("reviewedShort")}</span>
+            <span className="text-xs text-muted">{t("reviewedShort")} {t("ofLot", { n: s.reviewed, d: s.lot_size })}</span>
           </span>
         </div>
       </div>

@@ -121,7 +121,7 @@ async def test_create_project_blank_title_422(client, researcher_user, do_login)
 
 
 async def test_list_projects_member(client, session, researcher_user, do_login):
-    """GET /projects renvoie les projets dont l'user est membre (200)."""
+    """GET /projects returns the projects the user belongs to (200)."""
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     pid = await _create_project(client, title="Mon projet")
     resp = await client.get("/api/v1/projects")
@@ -254,7 +254,7 @@ def test_import_request_dates_optional_and_reversed_rejected():
 
 
 async def test_import_triggers_task(client, session, researcher_user, do_login, monkeypatch):
-    """POST /projects/{id}/import trigger le task Celery (mock .delay) → 202."""
+    """POST /projects/{id}/import triggers the Celery task (mock .delay) → 202."""
     import app.tasks as tasks
 
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)

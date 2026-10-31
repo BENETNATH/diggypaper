@@ -118,8 +118,8 @@ class FakeSourceAdapter:
 
 
 async def test_contract_fake_drives_import_pipeline_full_flow(engine):
-    """Le fake drive le vrai pipeline : ordre search_volume → iter_ids →
-    fetch_metadata (par lot) → fetch_fulltext (par article) + stats."""
+    """The fake drives the real pipeline: order search_volume → iter_ids →
+    fetch_metadata (per batch) → fetch_fulltext (per article) + stats."""
     project = await _make_project(engine)
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     ok_sections = [
@@ -211,7 +211,7 @@ async def test_contract_fake_error_sanitized_job_failure(engine):
     assert await _project_status(engine, project.id) == ProjectStatus.DRAFT
 
 
-# --- B. Adapter PubMed via le contrat : iter_ids ≡ fetch_all_pmids -----------
+# --- B. PubMed adapter via the contract: iter_ids ≡ fetch_all_pmids -----------
 
 
 def _date_range_handler(records: dict[str, int]):
@@ -358,7 +358,7 @@ async def test_iter_ids_limit_cap_most_recent():
 
 
 async def test_adapter_503_retries_and_error_sanitized(monkeypatch):
-    """503 transitoire → retry (backoff croissant) ; 503 persistant → NCBIError sans URL."""
+    """Transient 503 → retry (growing backoff); persistent 503 → NCBIError without URL."""
     sleeps: list[float] = []
 
     async def spy(delay: float) -> None:
@@ -396,7 +396,7 @@ async def test_adapter_503_retries_and_error_sanitized(monkeypatch):
 
 
 async def test_adapter_timeout_retries_and_sanitized(monkeypatch):
-    """Timeout transitoire → retry ; timeout persistant → NCBIError('timeout') sans URL."""
+    """Transient timeout → retry; persistent timeout → NCBIError('timeout') without URL."""
     sleeps: list[float] = []
 
     async def spy(delay: float) -> None:

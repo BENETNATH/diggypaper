@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useAuth } from "@/lib/auth";
@@ -19,6 +20,9 @@ export default function RegisterPage() {
   const urlToken = searchParams.get("token") ?? "";
 
   const [tokenInput, setTokenInput] = useState(urlToken);
+  // The token field is hidden when the link carries a token — except when that
+  // token is invalid/expired (401): the user can then paste another one.
+  const [showTokenField, setShowTokenField] = useState(!urlToken);
 
   // The registration page opens in the language chosen by the inviter
   // (the link's `language` claim), unless the invitee already chose their own language.
@@ -48,6 +52,7 @@ export default function RegisterPage() {
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         setError(t("invalidToken"));
+        setShowTokenField(true);
       } else if (err instanceof ApiError && err.status === 409) {
         setError(t("userExists"));
       } else {
@@ -65,10 +70,18 @@ export default function RegisterPage() {
         {error && (
           <div className="mb-4">
             <ErrorBanner message={error} />
+            {error === t("invalidToken") && (
+              <p className="mt-2 text-sm text-muted">{t("invalidTokenHint")}</p>
+            )}
+            {error === t("userExists") && (
+              <Link href="/login" className="mt-2 inline-block text-sm text-primary hover:underline">
+                {t("loginButton")}
+              </Link>
+            )}
           </div>
         )}
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-          {!urlToken && (
+          {showTokenField && (
             <Field label={t("token")}>
               <Input
                 value={tokenInput}

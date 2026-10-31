@@ -1,4 +1,7 @@
+"use client";
+
 import { ReactNode } from "react";
+import { useTranslations } from "next-intl";
 
 /** Empty state: reason + next action (frontend-design-pro). */
 export function EmptyState({
@@ -27,6 +30,7 @@ export function ErrorBanner({
   message: string;
   onRetry?: () => void;
 }) {
+  const t = useTranslations("common");
   return (
     <div
       className="flex items-center justify-between gap-3 rounded-lg border border-danger/30 bg-danger/10 p-3 text-sm text-danger"
@@ -41,7 +45,7 @@ export function ErrorBanner({
           onClick={onRetry}
           className="shrink-0 font-medium underline underline-offset-2 hover:no-underline"
         >
-          Réessayer
+          {t("retry")}
         </button>
       )}
     </div>
@@ -91,6 +95,7 @@ export function Toast({
   message: string;
   onDismiss: () => void;
 }) {
+  const t = useTranslations("common");
   return (
     <div
       className="fixed bottom-20 left-1/2 z-50 -translate-x-1/2 rounded-lg bg-foreground px-4 py-2.5 text-sm text-background shadow-lg md:bottom-6"
@@ -100,7 +105,7 @@ export function Toast({
       <button
         onClick={onDismiss}
         className="ml-3 opacity-70 hover:opacity-100"
-        aria-label="Fermer"
+        aria-label={t("close")}
       >
         ×
       </button>

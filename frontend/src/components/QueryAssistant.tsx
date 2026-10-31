@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { assistQuery, listModels, ModelInfo, QueryAssist } from "@/lib/api";
 import { sourceName } from "@/lib/source";
+import { useApiError } from "@/lib/errorMsg";
 import { Button } from "@/components/ui/Button";
 import { Select } from "@/components/ui/Field";
 import { ErrorBanner } from "@/components/ui/Feedback";
@@ -26,6 +27,7 @@ export function QueryAssistant({
   onUse: (query: string) => void;
 }) {
   const t = useTranslations("import");
+  const toError = useApiError();
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [model, setModel] = useState("");
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -61,7 +63,7 @@ export function QueryAssistant({
       const r = await assistQuery(projectId, { model, source, messages: messages.slice(-8), seeds });
       setTurns([...next, { role: "assistant", content: r.reply, result: r }]);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "error");
+      setError(toError(err));
     } finally {
       setBusy(false);
     }
@@ -92,6 +94,7 @@ export function QueryAssistant({
           maxLength={20000}
           placeholder={"10.1000/xyz123\nPMID: 12345678"}
           className="w-full rounded border border-border bg-surface p-2 font-mono text-xs"
+          aria-label={t("qaSeeds")}
         />
       </details>
       )}

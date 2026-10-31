@@ -146,7 +146,7 @@ def _make_http_client() -> httpx.AsyncClient:
 async def _require_project_member(
     session: AsyncSession, project_id: uuid.UUID, user: User
 ) -> Project:
-    """Charge le projet ; 404 si absent, 403 si l'user n'est ni membre ni ADMIN global."""
+    """Loads the project; 404 if absent, 403 if the user is neither a member nor a global ADMIN."""
     project = await session.get(Project, project_id)
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found")

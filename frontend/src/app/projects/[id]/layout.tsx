@@ -173,6 +173,9 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
           <span className="font-medium text-foreground" title={project?.description ?? undefined}>
             {project?.title ?? "…"}
           </span>
+          {project?.description && (
+            <span className="line-clamp-1 min-w-0 text-muted">{project.description}</span>
+          )}
         </nav>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
           {analysing && (
@@ -208,7 +211,7 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
             />
           )}
           {project && isLead && (
-            <Menu label="⋯">
+            <Menu label="⋯" ariaLabel={t("menuActions")}>
               <MenuItem onClick={() => void handleDelete()}>
                 <span className="text-danger">{t("deleteProject")}</span>
               </MenuItem>
@@ -263,7 +266,7 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
               {searches.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name}
-                  {s.kind !== "standard" ? ` (${t(`kind_${s.kind}`)})` : ""} — {s.lot_size}
+                  {s.kind !== "standard" ? ` (${t(`kind_${s.kind}`)})` : ""} — {t("lotSize", { n: s.lot_size })}
                 </option>
               ))}
             </select>

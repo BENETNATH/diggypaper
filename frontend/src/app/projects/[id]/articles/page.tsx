@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { getProject, prismaUrl, prismaPdfUrl, listArticles, Article, PredictionFilter, SchemaField } from "@/lib/api";
+import { useApiError } from "@/lib/errorMsg";
 import { AnswerFilters, Answers } from "@/components/AnswerFilters";
 import { BulkPdfUpload } from "@/components/BulkPdfUpload";
 import { ExportMenu } from "@/components/ExportMenu";
@@ -17,6 +18,8 @@ import { Button } from "@/components/ui/Button";
 import { Skeleton, ErrorBanner, EmptyState } from "@/components/ui/Feedback";
 import { articlesStoreKey, prefillStoreKey, selectionFromFilters, withSearch } from "@/lib/search";
 import { useSearchId } from "@/lib/useSearch";
+import { useAuth } from "@/lib/auth";
+import { isProjectLead } from "@/lib/role";
 
 type Filter = PredictionFilter | "ALL";
 const FILTERS: Filter[] = ["ALL", "TO_REVIEW", "AUTO_ACCEPTED", "AUTO_REJECTED", "NONE"];
@@ -35,6 +38,8 @@ function loadSaved(projectId: string, searchId?: string): { filter?: Filter; sor
 function ResultsContent() {
   const t = useTranslations("articles");
   const tc = useTranslations("common");
+  const errText = useApiError(); // raw API error → i18n message
+  const { user } = useAuth();
   const locale = useLocale();
   const projectId = useParams<{ id: string }>().id;
   const searchId = useSearchId(projectId);
@@ -56,6 +61,7 @@ function ResultsContent() {
   const [textDraft, setTextDraft] = useState("");
   const [fulltext, setFulltext] = useState<boolean | undefined>(undefined); // full text (true) / abstract only (false)
   const [ready, setReady] = useState(false);
+  const [isLead, setIsLead] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout>>();
   const restoredFor = useRef(""); // storage key from which filters are restored (avoids clobbering another search)
@@ -75,7 +81,10 @@ function ResultsContent() {
     setTextDraft(saved.q ?? "");
     setFulltext(saved.fulltext);
     getProject(projectId, searchId)
-      .then((p) => setFields(p.fields ?? []))
+      .then((p) => {
+        setFields(p.fields ?? []);
+        setIsLead(isProjectLead(p, user));
+      })
       .catch(() => setFields([]))
       .finally(() => {
         restoredFor.current = key;
@@ -132,9 +141,9 @@ function ResultsContent() {
       setTotal(res.total);
       setStats(res.stats);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "error");
+      setError(errText(e));
     }
-  }, [projectId, page, filter, sort, answers, searchId, text, fulltext]);
+  }, [projectId, page, filter, sort, answers, searchId, text, fulltext, errText]);
 
   useEffect(() => {
     if (ready && restoredFor.current === articlesStoreKey(projectId, searchId)) void load();
@@ -145,6 +154,16 @@ function ResultsContent() {
       ? Object.entries(stats).reduce((a, [k, n]) => (k === "TO_REVIEW" ? a : a + n), 0) // TO_REVIEW recoupe NEEDS_HUMAN_REVIEW
       : stats[f] ?? 0;
   const triaged = count("ALL") - count("NONE") > 0;
+  const filtersActive = filter !== "ALL" || text || hasAnswerFilter || fulltext !== undefined;
+
+  /** Empty-state CTA: clears the status filter, the quick search, the answer filters and the text filter. */
+  function resetAllFilters() {
+    resetAnswers();
+    setFilter("ALL");
+    setText("");
+    setTextDraft("");
+    setFulltext(undefined);
+  }
   const queue = "list"; // the re-review queue resumes the displayed list (filters, sort)
 
   /** Opens the Searches page with a selection prefilled by the current filters. */
@@ -186,7 +205,7 @@ function ResultsContent() {
         </div>
       </div>
 
-      {!triaged && count("ALL") > 0 && (
+      {!triaged && count("ALL") > 0 && isLead && (
         <p className="rounded-lg border border-primary/40 bg-primary/5 px-3 py-2 text-sm">
           {t("notTriaged")}{" "}
           <Link href={withSearch(`/projects/${projectId}/inference`, searchId)} className="font-medium text-primary hover:underline">
@@ -224,12 +243,11 @@ function ResultsContent() {
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <div className="flex flex-wrap gap-2" role="tablist">
+        <div className="flex flex-wrap gap-2">
           {FILTERS.filter((f) => f === "ALL" || count(f) > 0 || f === filter).map((f) => (
             <button
               key={f}
-              role="tab"
-              aria-selected={filter === f}
+              aria-pressed={filter === f}
               onClick={() => {
                 setFilter(f);
                 setPage(1);
@@ -285,7 +303,8 @@ function ResultsContent() {
             <option value="added">{t("sortAdded")}</option>
             <option value="date_desc">{t("sortDateDesc")}</option>
             <option value="date_asc">{t("sortDateAsc")}</option>
-            <option value="score_desc">{t("sortScore")}</option>
+            {/* Relevance exists only once the lot has been analysed. */}
+            {triaged && <option value="score_desc">{t("sortScore")}</option>}
           </select>
         </div>
       </div>
@@ -317,7 +336,7 @@ function ResultsContent() {
         <Modal title={t("prisma")} onClose={() => setPrismaOpen(false)} wide>
           <div className="flex flex-col items-start gap-3">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={prismaUrl(projectId, locale, searchId)} alt={t("prisma")} className="w-full rounded border border-border" />
+            <img src={prismaUrl(projectId, locale, searchId)} alt={t("prisma")} className="aspect-[3/4] w-full rounded border border-border bg-surface-muted object-contain" />
             <div className="flex gap-4 text-sm">
               <a href={prismaUrl(projectId, locale, searchId)} download="prisma.svg" className="text-primary hover:underline">
                 ⬇ {t("prismaDownload")}
@@ -333,7 +352,14 @@ function ResultsContent() {
       {articles.length === 0 ? (
         <EmptyState
           title={t("empty")}
-          hint={filter !== "ALL" || text || hasAnswerFilter || fulltext !== undefined ? t("emptyFiltered") : t("emptyHint")}
+          hint={filtersActive ? t("emptyFiltered") : t("emptyHint")}
+          action={
+            filtersActive ? (
+              <Button variant="secondary" size="sm" onClick={resetAllFilters}>
+                {t("resetFilters")}
+              </Button>
+            ) : undefined
+          }
         />
       ) : (
         <Card className="p-1 sm:p-2">

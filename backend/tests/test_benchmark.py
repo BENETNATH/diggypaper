@@ -92,7 +92,7 @@ async def test_run_benchmark_completes(engine, session):
 
 @pytest.mark.parametrize(("raw", "stored"), [("high", None), ("0.9", 0.9), (85, None)])
 async def test_run_benchmark_non_numeric_confidence_completes(engine, session, raw, stored):
-    """confidence_score textuel / hors [0, 1] : le run se termine, colonne Float = None / float."""
+    """textual / out-of-[0, 1] confidence_score: the run finishes, Float column = None / float."""
     project = Project(title="P", created_by=None)
     session.add(project)
     await session.commit()

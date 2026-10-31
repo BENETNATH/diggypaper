@@ -111,7 +111,7 @@ function ModelsContent() {
     await run(async () => {
       await addExternalModel(ext);
       setExt({ name: "", base_url: "", model: "", api_key: "" });
-      setExtMsg(null);
+      setExtMsg({ ok: true, text: t("extAdded") });
     });
   }
 
@@ -135,8 +135,8 @@ function ModelsContent() {
               />
             ))}
             {failed.map(([k, p]) => (
-              <p key={k} className="text-sm text-danger">
-                ⚠ {p.name ?? k} : {/MLX/i.test(p.error ?? "") ? t("errMlx") : p.error}
+              <p key={k} className="rounded-lg bg-danger/10 p-2 text-sm text-danger">
+                {p.name ?? k} : {/MLX/i.test(p.error ?? "") ? t("errMlx") : p.error}
               </p>
             ))}
           </div>
@@ -169,11 +169,11 @@ function ModelsContent() {
                   </div>
                   {typeof modelTests[m.id] === "object" && (
                     (modelTests[m.id] as { ok: boolean; error?: string }).ok ? (
-                      <div className="mt-1 text-xs font-medium text-emerald-500">
+                      <div className="mt-1 text-xs font-medium text-success">
                         ✓ {t("testOk")}
                       </div>
                     ) : (
-                      <div className="mt-1 text-xs font-medium text-red-500">
+                      <div className="mt-1 text-xs font-medium text-danger">
                         ✗ {t("testError")} {modelErrorMessage((modelTests[m.id] as { error?: string }).error ?? "?", t)}
                       </div>
                     )
@@ -189,8 +189,13 @@ function ModelsContent() {
                     >
                       {modelTests[m.id] === "running" ? t("testRunning") : t("testModel")}
                     </Button>
-                    <Button size="sm" variant="secondary" onClick={() => setSharing(sharing === m.id ? null : m.id)}>
-                      {t("share")}
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      aria-expanded={sharing === m.id}
+                      onClick={() => setSharing(sharing === m.id ? null : m.id)}
+                    >
+                      {sharing === m.id ? t("shareClose") : t("share")}
                     </Button>
                     <Button
                       size="sm"
@@ -280,12 +285,7 @@ function ModelsContent() {
         )}
         <section className={isAdmin && caps ? "mt-6 border-t border-border pt-4" : ""}>
           <h3 className="mb-2 text-sm font-semibold text-foreground">{t("addExternal")}</h3>
-          <ul className="flex flex-col gap-2 text-sm">
-            <li className="flex flex-wrap items-center gap-2">
-              <Badge color="green">{t("svcUp")}</Badge>
-              <span className="font-medium text-foreground">{t("svcExternal")}</span>
-            </li>
-          </ul>
+          <p className="text-sm font-medium text-foreground">{t("svcExternal")}</p>
           <div className="mt-3 rounded-lg bg-surface-muted p-3 text-sm">
             <p className="font-semibold text-foreground">{t("generativeTitle")}</p>
             <p className="mt-1 text-muted">{t("generativeBody")}</p>

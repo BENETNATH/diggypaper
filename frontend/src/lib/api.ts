@@ -370,6 +370,23 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Map a backend error detail to a known i18n key (``errors.*``) so errors render in the
+ * user's language; ``null`` when the detail is unknown (the caller falls back to the raw
+ * string). Details are taken from backend/app/api/v1.
+ */
+export function errorKey(detail: string | undefined): string | null {
+  const d = (detail ?? "").trim().toLowerCase();
+  if (!d) return "errors.generic";
+  if (d === "lead required" || d === "project lead required") return "errors.leadRequired";
+  if (d === "question_locked") return "errors.questionLocked";
+  if (d === "no_match") return "errors.noMatch";
+  if (d === "ambiguous") return "errors.ambiguous";
+  if (d.includes("not found")) return "errors.notFound";
+  if (d === "conflict") return "errors.conflict";
+  return null;
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const resp = await fetch(`${API_BASE}${path}`, {
     credentials: "include",
@@ -425,6 +442,22 @@ export async function register(
   return request<User>("/auth/register", {
     method: "POST",
     body: JSON.stringify({ token, password, full_name: fullName ?? null }),
+  });
+}
+
+/** Password reset step 1: always 200 (generic body, no user enumeration). */
+export async function requestPasswordReset(email: string): Promise<void> {
+  await request("/auth/password-reset/request", {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  });
+}
+
+/** Password reset step 2: token from the e-mail link + new password. */
+export async function confirmPasswordReset(token: string, newPassword: string): Promise<void> {
+  await request("/auth/password-reset/confirm", {
+    method: "POST",
+    body: JSON.stringify({ token, new_password: newPassword }),
   });
 }
 

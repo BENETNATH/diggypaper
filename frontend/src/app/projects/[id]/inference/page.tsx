@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
+import { useAuth } from "@/lib/auth";
+import { isProjectLead } from "@/lib/role";
 import { ModelRef } from "@/components/ModelRef";
 import {
   updateProject,
@@ -21,6 +23,7 @@ import {
   createSearch,
   Selection,
 } from "@/lib/api";
+import { useApiError } from "@/lib/errorMsg";
 import { MAX_GOLD_EXAMPLES } from "@/lib/benchmark";
 import { ExportMenu } from "@/components/ExportMenu";
 import { RequireAuth } from "@/components/RequireAuth";
@@ -48,6 +51,11 @@ function Stat({ label, value, tone }: { label: string; value: number; tone?: str
 
 function InferenceContent() {
   const t = useTranslations("inference");
+  const tLead = useTranslations("searches"); // leadOnly notice
+  const tj = useTranslations("jobs");
+  const errText = useApiError(); // raw API error → i18n message
+  const { user } = useAuth();
+  const [isLead, setIsLead] = useState(false);
   const projectId = useParams<{ id: string }>().id;
   const searchId = useSearchId(projectId);
   const { searches, current } = useSearches(projectId, searchId);
@@ -102,9 +110,9 @@ function InferenceContent() {
       setError(null);
     } catch (e) {
       if (e instanceof Error && /404/.test(e.message)) setJob(null);
-      else setError(e instanceof Error ? e.message : "error");
+      else setError(errText(e));
     }
-  }, [projectId, searchId]);
+  }, [projectId, searchId, errText]);
 
   // Changing the search reloads its question, its items and its analysis state.
   useEffect(() => {
@@ -122,6 +130,7 @@ function InferenceContent() {
           sections: p.text_sections ?? ["methods"],
         });
         setSaved0(JSON.stringify([set ? (p.question ?? "") : "", set ? (p.fields ?? []) : []]));
+        setIsLead(isProjectLead(p, user));
       })
       .catch(() => {});
   }, [load, projectId, searchId]);
@@ -190,7 +199,7 @@ function InferenceContent() {
       await cancelInference(projectId);
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "error");
+      setError(errText(err));
     } finally {
       setSubmitting(false);
     }
@@ -216,7 +225,7 @@ function InferenceContent() {
       });
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "error");
+      setError(errText(err));
     } finally {
       setSubmitting(false);
     }
@@ -286,10 +295,11 @@ function InferenceContent() {
       });
       await load();
       setLaunched(true);
-      // The progress area is below the fold: we bring the user there.
-      setTimeout(() => progressRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
+      // The progress area is below the fold: we bring the user there (no smooth scroll when reduced motion).
+      const smooth = typeof window.matchMedia === "function" && !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      setTimeout(() => progressRef.current?.scrollIntoView({ behavior: smooth ? "smooth" : "auto", block: "start" }), 100);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "error");
+      setError(errText(err));
     } finally {
       setSubmitting(false);
     }
@@ -318,6 +328,14 @@ function InferenceContent() {
   );
   const total = num(r.total);
   const busyElsewhere = !!busy && busy.id !== job?.id;
+  // Why the run button is disabled: the unmet conditions, in plain language.
+  const needs = [
+    !stage2 && !stage1 ? t("needModel") : null,
+    !q || !q.question.trim() ? t("needQuestion") : null,
+    q && q.fields.length === 0 ? t("needField") : null,
+    q && q.sections.length === 0 ? t("needSection") : null,
+    scopeMode === "new" && !newCount ? t("needSelection") : null,
+  ].filter((x): x is string => x !== null);
 
   return (
     <div className="flex flex-col gap-4">
@@ -382,7 +400,9 @@ function InferenceContent() {
       </Card>
 
       <Card title={`2. ${t("cascadeTitle")}`}>
-        {models.length === 0 ? (
+        {!isLead ? (
+          <p className="text-sm text-muted">{tLead("leadOnly")}</p>
+        ) : models.length === 0 ? (
           <p className="text-sm text-warning">
             {t("noModels")}{" "}
             <Link href="/models" className="font-medium text-primary hover:underline">
@@ -458,7 +478,7 @@ function InferenceContent() {
                 />
                 {examplesOn && (
                   <label className="flex items-center gap-2 text-sm text-foreground">
-                    N =
+                    {t("exampleLabel")}
                     <input
                       type="number"
                       min={1}
@@ -482,11 +502,18 @@ function InferenceContent() {
               {validate && <p className="text-xs text-muted">{t("validateHint")}</p>}
               {goldCount !== null && !noGold && <p className="text-xs text-muted">{t("goldCount", { n: goldCount })}</p>}
             </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <Button type="submit" loading={submitting} disabled={active || busyElsewhere || (!stage2 && !stage1) || !q || !q.question.trim() || q.fields.length === 0 || q.sections.length === 0 || (scopeMode === "new" && !newCount)}>
-                {job ? t("rerun") : t("run")}
-              </Button>
-              {launched && active && <span className="text-sm text-success">✓ {t("launched")}</span>}
+            <div className="flex flex-col gap-1">
+              <div className="flex flex-wrap items-center gap-3">
+                <Button type="submit" loading={submitting} disabled={active || busyElsewhere || (!stage2 && !stage1) || !q || !q.question.trim() || q.fields.length === 0 || q.sections.length === 0 || (scopeMode === "new" && !newCount)}>
+                  {job ? t("rerun") : t("run")}
+                </Button>
+                {launched && active && <span className="text-sm text-success">✓ {t("launched")}</span>}
+              </div>
+              {needs.length > 0 && (
+                <p className="text-sm text-muted">
+                  {t("needsIntro")} {needs.join(" ")}
+                </p>
+              )}
             </div>
           </form>
         )}
@@ -515,7 +542,7 @@ function InferenceContent() {
           ) : (
             <div className="mb-3 flex items-center justify-between gap-3 text-sm text-muted">
               <span className="font-mono">{jobModels}</span>
-              <Badge color={statusColor(job.status)}>{job.status}</Badge>
+              <Badge color={statusColor(job.status)}>{tj(`status_${job.status}`)}</Badge>
             </div>
           )}
           {sentPrompt && (
@@ -553,7 +580,7 @@ function InferenceContent() {
             <p className="mt-3 rounded-lg bg-warning/10 p-3 text-sm text-foreground">{t("stopped", { n: num(r.done) })}</p>
           )}
           {job.status === "FAILED" && job.error && job.error !== "cancelled" && (
-            <p className="mt-3 rounded-lg bg-danger/10 p-3 text-sm text-danger">{job.error}</p>
+            <p className="mt-3 rounded-lg bg-danger/10 p-3 text-sm text-danger">{errText(job.error)}</p>
           )}
           {job.status === "FAILED" && (
             <div className="mt-3 flex flex-col items-start gap-1">

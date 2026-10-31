@@ -21,13 +21,25 @@ import { useAuth } from "@/lib/auth";
 import { RequireAuth } from "@/components/RequireAuth";
 import { RequireAdmin } from "@/components/RequireAdmin";
 import { Button } from "@/components/ui/Button";
-import { Input, Select } from "@/components/ui/Field";
+import { Field, Input, Select } from "@/components/ui/Field";
 import { Badge, Card } from "@/components/ui/Card";
 import { ErrorBanner, Skeleton } from "@/components/ui/Feedback";
 
 const LANGS = ["fr", "en", "de", "es"];
 
-function UserRow({ u, me, onChange, onError }: { u: AdminUser; me: boolean; onChange: () => void; onError: (m: string) => void }) {
+function UserRow({
+  u,
+  me,
+  onChange,
+  onError,
+  onNotice,
+}: {
+  u: AdminUser;
+  me: boolean;
+  onChange: () => void;
+  onError: (m: string) => void;
+  onNotice: (text: string) => void;
+}) {
   const t = useTranslations("adminUsers");
   const [edit, setEdit] = useState(false);
   const [del, setDel] = useState(false);
@@ -105,18 +117,24 @@ function UserRow({ u, me, onChange, onError }: { u: AdminUser; me: boolean; onCh
             });
           }}
         >
-          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={t("name")} className="w-48" />
-          <Select value={role} onChange={(e) => setRole(e.target.value as AdminUser["role"])} disabled={me}>
-            <option value="RESEARCHER">{t("researcher")}</option>
-            <option value="ADMIN">{t("admin")}</option>
-          </Select>
-          <Select value={lang} onChange={(e) => setLang(e.target.value)}>
-            {LANGS.map((l) => (
-              <option key={l} value={l}>
-                {l.toUpperCase()}
-              </option>
-            ))}
-          </Select>
+          <Field label={t("name")} className="w-48">
+            <Input value={name} onChange={(e) => setName(e.target.value)} />
+          </Field>
+          <Field label={t("role")}>
+            <Select value={role} onChange={(e) => setRole(e.target.value as AdminUser["role"])} disabled={me}>
+              <option value="RESEARCHER">{t("researcher")}</option>
+              <option value="ADMIN">{t("admin")}</option>
+            </Select>
+          </Field>
+          <Field label={t("language")}>
+            <Select value={lang} onChange={(e) => setLang(e.target.value)}>
+              {LANGS.map((l) => (
+                <option key={l} value={l}>
+                  {l.toUpperCase()}
+                </option>
+              ))}
+            </Select>
+          </Field>
           <Button type="submit" size="sm">
             {t("save")}
           </Button>
@@ -139,7 +157,8 @@ function UserRow({ u, me, onChange, onError }: { u: AdminUser; me: boolean; onCh
               onClick={() =>
                 void run(async () => {
                   const r = await deleteAdminUser(u.id, alsoProjects);
-                  if (r.orphaned_projects.length) window.alert(t("orphaned", { list: r.orphaned_projects.join(", ") }));
+                  if (r.orphaned_projects.length)
+                    onNotice(t("orphaned", { list: r.orphaned_projects.join(", ") }));
                 })
               }
             >
@@ -222,7 +241,9 @@ function AdminContent() {
             });
           }}
         >
-          <Input type="email" required value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder={t("inviteEmail")} className="w-72" />
+          <Field label={t("inviteEmail")} className="w-72">
+            <Input type="email" required value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} />
+          </Field>
           <Button type="submit" size="sm">
             {t("inviteCreator")}
           </Button>
@@ -253,7 +274,14 @@ function AdminContent() {
         ) : (
           <ul className="divide-y divide-border">
             {users.map((u) => (
-              <UserRow key={u.id} u={u} me={u.id === user?.id} onChange={() => void load()} onError={setError} />
+              <UserRow
+                key={u.id}
+                u={u}
+                me={u.id === user?.id}
+                onChange={() => void load()}
+                onError={setError}
+                onNotice={(text) => setNotice({ text })}
+              />
             ))}
           </ul>
         )}

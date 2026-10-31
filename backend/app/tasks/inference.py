@@ -276,7 +276,7 @@ async def _run_inference(
             if stats.get("cancelled"):
                 return stats  # arrêtée par l'utilisateur : pas d'e-mail « terminée »
 
-            # Notification e-mail (best-effort, ne casse pas le job).
+            # E-mail notification (best-effort, never breaks the job).
             mailer = await _make_mailer(session)
             await notify_job_complete(
                 str(job.project_id),
@@ -655,7 +655,7 @@ async def _do_inference(
 async def _progress(
     session: AsyncSession, job: InferenceJob, done: int, total: int, invalid: int, counts: dict
 ) -> None:
-    """Progression lisible par GET /inference pendant le RUNNING (+ commit par article)."""
+    """Progress readable via GET /inference while RUNNING (+ commit per article)."""
     job.result_json = {
         "phase": "running",
         "done": done + invalid,

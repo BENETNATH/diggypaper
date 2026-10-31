@@ -6,6 +6,7 @@ import { useTranslations } from "next-intl";
 import { listBenchmarks, listModels, cancelBenchmark, BenchmarkRun, ModelInfo } from "@/lib/api";
 import { currentSearch } from "@/lib/search";
 import { useSearchId, useSearches } from "@/lib/useSearch";
+import { useApiError } from "@/lib/errorMsg";
 import { BenchmarkForm } from "@/components/BenchmarkForm";
 import { BenchmarkRunCard } from "@/components/BenchmarkRunCard";
 import { RequireAuth } from "@/components/RequireAuth";
@@ -14,6 +15,7 @@ import { Skeleton, ErrorBanner, EmptyState } from "@/components/ui/Feedback";
 
 function BenchmarksContent() {
   const t = useTranslations("benchmarks");
+  const toError = useApiError();
   const projectId = useParams<{ id: string }>().id;
   const searchId = useSearchId(projectId);
   const { searches } = useSearches(projectId, searchId);
@@ -30,9 +32,9 @@ function BenchmarksContent() {
     try {
       setRuns(await listBenchmarks(projectId));
     } catch (e) {
-      setError(e instanceof Error ? e.message : "error");
+      setError(toError(e));
     }
-  }, [projectId]);
+  }, [projectId, toError]);
 
   useEffect(() => {
     void load();
@@ -55,7 +57,7 @@ function BenchmarksContent() {
       await cancelBenchmark(projectId, runId);
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "error");
+      setError(toError(err));
     }
   }
 

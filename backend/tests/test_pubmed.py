@@ -1,4 +1,4 @@
-"""Tests du client NCBI E-utilities (app/pubmed) — 100 % offline (httpx.MockTransport)."""
+"""NCBI E-utilities client tests (app/pubmed) — 100% offline (httpx.MockTransport)."""
 
 import xml.etree.ElementTree as ET
 
@@ -168,7 +168,7 @@ async def test_retry_after_is_capped(monkeypatch):
 
 
 async def test_timeout_raises_ncbi_error():
-    """C-1 : timeout persistant → NCBIError('timeout') (pas d'exception httpx brute)."""
+    """C-1: persistent timeout → NCBIError('timeout') (no raw httpx exception)."""
     calls = {"n": 0}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -183,7 +183,7 @@ async def test_timeout_raises_ncbi_error():
 
 
 async def test_fetch_methods_503_raises_ncbi_error():
-    """C-1 : fetch_methods 503 → NCBIError (sans l'URL)."""
+    """C-1: fetch_methods 503 → NCBIError (without the URL)."""
 
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(503, text="Service Unavailable")

@@ -63,7 +63,7 @@ async def test_put_mask_unchanged(client, session, admin_user, do_login):
 
 
 async def test_put_empty_string_deletes(client, session, admin_user, do_login):
-    """value == "" → delete_setting (revert au default / None)."""
+    """value == "" → delete_setting (revert to default / None)."""
     await set_setting(session, "ncbi_api_key", "to-delete")
     await _login_admin(client, do_login)
     resp = await client.put(

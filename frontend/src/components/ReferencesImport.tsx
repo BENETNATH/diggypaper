@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useTranslations } from "next-intl";
 import { importReferences, ReferencesPreview } from "@/lib/api";
+import { useApiError } from "@/lib/errorMsg";
 import { Button } from "@/components/ui/Button";
 import { ErrorBanner } from "@/components/ui/Feedback";
 
@@ -11,6 +12,7 @@ const MAX_BYTES = 5_000_000;
 /** Corpus from a list of references: pasted DOI/PMID or a Zotero file (BibTeX, RIS, CSL JSON, CSV). */
 export function ReferencesImport({ projectId, onStarted }: { projectId: string; onStarted: () => void }) {
   const t = useTranslations("import");
+  const toError = useApiError();
   const [content, setContent] = useState("");
   const [fileName, setFileName] = useState<string | null>(null);
   const [preview, setPreview] = useState<ReferencesPreview | null>(null);
@@ -51,7 +53,7 @@ export function ReferencesImport({ projectId, onStarted }: { projectId: string; 
       change("", null);
       onStarted();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "error");
+      setError(toError(e));
     } finally {
       setBusy(false);
     }
@@ -75,7 +77,7 @@ export function ReferencesImport({ projectId, onStarted }: { projectId: string; 
           rows={5}
           placeholder={t("refsPlaceholder")}
           className="w-full rounded-lg border border-border bg-surface p-2 font-mono text-xs"
-          aria-label={t("refsPlaceholder")}
+          aria-label={t("refsLabel")}
         />
       )}
       <div className="flex flex-wrap items-center gap-3 text-sm">

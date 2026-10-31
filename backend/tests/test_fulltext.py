@@ -166,7 +166,7 @@ async def test_download_pdf_refuses_redirect_to_internal_host(monkeypatch):
     assert hits == ["open.example"]  # le saut interne n'a jamais été requêté
 
 
-# --- le PDF est-il bien cet article ? ---------------------------------------------------
+# --- is the PDF really this article? ---------------------------------------------------
 
 TITLE = "An automated machine vision-based index for Rett Syndrome in mouse models"
 

@@ -41,8 +41,9 @@ function AnswerCell({ r }: { r: Answer }) {
   const shown = typeof r.value === "boolean" ? (yes ? `✓ ${t("yes")}` : `✗ ${t("no")}`) : pretty(r.value);
   const muted = no || r.value === "UNSPECIFIED" || shown === "";
   const pct = r.confidence != null ? Math.round(r.confidence * 100) : null;
+  // Not focusable: the row link is the only focus stop; the tooltip opens on the link's focus (group/row).
   return (
-    <div className="group/cell relative" tabIndex={0}>
+    <div className="group/cell relative">
       <div className="h-[3.4rem] overflow-hidden rounded-md border border-border/70 bg-surface-muted/40 px-2.5 py-1.5">
         <div className="flex items-center justify-between gap-2">
           <span className="truncate text-[11px] text-muted">{r.label}</span>
@@ -66,7 +67,7 @@ function AnswerCell({ r }: { r: Answer }) {
           e.preventDefault(); // the row is a link: a click in the card does not open the article
           e.stopPropagation();
         }}
-        className="invisible absolute left-0 top-full z-30 w-80 max-w-[min(20rem,calc(100vw-3rem))] pt-1 opacity-0 transition-[opacity,visibility] delay-150 group-focus-within/cell:visible group-focus-within/cell:opacity-100 group-focus-within/cell:delay-0 group-hover/cell:visible group-hover/cell:opacity-100 group-hover/cell:delay-0"
+        className="invisible absolute left-0 top-full z-30 w-80 max-w-[min(20rem,calc(100vw-3rem))] pt-1 opacity-0 transition-[opacity,visibility] delay-150 group-focus/row:visible group-focus/row:opacity-100 group-focus/row:delay-0 group-hover/cell:visible group-hover/cell:opacity-100 group-hover/cell:delay-0"
       >
         <div className="rounded-lg border border-border bg-surface p-3 text-xs shadow-lg">
           <p className="text-muted">{r.label}</p>
@@ -100,7 +101,7 @@ export function ResultRow({ a, href }: { a: Article; href: string }) {
     <li className="group">
       <Link
         href={href}
-        className="flex flex-col gap-2 rounded-lg px-3 py-3 transition-colors hover:bg-surface-muted/60 sm:flex-row sm:items-start sm:justify-between sm:gap-6"
+        className="group/row flex flex-col gap-2 rounded-lg px-3 py-3 transition-colors hover:bg-surface-muted/60 sm:flex-row sm:items-start sm:justify-between sm:gap-6"
       >
         <div className="min-w-0 flex-1">
           <p className="line-clamp-2 text-[15px] leading-snug text-foreground">{a.title ?? t("untitled")}</p>

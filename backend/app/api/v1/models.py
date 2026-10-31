@@ -164,7 +164,7 @@ class PullRequest(BaseModel):
 
 
 async def _ollama_base(db: AsyncSession) -> str:
-    """URL racine d'Ollama = llm_api_base_url sans le suffixe /v1."""
+    """Ollama root URL = llm_api_base_url without the /v1 suffix."""
     base = (await get_setting(db, "llm_api_base_url")).rstrip("/")
     return base.removesuffix("/v1")
 

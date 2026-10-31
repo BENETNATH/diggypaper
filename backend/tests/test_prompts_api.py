@@ -1,10 +1,10 @@
-"""Tests des routes Prompt Studio (app/api/v1/prompts.py) — 100 % offline."""
+"""Prompt Studio route tests (app/api/v1/prompts.py) — 100% offline."""
 
 from app.db.models import Project, ProjectMember, ProjectMemberRole
 
 
 async def _make_project_with_lead(session, lead_user, other_user=None):
-    """Projet dont `lead_user` est LEAD ; `other_user` (optionnel) est ANNOTATOR."""
+    """Project where `lead_user` is LEAD; `other_user` (optional) is ANNOTATOR."""
     project = Project(title="P", created_by=lead_user.id)
     session.add(project)
     await session.commit()

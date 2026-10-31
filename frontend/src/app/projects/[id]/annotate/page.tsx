@@ -97,6 +97,8 @@ export default function AnnotatePage() {
       let r = await listArticles(projectId, 1, 200, status, sort, answers, searchId, queueMode === "all" ? undefined : saved.q, queueMode === "all" ? undefined : saved.fulltext);
       // The list is paginated by 200: we keep going until the opened article is found.
       const ids = r.items.map((a) => a.id);
+      // shortcut: queue capped at 5 pages × 200 items; beyond ~1000 the stepper hides and
+      // "next" wraps to the first item — raise the cap if very large lots become common.
       for (let p = 2; articleId && !ids.includes(articleId) && ids.length < r.total && p <= 5; p++) {
         ids.push(...(await listArticles(projectId, p, 200, status, sort, answers, searchId, queueMode === "all" ? undefined : saved.q, queueMode === "all" ? undefined : saved.fulltext)).items.map((a) => a.id));
       }
@@ -281,15 +283,23 @@ export default function AnnotatePage() {
   const stepper =
     queue.length > 1 && position >= 0 ? (
       <nav aria-label={t("navArticles")} className="flex shrink-0 items-center gap-2">
-        <Link href={prevId ? goTo(prevId) : "#"} aria-disabled={!prevId} className={stepCls(!!prevId)}>
-          ← {t("previousArticle")}
-        </Link>
+        {prevId ? (
+          <Link href={goTo(prevId)} className={stepCls(true)}>
+            ← {t("previousArticle")}
+          </Link>
+        ) : (
+          <span className={stepCls(false)}>← {t("previousArticle")}</span>
+        )}
         <span className="text-xs tabular-nums text-muted">
           {position + 1} / {queue.length}
         </span>
-        <Link href={nextId ? goTo(nextId) : "#"} aria-disabled={!nextId} className={stepCls(!!nextId)}>
-          {t("nextShort")} →
-        </Link>
+        {nextId ? (
+          <Link href={goTo(nextId)} className={stepCls(true)}>
+            {t("nextShort")} →
+          </Link>
+        ) : (
+          <span className={stepCls(false)}>{t("nextShort")} →</span>
+        )}
       </nav>
     ) : null;
 
@@ -338,7 +348,7 @@ export default function AnnotatePage() {
               version={shownPrediction.model_version}
             />{" "}
             · {t("status")}:{" "}
-            {shownPrediction.status}
+            {ta(`status_${shownPrediction.status}`)}
           </p>
         )}
       </header>

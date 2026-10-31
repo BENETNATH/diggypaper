@@ -31,6 +31,7 @@ export function BenchmarkRunCard({
   onStop: (runId: string) => void;
 }) {
   const t = useTranslations("benchmarks");
+  const tj = useTranslations("jobs");
   const locale = useLocale();
   const router = useRouter();
   const active = run.status === "PENDING" || run.status === "RUNNING";
@@ -41,17 +42,33 @@ export function BenchmarkRunCard({
   const [error, setError] = useState<string | null>(null);
   const [detail, setDetail] = useState<string | null>(null); // key of the expanded row
   const [busy, setBusy] = useState<string | null>(null);
+  const [copied, setCopied] = useState<string | null>(null); // variant name of the last copied prompt
+  const [copyError, setCopyError] = useState(false);
   const saved = useRef<Record<string, string>>({}); // prompts already saved (avoids duplicates)
+  const loaded = useRef(false); // results already fetched (avoids re-fetching on open/close)
 
-  // The results are read only on expansion, and re-read when the status changes (end of the run).
+  // The results are read once at the end of the run (top-1 preview on the collapsed
+  // card), or on expansion; re-read when the status changes.
   useEffect(() => {
-    if (!open || active) return;
+    if (active) {
+      loaded.current = false;
+      return;
+    }
+    if (!open && loaded.current) return;
     let stale = false;
     setResults(null);
     setError(null);
     getBenchmark(projectId, run.id)
-      .then((r) => !stale && setResults(r.results ?? []))
-      .catch((e) => !stale && setError(e instanceof Error ? e.message : "error"));
+      .then((r) => {
+        if (stale) return;
+        loaded.current = true;
+        setResults(r.results ?? []);
+      })
+      .catch((e) => {
+        if (stale) return;
+        loaded.current = false; // a failed read may be retried on the next expansion
+        setError(e instanceof Error ? e.message : "error");
+      });
     return () => {
       stale = true;
     };
@@ -60,6 +77,7 @@ export function BenchmarkRunCard({
   const ranked = results ? rankResults(results) : [];
   const crit = primaryParts(ranked.find((r) => r.details?.primary)?.details?.primary, fields);
   const withAgreement = ranked.some((r) => r.details?.agreement != null);
+  const metricLabel = crit ? t(`metric_${crit.metric}`) : withAgreement ? t("agreement") : t("time");
 
   /** ID of the prompt to use for analyzing: the saved prompt, or the free variant saved on the fly. */
   async function promptFor(r: BenchmarkResult): Promise<string | undefined> {
@@ -94,7 +112,16 @@ export function BenchmarkRunCard({
     }
   }
 
-  const copy = (text: string) => void navigator.clipboard?.writeText(text).catch(() => {});
+  const copy = (name: string, text: string) => {
+    navigator.clipboard
+      ?.writeText(text)
+      .then(() => {
+        setCopyError(false);
+        setCopied(name);
+        setTimeout(() => setCopied((c) => (c === name ? null : c)), 1500);
+      })
+      .catch(() => setCopyError(true));
+  };
 
   return (
     <Card>
@@ -122,7 +149,7 @@ export function BenchmarkRunCard({
               ■ {t("stop")}
             </Button>
           )}
-          <Badge color={statusColor(run.status)}>{run.status}</Badge>
+          <Badge color={statusColor(run.status)}>{tj(`status_${run.status}`)}</Badge>
         </div>
       </div>
 
@@ -148,6 +175,11 @@ export function BenchmarkRunCard({
           <Button type="button" variant="secondary" size="sm" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
             {open ? "▾" : "▸"} {t("results")}
           </Button>
+          {!open && ranked.length > 0 && (
+            <p className="mt-2 text-xs text-muted">
+              {t("topOne", { model: ranked[0].model_name, metric: metricLabel })}
+            </p>
+          )}
         </div>
       )}
 
@@ -235,6 +267,7 @@ export function BenchmarkRunCard({
                   </tbody>
                 </table>
               </div>
+              <p className="text-xs text-muted">{t("metricsLegend")}</p>
               {!ranked.some((r) => r.details?.scored) && <p className="text-xs text-muted">{t("noGoldScores")}</p>}
               <p className="text-xs text-muted">{t("useForAnalysisHint")}</p>
             </div>
@@ -243,14 +276,20 @@ export function BenchmarkRunCard({
           {!!run.variants?.length && (
             <details className="rounded-lg border border-border p-3">
               <summary className="cursor-pointer text-sm font-semibold text-foreground">{t("promptsCompared")}</summary>
+              {copyError && <p className="mt-2 text-xs text-danger">{t("copyFailed")}</p>}
               <div className="mt-3 flex flex-col gap-3">
                 {run.variants.map((v) => (
                   <div key={v.name}>
                     <div className="flex items-center justify-between gap-2">
                       <p className="text-sm font-medium text-foreground">{v.name}</p>
                       {v.system_prompt && (
-                        <Button type="button" variant="ghost" size="sm" onClick={() => copy(v.system_prompt ?? "")}>
-                          {t("copyPrompt")}
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => copy(v.name, v.system_prompt ?? "")}
+                        >
+                          {copied === v.name ? t("copied") : t("copyPrompt")}
                         </Button>
                       )}
                     </div>

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { addModelShare, listModelShares, listProjects, removeModelShare, ModelShare, Project } from "@/lib/api";
+import { useApiError } from "@/lib/errorMsg";
 import { Button } from "@/components/ui/Button";
 import { Input, Select } from "@/components/ui/Field";
 import { Badge } from "@/components/ui/Card";
@@ -10,7 +11,8 @@ import { Badge } from "@/components/ui/Card";
 /** Who can use this model: users (by e-mail) and projects (their LEAD). */
 export function ModelSharing({ modelId }: { modelId: string }) {
   const t = useTranslations("models");
-  const [shares, setShares] = useState<ModelShare[]>([]);
+  const toError = useApiError();
+  const [shares, setShares] = useState<ModelShare[] | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [email, setEmail] = useState("");
   const [projectId, setProjectId] = useState("");
@@ -20,9 +22,9 @@ export function ModelSharing({ modelId }: { modelId: string }) {
     try {
       setShares(await listModelShares(modelId));
     } catch (e) {
-      setError(e instanceof Error ? e.message : "error");
+      setError(toError(e));
     }
-  }, [modelId]);
+  }, [modelId, toError]);
 
   useEffect(() => {
     void load();
@@ -37,7 +39,7 @@ export function ModelSharing({ modelId }: { modelId: string }) {
       setProjectId("");
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "error");
+      setError(toError(e));
     }
   }
 
@@ -47,30 +49,27 @@ export function ModelSharing({ modelId }: { modelId: string }) {
       await removeModelShare(modelId, id);
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "error");
+      setError(toError(e));
     }
   }
 
   return (
     <div className="mt-2 rounded-lg bg-surface-muted p-3 text-sm">
       <p className="mb-2 text-xs text-muted">{t("shareHint")}</p>
-      {shares.length === 0 ? (
+      {shares === null ? (
+        <p className="text-xs text-muted">…</p>
+      ) : shares.length === 0 ? (
         <p className="text-xs text-muted">{t("shareNone")}</p>
       ) : (
         <ul className="mb-2 flex flex-wrap gap-2">
           {shares.map((s) => (
-            <li key={s.id}>
+            <li key={s.id} className="flex items-center gap-1">
               <Badge color={s.type === "project" ? "blue" : "gray"}>
-                {s.type === "project" ? "📁" : "👤"} {s.label}
-                <button
-                  type="button"
-                  aria-label={t("shareRemove")}
-                  className="ml-1 text-danger"
-                  onClick={() => void remove(s.id)}
-                >
-                  ×
-                </button>
+                {s.type === "project" ? t("shareProjectLabel") : t("shareUserLabel")} {s.label}
               </Badge>
+              <Button size="sm" variant="ghost" onClick={() => void remove(s.id)}>
+                {t("shareRemove")}
+              </Button>
             </li>
           ))}
         </ul>
@@ -98,7 +97,7 @@ export function ModelSharing({ modelId }: { modelId: string }) {
           {t("shareProjectBtn")}
         </Button>
       </div>
-      {error && <p className="mt-2 text-xs text-danger">{error}</p>}
+      {error && <p className="mt-2 text-sm text-danger">{error}</p>}
     </div>
   );
 }

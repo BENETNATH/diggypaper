@@ -371,7 +371,7 @@ class ExportJob(Base):
     )
     # PENDING | RUNNING | COMPLETED | FAILED
     status: Mapped[str] = mapped_column(String, server_default="PENDING")
-    # {done, total} pendant le RUNNING, puis {size, articles, pdf, text}
+    # {done, total} while RUNNING, then {size, articles, pdf, text}
     result_json: Mapped[dict | None] = mapped_column(JSONB)
     error: Mapped[str | None] = mapped_column(Text)
     filename: Mapped[str | None] = mapped_column(String)  # nom du zip dans EXPORT_DIR
@@ -447,6 +447,24 @@ class Invitation(Base):
         DateTime(timezone=True), server_default=func.now()
     )
     accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class PasswordReset(Base):
+    """Password reset request: only the SHA-256 hash of the token is stored
+    (the raw token goes in the email only)."""
+
+    __tablename__ = "password_resets"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, **_uuid_pk())
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    token_hash: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class BenchmarkRun(Base):

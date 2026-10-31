@@ -25,8 +25,10 @@
   /* États */
   --danger: oklch(0.55 0.2 25);
   --danger-foreground: oklch(0.985 0 0);
-  --success: oklch(0.55 0.16 155);
-  --warning: oklch(0.72 0.15 75);
+  /* L=0.48: 5.80:1 on white, 4.65:1 on bg-success/15 (Badge green), 5.20:1 on bg-surface-muted (WCAG 1.4.3). */
+  --success: oklch(0.48 0.16 155);
+  /* L=0.50: 6.12:1 on white, 5.29:1 on bg-warning/10, 4.55:1 on bg-warning/20 (Badge yellow), 5.48:1 on bg-surface-muted (WCAG 1.4.3). */
+  --warning: oklch(0.50 0.15 75);
 
   /* Focus (WCAG 2.4.11 : ≥ 2px, contraste ≥ 3:1) */
   --focus: oklch(0.55 0.19 258);
@@ -46,6 +48,10 @@
     --border: oklch(0.32 0.015 260);
     --muted: oklch(0.7 0.01 255);
     --muted-foreground: oklch(0.78 0.01 255);
+    /* Kept as is: dark primary-foreground on this primary measures 5.96:1 (verified by
+       WCAG computation), so the audit's 2.70:1 claim is a false positive; a lighter
+       foreground would read white (3.16:1, fail) and a darker primary would break
+       dark text-primary links. */
     --primary: oklch(0.65 0.19 258);
     --primary-hover: oklch(0.7 0.19 258);
     --primary-foreground: oklch(0.15 0.01 260);

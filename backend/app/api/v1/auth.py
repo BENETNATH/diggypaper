@@ -1,9 +1,11 @@
-"""Routes d'authentification : invite, register, login, me."""
+"""Authentication routes: invite, register, login, me, password reset."""
 
 import asyncio
+import hashlib
 import logging
+import secrets
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Annotated, Literal
 
 import jwt as pyjwt
@@ -35,6 +37,7 @@ from app.core.security import (
 from app.db.models import (
     Invitation,
     LanguageCode,
+    PasswordReset,
     Project,
     ProjectMember,
     ProjectMemberRole,
@@ -53,6 +56,8 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 LOGIN_RATE_LIMIT = 10
 REGISTER_RATE_LIMIT = 5
 INVITE_RATE_LIMIT = 20
+PASSWORD_RESET_RATE_LIMIT = 5
+RESET_TOKEN_TTL = timedelta(hours=1)
 
 
 def _rate_limit_dependency(scope: str, limit: int):
@@ -294,6 +299,92 @@ async def change_password(
     user.hashed_password = await asyncio.to_thread(hash_password, payload.new_password)
     user.token_version = (user.token_version or 0) + 1  # coupe les autres sessions
     await db.commit()
+
+
+def _token_digest(token: str) -> str:
+    """SHA-256 hex of the reset token (only the digest is stored)."""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+class PasswordResetRequest(BaseModel):
+    email: EmailStr
+
+
+class PasswordResetConfirm(BaseModel):
+    token: str
+    # same policy as register / change-password (422 otherwise).
+    new_password: str = Field(min_length=8)
+
+
+@router.post(
+    "/password-reset/request",
+    dependencies=[Depends(_rate_limit_dependency("password_reset", PASSWORD_RESET_RATE_LIMIT))],
+)
+async def password_reset_request(
+    payload: PasswordResetRequest,
+    mailer: Annotated[Mailer | None, Depends(get_mailer)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    """Sends the reset link (1 h TTL). Always 200 with the same generic body,
+    whatever the email exists or not (no user enumeration)."""
+    user = (
+        await db.execute(select(User).where(func.lower(User.email) == payload.email.lower()))
+    ).scalar_one_or_none()
+    if user is not None and user.is_active:
+        lang = user.language_preference.value if user.language_preference else default_lang()
+        token = secrets.token_urlsafe(32)
+        db.add(
+            PasswordReset(
+                user_id=user.id,
+                token_hash=_token_digest(token),
+                expires_at=datetime.now(UTC) + RESET_TOKEN_TTL,
+            )
+        )
+        await db.commit()
+        # same public link pattern as the invitation emails (app/invitations.py).
+        link = f"{get_settings().app_base_url}/reset?token={token}"
+        try:
+            if mailer is None:
+                raise RuntimeError("SMTP not configured")
+            await mailer.send(
+                to=user.email,
+                subject=t(lang, "reset_subject"),
+                body=t(lang, "reset_body", link=link),
+            )
+        except Exception:  # noqa: BLE001 - SMTP down: the link is lost, never leaked
+            logger.warning("password reset e-mail not sent", exc_info=True)
+    return {"detail": "ok"}
+
+
+@router.post(
+    "/password-reset/confirm",
+    dependencies=[Depends(_rate_limit_dependency("login", LOGIN_RATE_LIMIT))],
+)
+async def password_reset_confirm(
+    payload: PasswordResetConfirm, db: Annotated[AsyncSession, Depends(get_db)]
+) -> dict:
+    """Sets the new password from a valid (unexpired, unconsumed) reset token."""
+    reset = (
+        await db.execute(
+            select(PasswordReset).where(PasswordReset.token_hash == _token_digest(payload.token))
+        )
+    ).scalar_one_or_none()
+    if reset is None or reset.consumed_at is not None:
+        raise HTTPException(status_code=404, detail="invalid_token")
+    # SQLite returns naive datetimes: re-attach UTC before comparing (cf. app/maintenance.py).
+    expires = reset.expires_at
+    if expires.tzinfo is None:
+        expires = expires.replace(tzinfo=UTC)
+    if expires < datetime.now(UTC):
+        raise HTTPException(status_code=400, detail="expired_token")
+    user = await db.get(User, reset.user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="invalid_token")
+    user.hashed_password = await asyncio.to_thread(hash_password, payload.new_password)
+    user.token_version = (user.token_version or 0) + 1  # coupe les autres sessions
+    reset.consumed_at = datetime.now(UTC)
+    await db.commit()
+    return {"detail": "ok"}
 
 
 @router.post("/logout", status_code=204)

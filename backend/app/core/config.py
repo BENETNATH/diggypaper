@@ -6,7 +6,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """Config depuis env (DATABASE_URL, JWT_SECRET, SMTP_*, ...) — stockage DB au lot 3."""
+    """Config from env (DATABASE_URL, JWT_SECRET, SMTP_*, ...) — DB storage in lot 3."""
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

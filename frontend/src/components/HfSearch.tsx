@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useTranslations } from "next-intl";
 import { searchHf, hfFiles, installHf, pullOllama, HfModel, HfFile } from "@/lib/api";
+import { useApiError } from "@/lib/errorMsg";
 import { Button } from "@/components/ui/Button";
 import { Input, Select } from "@/components/ui/Field";
 
@@ -18,6 +19,7 @@ export function HfSearch({
   onError: (m: string) => void;
 }) {
   const t = useTranslations("models");
+  const toError = useApiError();
   const [q, setQ] = useState("");
   const [results, setResults] = useState<HfModel[] | null>(null);
   const [searching, setSearching] = useState(false);
@@ -34,7 +36,7 @@ export function HfSearch({
     try {
       setResults(await searchHf(q.trim()));
     } catch (err) {
-      onError(err instanceof Error ? err.message : "error");
+      onError(toError(err));
     } finally {
       setSearching(false);
     }
@@ -51,7 +53,7 @@ export function HfSearch({
       // Preselection: the variant recommended for the CPU, otherwise the first (already sorted).
       setChoice((r.items.find((f) => f.recommended) ?? r.items[0])?.quant ?? "");
     } catch (err) {
-      onError(err instanceof Error ? err.message : "error");
+      onError(toError(err));
     }
   }
 
@@ -61,7 +63,7 @@ export function HfSearch({
       await installHf({ repo, ...(choice ? { quant: choice } : {}) });
       done();
     } catch (err) {
-      onError(err instanceof Error ? err.message : "error");
+      onError(toError(err));
     }
   }
 
@@ -70,7 +72,7 @@ export function HfSearch({
       await pullOllama(name);
       done();
     } catch (err) {
-      onError(err instanceof Error ? err.message : "error");
+      onError(toError(err));
     }
   }
 
@@ -91,7 +93,14 @@ export function HfSearch({
       <p className="mb-3 text-sm text-muted">{t("searchHint")}</p>
       <form onSubmit={search} className="flex flex-wrap gap-2">
         <div className="min-w-[12rem] flex-1">
-          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="qwen, gemma, llama…" minLength={2} required />
+          <Input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="qwen, gemma, llama…"
+            minLength={2}
+            required
+            aria-label={t("search")}
+          />
         </div>
         <Button type="submit" loading={searching} disabled={q.trim().length < 2}>
           {t("search")}

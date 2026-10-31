@@ -795,7 +795,7 @@ async def test_test_installed_forbidden_other_user(client, admin_user, researche
 
 
 def _recorder():
-    """Handler Ollama qui journalise les appels (200)."""
+    """Ollama handler that logs the calls (200)."""
     seen: list[httpx.Request] = []
 
     def handler(req: httpx.Request) -> httpx.Response:

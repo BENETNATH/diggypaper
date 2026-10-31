@@ -46,7 +46,7 @@ def compose_text(article, kinds: list[str] | None = None) -> str:
 
 
 def fill_prompt(template: str | None, article, kinds: list[str] | None = None) -> str:
-    """Substitue ``{article_text}`` (parties du projet) et ``{methods_text}`` (compat)."""
+    """Substitutes ``{article_text}`` (project parts) and ``{methods_text}`` (compat)."""
     return (
         (template or "")
         .replace("{article_text}", compose_text(article, kinds))

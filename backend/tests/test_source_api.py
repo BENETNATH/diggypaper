@@ -109,7 +109,7 @@ async def test_article_payloads_expose_source_and_native_id(
     assert (detail["source"], detail["native_id"]) == ("pubmed", "42")
 
 
-# --- query-volume par source (spec 2026-10-29-sources-phase3 D4) --------------
+# --- query volume per source (spec 2026-10-29-sources-phase3 D4) --------------
 
 
 @pytest.fixture(autouse=True)
@@ -167,7 +167,7 @@ async def test_query_volume_europepmc(client, researcher_user, do_login, monkeyp
 
 
 async def test_query_volume_europepmc_error_502(client, researcher_user, do_login, monkeypatch):
-    """503 EPMC persistant (retries inclus) → 502 {error: europepmc_unavailable}, sans URL."""
+    """Persistent EPMC 503 (retries included) → 502 {error: europepmc_unavailable}, no URL."""
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     pid = await _project(client, do_login)
     import app.api.v1.projects as projects_api
@@ -220,7 +220,7 @@ async def test_query_volume_openalex(client, researcher_user, do_login, monkeypa
 
 
 async def test_query_volume_openalex_error_502(client, researcher_user, do_login, monkeypatch):
-    """429 OpenAlex persistant (retries inclus) → 502 {error: openalex_unavailable}, sans URL."""
+    """Persistent OpenAlex 429 (retries included) → 502 {error: openalex_unavailable}, no URL."""
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     pid = await _project(client, do_login)
     import app.api.v1.projects as projects_api

@@ -124,7 +124,7 @@ async def test_trigger_inference_admin(client, session, admin_user, do_login, mo
 
 
 async def test_trigger_inference_non_lead_403(client, session, researcher_user, do_login):
-    """Membre ANNOTATOR (pas LEAD) → 403."""
+    """ANNOTATOR member (not LEAD) → 403."""
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     project_id, prompt_id = await _create_frozen_project(client, session, researcher_user)
     member = await session.get(ProjectMember, (uuid.UUID(project_id), researcher_user.id))
@@ -162,7 +162,7 @@ async def test_trigger_inference_not_frozen_409(client, session, researcher_user
     resp = await client.post("/api/v1/projects", json={"title": "P1"})
     project_id = resp.json()["id"]
     project = await session.get(Project, uuid.UUID(project_id))
-    # reste DRAFT (pas FROZEN)
+    # stays DRAFT (not FROZEN)
     prompt = PromptTemplate(project_id=project.id, version_number="v1.0", system_prompt="SYS")
     session.add(prompt)
     await session.commit()

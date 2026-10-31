@@ -62,7 +62,7 @@ def create_invite_token(
     role: str | None = None,
     invitation_id: str | None = None,
 ) -> str:
-    """Invitation ; avec ``project_id`` + ``role`` : l'inscription rejoint ce projet."""
+    """Invitation; with ``project_id`` + ``role``: registration joins that project."""
     settings = get_settings()
     now = _now()
     payload = {

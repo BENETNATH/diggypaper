@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
 import { getStorage, Storage } from "@/lib/api";
 import { Card } from "@/components/ui/Card";
+import { ErrorBanner } from "@/components/ui/Feedback";
 
 const gb = (n: number | null | undefined): string => (n == null ? "—" : `${(n / 1024 ** 3).toFixed(1)} GB`);
 const mb = (n: number): string => (n >= 1024 ** 3 ? gb(n) : `${Math.round(n / 1024 ** 2)} MB`);
@@ -12,12 +13,15 @@ const mb = (n: number): string => (n >= 1024 ** 3 ? gb(n) : `${Math.round(n / 10
 /** Server disk space, weight of the PDFs and inactive projects (administrator). */
 export function StoragePanel() {
   const t = useTranslations("storage");
+  const tc = useTranslations("common");
   const locale = useLocale();
   const [s, setS] = useState<Storage | null>(null);
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
-    getStorage().then(setS).catch(() => setS(null));
+    getStorage().then(setS).catch(() => setFailed(true));
   }, []);
+  if (failed) return <ErrorBanner message={tc("error")} />;
   if (!s) return null;
   const d = s.disk;
   return (

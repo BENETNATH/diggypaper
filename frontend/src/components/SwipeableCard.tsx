@@ -25,7 +25,7 @@ export function SwipeableCard({
   onSwipeRight,
   onSwipeLeft,
   threshold = 50,
-  className = "rounded-lg border bg-white p-4 shadow-sm",
+  className = "rounded-lg border bg-surface p-4 shadow-sm",
 }: SwipeableCardProps) {
   const handlers = useSwipeable({
     onSwipedRight: () => onSwipeRight?.(),

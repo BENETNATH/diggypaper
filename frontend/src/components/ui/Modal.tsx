@@ -1,6 +1,7 @@
 "use client";
 
 import { ReactNode, useEffect, useRef } from "react";
+import { useTranslations } from "next-intl";
 
 /** Modal window: darkened backdrop, Escape / outside click / button to close, internal scrolling. */
 export function Modal({
@@ -8,7 +9,7 @@ export function Modal({
   onClose,
   children,
   wide = false,
-  closeLabel = "×",
+  closeLabel,
 }: {
   title: string;
   onClose: () => void;
@@ -17,6 +18,7 @@ export function Modal({
   closeLabel?: string;
 }) {
   const panel = useRef<HTMLDivElement>(null);
+  const t = useTranslations("common");
 
   useEffect(() => {
     const esc = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -43,7 +45,7 @@ export function Modal({
           <button
             type="button"
             onClick={onClose}
-            aria-label={closeLabel}
+            aria-label={closeLabel ?? t("close")}
             className="rounded-md px-2 py-1 text-lg leading-none text-muted hover:bg-surface-muted hover:text-foreground"
           >
             ×

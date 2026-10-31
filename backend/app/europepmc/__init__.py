@@ -165,7 +165,7 @@ class EuropePMCAdapter:
                 )
                 or 0
             )
-        # Cap absent → le plafond d'import (``_esearch_max()``), comme l'adapter PubMed.
+        # No cap → the import ceiling (``_esearch_max()``), like the PubMed adapter.
         limit = limit or _esearch_max()
         term = _term_bounded(query, b)
         cursor = "*"

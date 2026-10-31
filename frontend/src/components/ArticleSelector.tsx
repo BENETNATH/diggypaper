@@ -3,11 +3,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import { previewSelection, SearchInfo, Selection, PredictionFilter } from "@/lib/api";
+import { useApiError } from "@/lib/errorMsg";
 import { cleanSelection } from "@/lib/search";
 import { AnswerFilters } from "@/components/AnswerFilters";
 import { Button } from "@/components/ui/Button";
 
-const STATUSES: PredictionFilter[] = ["AUTO_ACCEPTED", "AUTO_REJECTED", "NEEDS_HUMAN_REVIEW", "TO_REVIEW", "NONE"];
+// NEEDS_HUMAN_REVIEW is not listed: TO_REVIEW already covers it (its i18n key is missing in all locales).
+const STATUSES: PredictionFilter[] = ["AUTO_ACCEPTED", "AUTO_REJECTED", "TO_REVIEW", "NONE"];
 const selectCls = "rounded border border-border bg-surface p-1 text-sm text-foreground";
 const inputCls = `${selectCls} w-20`;
 
@@ -40,6 +42,7 @@ export function ArticleSelector({
 }) {
   const t = useTranslations("searches");
   const ta = useTranslations("articles");
+  const errText = useApiError(); // raw API error → i18n message
   const initial = searches.find((s) => s.is_default) ?? searches[0];
   const origin = searches.find((s) => s.id === value.from_search_id) ?? initial;
   const [count, setCount] = useState<number | null>(null);
@@ -66,7 +69,7 @@ export function ArticleSelector({
           onCount?.(n);
         })
         .catch((e) => {
-          if (!stale) setError(e instanceof Error ? e.message : "error");
+          if (!stale) setError(errText(e));
         });
     }, 400);
     return () => {

@@ -194,7 +194,8 @@ export function BenchmarkForm({
       <p className="mb-4 text-sm text-muted">{t("concept")}</p>
       <form
         onSubmit={handleRun}
-        // Typing in a field (name, sub-batch filters) must not launch the benchmark.
+        // Enter in a single-line input implicitly submits and would launch the
+        // benchmark; textareas are unaffected (Enter inserts a line break natively).
         onKeyDown={(e) => {
           if (e.key === "Enter" && e.target instanceof HTMLInputElement) e.preventDefault();
         }}
@@ -363,6 +364,8 @@ export function BenchmarkForm({
           <p className="text-sm text-foreground" role="status">
             <b>{t("estimate", { calls, lot, models: selected.length, variants: Math.max(1, drafts.length) })}</b>
           </p>
+          {!canRun && selected.length === 0 && <p className="text-sm text-muted">{t("needModel")}</p>}
+          {!canRun && selected.length > 0 && lot === 0 && <p className="text-sm text-muted">{t("emptyLot")}</p>}
           {tooMany && (
             <p className="text-sm text-danger" role="alert">
               {t("err_tooMany", { n: calls, max: MAX_CALLS })}

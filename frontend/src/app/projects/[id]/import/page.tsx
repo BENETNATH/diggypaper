@@ -20,6 +20,7 @@ import { ReferencesImport } from "@/components/ReferencesImport";
 import { CitationExpand } from "@/components/CitationExpand";
 import { QueryAssistant } from "@/components/QueryAssistant";
 import { sourceLabel, sourceName } from "@/lib/source";
+import { useApiError } from "@/lib/errorMsg";
 import { Button } from "@/components/ui/Button";
 import { Field, Input } from "@/components/ui/Field";
 import { Card, Badge, statusColor } from "@/components/ui/Card";
@@ -30,6 +31,7 @@ const num = (v: unknown): number => (typeof v === "number" ? v : 0);
 /** Readable progress of a job: phase, percentage, counters. */
 function JobProgress({ job, onRetry }: { job: ImportJob; onRetry?: (job: ImportJob) => void }) {
   const t = useTranslations("import");
+  const tj = useTranslations("jobs");
   const projectId = useParams<{ id: string }>().id;
   const r = job.result ?? {};
   const active = job.status === "PENDING" || job.status === "RUNNING";
@@ -61,7 +63,7 @@ function JobProgress({ job, onRetry }: { job: ImportJob; onRetry?: (job: ImportJ
         <code className="min-w-0 truncate text-xs text-muted">
           {job.kind === "fulltext" ? t("fulltextJob") : job.kind === "references" ? t("refsJob") : job.kind === "citations" ? t("citJob") : job.query}
         </code>
-        <Badge color={statusColor(job.status)}>{job.status}</Badge>
+        <Badge color={statusColor(job.status)}>{tj(`status_${job.status}`)}</Badge>
       </div>
       {active && <ProgressBar value={value} label={label} />}
       {job.kind === "fulltext" && job.status === "COMPLETED" && (
@@ -84,8 +86,8 @@ function JobProgress({ job, onRetry }: { job: ImportJob; onRetry?: (job: ImportJ
             ["total", num(r.total_count)],
           ].map(([k, v]) => (
             <div key={k as string} className="rounded-lg bg-surface-muted p-2">
-              <dd className="text-lg font-bold text-foreground">{(v as number).toLocaleString()}</dd>
               <dt className="text-xs text-muted">{t(k as string)}</dt>
+              <dd className="text-lg font-bold text-foreground">{(v as number).toLocaleString()}</dd>
             </div>
           ))}
         </dl>
@@ -152,6 +154,7 @@ function JobProgress({ job, onRetry }: { job: ImportJob; onRetry?: (job: ImportJ
 
 function ImportContent() {
   const t = useTranslations("import");
+  const toError = useApiError();
   const params = useParams<{ id: string }>();
   const projectId = params.id;
   const searchId = useSearchId(projectId);
@@ -178,10 +181,10 @@ function ImportContent() {
       window.dispatchEvent(new CustomEvent("diggy:project", { detail: p }));
       return js;
     } catch (e) {
-      setError(e instanceof Error ? e.message : "error");
+      setError(toError(e));
       return null;
     }
-  }, [projectId]);
+  }, [projectId, toError]);
 
   useEffect(() => {
     void load();
@@ -233,9 +236,9 @@ function ImportContent() {
       setVolume(r.count);
       setCap(r.max >= 1e9 ? Infinity : r.max);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "error";
-      const name = sourceName(msg.replace(/_unavailable$/, ""));
-      setError(name ? t("srcDown", { src: name }) : msg);
+      const raw = err instanceof Error ? err.message : "error";
+      const name = sourceName(raw.replace(/_unavailable$/, ""));
+      setError(name ? t("srcDown", { src: name }) : toError(err));
     } finally {
       setChecking(false);
     }
@@ -248,7 +251,7 @@ function ImportContent() {
       await completeFulltext(projectId);
       setWatching(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "error");
+      setError(toError(err));
     }
   }
 
@@ -263,7 +266,7 @@ function ImportContent() {
       await triggerImport(projectId, failed.query ?? "", failed.source ?? "pubmed");
       setWatching(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "error");
+      setError(toError(err));
     }
   }
 
@@ -276,7 +279,7 @@ function ImportContent() {
       await triggerImport(projectId, query, source);
       setWatching(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "error");
+      setError(toError(err));
     } finally {
       setSubmitting(false);
     }
@@ -335,13 +338,12 @@ function ImportContent() {
           <p className="text-sm text-muted">{t("lockedProcessing")}</p>
         ) : (
           <>
-            <div role="tablist" className="mb-4 inline-flex rounded-lg border border-border p-0.5 text-sm">
+            <div className="mb-4 inline-flex rounded-lg border border-border p-0.5 text-sm">
               {(["pubmed", "refs", ...(hasCorpus ? (["cites"] as const) : [])] as const).map((m) => (
                 <button
                   key={m}
                   type="button"
-                  role="tab"
-                  aria-selected={mode === m}
+                  aria-pressed={mode === m}
                   onClick={() => setMode(m)}
                   className={`rounded-md px-3 py-1 ${
                     mode === m ? "bg-primary text-white" : "text-muted hover:text-foreground"
@@ -421,21 +423,23 @@ function ImportContent() {
               </p>
             )}
             <div className="flex flex-wrap gap-2">
-              <Button type="submit" variant="secondary" loading={checking} disabled={!query}>
+              <Button type="submit" variant="secondary" loading={checking} disabled={!query.trim()}>
                 {t("checkVolume")}
               </Button>
               <Button
                 type="button"
                 onClick={handleImport}
                 loading={submitting}
-                disabled={!query || volume === null || volume === 0 || polling}
+                disabled={!query.trim() || volume === null || volume === 0 || polling}
               >
                 {hasCorpus ? t("importMore") : t("import")}
               </Button>
             </div>
-            {volume === null && query && (
+            {!query.trim() ? (
+              <p className="text-xs text-muted">{t("queryRequired")}</p>
+            ) : volume === null ? (
               <p className="text-xs text-muted">{t("checkFirst")}</p>
-            )}
+            ) : null}
           </form>
             </div>
             )}

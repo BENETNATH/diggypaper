@@ -17,6 +17,7 @@ import {
   Selection,
 } from "@/lib/api";
 import { SearchCreate } from "@/lib/api";
+import { useApiError } from "@/lib/errorMsg";
 import { cleanSelection, isUntouched, prefillStoreKey, withSearch } from "@/lib/search";
 import { notifySearchesChanged, storeSearchId, useSearchId, useSearches, useSelectSearch } from "@/lib/useSearch";
 import { ModelRef } from "@/components/ModelRef";
@@ -54,6 +55,8 @@ function SearchCard({
   onDeleted: () => void;
 }) {
   const t = useTranslations("searches");
+  const tj = useTranslations("jobs");
+  const errText = useApiError(); // raw API error → i18n message
   const locale = useLocale();
   const projectId = useParams<{ id: string }>().id;
   const [renaming, setRenaming] = useState<string | null>(null);
@@ -67,7 +70,7 @@ function SearchCard({
       await fn();
       after();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "error");
+      setError(errText(e));
     } finally {
       setBusy(false);
     }
@@ -81,7 +84,11 @@ function SearchCard({
             <h3 className="flex flex-wrap items-center gap-2 font-semibold text-foreground">
               {s.name}
               {s.is_default && <Badge color="blue">{t("initial")}</Badge>}
-              {s.kind !== "standard" && <Badge color={s.kind === "blind" ? "yellow" : "gray"}>{t(`kind_${s.kind}`)}</Badge>}
+              {s.kind !== "standard" && (
+                <span title={t(`kindHint_${s.kind}`)}>
+                  <Badge color={s.kind === "blind" ? "yellow" : "gray"}>{t(`kind_${s.kind}`)}</Badge>
+                </span>
+              )}
               {current && <Badge color="green">{t("current")}</Badge>}
               {s.schedule_state === "waiting" && <Badge color="gray">{t("scheduledBadge")}</Badge>}
               {s.schedule_state === "failed" && <Badge color="red">{t("scheduleFailedBadge")}</Badge>}
@@ -99,7 +106,7 @@ function SearchCard({
               }}
             >
               <Input value={renaming} onChange={(e) => setRenaming(e.target.value)} aria-label={t("rename")} autoFocus />
-              <Button type="submit" size="sm" loading={busy}>
+              <Button type="submit" size="sm" loading={busy} disabled={!renaming.trim()}>
                 {t("save")}
               </Button>
               <Button type="button" size="sm" variant="ghost" onClick={() => setRenaming(null)}>
@@ -117,7 +124,7 @@ function SearchCard({
             <span>{t("stats", { lot: s.lot_size, predicted: s.predicted, reviewed: s.reviewed })}</span>
             {s.last_job && (
               <span className="inline-flex items-center gap-1">
-                {t("lastJob")} <Badge color={statusColor(s.last_job.status)}>{s.last_job.status}</Badge>
+                {t("lastJob")} <Badge color={statusColor(s.last_job.status)}>{tj(`status_${s.last_job.status}`)}</Badge>
                 <code>
                   <ModelRef name={s.last_job.model} version={s.last_job.model_version} />
                 </code>
@@ -162,6 +169,7 @@ function SearchCard({
 
 function SearchesContent() {
   const t = useTranslations("searches");
+  const errText = useApiError(); // raw API error → i18n message
   const projectId = useParams<{ id: string }>().id;
   const router = useRouter();
   const searchId = useSearchId(projectId);
@@ -282,7 +290,7 @@ function SearchesContent() {
       });
       router.push(sched ? `/projects/${projectId}` : withSearch(`/projects/${projectId}/inference`, s.id));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "error");
+      setError(errText(err));
       setCreating(false);
     }
   }
@@ -297,7 +305,7 @@ function SearchesContent() {
       });
       router.push(withSearch(`/projects/${projectId}/annotate?queue=all`, s.id));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "error");
+      setError(errText(err));
       setBlindBusy(false);
     }
   }
@@ -347,9 +355,11 @@ function SearchesContent() {
               <div className="rounded-lg border border-border p-3">
                 <label className="flex items-center gap-2 text-sm font-medium text-foreground">
                   <input type="checkbox" checked={sched} onChange={(e) => setSched(e.target.checked)} />
-                  {t("scheduleLabel", { origin: (searches?.find((s) => s.id === (selection.from_search_id ?? searches.find((x) => x.is_default)?.id)) ?? current)?.name ?? "…" })}
+                  {t("scheduleLabel")}
                 </label>
-                <p className="mt-1 text-xs text-muted">{t("scheduleHint")}</p>
+                <p className="mt-1 text-xs text-muted">
+                  {t("scheduleHint", { origin: (searches?.find((s) => s.id === (selection.from_search_id ?? searches.find((x) => x.is_default)?.id)) ?? current)?.name ?? "…" })}
+                </p>
                 {sched && (
                   <div className="mt-3 grid gap-3 sm:grid-cols-2">
                     <Field label={t("scheduleStage2")}>
@@ -393,6 +403,7 @@ function SearchesContent() {
                 {t("cancel")}
               </Button>
               {!sched && count === 0 && <span className="text-sm text-warning">{t("emptySelection")}</span>}
+              {!sched && count === null && <span className="text-sm text-muted">{t("counting")}</span>}
             </div>
           </form>
         </Card>

@@ -5,14 +5,16 @@ import { useParams } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { inviteMember, listMembers, removeMember, Member } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { useApiError } from "@/lib/errorMsg";
 import { RequireAuth } from "@/components/RequireAuth";
 import { Button } from "@/components/ui/Button";
 import { Field, Input, Select } from "@/components/ui/Field";
 import { Card, Badge } from "@/components/ui/Card";
-import { ErrorBanner } from "@/components/ui/Feedback";
+import { EmptyState, ErrorBanner, Skeleton } from "@/components/ui/Feedback";
 
 function TeamContent() {
   const t = useTranslations("team");
+  const toError = useApiError();
   const projectId = useParams<{ id: string }>().id;
   const { user } = useAuth();
   const [members, setMembers] = useState<Member[] | null>(null);
@@ -28,9 +30,9 @@ function TeamContent() {
     try {
       setMembers(await listMembers(projectId));
     } catch (e) {
-      setError(e instanceof Error ? e.message : "error");
+      setError(toError(e));
     }
-  }, [projectId]);
+  }, [projectId, toError]);
 
   useEffect(() => {
     void load();
@@ -47,11 +49,11 @@ function TeamContent() {
     try {
       const r = await inviteMember(projectId, email.trim(), role, lang);
       const key = r.status === "added" ? "added" : "invited";
-      setNotice({ text: t(r.email_sent ? `${key}Sent` : `${key}NoMail`, { email }), link: r.link });
+      setNotice({ text: t(r.email_sent ? `${key}Sent` : `${key}NoMail`, { email: email.trim() }), link: r.link });
       setEmail("");
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "error");
+      setError(toError(err));
     } finally {
       setBusy(false);
     }
@@ -64,7 +66,7 @@ function TeamContent() {
       await removeMember(projectId, m.user_id);
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "error");
+      setError(toError(err));
     }
   }
 
@@ -113,8 +115,13 @@ function TeamContent() {
       )}
 
       <Card title={t("membersTitle")}>
+        {members === null ? (
+          <Skeleton rows={2} height="h-8" />
+        ) : members.length === 0 ? (
+          <EmptyState title={t("membersEmptyTitle")} hint={t("membersEmptyHint")} />
+        ) : (
         <ul className="divide-y divide-border">
-          {(members ?? []).map((m) => (
+          {members.map((m) => (
             <li key={m.user_id} className="flex items-center justify-between gap-3 py-3">
               <div className="min-w-0">
                 <p className="truncate text-sm font-medium text-foreground">{m.full_name || m.email}</p>
@@ -131,6 +138,7 @@ function TeamContent() {
             </li>
           ))}
         </ul>
+        )}
       </Card>
     </div>
   );

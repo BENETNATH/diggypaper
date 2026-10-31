@@ -176,7 +176,8 @@ def test_migration_0030_chain_after_0029():
     mod = _migration("0030")
     assert mod.revision == "0030" and mod.down_revision == "0029"
     script = ScriptDirectory.from_config(Config(str(BACKEND / "alembic.ini")))
-    assert script.get_heads() == ["0032"]  # 0032 (recherche native_id) est la tête courante
+    assert len(script.get_heads()) == 1  # single chain (head moves with each migration)
+    assert "0030" in [s.revision for s in script.walk_revisions()]
 
 
 def test_migration_0030_backfill_and_downgrade_on_sqlite(tmp_path, monkeypatch):

@@ -154,7 +154,7 @@ async def test_notify_mailing_failure_never_raises(engine, session):
 
 
 async def test_notify_no_mailer_skips(engine, session):
-    """mailer=None → pas d'envoi (le caller fournit son mailer)."""
+    """mailer=None → no send (the caller provides its mailer)."""
     lead = await _make_lead(session, lang="en")
     project = await _make_project(session, lead)
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)

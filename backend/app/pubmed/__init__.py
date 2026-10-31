@@ -315,7 +315,7 @@ async def _fetch_pmc_xml(pmcid: str | None, http: httpx.AsyncClient) -> str | No
     return resp.text
 
 
-# --- Parsing XML (xml.etree.ElementTree, sans namespace) ---
+# --- XML parsing (xml.etree.ElementTree, no namespace) ---
 
 
 def _text(el: ET.Element, xpath: str) -> str | None:

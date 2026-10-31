@@ -261,7 +261,7 @@ async def test_import_failure_error_sanitized_no_key_no_url(engine):
     assert "api_key" not in jobs[0].error
 
 
-# --- M3 : persistance du job (import_jobs) ---
+# --- M3: job persistence (import_jobs) ---
 
 
 async def test_import_creates_import_job(engine):
@@ -333,7 +333,7 @@ async def test_reimport_no_duplicates(engine):
     handler = _ncbi_handler(["111", "222"])
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
         r1 = await _import_pubmed(str(project.id), "cancer", session_factory=factory, http=http)
-    # le projet est FROZEN → on le remet en DRAFT pour le re-import
+    # the project is FROZEN → set it back to DRAFT to re-import
     async with factory() as session:
         project = await session.get(Project, project.id)
         project.status = ProjectStatus.DRAFT
@@ -461,7 +461,7 @@ async def test_import_pubmed_without_dates_count_term_unchanged(engine):
 
 
 def test_import_pubmed_task_wrapper_passes_dates():
-    """Le wrapper sync propage les bornes date au core async."""
+    """The sync wrapper propagates the date bounds to the async core."""
     from datetime import date
 
     with patch("app.tasks._import_pubmed", new_callable=AsyncMock) as mock_core:
@@ -551,7 +551,7 @@ async def test_import_unknown_language_stored_raw(engine):
     assert articles[0].original_language == "Italian"
 
 
-# --- C1/C2 : pattern thread + engine par run ---
+# --- C1/C2: thread + engine-per-run pattern ---
 
 
 async def test_import_creates_own_engine(tmp_path, monkeypatch):

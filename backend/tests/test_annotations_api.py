@@ -104,7 +104,7 @@ async def test_get_article_404_foreign_project(client, session, researcher_user,
 
 async def test_get_article_403_not_member(client, session, researcher_user, do_login):
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
-    # Projet dont le researcher n'est pas membre.
+    # Project the researcher is not a member of.
     other = Project(title="Foreign", created_by=researcher_user.id)
     session.add(other)
     await session.commit()

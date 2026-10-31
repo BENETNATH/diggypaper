@@ -70,6 +70,7 @@ EXPECTED_TABLES = {
     "searches",  # recherches : question + lot d'articles
     "search_articles",  # lot figé d'une recherche
     "benchmark_predictions",  # réponses de chaque variante du banc d'essai
+    "password_resets",  # jetons de réinitialisation de mot de passe (hash)
 }
 
 
@@ -843,7 +844,7 @@ async def test_cascade_delete_benchmark_run(session):
     assert (await session.execute(select(Project))).scalar_one() is not None
 
 
-# --- flux RGPD : suppression d'un user ---
+# --- GDPR flow: user deletion ---
 
 
 async def test_rgpd_user_deletion(session):
