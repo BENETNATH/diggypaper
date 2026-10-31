@@ -1,6 +1,6 @@
 """Gold Dataset route tests (app/api/v1/gold.py) — 100% offline."""
 
-from app.db.models import Article, Project, ProjectMember, ProjectMemberRole
+from app.db.models import Article, HumanAnnotation, Project, ProjectMember, ProjectMemberRole
 
 VALID_GT = {
     "use_ai_behavior": True,
@@ -79,6 +79,37 @@ async def test_create_gold_article_not_in_project_422(client, session, researche
         json={"article_id": str(foreign_article.id), "ground_truth_json": VALID_GT},
     )
     assert resp.status_code == 422
+
+
+async def test_from_reviews_rejects_article_ids_of_another_project(
+    client, session, researcher_user, do_login
+):
+    """Un identifiant d'article d'un autre projet (portant une relecture « legacy »,
+    ``search_id`` NULL) ne doit jamais créer de référence dans le projet appelant."""
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project, _ = await _make_project_with_article(session, researcher_user)
+    other = Project(title="Other", created_by=researcher_user.id)
+    session.add(other)
+    await session.commit()
+    foreign_article = Article(project_id=other.id, pmid="333", title="Foreign")
+    session.add(foreign_article)
+    await session.commit()
+    session.add(
+        HumanAnnotation(
+            article_id=foreign_article.id,
+            user_id=researcher_user.id,
+            search_id=None,  # relecture legacy : retenue par in_search() de la recherche initiale
+            decision_json={**VALID_GT, "review_status": "MANUAL"},
+        )
+    )
+    await session.commit()
+    base = f"/api/v1/projects/{project.id}/gold"
+    resp = await client.post(
+        f"{base}/from-reviews", json={"article_ids": [str(foreign_article.id)]}
+    )
+    assert resp.status_code == 422
+    assert resp.json()["detail"] == "article not in this project"
+    assert (await client.get(base)).json()["items"] == []
 
 
 async def test_delete_gold_lead(client, session, researcher_user, do_login):
