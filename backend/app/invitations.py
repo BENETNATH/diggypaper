@@ -58,7 +58,11 @@ async def render_invitation(db: AsyncSession, inv: Invitation) -> tuple[str, str
     )
     link = f"{get_settings().app_base_url}/register?token={token}"
     if inv.project_id is None:
-        return t(inv.language, "invite_subject"), t(inv.language, "invite_body", link=link), link
+        return (
+            t(inv.language, "invite_subject"),
+            t(inv.language, "invite_body", link=link, token=token),
+            link,
+        )
     project = await db.get(Project, inv.project_id)
     inviter = await db.get(User, inv.invited_by) if inv.invited_by else None
     fields = dict(
@@ -66,6 +70,7 @@ async def render_invitation(db: AsyncSession, inv: Invitation) -> tuple[str, str
         inviter=(inviter.full_name or inviter.email) if inviter else "",
         role=inv.role or "ANNOTATOR",
         link=link,
+        token=token,
     )
     return (
         t(inv.language, "project_invite_subject", project=fields["project"]),

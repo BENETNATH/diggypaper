@@ -112,11 +112,12 @@ async def invite_member(
     mailer = await mailer_from_db(db)
     sent = False
     if mailer is not None:
-        fields = dict(project=project.title, inviter=inviter, role=payload.role, link=link)
-        subject = t(lang, f"{kind}_subject", project=project.title)
-        body = t(lang, f"{kind}_body", **fields)
         if is_new:
             subject, body = invite_subject, invite_body
+        else:
+            fields = dict(project=project.title, inviter=inviter, role=payload.role, link=link)
+            subject = t(lang, f"{kind}_subject", project=project.title)
+            body = t(lang, f"{kind}_body", **fields)
         try:
             await mailer.send(to=payload.email, subject=subject, body=body)
             sent = True

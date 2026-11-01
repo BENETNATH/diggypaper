@@ -39,7 +39,9 @@ def test_resolve_lang_fallback_en():
 def test_t_fallback_and_params():
     assert t("fr", "consent_required") != t("en", "consent_required")
     assert t("pt", "consent_required") == t("en", "consent_required")
-    assert t("en", "invite_body", link="http://x") == t("en", "invite_body").format(link="http://x")
+    assert t("en", "invite_body", link="http://x", token="T") == t("en", "invite_body").format(
+        link="http://x", token="T"
+    )
 
 
 async def test_invite_email_in_french(client, admin_user, mock_mailer, do_login):
@@ -49,7 +51,7 @@ async def test_invite_email_in_french(client, admin_user, mock_mailer, do_login)
     msg = mock_mailer.sent[0]
     link = next(line for line in msg["body"].splitlines() if "/register?token=" in line).strip()
     assert msg["subject"] == t("fr", "invite_subject")
-    assert msg["body"] == t("fr", "invite_body", link=link)
+    assert msg["body"] == t("fr", "invite_body", link=link, token=link.split("token=", 1)[1])
 
 
 async def test_invite_email_in_german(client, admin_user, mock_mailer, do_login):
