@@ -99,9 +99,9 @@ describe("i18n phase 4a", () => {
   });
 
   it.each(LOCALES)(
-    "intro + howBody cite the 3 selectable sources (%s)",
+    "intro + howStep1 cite the 3 selectable sources (%s)",
     (_, m) => {
-      for (const text of [m.import.intro, m.project.howBody]) {
+      for (const text of [m.import.intro, m.project.howStep1]) {
         expect(text).toContain("PubMed");
         expect(text).toContain("Europe PMC");
         expect(text).toContain("OpenAlex");

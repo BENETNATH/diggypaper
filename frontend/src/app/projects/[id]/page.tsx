@@ -307,7 +307,11 @@ function ProjectDashboard() {
 
       <details className="rounded-lg border border-border bg-surface p-3 text-sm">
         <summary className="cursor-pointer font-medium text-foreground">{t("howTitle")}</summary>
-        <p className="mt-2 text-muted">{t("howBody")}</p>
+        <ol className="mt-2 list-decimal space-y-1 pl-5 text-muted">
+          <li>{t("howStep1")}</li>
+          <li>{t("howStep2")}</li>
+          <li>{t("howStep3")}</li>
+        </ol>
       </details>
     </div>
   );
