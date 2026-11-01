@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "license": "MIT",
   "private": true,
+  "overrides": {
+    "minimatch": "11.0.1"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",

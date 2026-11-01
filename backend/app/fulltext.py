@@ -433,9 +433,7 @@ async def complete_article(
         for col, val in (("pmcid", pmcid), ("doi", doi), ("pmid", pmid)):
             if val and not getattr(art, col):
                 setattr(art, col, val)
-    sections, source, url, pdf = await find_open_fulltext(
-        pmid, pmcid, doi, email, http, art.title
-    )
+    sections, source, url, pdf = await find_open_fulltext(pmid, pmcid, doi, email, http, art.title)
     if not sections and art.source == "hal" and art.native_id:
         sections, url, pdf = await _hal_retry(art, http)
         source = "hal" if sections else None
