@@ -698,17 +698,21 @@ function AnalyseContent() {
           </ul>
         </div>
       ) : searches ? (
-        <EmptyState
-          title={tLead("empty")}
-          hint={tLead("emptyHint")}
-          action={
-            isLead ? (
-              <Button variant="secondary" onClick={() => setPanelOpen(true)}>
-                + {t("panelTitle")}
-              </Button>
-            ) : undefined
-          }
-        />
+        // The creation panel (above) is already open for a lead on a fresh project:
+        // the empty state would repeat it. Members without the form still see it.
+        isLead && panelOpen ? null : (
+          <EmptyState
+            title={tLead("empty")}
+            hint={tLead("emptyHint")}
+            action={
+              isLead ? (
+                <Button variant="secondary" onClick={() => setPanelOpen(true)}>
+                  + {t("panelTitle")}
+                </Button>
+              ) : undefined
+            }
+          />
+        )
       ) : (
         <Skeleton rows={3} />
       )}
