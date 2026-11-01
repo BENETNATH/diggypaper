@@ -49,6 +49,8 @@ export function ArticleSelector({
   const [error, setError] = useState<string | null>(null);
 
   const set = (patch: Partial<Selection>) => onChange({ ...value, ...patch });
+  // Criteria filter analysis results: meaningless before the first analysis.
+  const hasPredictions = searches.some((s) => s.predicted > 0);
   const answers = useMemo(
     () => Object.fromEntries(Object.entries(value.answers ?? {}).map(([k, v]) => [k, String(v)])),
     [value.answers]
@@ -102,10 +104,11 @@ export function ArticleSelector({
             </option>
           ))}
         </select>
-        <span className="text-xs text-muted">{t("selFromHint")}</span>
+        {hasPredictions && <span className="text-xs text-muted">{t("selFromHint")}</span>}
       </label>
 
-      <div className="flex flex-wrap items-end gap-3 rounded-lg border border-border bg-surface p-3">
+      {hasPredictions && (
+        <div className="flex flex-wrap items-end gap-3 rounded-lg border border-border bg-surface p-3">
         <label className="flex flex-col gap-0.5 text-xs text-muted">
           {t("selStatus")}
           <select
@@ -172,7 +175,8 @@ export function ArticleSelector({
             className={inputCls}
           />
         </label>
-      </div>
+        </div>
+      )}
 
       <div className="flex flex-wrap items-end gap-3 rounded-lg border border-border bg-surface p-3">
         <label className="flex flex-col gap-0.5 text-xs text-muted">

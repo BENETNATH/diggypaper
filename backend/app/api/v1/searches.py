@@ -33,7 +33,7 @@ from app.db.models import (
 )
 from app.model_access import usable_models
 from app.scheduler import selection_dict, start_ready
-from app.schema import DEFAULT_QUESTION, check_fields, project_fields
+from app.schema import DEFAULT_QUESTION, check_fields
 from app.searches import (
     default_search,
     definition_hash,
@@ -233,7 +233,9 @@ def _payload(s: Search, stats: dict, parent: Search | None, author: User | None)
         "kind": s.kind,
         "is_default": s.is_default,
         "question": s.question or DEFAULT_QUESTION,
-        "fields": project_fields(s),
+        # The search's own items (None: no question -> no answer filters; no
+        # fallback to DEFAULT_FIELDS, which would show a legacy hardcoded question).
+        "fields": s.fields or [],
         "text_sections": s.text_sections,
         "parent": {"id": str(parent.id), "name": parent.name} if parent else None,
         "parent_spec": s.parent_spec,
