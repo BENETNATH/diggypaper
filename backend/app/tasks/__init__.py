@@ -367,18 +367,22 @@ async def _do_import(
     # DOIs carried by records of THIS import: a second identical DOI is skipped (not
     # attached — attachment only targets existing rows).
     import_dois: set[str] = set()
-    # Normalized DOI → identities (source, native_id) already in the project: a DOI carried
-    # by an EXISTING other identity is attached (archi § 3), not re-inserted.
+    # Normalized DOI (and PMID) → identities (source, native_id) already in the project:
+    # an identifier carried by an EXISTING other identity is attached (archi § 3), not
+    # re-inserted — the PMID map dedupes across sources when the DOI is unknown on one side.
     doi_owners: dict[str, set] = {}
-    for doi, src, nid in (
+    pmid_owners: dict[str, set] = {}
+    for pmid, doi, src, nid in (
         await session.execute(
-            select(Article.doi, Article.source, Article.native_id).where(
-                Article.project_id == project.id, Article.doi.is_not(None)
+            select(Article.pmid, Article.doi, Article.source, Article.native_id).where(
+                Article.project_id == project.id
             )
         )
     ).all():
         if key := clean_doi(doi):
             doi_owners.setdefault(key, set()).add((src, nid))
+        if pmid:
+            pmid_owners.setdefault(pmid, set()).add((src, nid))
 
     async def progress() -> None:
         # Readable by GET /jobs while RUNNING (import screen progress bar).
@@ -417,6 +421,8 @@ async def _do_import(
                     }
                     identity, doi = (source, native_id), clean_doi(meta.get("doi"))
                     others = doi_owners.get(doi, set()) - {identity} if doi else set()
+                    if not others and (pmid := meta.get("pmid")):
+                        others = pmid_owners.get(pmid, set()) - {identity}
                     if others:
                         # DOI carried by another existing identity (archi § 3): attachment to the
                         # row (empty fields + full text if absent) — no duplicate.

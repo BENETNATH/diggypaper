@@ -155,7 +155,7 @@ function ProjectsContent() {
                       <p className="mt-1 text-sm text-muted">{p.description}</p>
                     )}
                   </div>
-                  <Badge color={statusColor(p.status)}>{p.status}</Badge>
+                  <Badge color={statusColor(p.status)}>{t(`status_${p.status}`)}</Badge>
                 </div>
                 <div className="mt-3 flex items-center gap-3 text-sm text-muted">
                   <span>{t("articles")}: {p.article_count ?? 0}</span>

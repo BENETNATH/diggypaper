@@ -13,6 +13,16 @@ from app.fulltext import apply_uploaded_pdf, complete_article, find_open_fulltex
 BODY = "lorem ipsum dolor sit amet " * 100
 
 
+@pytest.fixture(autouse=True)
+async def _epmc_ids_offline(monkeypatch):
+    """Offline suite: no Europe PMC identifier resolution unless a test provides it."""
+
+    async def _none(pmid, http, doi=None):
+        return None, None, None
+
+    monkeypatch.setattr("app.fulltext._epmc_ids", _none)
+
+
 def make_pdf(lines: list[str]) -> bytes:
     """PDF 1 page minimal (police Helvetica) contenant ``lines``."""
     content = "BT /F1 10 Tf 12 TL 40 760 Td " + " ".join(f"({x}) Tj T*" for x in lines) + " ET"
@@ -57,8 +67,13 @@ def test_pdf_to_sections_splits_imrad_and_stops_at_references():
     assert all("[1] x" not in s["text"] for s in secs)
 
 
-async def test_find_open_fulltext_falls_back_to_preprint_pdf():
+async def test_find_open_fulltext_falls_back_to_preprint_pdf(monkeypatch):
     pdf = make_pdf(["Methods"] + [BODY[i : i + 80] for i in range(0, 2400, 80)])
+
+    async def _ids(pmid, http, doi=None):
+        return None, "10.1/x", "123"  # as the Europe PMC search used to answer below
+
+    monkeypatch.setattr("app.fulltext._epmc_ids", _ids)
 
     def handler(req: httpx.Request) -> httpx.Response:
         url = str(req.url)
@@ -428,6 +443,27 @@ async def test_complete_article_replaces_entire_source(
     if not has_methods:
         assert compose_text(art) == "Current abstract"
         assert fill_prompt("{methods_text}", art) == ""
+
+
+async def test_complete_article_persists_resolved_ids(session, monkeypatch):
+    """A PMID-only article gains the PMCID/DOI that Europe PMC knows for it, on the row
+    (cross-source dedup later); find_open_fulltext gets the resolved ids (one lookup)."""
+    art = Article(pmid="123", title=TITLE, abstract="Abstract")
+    session.add(art)
+    await session.commit()
+    find = AsyncMock(return_value=([], None, None, None))
+    monkeypatch.setattr("app.fulltext.find_open_fulltext", find)
+
+    async def _ids(pmid, http, doi=None):
+        return "PMC9", "10.9/x", "123"
+
+    monkeypatch.setattr("app.fulltext._epmc_ids", _ids)
+    async with httpx.AsyncClient() as http:
+        assert await complete_article(session, art, "a@b.fr", http) is None
+    await session.commit()
+    await session.refresh(art)
+    assert (art.pmcid, art.doi, art.pmid) == ("PMC9", "10.9/x", "123")
+    find.assert_awaited_once_with("123", "PMC9", "10.9/x", "a@b.fr", http, TITLE)
 
 
 async def test_uploaded_pdf_replaces_source_without_old_methods(session, article_with_pdf):

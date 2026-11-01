@@ -90,7 +90,11 @@
     "emptyHint": "Erstellen Sie Ihr erstes Projekt, um zu beginnen.",
     "importCrate": "RO-Crate importieren",
     "importCrateBusy": "Import läuft…",
-    "importCrateHelp": "Stellt ein Projekt aus einem von Diggypaper exportierten Zip wieder her: Korpus, Texte, PDFs, Modell- und menschliche Antworten."
+    "importCrateHelp": "Stellt ein Projekt aus einem von Diggypaper exportierten Zip wieder her: Korpus, Texte, PDFs, Modell- und menschliche Antworten.",
+    "status_DRAFT": "Entwurf",
+    "status_PROCESSING": "Import läuft",
+    "status_FROZEN": "Bereit zur Analyse",
+    "status_COMPLETED": "Analysiert"
   },
   "project": {
     "loading": "Projekt wird geladen…",

@@ -121,20 +121,20 @@ async def _epmc_xml(pmcid: str, http: httpx.AsyncClient) -> list[dict]:
 
 async def _epmc_ids(
     pmid: str | None, http: httpx.AsyncClient, doi: str | None = None
-) -> tuple[str | None, str | None]:
-    """(pmcid, doi) known to Europe PMC for this PMID (or, without PMID, this DOI)."""
+) -> tuple[str | None, str | None, str | None]:
+    """(pmcid, doi, pmid) known to Europe PMC for this PMID (or, without PMID, this DOI)."""
     if pmid:
         query = f"EXT_ID:{pmid} AND SRC:MED"
     elif doi and '"' not in doi:
         query = f'DOI:"{doi}"'
     else:
-        return None, None
+        return None, None, None
     data = await _get_json(
         http, f"{EPMC}/search", {"query": query, "format": "json", "resultType": "lite"}
     )
     rows = ((data or {}).get("resultList") or {}).get("result") or []
     row = next((r for r in rows if r.get("pmcid")), rows[0] if rows else {})
-    return row.get("pmcid"), row.get("doi")
+    return row.get("pmcid"), row.get("doi"), row.get("pmid")
 
 
 def _arxiv_pdf(doi: str | None) -> str | None:
@@ -337,7 +337,9 @@ async def find_open_fulltext(
     title: str | None = None,
 ) -> tuple[list[dict], str | None, str | None, bytes | None]:
     """Full text via open sources → (sections, source, url, pdf) or 4 × empty."""
-    epmc_pmcid, epmc_doi = await _epmc_ids(pmid, http, doi) if not (pmcid and doi) else (None, None)
+    (epmc_pmcid, epmc_doi, _pmid) = (
+        await _epmc_ids(pmid, http, doi) if not (pmcid and doi) else (None, None, None)
+    )
     pmcid, doi = pmcid or epmc_pmcid, doi or epmc_doi
     if pmcid:
         sections = await _epmc_xml(pmcid, http)
@@ -420,8 +422,19 @@ async def complete_article(
     """
     if art.fulltext_source == "pdf:upload" and long_enough(art.sections or []):
         return None
+    # Link identifiers on the row (Europe PMC's resolution): a PMID-only article
+    # gains its PMCID/DOI, a DOI-only one its PMID — cross-source re-imports then
+    # dedupe on the row, and find_open_fulltext is called with the resolved ids
+    # (its own Europe PMC lookup is skipped).
+    pmcid, doi, pmid = art.pmcid, art.doi, art.pmid
+    if not (pmcid and doi) and (pmid or doi):
+        epmc_pmcid, epmc_doi, epmc_pmid = await _epmc_ids(pmid, http, doi)
+        pmcid, doi, pmid = pmcid or epmc_pmcid, doi or epmc_doi, pmid or epmc_pmid
+        for col, val in (("pmcid", pmcid), ("doi", doi), ("pmid", pmid)):
+            if val and not getattr(art, col):
+                setattr(art, col, val)
     sections, source, url, pdf = await find_open_fulltext(
-        art.pmid, art.pmcid, art.doi, email, http, art.title
+        pmid, pmcid, doi, email, http, art.title
     )
     if not sections and art.source == "hal" and art.native_id:
         sections, url, pdf = await _hal_retry(art, http)

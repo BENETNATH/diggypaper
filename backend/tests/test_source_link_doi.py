@@ -172,3 +172,22 @@ async def test_doi_duplicate_same_import_still_skipped_not_linked(engine):
     assert not any(c[0] == "fetch_fulltext" for c in fake.calls)
     w1 = next(a for a in await _articles(engine, project.id) if a.native_id == "W1")
     assert w1.abstract is None  # pas de fusion de la notice W2
+
+
+async def test_pmid_duplicate_other_identity_links_and_fills(engine):
+    """Existing ``pubmed`` row with the same PMID and no DOI: the ``europepmc`` record
+    (PMID only, DOI unknown) completes it — cross-source dedup on the PMID, no new row."""
+    project = await _make_project(
+        engine,
+        {"source": "pubmed", "native_id": "34335492", "pmid": "34335492"},
+    )
+    notice = {k: v for k, v in NOTICE.items() if k != "doi"} | {"pmid": "34335492"}
+    result = await _import_epmc(engine, project, _fake(notice))
+    assert result["imported"] == 0 and result.get("duplicates_doi") == 1
+    arts = await _articles(engine, project.id)
+    assert len(arts) == 1
+    a = arts[0]
+    assert (a.source, a.native_id, a.pmid) == ("pubmed", "34335492", "34335492")  # identity
+    assert a.pmcid == "PMC12345"  # empty field completed
+    assert a.abstract == "New abstract."
+    assert a.sections and a.fulltext_source == "europepmc"

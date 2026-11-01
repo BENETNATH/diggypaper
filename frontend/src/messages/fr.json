@@ -90,7 +90,11 @@
     "emptyHint": "Créez votre premier projet pour commencer.",
     "importCrate": "Importer un RO-Crate",
     "importCrateBusy": "Import en cours…",
-    "importCrateHelp": "Restaure un projet à partir du zip exporté par Diggypaper : corpus, textes, PDF, réponses du modèle et réponses humaines."
+    "importCrateHelp": "Restaure un projet à partir du zip exporté par Diggypaper : corpus, textes, PDF, réponses du modèle et réponses humaines.",
+    "status_DRAFT": "Brouillon",
+    "status_PROCESSING": "Import en cours",
+    "status_FROZEN": "Prêt à analyser",
+    "status_COMPLETED": "Analysé"
   },
   "project": {
     "loading": "Chargement du projet…",
