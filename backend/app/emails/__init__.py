@@ -93,5 +93,5 @@ async def mailer_from_db(db) -> "Mailer | None":
         if not (values.get("smtp_host") or settings.smtp_host):
             return None
         return Mailer.from_settings(settings, values)
-    except Exception:  # noqa: BLE001 - config invalide : pas d'e-mail, lien affiché à la place
+    except Exception:  # noqa: BLE001 - invalid config: no e-mail, link shown instead
         return None

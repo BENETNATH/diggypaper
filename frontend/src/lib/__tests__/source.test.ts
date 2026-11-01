@@ -15,11 +15,11 @@ describe("sourceLabel", () => {
     expect(sourceLabel("crossref", "10.1000/x", "fichier importé")).toBe("Crossref DOI 10.1000/x");
   });
 
-  it("fichier : le libellé traduit fourni, sans identifiant", () => {
+  it("file: the translated label provided, no identifier", () => {
     expect(sourceLabel("file", null, "imported file")).toBe("imported file");
   });
 
-  it("Europe PMC (phase 3) : nom propre, même dans les 4 langues + identifiant", () => {
+  it("Europe PMC (phase 3): proper name, in all 4 languages + identifier", () => {
     expect(sourceLabel("europepmc", "W123", "x")).toBe("Europe PMC W123");
   });
 
@@ -32,7 +32,7 @@ describe("sourceLabel", () => {
     expect(sourceLabel("medline", null, "x")).toBe("medline");
   });
 
-  it("sans source (donnée ancienne) → null : l'appelant affiche son repli", () => {
+  it("no source (old data) → null: the caller shows its fallback", () => {
     expect(sourceLabel(null, "123", "x")).toBeNull();
     expect(sourceLabel(undefined, undefined, "x")).toBeNull();
   });
@@ -47,14 +47,14 @@ const LOCALES: [string, Messages][] = [
 ];
 
 describe("i18n source", () => {
-  it.each(LOCALES)("clés présentes et non vides (%s)", (_, messages) => {
+  it.each(LOCALES)("keys present and non-empty (%s)", (_, messages) => {
     for (const key of ["sourceFile", "sourceNotRecorded"]) {
       expect(typeof messages.articles?.[key]).toBe("string");
       expect(messages.articles[key].trim().length).toBeGreaterThan(0);
     }
   });
 
-  it("searchPlaceholder : l'identifiant générique, plus « PMID » seule (phase 3)", () => {
+  it('searchPlaceholder: the generic identifier, no bare "PMID" (phase 3)', () => {
     const words: Record<string, string> = {
       en: "identifier",
       fr: "identifiant",
@@ -67,7 +67,7 @@ describe("i18n source", () => {
     }
   });
 
-  it("réellement traduites", () => {
+  it("actually translated", () => {
     const base = (en as unknown as Messages).articles;
     for (const [lang, messages] of LOCALES) {
       if (lang === "en") continue;
@@ -80,7 +80,7 @@ describe("i18n source", () => {
 /** Phase 4a: source selector + OpenAlex — the new strings exist in the
  * 4 languages (user constraint: everything is multilingual). */
 describe("i18n phase 4a", () => {
-  it.each(LOCALES)("clés import/annotate/settings présentes et non vides (%s)", (_, m) => {
+  it.each(LOCALES)("import/annotate/settings keys present and non-empty (%s)", (_, m) => {
     for (const [ns, key] of [
       ["import", "sourceLabel"],
       ["import", "queryHintGeneric"],
@@ -94,12 +94,12 @@ describe("i18n phase 4a", () => {
     }
   });
 
-  it.each(LOCALES)("queryLabel générique : plus « PubMed » en dur (%s)", (_, m) => {
+  it.each(LOCALES)('generic queryLabel: no hardcoded "PubMed" (%s)', (_, m) => {
     expect(m.import.queryLabel).not.toContain("PubMed");
   });
 
   it.each(LOCALES)(
-    "intro + howBody citent les 3 sources sélectionnables (%s)",
+    "intro + howBody cite the 3 selectable sources (%s)",
     (_, m) => {
       for (const text of [m.import.intro, m.project.howBody]) {
         expect(text).toContain("PubMed");
@@ -110,7 +110,7 @@ describe("i18n phase 4a", () => {
   );
 
   it.each(LOCALES)(
-    "réellement traduites (phase 4a ; « Source » est identique en fr/en) (%s)",
+    'actually translated (phase 4a; "Source" is identical in fr/en) (%s)',
     (_, m) => {
       const base = en as unknown as Messages;
       if (m === en) return;

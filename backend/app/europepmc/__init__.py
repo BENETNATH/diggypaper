@@ -145,7 +145,7 @@ class EuropePMCAdapter:
 
     def __init__(self, http: httpx.AsyncClient, api_key: str | None = None) -> None:
         self._http = http
-        self._api_key = api_key  # ignoré : Europe PMC ne prend pas de clé
+        self._api_key = api_key  # ignored: Europe PMC takes no key
         self._last_count: int | None = None
 
     async def search_volume(self, query: str, bornes: DateBounds | None) -> int:
@@ -228,7 +228,7 @@ class EuropePMCAdapter:
         _check_xml_size(resp)
         methods, sections = _extract_methods(resp.text), _extract_sections(resp.text)
         if methods is None and not sections:
-            return None  # « non disponible » (pas de XML) → fulltext_note côté pipeline
+            return None  # "not available" (no XML) → fulltext_note on the pipeline side
         return methods, sections
 
 

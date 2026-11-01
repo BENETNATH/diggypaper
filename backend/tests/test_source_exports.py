@@ -54,12 +54,12 @@ async def test_xlsx_results_source_columns(client, session, researcher_user, do_
     session.add_all(_articles(pid))
     await session.commit()
     resp = await client.get(f"/api/v1/projects/{pid}/export.xlsx")
-    rows = list(load_workbook(io.BytesIO(resp.content))["Résultats"].values)
+    rows = list(load_workbook(io.BytesIO(resp.content))["Results"].values)
     head = rows[0]
     i = head.index("Source")
-    assert i == head.index("Lien texte intégral / PDF") + 1
-    assert head[i + 1] == "Identifiant source"
-    by_title = {r[head.index("Titre")]: r[i : i + 2] for r in rows[1:]}
+    assert i == head.index("Full text / PDF link") + 1
+    assert head[i + 1] == "Source identifier"
+    by_title = {r[head.index("Title")]: r[i : i + 2] for r in rows[1:]}
     assert by_title["From PubMed"] == ("PubMed PMID 42", "42")
     assert by_title["From Crossref"] == ("Crossref DOI 10.1/y", "10.1/y")
     assert by_title["Legacy"] == (None, None)
@@ -95,12 +95,12 @@ async def test_xlsx_projet_sheet_import_sources(client, session, researcher_user
     )
     await session.commit()
     resp = await client.get(f"/api/v1/projects/{pid}/export.xlsx")
-    info = {r[0]: r[1] for r in load_workbook(io.BytesIO(resp.content))["Projet"].values if r}
+    info = {r[0]: r[1] for r in load_workbook(io.BytesIO(resp.content))["Project"].values if r}
     assert "Requêtes PubMed" not in info
-    assert info["Imports"] == "Date · source · articles importés"
+    assert info["Imports"] == "Date · source · imported articles"
     assert "PubMed" in info["cancer AND mice"] and info["cancer AND mice"].endswith("· 12")
-    assert "non enregistrée" in info["old query"]
-    assert "sources par article" in info["references (2)"]
+    assert "not recorded" in info["old query"]
+    assert "per-article sources" in info["references (2)"]
 
 
 async def test_ris_db_tag_and_bibtex_source_field(client, session, researcher_user, do_login):
@@ -207,7 +207,7 @@ def test_source_label_and_name():
     assert source_name(None) is None
     assert source_label("pubmed", "123") == "PubMed PMID 123"
     assert source_label("crossref", "10.1/x") == "Crossref DOI 10.1/x"
-    assert source_label("file", None) == "Fichier importé"
+    assert source_label("file", None) == "Imported file"
     assert source_label("europepmc", "W1") == "Europe PMC W1"
     assert source_label("openalex", "W123") == "OpenAlex W123"
     assert source_label("hal", "hal-00478278") == "HAL hal-00478278"

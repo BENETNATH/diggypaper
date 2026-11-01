@@ -27,7 +27,7 @@ from app.schema import check_fields
 MAX_JSON = 5 * 1024 * 1024
 MAX_TEXT = 10 * 1024 * 1024
 MAX_ARTICLES = 200_000
-MAX_TOTAL = 8 * 1024**3  # taille décompressée annoncée, tous fichiers confondus
+MAX_TOTAL = 8 * 1024**3  # announced uncompressed size, all files combined
 _KEY = re.compile(r"^[A-Za-z0-9._-]{1,120}$")
 
 
@@ -65,13 +65,13 @@ def _budget(zf: zipfile.ZipFile) -> _ReadBudget:
     budget = getattr(zf, "_crate_budget", None)
     if budget is None:
         budget = _ReadBudget(MAX_TOTAL)
-        zf._crate_budget = budget  # attribut privé : aucune signature publique à changer
+        zf._crate_budget = budget  # private attribute: no public signature to change
     return budget
 
 
 def _read(zf: zipfile.ZipFile, name: str, limit: int) -> bytes:
     budget = _budget(zf)
-    budget.check()  # budget épuisé : refus immédiat, sans rien décompresser de plus
+    budget.check()  # budget exhausted: immediate rejection, no more decompression
     try:
         info = zf.getinfo(name)
     except KeyError:
@@ -87,7 +87,7 @@ def _read(zf: zipfile.ZipFile, name: str, limit: int) -> bytes:
         raise CrateError(f"invalid_zip:{name}") from exc
     if len(data) > limit:
         raise CrateError(f"too_large:{name}")
-    budget.charge(len(data))  # octets réellement décompressés, tous fichiers confondus
+    budget.charge(len(data))  # actually decompressed bytes, all files combined
     return data
 
 
@@ -123,7 +123,7 @@ def open_crate(path: str | Path) -> tuple[zipfile.ZipFile, dict]:
         if not str(info.get("title") or "").strip():
             raise CrateError("no_title")
     except BaseException:
-        zf.close()  # refus d'un crate : pas de descripteur laissé ouvert (uploads répétés)
+        zf.close()  # rejected crate: no descriptor left open (repeated uploads)
         raise
     return zf, info
 
@@ -191,7 +191,7 @@ def read_article(zf: zipfile.ZipFile, key: str) -> dict:
     pmid = _clean(meta.get("pmid"), 20)
     source = _clean(meta.get("source"), 50)
     native_id = _clean(meta.get("native_id"), 200)
-    if source is None and pmid:  # crate ancien : seule la recherche PubMed avait un PMID
+    if source is None and pmid:  # old crate: only the PubMed search had a PMID
         source, native_id = "pubmed", pmid
     return {
         "source": source,
@@ -237,7 +237,7 @@ def iter_articles(zf: zipfile.ZipFile) -> Iterator[tuple[str, dict]]:
         try:
             yield key, read_article(zf, key)
         except CrateError:
-            continue  # un dossier abîmé n'empêche pas de restaurer les autres
+            continue  # a damaged folder does not prevent restoring the others
 
 
 def now() -> datetime:

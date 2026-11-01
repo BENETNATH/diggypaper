@@ -58,9 +58,9 @@ async def test_doi_duplicate_other_identity_links_and_fills(engine):
     arts = await _articles(engine, project.id)
     assert len(arts) == 1
     a = arts[0]
-    assert (a.source, a.native_id, a.pmid) == ("pubmed", "34335492", "34335492")  # identité
-    assert a.origin is None  # non touchée
-    assert a.abstract == "New abstract."  # champ vide complété
+    assert (a.source, a.native_id, a.pmid) == ("pubmed", "34335492", "34335492")  # identity
+    assert a.origin is None  # untouched
+    assert a.abstract == "New abstract."  # empty field completed
     assert a.journal == "Journal X"
     assert a.pmcid == "PMC12345"
     assert a.sections and a.fulltext_source == "europepmc"

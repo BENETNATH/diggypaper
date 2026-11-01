@@ -54,11 +54,11 @@ class Selection(BaseModel):
     search), a random draw, or a list. Criteria accumulate (AND)."""
 
     from_search_id: uuid.UUID | None = (
-        None  # recherche dont on filtre les résultats (déf. initiale)
+        None  # search whose results we filter (default: the initial one)
     )
     status: str | None = Field(default=None, pattern=STATUS_PATTERN)
     answers: dict[str, str | bool] | None = None  # {item: valeur}
-    reviewed: bool | None = None  # relu par un humain (dans from_search)
+    reviewed: bool | None = None  # reviewed by a human (in from_search)
     has_fulltext: bool | None = None
     q: str | None = Field(
         default=None, max_length=200
@@ -66,7 +66,7 @@ class Selection(BaseModel):
     confidence_min: float | None = Field(default=None, ge=0, le=1)
     confidence_max: float | None = Field(default=None, ge=0, le=1)
     ids: list[uuid.UUID] | None = Field(default=None, max_length=20000)
-    sample_n: int | None = Field(default=None, ge=1, le=20000)  # tirage au sort parmi le résultat
+    sample_n: int | None = Field(default=None, ge=1, le=20000)  # random sample from the result
     seed: int | None = None  # tirage reproductible
 
 
@@ -88,7 +88,7 @@ class SearchCreate(BaseModel):
     # standard; tuning (fine-tuning: compare variants); blind (blind re-read sample)
     kind: Literal["standard", "tuning", "blind"] = "standard"
     selection: Selection = Selection()
-    schedule: ScheduleIn | None = None  # programmer l'analyse après la recherche d'origine
+    schedule: ScheduleIn | None = None  # schedule the analysis after the original search
 
     @field_validator("fields")
     @classmethod
@@ -117,7 +117,7 @@ async def select_articles(db: AsyncSession, project: Project, sel: Selection) ->
     if src.kind == "blind" and any(
         v is not None
         for v in (sel.status, sel.answers, sel.reviewed, sel.confidence_min, sel.confidence_max)
-    ):  # sinon ces critères serviraient d'oracle sur les réponses masquées
+    ):  # otherwise these criteria would be an oracle on the masked answers
         raise HTTPException(status_code=422, detail="criteria unavailable on a blind search")
     answers = json.dumps(sel.answers) if sel.answers else None
     where, _ps, pconf, _pd, annotated = article_filter(src, sel.status, answers, sel.q)
@@ -132,11 +132,11 @@ async def select_articles(db: AsyncSession, project: Project, sel: Selection) ->
             sel.q,
         )
     )
-    if on_results:  # critères sur les résultats (et le lot) de la recherche d'origine
+    if on_results:  # criteria on the results (and the batch) of the original search
         cond = list(where)
-    elif sel.from_search_id:  # « même lot que cette recherche »
+    elif sel.from_search_id:  # "same batch as this search"
         cond = [lot_condition(src)]
-    else:  # aucun critère : tout le corpus
+    else:  # no criteria: the whole corpus
         cond = [Article.project_id == project.id]
     if sel.reviewed is True:
         cond.append(annotated)
@@ -178,7 +178,7 @@ async def _stats(db: AsyncSession, s: Search) -> dict:
     ).scalar_one()
     breakdown: dict = {}
     to_review = 0
-    if s.kind != "blind":  # aveugle : pas de répartition des réponses de l'IA
+    if s.kind != "blind":  # blind: no distribution of the AI answers
         _where, pstatus, _c, _d, annotated = article_filter(s, None, None)
         rows = await db.execute(
             select(pstatus, func.count())
@@ -213,7 +213,7 @@ async def _stats(db: AsyncSession, s: Search) -> dict:
         "predicted": predicted,
         "reviewed": reviewed,
         "breakdown": breakdown,  # {AUTO_ACCEPTED, AUTO_REJECTED, NEEDS_HUMAN_REVIEW, NONE}
-        "to_review": to_review,  # incertains pas encore relus
+        "to_review": to_review,  # uncertain, not yet reviewed
         "last_job": (
             {
                 "status": job.status,
@@ -354,7 +354,7 @@ async def create_search(
         names = [n for n in (sched.model, sched.prefilter_model) if n]
         if len(await usable_models(db, user, names, project_id)) != len(set(names)):
             raise HTTPException(status_code=422, detail="unknown model")
-        ids: list = []  # le lot sera calculé quand l'origine aura fini
+        ids: list = []  # the batch will be computed when the origin finishes
     else:
         ids = await select_articles(db, project, sel)
         if not ids:
@@ -385,7 +385,7 @@ async def create_search(
     db.add_all(SearchArticle(search_id=s.id, article_id=i) for i in ids)
     await db.commit()
     if sched:
-        await start_ready(db, project)  # l'origine a peut-être déjà fini
+        await start_ready(db, project)  # the origin may have already finished
     await db.refresh(s)
     return await _full_payload(db, s)
 

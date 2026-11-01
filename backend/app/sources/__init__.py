@@ -61,7 +61,7 @@ SOURCE_NAMES = {
     "openalex": "OpenAlex",
     "hal": "HAL",
     "crossref": "Crossref",
-    "file": "Fichier importé",
+    "file": "Imported file",
 }
 #: Nature of the native identifier, when it has a common name.
 _ID_KINDS = {"pubmed": "PMID", "crossref": "DOI"}

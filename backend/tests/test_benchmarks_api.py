@@ -55,7 +55,8 @@ async def _seed_benchmark_prereqs(session, project_id: str) -> tuple[str, str]:
     model = ModelRegistry(name="Kev-4B", model_identifier="kef/kev-4b")
     session.add(model)
     await session.commit()
-    session.add(ModelShare(model_id=model.id, project_id=project.id))  # modèle autorisé au projet
+    # model authorized for the project
+    session.add(ModelShare(model_id=model.id, project_id=project.id))
     await session.commit()
     article = Article(project_id=project.id, pmid="111", title="A", methods_text="Methods.")
     session.add(article)
@@ -409,5 +410,5 @@ async def test_cancel_benchmark(client, session, researcher_user, do_login, monk
     ).json()["run_id"]
     r = await client.post(f"{base}/{run_id}/cancel")
     assert r.status_code == 200 and r.json()["status"] == "FAILED"
-    assert (await client.post(f"{base}/{run_id}/cancel")).status_code == 409  # déjà arrêté
+    assert (await client.post(f"{base}/{run_id}/cancel")).status_code == 409  # already stopped
     assert (await client.post(f"{base}/{uuid.uuid4()}/cancel")).status_code == 404

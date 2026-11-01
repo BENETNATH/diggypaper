@@ -5,7 +5,7 @@ describe("isProjectLead", () => {
     expect(isProjectLead({ role_in_project: "LEAD" }, { role: "RESEARCHER" })).toBe(true);
     expect(isProjectLead({ role_in_project: null }, { role: "ADMIN" })).toBe(true);
   });
-  it("un annotateur, un invité ou rien : non", () => {
+  it("an annotator, a guest or nothing: no", () => {
     expect(isProjectLead({ role_in_project: "ANNOTATOR" }, { role: "RESEARCHER" })).toBe(false);
     expect(isProjectLead({ role_in_project: null }, { role: "RESEARCHER" })).toBe(false);
     expect(isProjectLead(null, null)).toBe(false);

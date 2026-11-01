@@ -104,7 +104,7 @@ class FakeSource:
 
 def _refuse_network():
     def handler(request: httpx.Request) -> httpx.Response:
-        raise AssertionError(f"aucun appel réseau attendu : {request.url}")
+        raise AssertionError(f"no network call expected: {request.url}")
 
     return httpx.AsyncClient(transport=httpx.MockTransport(handler))
 
@@ -245,7 +245,7 @@ def test_migration_0030_backfill_and_downgrade_on_sqlite(tmp_path, monkeypatch):
     assert "uq_articles_project_source_native" not in {
         i["name"] for i in insp.get_indexes("articles")
     }
-    run(mod.upgrade)  # ré-applicable après downgrade
+    run(mod.upgrade)  # re-applicable after downgrade
 
 
 # --- §2 Import ------------------------------------------------------------------------------

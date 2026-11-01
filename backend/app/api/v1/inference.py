@@ -44,14 +44,17 @@ INFERENCE_RATE_LIMIT = 5
 
 
 class InferenceCreate(BaseModel):
-    prompt_template_id: uuid.UUID | None = None  # défaut : prompt généré depuis la question
+    prompt_template_id: uuid.UUID | None = None  # default: prompt generated from the question
     model: str = Field(min_length=1)
-    prefilter_model: str | None = None  # étage 1 : petit modèle sur titre + abstract, optionnel
-    resume: bool = False  # reprend la dernière analyse interrompue (saute les articles déjà faits)
-    search_id: uuid.UUID | None = None  # recherche analysée (défaut : la recherche initiale)
-    gold_examples: int = Field(default=0, ge=0, le=20)  # exemples du gold ajoutés au prompt
-    instructions: str | None = Field(default=None, max_length=2000)  # consigne ajoutée au prompt
-    validate_with_gold: bool = False  # noter les résultats contre le gold (articles du lot au gold)
+    prefilter_model: str | None = None  # stage 1: small model on title + abstract, optional
+    resume: bool = False  # resumes the last interrupted analysis (skips the articles already done)
+    search_id: uuid.UUID | None = None  # analyzed search (default: the initial search)
+    gold_examples: int = Field(default=0, ge=0, le=20)  # gold examples added to the prompt
+    instructions: str | None = Field(  # instruction added to the prompt
+        default=None, max_length=2000
+    )
+    # score the results against the gold (batch articles in the gold)
+    validate_with_gold: bool = False
 
 
 async def _require_lead(db: AsyncSession, project_id: uuid.UUID, user: User) -> None:
@@ -69,7 +72,7 @@ def _job_payload(job: InferenceJob) -> dict:
         "prompt_template_id": str(job.prompt_template_id) if job.prompt_template_id else None,
         "model_used": job.model_used,
         "prefilter_model": job.prefilter_model,
-        "model_info": job.model_info,  # instantané figé (sans secret par construction)
+        "model_info": job.model_info,  # frozen snapshot (no secret by construction)
         "search_id": str(job.search_id) if job.search_id else None,
         "status": job.status,
         "result": job.result_json,
@@ -162,7 +165,7 @@ async def trigger_inference(
     return {"job_id": str(job.id), "status": status}
 
 
-CANCELLED = "cancelled"  # job.error d'une analyse arrêtée à la main (statut FAILED → reprenable)
+CANCELLED = "cancelled"  # job.error of a manually stopped analysis (status FAILED, resumable)
 
 
 @router.post("/{project_id}/inference/cancel")

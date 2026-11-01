@@ -78,7 +78,7 @@ async def test_invite_existing_user_added_directly(client, session, lead_project
     resp = await client.post(
         f"/api/v1/projects/{lead_project.id}/members/invite", json={"email": "OLD@lab.fr"}
     )
-    assert resp.json()["status"] == "invited"  # réponse uniforme (pas d'énumération)
+    assert resp.json()["status"] == "invited"  # uniform response (no enumeration)
     again = await client.post(
         f"/api/v1/projects/{lead_project.id}/members/invite", json={"email": "old@lab.fr"}
     )
@@ -133,21 +133,21 @@ async def test_export_xlsx_contains_results(client, session, lead_project):
     resp = await client.get(f"/api/v1/projects/{lead_project.id}/export.xlsx")
     assert resp.status_code == 200 and "spreadsheetml" in resp.headers["content-type"]
     wb = load_workbook(io.BytesIO(resp.content))
-    assert wb.sheetnames == ["Résultats", "Résumé", "Projet"]
-    rows = list(wb["Résultats"].values)
+    assert wb.sheetnames == ["Results", "Summary", "Project"]
+    rows = list(wb["Results"].values)
     head, first = rows[0], rows[1]
     assert first[head.index("PMID")] == "42"
-    assert first[head.index("Statut IA")] == "AUTO_ACCEPTED"
-    assert first[head.index("Pertinence IA")] == 0.93
-    assert "quote one\nquote two" == first[head.index("Extraits (IA)")]
-    assert first[head.index("Raisonnement (IA)")] == "because"
-    assert first[head.index("Certitude · Uses AI behavior analysis")] == 0.81
-    assert first[head.index("Premier auteur")] == "Doe J"
-    assert first[head.index("Dernier auteur")] == "Poe P"
+    assert first[head.index("AI status")] == "AUTO_ACCEPTED"
+    assert first[head.index("AI relevance")] == 0.93
+    assert "quote one\nquote two" == first[head.index("Extracts (AI)")]
+    assert first[head.index("Reasoning (AI)")] == "because"
+    assert first[head.index("Confidence · Uses AI behavior analysis")] == 0.81
+    assert first[head.index("First author")] == "Doe J"
+    assert first[head.index("Last author")] == "Poe P"
     assert first[head.index("Journal")] == "Nature"
     assert (await session.execute(select(Article))).scalars().first() is not None
-    assert first[head.index("Lien DOI")] == "https://doi.org/10/x"
-    assert first[head.index("Lien texte intégral / PDF")] == "https://repo.org/a.pdf"
+    assert first[head.index("DOI link")] == "https://doi.org/10/x"
+    assert first[head.index("Full text / PDF link")] == "https://repo.org/a.pdf"
 
 
 async def test_list_articles_filters_by_answers(client, session, lead_project):
@@ -190,7 +190,7 @@ async def test_list_articles_filters_by_answers(client, session, lead_project):
     assert await pmids(ai=False) == ["2"]
     assert await pmids(sex="FEMALE") == ["2"]
     assert await pmids(note="deep_lab") == ["1"]
-    assert await pmids(note="deep%") == []  # % littéral, pas un joker
+    assert await pmids(note="deep%") == []  # % literal, not a wildcard
     assert await pmids(ai=True, sex="FEMALE") == []
     assert await pmids(ai="") == ["1", "2"]
     bad = await client.get(
@@ -258,7 +258,7 @@ async def test_export_ro_crate_async(
     assert (await client.get(base)).json() is None
     r = await client.post(base)
     assert r.status_code == 202 and r.json()["status"] == "PENDING" and len(queued) == 1
-    assert (await client.post(base)).json()["id"] == r.json()["id"]  # un seul à la fois
+    assert (await client.post(base)).json()["id"] == r.json()["id"]  # one at a time
     assert len(queued) == 1
     assert (await client.get(f"{base}/{r.json()['id']}/download")).status_code == 404
 
@@ -283,9 +283,9 @@ async def test_export_ro_crate_async(
     ids = {e["@id"] for e in graph}
     assert {"./", "https://doi.org/10.1/x", "articles/pmid-42/fulltext.pdf", "#analysis"} <= ids
     root = next(e for e in graph if e["@id"] == "./")
-    assert all(p["@id"] in ids for p in root["hasPart"])  # pas de référence orpheline
+    assert all(p["@id"] in ids for p in root["hasPart"])  # no orphan reference
     assert root["license"]["@id"] == "https://creativecommons.org/licenses/by/4.0/"
-    assert "https://creativecommons.org/licenses/by/4.0/" in ids  # licence décrite dans le graphe
+    assert "https://creativecommons.org/licenses/by/4.0/" in ids  # license described in the graph
     info = json.loads(z.read("project.json"))
     assert info["analysis"]["stage_2_model"]["config_sha256"]
     assert z.read("extraction.csv").decode("utf-8-sig").splitlines()[0].startswith("key,pmid")
@@ -404,7 +404,7 @@ async def test_prisma_counts_and_svg(client, session, lead_project):
     from pypdf import PdfReader
 
     text = PdfReader(io.BytesIO(pdf.content)).pages[0].extract_text()
-    assert "Références identifiées" in text and "n = 7" in text  # accents conservés
+    assert "Références identifiées" in text and "n = 7" in text  # accents preserved
 
     # Derived search: the starting point is the original search, the criteria are
     # stated, and the excluded articles are not "duplicates".
@@ -477,7 +477,7 @@ async def test_resume_inference_skips_done_articles(engine, session, fake_redis)
     stats = await _run_inference(
         str(job.id), session_factory=factory, inference=chat, redis=fake_redis
     )
-    assert chat.calls == 2  # 1 warm-up + seul l'article restant est analysé
+    assert chat.calls == 2  # 1 warm-up + only the remaining article is analyzed
     assert stats["processed"] == 2 and stats["auto_accepted"] == 1 and stats["auto_rejected"] == 1
 
 
@@ -506,7 +506,7 @@ async def test_trigger_inference_resume(client, session, lead_project, monkeypat
     await session.commit()
     url = f"/api/v1/projects/{lead_project.id}/inference"
     body = {"model": "Kev", "resume": True}
-    assert (await client.post(url, json=body)).status_code == 409  # rien à reprendre
+    assert (await client.post(url, json=body)).status_code == 409  # nothing to resume
 
     first = await client.post(url, json={"model": "Kev"})
     assert first.status_code == 202
@@ -550,7 +550,7 @@ async def test_review_status_reviewer_and_prefill(client, session, lead_project)
     assert item["review"]["by"]  # nom ou e-mail du relecteur
 
     # correction: the last re-read wins, pre-filled on reload
-    await asyncio.sleep(1.1)  # SQLite : created_at à la seconde, sinon égalité départagée au hasard
+    await asyncio.sleep(1.1)  # SQLite: created_at to the second; otherwise the tie is random
     r = await client.post(f"{base}/{a.id}/annotation", json={"ai": False})
     assert r.json()["status"] == "CORRECTED"
     got = (await client.get(f"{base}/{a.id}/annotation")).json()
@@ -565,11 +565,11 @@ async def test_review_status_reviewer_and_prefill(client, session, lead_project)
     assert (await client.get(base, params={"answers": '{"ai": true}'})).json()["items"] == []
 
     x = await client.get(f"/api/v1/projects/{lead_project.id}/export.xlsx")
-    ws = load_workbook(io.BytesIO(x.content))["Résultats"]
+    ws = load_workbook(io.BytesIO(x.content))["Results"]
     head = [c.value for c in ws[1]]
     row = [c.value for c in ws[2]]
-    assert row[head.index("Statut de relecture")] == "CORRECTED"
-    assert row[head.index("Relu par")]
+    assert row[head.index("Review status")] == "CORRECTED"
+    assert row[head.index("Reviewed by")]
 
 
 # --- model traceability + version (spec 2026-10-29-tracabilite-modele-version §5) ---
@@ -595,7 +595,7 @@ SNAPSHOT = {
 
 
 def _projet_rows(wb) -> dict:
-    return {r[0]: r[1] for r in wb["Projet"].values if r and r[0]}
+    return {r[0]: r[1] for r in wb["Project"].values if r and r[0]}
 
 
 async def test_export_xlsx_traces_model_identifier_and_version(client, session, lead_project):
@@ -629,19 +629,19 @@ async def test_export_xlsx_traces_model_identifier_and_version(client, session, 
     await session.commit()
     resp = await client.get(f"/api/v1/projects/{lead_project.id}/export.xlsx")
     wb = load_workbook(io.BytesIO(resp.content))
-    head, first = list(wb["Résultats"].values)[:2]
-    i = head.index("Modèle")
-    assert head[i + 1 : i + 3] == ("Identifiant du modèle", "Version du modèle")
+    head, first = list(wb["Results"].values)[:2]
+    i = head.index("Model")
+    assert head[i + 1 : i + 3] == ("Model identifier", "Model version")
     assert first[i : i + 3] == ("Big", "qwen3:8b", DIGEST_BIG)
     info = _projet_rows(wb)
-    assert info["Modèle (étage 2)"] == "Big"
-    assert info["Modèle (étage 2) · identifiant"] == "qwen3:8b"
-    assert info["Modèle (étage 2) · version"] == DIGEST_BIG
-    assert "Q4_K_M" in info["Modèle (étage 2) · détails"]
-    assert "8.2B" in info["Modèle (étage 2) · détails"]
-    assert info["Pré-filtre (étage 1)"] == "Small"
-    assert info["Pré-filtre (étage 1) · identifiant"] == "qwen3:1.7b"
-    assert info["Pré-filtre (étage 1) · version"] == DIGEST_SMALL
+    assert info["Model (stage 2)"] == "Big"
+    assert info["Model (stage 2) · identifier"] == "qwen3:8b"
+    assert info["Model (stage 2) · version"] == DIGEST_BIG
+    assert "Q4_K_M" in info["Model (stage 2) · details"]
+    assert "8.2B" in info["Model (stage 2) · details"]
+    assert info["Prefilter (stage 1)"] == "Small"
+    assert info["Prefilter (stage 1) · identifier"] == "qwen3:1.7b"
+    assert info["Prefilter (stage 1) · version"] == DIGEST_SMALL
 
 
 async def test_export_xlsx_without_recorded_version_says_so(client, session, lead_project):
@@ -669,14 +669,14 @@ async def test_export_xlsx_without_recorded_version_says_so(client, session, lea
     resp = await client.get(f"/api/v1/projects/{lead_project.id}/export.xlsx")
     assert resp.status_code == 200
     wb = load_workbook(io.BytesIO(resp.content))
-    head, first = list(wb["Résultats"].values)[:2]
-    assert first[head.index("Modèle")] == "coder"
-    assert first[head.index("Identifiant du modèle")] is None
-    assert first[head.index("Version du modèle")] is None
+    head, first = list(wb["Results"].values)[:2]
+    assert first[head.index("Model")] == "coder"
+    assert first[head.index("Model identifier")] is None
+    assert first[head.index("Model version")] is None
     info = _projet_rows(wb)
-    assert info["Modèle (étage 2)"] == "coder"
-    assert info["Modèle (étage 2) · version"] == "non enregistrée"
-    assert "Pré-filtre (étage 1) · version" not in info  # pas de pré-filtre
+    assert info["Model (stage 2)"] == "coder"
+    assert info["Model (stage 2) · version"] == "not recorded"
+    assert "Prefilter (stage 1) · version" not in info  # no prefilter
 
 
 async def test_export_ris_bib_notes_mention_model_and_version(client, session, lead_project):
@@ -702,7 +702,7 @@ async def test_export_ris_bib_notes_mention_model_and_version(client, session, l
     n1 = [line for line in ris.splitlines() if line.startswith("N1  - ")]
     assert len(n1) == 2
     assert any("Big (qwen3:8b)" in n and DIGEST_BIG in n for n in n1)
-    assert any("version non enregistrée" in n for n in n1)
+    assert any("version not recorded" in n for n in n1)
     bib = (await client.get(f"{base}/export.bib")).text
     assert DIGEST_BIG in bib and "qwen3:8b" in bib
 
@@ -737,10 +737,10 @@ async def test_export_neutralizes_formula_in_model_version_columns(client, sessi
     await session.commit()
     resp = await client.get(f"/api/v1/projects/{lead_project.id}/export.xlsx")
     wb = load_workbook(io.BytesIO(resp.content))
-    head, first = list(wb["Résultats"].values)[:2]
-    assert first[head.index("Version du modèle")] == "'" + evil
-    assert first[head.index("Identifiant du modèle")].startswith("'=")
-    assert _projet_rows(wb)["Modèle (étage 2) · version"] == "'" + evil
+    head, first = list(wb["Results"].values)[:2]
+    assert first[head.index("Model version")] == "'" + evil
+    assert first[head.index("Model identifier")].startswith("'=")
+    assert _projet_rows(wb)["Model (stage 2) · version"] == "'" + evil
 
 
 async def test_export_ris_bib_model_version_cannot_inject_fields(client, session, lead_project):

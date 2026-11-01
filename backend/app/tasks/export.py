@@ -87,7 +87,7 @@ async def _notify(session: AsyncSession, job: ExportJob, project: Project, ok: b
             ),
         )
     except Exception:
-        logger.exception("export: notification e-mail échouée (job %s)", job.id)
+        logger.exception("export: e-mail notification failed (job %s)", job.id)
 
 
 async def _run_export(
@@ -107,7 +107,7 @@ async def _run_export(
             if job is None:
                 raise LookupError(f"export job not found: {export_job_id}")
             if job.status in ("COMPLETED", "FAILED"):
-                return {}  # tâche redélivrée : déjà close
+                return {}  # task redelivered: already closed
             project = await session.get(Project, job.project_id)
             scope = await get_search(session, project, job.search_id)
             project = ScopedProject(project, scope)

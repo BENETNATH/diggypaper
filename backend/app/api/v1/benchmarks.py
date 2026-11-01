@@ -42,7 +42,7 @@ DbDep = Annotated[AsyncSession, Depends(get_db)]
 UserDep = Annotated[User, Depends(get_current_user)]
 
 BENCHMARK_RATE_LIMIT = 5
-BENCHMARK_MAX_CALLS = 3000  # articles × variantes × modèles : au-delà, réduire le lot
+BENCHMARK_MAX_CALLS = 3000  # articles × variants × models: beyond that, reduce the batch
 
 
 class Variant(BaseModel):
@@ -55,12 +55,12 @@ class Variant(BaseModel):
 
 
 class BenchmarkCreate(BaseModel):
-    prompt_template_id: uuid.UUID | None = None  # variante unique (défaut : prompt généré)
+    prompt_template_id: uuid.UUID | None = None  # single variant (default: generated prompt)
     variants: list[Variant] | None = Field(default=None, max_length=10)
     models: list[str] = Field(min_length=1)
-    search_id: uuid.UUID | None = None  # recherche dont le lot sert de banc d'essai
-    use_gold: bool = False  # noter les variantes contre le gold (articles du lot au gold)
-    gold_examples: int = Field(default=0, ge=0, le=20)  # exemples du gold ajoutés au prompt
+    search_id: uuid.UUID | None = None  # search whose batch is the test bench
+    use_gold: bool = False  # score the variants against the gold (batch articles in the gold)
+    gold_examples: int = Field(default=0, ge=0, le=20)  # gold examples added to the prompt
 
 
 async def _require_lead(db: AsyncSession, project_id: uuid.UUID, user: User) -> None:
@@ -111,7 +111,8 @@ async def trigger_benchmark(
     if len({v.name for v in variants}) != len(variants):
         raise HTTPException(status_code=422, detail="variant names must be unique")
     prompt_id = None
-    if not variants:  # une seule formulation : le prompt choisi, sinon celui généré de la question
+    # a single formulation: the chosen prompt, otherwise the one generated from the question
+    if not variants:
         if payload.prompt_template_id is None:
             prompt = await ensure_prompt(db, project, scope)
         else:

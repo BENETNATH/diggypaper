@@ -49,8 +49,9 @@ class GoldCreate(BaseModel):
 class GoldFromReviews(BaseModel):
     """Adds the human re-reads to the gold (last re-read of each article)."""
 
-    article_ids: list[uuid.UUID] | None = None  # None : tous les articles relus de la recherche
-    refresh: bool = False  # remplace la copie des articles déjà au gold par la relecture actuelle
+    article_ids: list[uuid.UUID] | None = None  # None: all the articles reviewed in the search
+    # replaces the copy of the articles already in the gold with the current review
+    refresh: bool = False
 
 
 async def _require_lead(db: AsyncSession, project_id: uuid.UUID, user: User) -> None:
@@ -121,7 +122,7 @@ def _payload(
         if ann
         else None,
         "added_by": names.get(g.added_by),
-        "stale": stale,  # la relecture a changé depuis la copie : « mettre à jour »
+        "stale": stale,  # the review changed since the copy: "update"
     }
 
 
@@ -213,9 +214,8 @@ async def gold_from_reviews(
     scope = await get_search(db, project, search)
     fields = project_fields(scope)
     if payload.article_ids:
-        # Seulement les articles de CE projet : ``latest_reviews`` ne joint pas Article, et la
-        # recherche initiale retient aussi les relectures legacy (``search_id`` NULL) de tout
-        # projet.
+        # Only the articles of THIS project: ``latest_reviews`` does not join Article, and the
+        # initial search also keeps the legacy reviews (``search_id`` NULL) of any project.
         wanted = set(payload.article_ids)
         own = set(
             (

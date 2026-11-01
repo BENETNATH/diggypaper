@@ -31,7 +31,7 @@ async def test_register_rate_limit_6th_request_429(client, admin_user, mock_mail
         resp = await client.post(
             "/api/v1/auth/register", json={"token": token, "password": "new-pass-123"}
         )
-        assert resp.status_code == 409, f"register {i} devrait être 409"
+        assert resp.status_code == 409, f"register {i} should be 409"
     # 6e → 429 (rate limit)
     resp = await client.post(
         "/api/v1/auth/register", json={"token": token, "password": "new-pass-123"}

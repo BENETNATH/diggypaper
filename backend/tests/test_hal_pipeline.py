@@ -100,6 +100,6 @@ async def test_hal_doi_link_completes_existing_row(engine):
     arts = await _articles(engine, project.id)
     by_nid = {a.native_id: a for a in arts}
     a = by_nid["10.1007/s10549-008-0235-7"]
-    assert (a.source, a.native_id) == ("crossref", "10.1007/s10549-008-0235-7")  # identité intacte
+    assert (a.source, a.native_id) == ("crossref", "10.1007/s10549-008-0235-7")  # identity intact
     assert a.sections == SECTIONS and a.fulltext_source == "hal"
-    assert by_nid["hal-04167683"].fulltext_note == "hal_no_file"  # l'autre inséré
+    assert by_nid["hal-04167683"].fulltext_note == "hal_no_file"  # the other inserted

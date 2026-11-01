@@ -55,7 +55,7 @@ def check_fields(fields: list[dict]) -> list[dict]:
                 raise ValueError(f"field {key}: at least 2 options required")
             item["options"] = list(dict.fromkeys(opts))
         if f.get("primary") and f.get("type") in ("boolean", "choice"):
-            item["primary"] = True  # critère de classement du benchmark (un seul)
+            item["primary"] = True  # benchmark ranking criterion (single)
             metric = f.get("metric")
             item["metric"] = (
                 metric if metric in ("accuracy", "recall", "precision", "f1") else "recall"

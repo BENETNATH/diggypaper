@@ -29,7 +29,7 @@ EPMC = "https://www.ebi.ac.uk/europepmc/webservices/rest"
 OPENALEX = "https://api.openalex.org/works"
 UNPAYWALL = "https://api.unpaywall.org/v2"
 
-MIN_CHARS = 1500  # en dessous : page d'accueil / paywall, pas un article
+MIN_CHARS = 1500  # below: landing page / paywall, not an article
 MAX_PDF_BYTES = 25 * 1024 * 1024
 MAX_PDF_PAGES = 80
 MAX_PDF_TRIES = 4
@@ -79,7 +79,7 @@ def pdf_to_sections(data: bytes) -> list[dict]:
         flush()
         buf = []
         if m.group(1).lower().startswith(_STOP):
-            return sections  # références / remerciements : fin du corps
+            return sections  # references / acknowledgments: end of the body
         title = line
     flush()
     return sections
@@ -101,7 +101,7 @@ async def _epmc_xml(pmcid: str, http: httpx.AsyncClient) -> list[dict]:
         if resp.status_code != 200:
             return []
         return _extract_sections(resp.text)
-    except Exception:  # noqa: BLE001 - réseau ou XML mal formé : source suivante
+    except Exception:  # noqa: BLE001 - network or malformed XML: next source
         return []
 
 
@@ -198,7 +198,7 @@ _STOPWORDS = {
     "dans", "pour", "sur", "par", "avec", "der", "die", "das", "und", "von", "mit", "los",
     "las", "del", "con", "por", "una",
 }  # fmt: skip
-HEAD_CHARS = 6000  # ≈ les deux premières pages : titre, auteurs, résumé
+HEAD_CHARS = 6000  # about the first two pages: title, authors, abstract
 TITLE_COVERAGE = 0.8
 
 
@@ -226,7 +226,7 @@ def pdf_matches_article(title: str | None, doi: str | None, sections: list[dict]
     head = " ".join(s["text"] for s in sections)[:HEAD_CHARS]
     wanted = {w for w in _words(title or "") if len(w) >= 3 and w not in _STOPWORDS}
     if len(wanted) < 3:
-        return None  # titre absent ou trop court pour trancher
+        return None  # title missing or too short to decide
     if len(wanted & set(_words(head))) / len(wanted) >= TITLE_COVERAGE:
         return True
     return doi_in(head, doi)
@@ -242,7 +242,7 @@ def match_scores(sections: list[dict], candidates: list[tuple]) -> list[tuple[fl
     scored = []
     for art_id, title, doi in candidates:
         if doi_in(head, doi):
-            scored.append((2.0, art_id))  # le DOI prime sur un simple titre
+            scored.append((2.0, art_id))  # the DOI beats a simple title
             continue
         wanted = {w for w in _words(title or "") if len(w) >= 3 and w not in _STOPWORDS}
         if len(wanted) >= 3:
@@ -299,14 +299,14 @@ async def find_open_fulltext(
             continue
         try:
             sections = pdf_to_sections(data)
-        except Exception:  # noqa: BLE001 - PDF illisible/chiffré : candidat suivant
+        except Exception:  # noqa: BLE001 - unreadable/encrypted PDF: next candidate
             logger.info("pdf unreadable for pmid %s", pmid)
             continue
         if not long_enough(sections):
             continue
         if pdf_matches_article(title, doi, sections) is False:
             logger.info("pdf from %s is not pmid %s: skipped", urlsplit(url).hostname, pmid)
-            continue  # PDF d'un autre article (mauvaise ressource, page de couverture…)
+            continue  # PDF from another article (wrong resource, cover page…)
         return sections, (f"pdf:{version}" if version else "pdf"), url, data
     return [], None, None, None
 

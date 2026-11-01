@@ -11,7 +11,7 @@ import math
 import re
 from collections import Counter
 
-RELEVANT_AT = 0.5  # pertinence >= 0.5 : article « à inclure »
+RELEVANT_AT = 0.5  # relevance >= 0.5: article "to include"
 METRICS = ("accuracy", "recall", "precision", "f1")
 
 
@@ -96,7 +96,7 @@ def score(fields: list[dict], preds: dict, gold: dict, exclude: set | None = Non
     invalid = 0
     for i in ids:
         p, g = relevant(preds[i]), relevant(gold[i])
-        if not preds[i]:  # sortie invalide : une erreur, jamais un « non pertinent » avantageux
+        if not preds[i]:  # invalid output: an error, never an advantageous "not relevant"
             p, invalid = not g, invalid + 1
         rel[0] += p and g
         rel[1] += p and not g
@@ -118,7 +118,7 @@ def score(fields: list[dict], preds: dict, gold: dict, exclude: set | None = Non
         elif t == "choice":
             ok = sum(_norm(preds[i][k]) == _norm(gold[i][k]) for i in known)
             items[k] = {"type": t, "n": len(known), "accuracy": ok / len(known) if known else 0.0}
-        else:  # texte libre : recouvrement de mots (F1), pas d'égalité stricte
+        else:  # free text: word overlap (F1), not strict equality
             f1 = [_token_f1(preds[i][k], gold[i][k]) for i in known]
             items[k] = {"type": t, "n": len(known), "f1": sum(f1) / len(f1) if f1 else 0.0}
     accs = [v["accuracy"] for v in items.values() if "accuracy" in v and v["n"]]

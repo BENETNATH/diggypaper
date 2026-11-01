@@ -78,7 +78,7 @@ async def test_user_defines_and_shares_own_external_model(client, session, alice
     assert await _names(client) == ["My-GPT"]
 
     await _login(client, "bob@lab.fr", "bob-pass-12345")
-    assert await _names(client) == []  # pas à lui
+    assert await _names(client) == []  # none of theirs
     assert (await client.get(f"{API}/models/{mid}/shares")).status_code == 404
     assert (await client.delete(f"{API}/models/{mid}")).status_code == 404 or 403
 
@@ -128,7 +128,7 @@ async def test_model_shared_with_project_follows_membership(
     await session.commit()
     await _login(client, "bob@lab.fr", "bob-pass-12345")
     assert await _names(client, project_id=str(project.id)) == ["My-GPT"]
-    assert await _names(client, project_id=str(other.id)) == []  # partagé à un autre projet
+    assert await _names(client, project_id=str(other.id)) == []  # shared to another project
     # removed from the project: no more access
     await session.execute(
         ProjectMember.__table__.delete().where(
@@ -203,7 +203,7 @@ async def test_disabled_account_loses_access_and_cannot_login(client, session, a
     await _login(client, "admin@lab.fr", "admin-pass-123")
     await client.patch(f"{API}/admin/users/{alice.id}", json={"is_active": True})
     await _login(client, "alice@lab.fr", "alice-pass-123")
-    (await session.get(User, alice.id)).is_active = False  # désactivé pendant la session
+    (await session.get(User, alice.id)).is_active = False  # disabled during the session
     await session.commit()
     assert (await client.get(f"{API}/auth/me")).status_code == 401
 
@@ -273,7 +273,7 @@ async def test_delete_user_with_their_projects_and_leftovers(
         await session.execute(select(func.count()).select_from(ModelRegistry))
     ).scalar_one() == 0
     ann = (await session.execute(select(HumanAnnotation))).scalars().one()
-    assert ann.user_id is None and ann.annotator_hash  # annotation conservée, anonymisée
+    assert ann.user_id is None and ann.annotator_hash  # annotation kept, anonymized
 
 
 async def test_delete_user_keeps_projects_and_reports_them(client, session, admin_user, alice):
@@ -297,7 +297,7 @@ async def test_pending_invitations_listed_resent_and_revoked(client, session, ad
         json={"email": "new@lab.fr", "role": "ANNOTATOR", "language": "de"},
     )
     assert r.status_code == 201
-    link = r.json()["link"]  # pas de SMTP en test : le lien est renvoyé
+    link = r.json()["link"]  # no SMTP in tests: the link is returned
     token = link.split("token=")[1]
     assert decode_invite_token(token)["iid"]
 
@@ -315,14 +315,14 @@ async def test_pending_invitations_listed_resent_and_revoked(client, session, ad
     assert len(items) == 1 and items[0]["language"] == "es"
 
     r = await client.post(f"{API}/admin/invitations/{items[0]['id']}/resend")
-    assert r.status_code == 200 and r.json()["link"]  # sans SMTP : lien à transmettre
+    assert r.status_code == 200 and r.json()["link"]  # no SMTP: link to forward
     assert (await client.delete(f"{API}/admin/invitations/{items[0]['id']}")).status_code == 204
     assert (await client.get(f"{API}/admin/invitations")).json()["items"] == []
     client.cookies.clear()
     r = await client.post(
         f"{API}/auth/register", json={"token": token, "password": "new-pass-1234"}
     )
-    assert r.status_code == 401  # lien révoqué
+    assert r.status_code == 401  # link revoked
 
 
 async def test_register_marks_invitation_accepted(
@@ -372,7 +372,7 @@ async def test_guest_removed_from_last_project_is_deleted_creator_is_not(
     client, session, admin_user, alice, bob, guest
 ):
     p = await _project(session, alice)
-    for u in (bob, guest):  # bob = créateur, guest = invité
+    for u in (bob, guest):  # bob = creator, guest = invitee
         session.add(
             ProjectMember(
                 project_id=p.id, user_id=u.id, role_in_project=ProjectMemberRole.ANNOTATOR
@@ -384,7 +384,7 @@ async def test_guest_removed_from_last_project_is_deleted_creator_is_not(
     assert (await client.delete(f"{API}/projects/{pid}/members/{gid}")).status_code == 204
     assert await _exists(session, "guest@lab.fr") is None
     assert (await client.delete(f"{API}/projects/{pid}/members/{bid}")).status_code == 204
-    assert await _exists(session, "bob@lab.fr") is not None  # créateur : conservé
+    assert await _exists(session, "bob@lab.fr") is not None  # creator: kept
     # the creator deleting their project keeps their account (regression B1)
     assert (await client.delete(f"{API}/projects/{pid}")).status_code == 204
     assert await _exists(session, "alice@lab.fr") is not None
@@ -414,7 +414,7 @@ async def test_admin_purge_orphans_only_guests(client, session, admin_user, alic
     await _login(client, "admin@lab.fr", "admin-pass-123")
     assert (await client.post(f"{API}/admin/users/purge-orphans")).json() == {"deleted": 1}
     assert await _exists(session, "guest@lab.fr") is None
-    assert await _exists(session, "bob@lab.fr") is not None  # créateur sans projet : conservé
+    assert await _exists(session, "bob@lab.fr") is not None  # creator without a project: kept
 
 
 async def test_admin_invites_creator_and_toggles_flag(client, session, admin_user, guest):
@@ -493,13 +493,13 @@ async def test_jwt_revoked_on_password_change_and_logout(client, session, alice)
     )
     assert r.status_code == 204
     client.cookies.set("access_token", old)
-    assert (await client.get(f"{API}/auth/me")).status_code == 401  # ancien JWT révoqué
-    await _login(client, "ALICE@lab.fr", "alice-new-pass-1")  # login insensible à la casse
+    assert (await client.get(f"{API}/auth/me")).status_code == 401  # old JWT revoked
+    await _login(client, "ALICE@lab.fr", "alice-new-pass-1")  # case-insensitive login
     assert (await client.get(f"{API}/auth/me")).status_code == 200
     fresh = client.cookies.get("access_token")
     assert (await client.post(f"{API}/auth/logout")).status_code == 204
     client.cookies.set("access_token", fresh)
-    assert (await client.get(f"{API}/auth/me")).status_code == 401  # logout révoque aussi
+    assert (await client.get(f"{API}/auth/me")).status_code == 401  # logout revokes too
 
 
 async def test_import_and_pdf_upload_need_lead(client, session, alice, bob):

@@ -72,7 +72,7 @@ def create_invite_token(
         "iat": now,
         "exp": now + INVITE_TOKEN_TTL,
     }
-    if invitation_id:  # lien vers la ligne `invitations` : supprimée = invitation révoquée
+    if invitation_id:  # link to the `invitations` row: deleted = invitation revoked
         payload["iid"] = invitation_id
     if project_id:
         payload.update(project_id=project_id, role=role or "ANNOTATOR")

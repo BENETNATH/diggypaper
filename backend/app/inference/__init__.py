@@ -46,13 +46,13 @@ class OpenAICompatibleService:
         extra_body: dict | None = None,
         native_ollama: bool = False,
     ) -> None:
-        self._public_only = public_only  # modèle d'un utilisateur : jamais d'adresse interne
+        self._public_only = public_only  # user's model: never an internal address
         self._base_url = base_url.rstrip("/")
         self.base_url = self._base_url
         self._api_key = api_key
         self._timeout = timeout
-        self._http = http  # injectable (mock en tests) ; sinon créé à la demande
-        self._extra_body = extra_body or {}  # backends locaux ; les clés fixes priment
+        self._http = http  # injectable (mock in tests); otherwise created on demand
+        self._extra_body = extra_body or {}  # local backends; the fixed keys take precedence
         # Ollama local : endpoint natif /api/chat (l'endpoint /v1 ignore options, ex. num_ctx).
         self._native_ollama = native_ollama
         # Model returned by the last response read (traceability of the served version).
@@ -73,7 +73,7 @@ class OpenAICompatibleService:
             # format "json" (not response_format, unknown to the native one).
             url = f"{self._base_url.removesuffix('/v1')}/api/chat"
             opts = self._extra_body.get("options")
-            opts = opts if isinstance(opts, dict) else {}  # réglage libre : pas de TypeError
+            opts = opts if isinstance(opts, dict) else {}  # free-form setting: no TypeError
             body = {
                 "model": model,
                 "messages": [
@@ -96,7 +96,7 @@ class OpenAICompatibleService:
                 "temperature": 0.0,
                 "response_format": {"type": "json_object"},
             }
-        body = {**self._extra_body, **body}  # corps fixe : jamais écrasé par le réglage
+        body = {**self._extra_body, **body}  # fixed body: never overridden by the setting
         if self._public_only:
             # Re-verified at EVERY call (not only at registration): a later DNS
             # rewrite no longer leads to the internal network.
@@ -223,7 +223,7 @@ async def model_snapshot(model, service, name: str | None = None) -> dict | None
             }
             snap.update({k: v for k, v in extra.items() if v is not None})
             break
-    except Exception as exc:  # noqa: BLE001 - la traçabilité ne doit jamais faire échouer un job
+    except Exception as exc:  # noqa: BLE001 - traceability must never fail a job
         logger.warning("model_snapshot %s : %s", ident, type(exc).__name__)
     return snap
 
@@ -316,8 +316,8 @@ async def warmup(
         await infer_with(
             model,
             service,
-            "Tu es un service d'inférence.",
-            'Réponds uniquement {"ok": true}',
+            "You are an inference service.",
+            'Reply only with {"ok": true}',
             name=model_identifier,
         )
     except InferenceError as exc:
@@ -354,7 +354,7 @@ async def infer_with(
         return out
     if model is None or model.backend_type == "OLLAMA":
         svc = default
-    else:  # LLAMA_CPP, TRANSFORMERS, … : pas d'/api/chat
+    else:  # LLAMA_CPP, TRANSFORMERS, …: no /api/chat
         svc = copy.copy(default)
         svc._native_ollama = False
     ident = model.model_identifier if model is not None else (name or "")

@@ -133,7 +133,7 @@ async def update_settings(
             raise HTTPException(status_code=422, detail=f"unknown setting key: {key}")
     for key, value in payload.values.items():
         if value in (MASK, ""):
-            continue  # MASK → inchangé, "" → delete : pas de validation
+            continue  # MASK: unchanged, "": delete — no validation
         if key == "smtp_port":
             try:
                 port = int(value)
@@ -154,7 +154,7 @@ async def update_settings(
     try:
         for key, value in payload.values.items():
             if value == MASK:
-                continue  # inchangé
+                continue  # unchanged
             if value == "":
                 await delete_setting(
                     db, key, scope, payload.project_id, payload.user_id, commit=False
@@ -188,7 +188,7 @@ async def test_smtp(payload: SmtpTestRequest, db: DbDep, admin: AdminDep) -> dic
             "Diggypaper — test SMTP",
             "Cet email confirme que la configuration SMTP fonctionne.",
         )
-    except Exception as exc:  # noqa: BLE001 — tout échec (config ou envoi) → 502
+    except Exception as exc:  # noqa: BLE001 — any failure (config or sending) → 502
         logger.exception("SMTP test failed")
         return JSONResponse(
             status_code=502,

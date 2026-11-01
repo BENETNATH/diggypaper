@@ -16,7 +16,7 @@ const res = (model: string, over: Partial<BenchmarkResult> & { primary?: number 
 });
 
 describe("estimateCalls", () => {
-  it("articles × modèles × variantes", () => {
+  it("articles × models × variants", () => {
     expect(estimateCalls(30, 2, 3)).toBe(180);
   });
   it("sans variante : un seul prompt", () => {
@@ -26,10 +26,10 @@ describe("estimateCalls", () => {
 });
 
 describe("rankResults", () => {
-  it("classe sur le critère principal décroissant", () => {
+  it("ranks on the primary criterion, descending", () => {
     expect(rankResults([res("a", { primary: 0.5 }), res("b", { primary: 0.9 })]).map((r) => r.model_name)).toEqual(["b", "a"]);
   });
-  it("à défaut de critère : accord décroissant, puis temps croissant", () => {
+  it("without a criterion: descending agreement, then ascending time", () => {
     const out = rankResults([
       res("lent", { agreement: 0.8, execution_time_seconds: 90 }),
       res("rapide", { agreement: 0.8, execution_time_seconds: 10 }),
@@ -38,7 +38,7 @@ describe("rankResults", () => {
     ]);
     expect(out.map((r) => r.model_name)).toEqual(["accord", "rapide", "lent", "rien"]);
   });
-  it("les résultats notés passent avant ceux sans critère, sans muter l'entrée", () => {
+  it("scored results come before the unscored ones, without mutating the input", () => {
     const input = [res("x", { agreement: 1 }), res("y", { primary: 0 })];
     expect(rankResults(input).map((r) => r.model_name)).toEqual(["y", "x"]);
     expect(input[0].model_name).toBe("x");
@@ -50,7 +50,7 @@ describe("rankResults", () => {
 });
 
 describe("variantes", () => {
-  it("nextVariantName évite les doublons", () => {
+  it("nextVariantName avoids duplicates", () => {
     expect(nextVariantName("Variante", ["Variante 2"])).toBe("Variante 3");
     expect(nextVariantName("Variante", [])).toBe("Variante 1");
   });
@@ -67,7 +67,7 @@ describe("variantes", () => {
       { name: "b", system_prompt: "t" },
     ]);
   });
-  it("savedPromptVersion tient en 50 caractères", () => {
+  it("savedPromptVersion fits in 50 characters", () => {
     expect(savedPromptVersion("12345678-aaaa", "x".repeat(80))).toHaveLength(50);
   });
 });
@@ -82,7 +82,7 @@ describe("affichage", () => {
     expect(relevanceOf({ confidence_score: 0.876 })).toBe("88 %");
     expect(relevanceOf(null)).toBe("—");
   });
-  it("primaryParts : libellé de l'item, null pour la pertinence", () => {
+  it("primaryParts: the item label, null for relevance", () => {
     const f = [{ key: "k", label: "Randomisé", type: "boolean" as const }];
     expect(primaryParts({ item: "k", metric: "f1", value: 1 }, f)).toEqual({ item: "Randomisé", metric: "f1" });
     expect(primaryParts({ item: "relevance", metric: "recall", value: 1 }, f)).toEqual({ item: null, metric: "recall" });
@@ -91,7 +91,7 @@ describe("affichage", () => {
 });
 
 describe("erreurs serveur", () => {
-  it("reconnaît les messages connus", () => {
+  it("recognizes the known messages", () => {
     expect(benchmarkErrorKey("no gold articles in the lot")).toBe("err_noGold");
     expect(benchmarkErrorKey("benchmark already in progress")).toBe("err_inProgress");
     expect(benchmarkErrorKey("autre chose")).toBeNull();

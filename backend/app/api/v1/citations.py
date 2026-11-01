@@ -38,9 +38,9 @@ MAX_SEEDS = 2000
 
 
 class CitationRequest(BaseModel):
-    selection: Selection = Selection()  # articles de départ (déf. : tout le corpus)
-    direction: Literal["backward", "forward", "both"] = "both"  # références / citants / les deux
-    min_overlap: int = Field(default=1, ge=1, le=50)  # nombre minimal de graines liées
+    selection: Selection = Selection()  # starting articles (default: the whole corpus)
+    direction: Literal["backward", "forward", "both"] = "both"  # references / citers / both
+    min_overlap: int = Field(default=1, ge=1, le=50)  # minimum number of linked seeds
     max_candidates: int = Field(default=300, ge=1, le=10000)
     dry_run: bool = False  # estimation seulement
 

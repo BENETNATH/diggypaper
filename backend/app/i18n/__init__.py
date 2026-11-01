@@ -8,7 +8,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 SUPPORTED_LANGS: tuple[str, ...] = ("fr", "en", "de", "es")
-FALLBACK_LANG = "en"  # catalogue : langue de repli pour une clé manquante
+FALLBACK_LANG = "en"  # catalog: fallback language for a missing key
 
 _MESSAGES: dict[str, dict[str, str]] = json.loads(
     (Path(__file__).parent / "messages.json").read_text(encoding="utf-8")
@@ -44,7 +44,7 @@ def _parse_qvalue(part: str) -> tuple[str, float] | None:
             try:
                 q = float(raw)
             except ValueError:
-                return None  # q invalide → entrée ignorée
+                return None  # invalid q → entry ignored
             break
     return code, q
 
@@ -62,7 +62,7 @@ def resolve_lang(accept_language: str | None) -> str:
             if parsed is None:
                 continue
             code, q = parsed
-            if q <= 0:  # q=0 → langue explicitement non souhaitée
+            if q <= 0:  # q=0 → language explicitly not wanted
                 continue
             if code not in SUPPORTED_LANGS:
                 continue

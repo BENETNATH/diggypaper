@@ -64,9 +64,7 @@ async def test_search_volume_params_and_count(monkeypatch):
     assert seen["resultType"] == "lite"
     assert seen["pageSize"] == "1"
     assert "FIRST_PDATE" not in seen["query"]
-    assert (
-        "sort" not in seen
-    )  # le count ne trie pas (503 EBI de 2026-10-31 sur toute requête triée)
+    assert "sort" not in seen  # the count does not sort (EBI 503 of 2026-10-31 on any sorted query)
 
 
 async def test_search_volume_date_bounds(monkeypatch):
@@ -101,7 +99,7 @@ async def test_iter_ids_cursor_pagination():
         p = dict(request.url.params)
         calls.append(p)
         if "cursorMark" not in p:
-            return _search_resp(3, [])  # count de l'itération (fallback, pageSize=1)
+            return _search_resp(3, [])  # count from the iteration (fallback, pageSize=1)
         if p["cursorMark"] == "*":
             return _search_resp(3, [{"id": "W2"}, {"id": "W1"}, {"id": "W3"}], cursor="C2")
         assert p["cursorMark"] == "C2"
@@ -110,7 +108,7 @@ async def test_iter_ids_cursor_pagination():
     async with _client(handler) as http:
         ad = EuropePMCAdapter(http, None)
         ids = [i async for i in ad.iter_ids("q", DateBounds(), limit=10)]
-    assert ids == ["W2", "W1", "W3", "W4"]  # ordre de première occurrence, pas de doublon
+    assert ids == ["W2", "W1", "W3", "W4"]  # first-occurrence order, no duplicate
     assert calls[1]["cursorMark"] == "*"
     assert calls[1]["sort"] == "FIRST_PDATE desc"
     assert len(calls) == 3  # count + page 1 + page 2
@@ -159,12 +157,12 @@ async def test_iter_ids_limit_and_cached_count():
         await ad.search_volume("q", DateBounds())  # remplit le cache
         ids = [i async for i in ad.iter_ids("q", DateBounds(), limit=5)]
     assert ids == ["W0", "W1", "W2", "W3", "W4"]
-    assert n_counts == 1  # le count de search_volume est réutilisé (pas de 2ᵉ count)
+    assert n_counts == 1  # the search_volume count is reused (no 2nd count)
 
     async with _client(handler) as http:
         ad2 = EuropePMCAdapter(http, None)
         ids2 = [i async for i in ad2.iter_ids("q", DateBounds(), limit=5)]
-    assert n_counts == 2  # itération sans count préalable → fallback
+    assert n_counts == 2  # iteration without a prior count → fallback
     assert ids2 == ["W0", "W1", "W2", "W3", "W4"]
 
 
@@ -303,7 +301,7 @@ async def test_throttle_and_retry_503(monkeypatch):
     async with _client(handler) as http:
         ad = EuropePMCAdapter(http, None)
         assert await ad.search_volume("q", DateBounds()) == 1
-    assert states["n"] == 2  # 503 → retry → succès
+    assert states["n"] == 2  # 503 → retry → success
     assert sleeps[0] == _INTERVAL  # throttle avant l'appel
     assert len(sleeps) == 2 and all(s >= _INTERVAL for s in sleeps)  # throttle puis backoff
 

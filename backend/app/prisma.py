@@ -200,14 +200,14 @@ def prisma_counts(
                 identified += (
                     int(r.get("imported", 0))
                     + int(r.get("failed", 0))
-                    + int(r.get("duplicates_doi", 0))  # doublons DOI écartés à l'import
+                    + int(r.get("duplicates_doi", 0))  # duplicate DOIs dropped at import
                 )
                 failed += int(r.get("failed", 0))
         identified = max(identified, total + failed)
-    dups = identified - failed - total  # références déjà présentes (ré-imports)
+    dups = identified - failed - total  # references already present (re-imports)
 
     c = {"included": 0, "ai_excluded": 0, "human_excluded": 0, "pending": 0, "untriaged": 0}
-    retrieved = 0  # parmi les références non exclues : celles avec texte intégral
+    retrieved = 0  # among the non-excluded references: those with full text
     not_excluded = 0
     for a in articles:
         human = (annos.get(a.id) or [None])[-1]
@@ -342,7 +342,7 @@ def render_svg(
         f"{L['errors']} ({n('failed')})",
         f"{L['notscreened']} ({n('not_screened')})",
     ]
-    if origin:  # recherche dérivée : les critères de sélection remplacent doublons et erreurs
+    if origin:  # derived search: selection criteria replace duplicates and errors
         crit = [_clip(x) for x in describe_criteria(origin["criteria"], origin["labels"], lang)]
         crit = crit[:8] + ["…"] * (len(crit) > 8)
         removed = [
@@ -375,7 +375,7 @@ def render_svg(
 
     if origin:
         first = L["from_search"].format(name=origin["name"])
-    elif sources is None and lists is None:  # appelant historique : libellé statique
+    elif sources is None and lists is None:  # historical caller: static label
         ident_parts = [source_name("pubmed"), L["identified_lists"]]
     else:
         ident_parts = list(sources or [])
@@ -384,7 +384,7 @@ def render_svg(
     if not origin:
         first = f"{L['identified_base']} ({', '.join(ident_parts)})"
     first_lines = [n("identified")]
-    if c.get("via_citations"):  # PRISMA 2020 : identification par d'autres méthodes
+    if c.get("via_citations"):  # PRISMA 2020: identification via other methods
         first_lines.append(f"{L['via_citations']} ({n('via_citations')})")
     parts.append(_box(left, rows[0], _W, _H, first, first_lines))
     parts.append(_box(right, rows[0], _W, top_h, L["removed"], removed, "#f8fafc"))
@@ -409,9 +409,9 @@ def render_svg(
     parts.append(_box(right, rows[3], _W, _H, L["pending"], [n("pending")], "#f8fafc"))
     parts.append(_box(left, rows[4], _W, _H, L["included"], [n("included")], "#dcfce7"))
     cx = left + _W / 2
-    for i in range(4):  # flèches verticales
+    for i in range(4):  # vertical arrows
         parts.append(_arrow(cx, rows[i] + _H, cx, rows[i + 1]))
-    for i in range(4):  # flèches vers les exclusions (sauf ligne 4 : alignée sur l'évaluation)
+    for i in range(4):  # arrows to the exclusions (except row 4: aligned with the evaluation)
         y = rows[i] + _H / 2
         parts.append(_arrow(left + _W, y, right, y))
     parts.append(
@@ -458,7 +458,7 @@ def svg_to_pdf(svg: str) -> bytes:
         elif tag == "line":
             x1, y1, x2, y2 = (float(a[k]) for k in ("x1", "y1", "x2", "y2"))
             ops.append(f"0.2 0.25 0.33 RG 1.4 w {x1:.2f} {y(y1):.2f} m {x2:.2f} {y(y2):.2f} l S")
-            if a.get("marker-end"):  # pointe pleine à l'extrémité
+            if a.get("marker-end"):  # solid arrowhead at the end
                 dx, dy = x2 - x1, y2 - y1
                 n = (dx * dx + dy * dy) ** 0.5 or 1
                 ux, uy = dx / n, dy / n
@@ -475,10 +475,10 @@ def svg_to_pdf(svg: str) -> bytes:
             font = "/F2" if a.get("font-weight") == "700" else "/F1"
             data = text.encode("cp1252", "replace")
             data = data.replace(b"\\", b"\\\\").replace(b"(", b"\\(").replace(b")", b"\\)")
-            wd = 0.5 * size * len(text)  # largeur approchée (Helvetica) pour centrer
+            wd = 0.5 * size * len(text)  # approximated width (Helvetica) for centering
             x0, y0 = float(a.get("x", 0)), float(a.get("y", 0))
             fill = rgb(a.get("fill", "#0f172a"))
-            if "rotate" in a.get("transform", ""):  # libellés de phase verticaux
+            if "rotate" in a.get("transform", ""):  # vertical phase labels
                 tx, ty = a["transform"].split("translate(")[1].split(")")[0].split()
                 m = f"0 1 -1 0 {float(tx):.2f} {y(float(ty)):.2f}"
                 ops.append(

@@ -38,7 +38,7 @@ class AssistRequest(BaseModel):
     model: str = Field(min_length=1)
     source: Literal["pubmed", "europepmc", "openalex", "hal"] = "pubmed"
     messages: list[Message] = Field(min_length=1, max_length=qa.MAX_MESSAGES)
-    seeds: str = Field(default="", max_length=20000)  # articles attendus : DOI / PMID, un par ligne
+    seeds: str = Field(default="", max_length=20000)  # expected articles: DOI / PMID, one per line
 
 
 async def _check_source(source: str, query: str, seeds: str, db: AsyncSession) -> dict:
@@ -76,7 +76,7 @@ async def assist(project_id: uuid.UUID, payload: AssistRequest, db: DbDep, user:
     prompt = qa.build_prompt([m.model_dump() for m in payload.messages])
     service = await make_inference_service(db)
     answer = None
-    for attempt in range(2):  # un modèle qui raisonne répond parfois sans JSON : une seconde chance
+    for attempt in range(2):  # a reasoning model sometimes answers without JSON: a second chance
         try:
             answer = await infer_with(models[0], service, qa.system_prompt(payload.source), prompt)
             break

@@ -171,8 +171,8 @@ async def _send(mailer, user: User, subject_key: str, body_key: str, **params) -
     lang = user.language_preference or "en"
     try:
         await mailer.send(user.email, t(lang, subject_key, **params), t(lang, body_key, **params))
-    except Exception:  # noqa: BLE001 - un e-mail perdu ne doit pas arrêter l'entretien
-        logger.exception("maintenance: e-mail non envoyé (%s)", subject_key)
+    except Exception:  # noqa: BLE001 - a lost e-mail must not stop the maintenance
+        logger.exception("maintenance: e-mail not sent (%s)", subject_key)
 
 
 async def retention_sweep(db: AsyncSession, mailer, now: datetime | None = None) -> dict:
@@ -191,7 +191,7 @@ async def retention_sweep(db: AsyncSession, mailer, now: datetime | None = None)
         idle = now - last
         warned = p.retention_warned_at
         warned = warned.replace(tzinfo=UTC) if warned and not warned.tzinfo else warned
-        if warned and last > warned:  # activité depuis l'avertissement : on repart de zéro
+        if warned and last > warned:  # activity since the warning: reset to zero
             p.retention_warned_at = warned = None
         if idle < timedelta(days=settings.project_retention_days):
             continue
@@ -262,7 +262,7 @@ async def disk_alert(db: AsyncSession, mailer, now: float | None = None) -> bool
         marker.touch()
     except OSError:
         logger.warning(
-            "maintenance: marqueur d'alerte disque non écrit (alerte répétée au prochain passage)"
+            "maintenance: disk alert marker not written (alert repeated on the next pass)"
         )
     return True
 

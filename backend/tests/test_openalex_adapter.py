@@ -31,7 +31,7 @@ WORK = {
     "abstract_inverted_index": {"p53": [0], "review": [1], "article": [2]},
     "authorships": [
         {"author": {"display_name": "Karen H. Vousden"}},
-        {"author": None},  # author manquant : sauté
+        {"author": None},  # missing author: skipped
     ],
     "primary_location": {"source": {"display_name": "Cell"}},
     "ids": {"openalex": W1, "pmid": "https://pubmed.ncbi.nlm.nih.gov/10767502"},
@@ -128,7 +128,7 @@ async def test_iter_ids_page_pagination():
         ids = [
             i async for i in ad.iter_ids("p53", DateBounds(date_from=date(2024, 1, 1)), limit=10)
         ]
-    assert ids == ["W2056724834", "W190488077"]  # première occurrence, sans URL
+    assert ids == ["W2056724834", "W190488077"]  # first occurrence, no URL
     assert calls[0]["search"] == "p53" and calls[0]["per_page"] == "10"  # min(200, limit)
     assert calls[0]["filter"] == "from_publication_date:2024-01-01"
     assert len(calls) == 2
@@ -194,8 +194,8 @@ async def test_fetch_metadata_one_get_per_id_and_parse():
     assert w2["doi"] == "10.1038/nature12374"
     assert w2["pmcid"] == "PMC3716088"
     assert w2["journal"] == "Nature"
-    assert w2["abstract"] is None  # absente dans le work → None (clé principale)
-    assert "pmid" not in w2 and "authors" not in w2  # clés secondaires absentes
+    assert w2["abstract"] is None  # absent in the work → None (primary key)
+    assert "pmid" not in w2 and "authors" not in w2  # secondary keys absent
     assert w2["fulltext_note"] == "metadata_only"
 
 
@@ -233,7 +233,7 @@ async def test_retry_on_429_and_error_sanitized(monkeypatch):
     async with _client(handler) as http:
         ad = OpenAlexAdapter(http, None)
         assert await ad.search_volume("q", DateBounds()) == 3
-    assert states["n"] == 2  # 429 → retry → succès
+    assert states["n"] == 2  # 429 → retry → success
     assert sleeps[0] == _INTERVAL  # throttle avant le 1er appel
     assert len(sleeps) == 2 and all(s >= _INTERVAL for s in sleeps)
 

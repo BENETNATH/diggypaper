@@ -1,7 +1,7 @@
 import { addQuote, cleanQuote, highlightSegments } from "@/lib/highlight";
 
 describe("highlightSegments", () => {
-  it("renvoie un seul segment non surligné si aucune citation", () => {
+  it("returns a single unhighlighted segment when there is no quote", () => {
     const segments = highlightSegments("Mice were randomized.", null);
     expect(segments).toEqual([{ text: "Mice were randomized.", highlighted: false }]);
   });
@@ -15,7 +15,7 @@ describe("highlightSegments", () => {
     ]);
   });
 
-  it("est sensible à la casse (extraits verbatim)", () => {
+  it("is case-sensitive (verbatim extracts)", () => {
     // "Randomized" does not match "randomized" (different case)
     const segments = highlightSegments("Mice were Randomized.", ["randomized"]);
     expect(segments).toEqual([{ text: "Mice were Randomized.", highlighted: false }]);
@@ -43,7 +43,7 @@ describe("highlightSegments", () => {
     ]);
   });
 
-  it("gère les occurrences multiples d'une même citation", () => {
+  it("handles multiple occurrences of the same quote", () => {
     const segments = highlightSegments("cat cat cat", ["cat"]);
     expect(segments.filter((s) => s.highlighted)).toHaveLength(3);
   });
@@ -66,13 +66,13 @@ describe("highlightSegments", () => {
 });
 
 
-describe("sélection → extrait de preuve", () => {
+describe("selection → evidence extract", () => {
   it("rogne et refuse un texte trop court", () => {
     expect(cleanQuote("  hello world \n")).toBe("hello world");
     expect(cleanQuote(" a ")).toBeNull();
     expect(cleanQuote("x".repeat(2000))?.length).toBe(1000);
   });
-  it("ajoute sans doublon, et l'extrait ajouté est surligné dans le texte", () => {
+  it("adds without duplicate, and the added extract is highlighted in the text", () => {
     const quotes = addQuote(addQuote(["a b c"], "mice were"), "mice were");
     expect(quotes).toEqual(["a b c", "mice were"]);
     const segs = highlightSegments("Adult mice were housed", quotes);

@@ -201,7 +201,7 @@ async def test_round_trip_restores_corpus_results_and_pdf(engine, session, tmp_p
     assert [s["kind"] for s in a1.sections] == [
         "methods",
         "results",
-    ]  # le résumé n'est pas une section
+    ]  # the abstract is not a section
     assert a1.methods_text == "Mice were housed." and a1.abstract == "Résumé A."
     assert a1.origin == "crate" and a2.sections is None and a2.abstract == "Seulement un résumé."
     pdf = (
@@ -233,7 +233,7 @@ async def test_round_trip_restores_corpus_results_and_pdf(engine, session, tmp_p
     assert job.kind == "crate" and job.status.value == "COMPLETED"
     import os
 
-    assert not os.path.exists(path)  # le zip déposé est supprimé
+    assert not os.path.exists(path)  # the uploaded zip is deleted
 
 
 def _zip(tmp_path, files: dict[str, bytes | str], name="x.zip") -> str:
@@ -300,7 +300,7 @@ _VALID = {"ro-crate-metadata.json": GRAPH, "project.json": '{"title": "T"}'}
 
 def test_declared_total_over_max_total_is_rejected(tmp_path, monkeypatch):
     """Sum of the ANNOUNCED sizes > MAX_TOTAL → refused at open (fast guard)."""
-    monkeypatch.setattr(ci, "MAX_TOTAL", 16)  # les 2 fichiers déclarent plus que ça
+    monkeypatch.setattr(ci, "MAX_TOTAL", 16)  # the 2 files declare more than that
     with pytest.raises(ci.CrateError, match="too_large"):
         ci.open_crate(_zip(tmp_path, _VALID))
 
@@ -309,15 +309,15 @@ def test_read_budget_counts_bytes_actually_decompressed(tmp_path):
     """The cap is on the bytes actually read (counter shared by the crate)."""
     zf, _ = ci.open_crate(_zip(tmp_path, _VALID))
     try:
-        ci._budget(zf).left = 5  # budget d'un crate déjà presque épuisé
+        ci._budget(zf).left = 5  # budget of an almost exhausted crate
         with pytest.raises(ci.CrateError, match="too_large"):
             ci._json(zf, "project.json")
         left = ci._budget(zf).left
-        assert left < 0  # la lecture a bien été imputée
+        assert left < 0  # the read was actually charged
         # Budget exhausted: the next read is refused BEFORE any decompression
         with pytest.raises(ci.CrateError, match="too_large"):
             ci._json(zf, "ro-crate-metadata.json")
-        assert ci._budget(zf).left == left  # rien n'a été décompressé (compteur inchangé)
+        assert ci._budget(zf).left == left  # nothing was decompressed (counter unchanged)
     finally:
         zf.close()
 
@@ -329,7 +329,7 @@ def test_lying_header_cannot_expand_an_entry(tmp_path):
     entry fails (CRC) before producing the bytes, and the error is converted to
     CrateError (otherwise raw BadZipFile = 500 on POST /import-crate, broken task)."""
     path = _zip(tmp_path, _VALID)
-    _patch_zip_headers(path, 22, 24, 10)  # taille décompressée annoncée : 10 octets
+    _patch_zip_headers(path, 22, 24, 10)  # announced uncompressed size: 10 bytes
     with pytest.raises(ci.CrateError, match="invalid_zip"):
         ci.open_crate(path)
 
@@ -378,7 +378,7 @@ async def test_import_endpoint(client, session, researcher_user, do_login, tmp_p
     assert path.startswith(str(tmp_path)) and delay.call_args.args[0] == pid
     bad = await client.post("/api/v1/projects/import-crate", content=b"not a zip")
     assert bad.status_code == 422 and "invalid_crate" in bad.json()["detail"]
-    assert len(list((tmp_path / "uploads").glob("crate-*.zip"))) == 1  # le zip refusé est supprimé
+    assert len(list((tmp_path / "uploads").glob("crate-*.zip"))) == 1  # the rejected zip is deleted
 
 
 # --- model traceability + version (spec 2026-10-29-tracabilite-modele-version §5) ---

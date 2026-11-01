@@ -54,20 +54,20 @@ def test_format_stats_benchmark():
         ],
     }
     text = _format_stats("benchmark", stats)
-    assert "Modèles testés: 2, articles: 10" in text
+    assert "Models tested: 2, articles: 10" in text
     assert "A: F1=0.90" in text
     assert "B: F1=0.70" in text
 
 
 def test_format_stats_import():
     text = _format_stats("import", {"imported": 5, "failed": 1})
-    assert "Importés: 5, échecs: 1" in text
+    assert "Imported: 5, failures: 1" in text
 
 
 def test_format_stats_import_truncated():
     stats = {"imported": 10000, "failed": 0, "truncated": True, "total_count": 12345}
     text = _format_stats("import", stats)
-    assert "tronqué: count réel 12345" in text
+    assert "truncated: real count 12345" in text
 
 
 def test_format_stats_unknown():
@@ -77,7 +77,7 @@ def test_format_stats_unknown():
 
 def test_format_stats_benchmark_empty():
     """Empty stats -> counters at 0 (the benchmark branch always produces a row)."""
-    assert _format_stats("benchmark", {}) == "Modèles testés: 0, articles: 0"
+    assert _format_stats("benchmark", {}) == "Models tested: 0, articles: 0"
 
 
 # --- notify_job_complete ---

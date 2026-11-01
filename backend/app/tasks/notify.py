@@ -25,12 +25,12 @@ def _format_stats(job_type: str, stats: dict) -> str:
                 f"acc={r['accuracy']:.2f} t={r['execution_time_seconds']:.1f}s"
             )
         lines.insert(
-            0, f"Modèles testés: {stats.get('models', 0)}, articles: {stats.get('articles', 0)}"
+            0, f"Models tested: {stats.get('models', 0)}, articles: {stats.get('articles', 0)}"
         )
     elif job_type == "import":
-        lines.append(f"Importés: {stats.get('imported', 0)}, échecs: {stats.get('failed', 0)}")
+        lines.append(f"Imported: {stats.get('imported', 0)}, failures: {stats.get('failed', 0)}")
         if stats.get("truncated"):
-            lines.append(f"(tronqué: count réel {stats.get('total_count', '?')})")
+            lines.append(f"(truncated: real count {stats.get('total_count', '?')})")
     else:
         lines.append(str(stats))
     return "\n".join(lines) if lines else "—"

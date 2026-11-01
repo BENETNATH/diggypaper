@@ -290,7 +290,7 @@ async def test_iter_ids_bisection_order_and_calls(monkeypatch):
     async with _client(spy) as http:
         ref = await fetch_all_pmids("sleep", "key", http, 40)
     assert got == ref
-    assert got == sorted(got, reverse=True)  # strictement décroissant, plus récents d'abord
+    assert got == sorted(got, reverse=True)  # strictly decreasing, most recent first
     assert got[0] == "1039"
     # Same esearch calls (bounded terms + retmax): the adapter makes 1 extra count.
     assert adapter_calls[1:] == esearches
@@ -321,7 +321,7 @@ async def test_iter_ids_user_bounds():
         ]
     assert got == ids
     expected = '(q) AND ("2024/01/01"[dp] : "2025/01/01"[dp])'
-    assert terms == [expected, expected]  # le terme est borné (count + ids)
+    assert terms == [expected, expected]  # the term is bounded (count + ids)
 
 
 async def test_iter_ids_limit_cap_most_recent():
@@ -348,9 +348,9 @@ async def test_iter_ids_limit_cap_most_recent():
     async with _client(spy) as http:
         ref = await fetch_all_pmids("q", "key", http, 20000, 1500)
     assert len(got) == 1500
-    assert got == ref  # appels NCBI identiques → même résultat
+    assert got == ref  # identical NCBI calls → same result
     assert got == sorted(got, reverse=True)
-    assert got[0] == str(1000 + 19999)  # le plus récent
+    assert got[0] == str(1000 + 19999)  # the most recent
     assert adapter_calls[1:] == esearches
 
 
@@ -426,7 +426,7 @@ async def test_adapter_timeout_retries_and_sanitized(monkeypatch):
     async with _client(failing) as http:
         with pytest.raises(NCBIError) as exc_info:
             await PubMedAdapter(http, None).search_volume("q", None)
-    assert fails["n"] == 3  # timeout épuisé (1 + 2 retries)
+    assert fails["n"] == 3  # timeout exhausted (1 + 2 retries)
     assert str(exc_info.value) == "timeout"
     assert "ncbi.nlm.nih.gov" not in str(exc_info.value)
 

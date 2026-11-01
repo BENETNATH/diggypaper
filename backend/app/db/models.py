@@ -70,7 +70,7 @@ class BackendType(enum.StrEnum):
     TRANSFORMERS = "TRANSFORMERS"
     ONNX_LOCAL = "ONNX_LOCAL"
     SYSTEMONE = "SYSTEMONE"
-    OPENAI_API = "OPENAI_API"  # API externe compatible OpenAI (URL + clé + modèle)
+    OPENAI_API = "OPENAI_API"  # external OpenAI-compatible API (URL + key + model)
 
 
 class BenchmarkStatus(enum.StrEnum):
@@ -303,7 +303,7 @@ class Article(Base):
     # forbidding PMC archiving); erased as soon as a text is found.
     fulltext_note: Mapped[str | None] = mapped_column(String)
     fulltext_source: Mapped[str | None] = mapped_column(String)  # pmc | europepmc | pdf[:version]
-    fulltext_url: Mapped[str | None] = mapped_column(String)  # lien public vers le texte / PDF
+    fulltext_url: Mapped[str | None] = mapped_column(String)  # public link to the text / PDF
     journal: Mapped[str | None] = mapped_column(String)
     pub_date: Mapped[str | None] = mapped_column(String)  # ISO partiel : 2024, 2024-05, 2024-05-12
     pub_year: Mapped[int | None] = mapped_column(Integer)
@@ -374,7 +374,7 @@ class ExportJob(Base):
     # {done, total} while RUNNING, then {size, articles, pdf, text}
     result_json: Mapped[dict | None] = mapped_column(JSONB)
     error: Mapped[str | None] = mapped_column(Text)
-    filename: Mapped[str | None] = mapped_column(String)  # nom du zip dans EXPORT_DIR
+    filename: Mapped[str | None] = mapped_column(String)  # zip name in EXPORT_DIR
     created_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -392,7 +392,7 @@ class ModelRegistry(Base):
     model_identifier: Mapped[str] = mapped_column(String, nullable=False)
     ram_usage_mb: Mapped[int | None] = mapped_column(Integer)
     is_active: Mapped[bool | None] = mapped_column(Boolean, server_default=text("true"))
-    api_key_enc: Mapped[bytes | None] = mapped_column(LargeBinary)  # OPENAI_API : clé chiffrée
+    api_key_enc: Mapped[bytes | None] = mapped_column(LargeBinary)  # OPENAI_API: encrypted key
     # Owner (external model defined by a user); NULL = platform model.
     owner_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("users.id", ondelete="CASCADE")
@@ -485,7 +485,7 @@ class BenchmarkRun(Base):
     # {use_gold: validate against the gold, gold_examples: k gold examples in the prompt}
     options: Mapped[dict | None] = mapped_column(JSONB)
     models_tested: Mapped[list[str] | None] = mapped_column(JSONB)
-    progress: Mapped[dict | None] = mapped_column(JSONB)  # {done, total} pendant le RUNNING
+    progress: Mapped[dict | None] = mapped_column(JSONB)  # {done, total} while RUNNING
     status: Mapped[BenchmarkStatus | None] = mapped_column(
         _enum(BenchmarkStatus), server_default="PENDING"
     )
@@ -509,7 +509,7 @@ class BenchmarkResult(Base):
     )
     model_name: Mapped[str] = mapped_column(String, nullable=False)
     variant: Mapped[str | None] = mapped_column(String)  # variante de prompt (NULL = unique)
-    n_scored: Mapped[int | None] = mapped_column(Integer)  # articles notés (gold hors exemples)
+    n_scored: Mapped[int | None] = mapped_column(Integer)  # scored articles (gold without examples)
     # Metrics per item, confusion matrix, agreement between variants…
     details: Mapped[dict | None] = mapped_column(JSONB)
     execution_time_seconds: Mapped[float | None] = mapped_column(Float)

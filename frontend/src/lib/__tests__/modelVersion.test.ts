@@ -9,7 +9,7 @@ import es from "@/messages/es.json";
 const DIGEST = "a1b2c3d4e5f6" + "0".repeat(52); // digest Ollama (/api/tags) : 64 hex
 
 describe("shortVersion", () => {
-  it("absente → null (l'interface affiche « version non enregistrée »)", () => {
+  it('absent → null (the UI shows "version not recorded")', () => {
     expect(shortVersion(null)).toBeNull();
     expect(shortVersion(undefined)).toBeNull();
     expect(shortVersion("")).toBeNull();
@@ -28,7 +28,7 @@ describe("shortVersion", () => {
     expect(shortVersion("a1b2c3")).toBe("a1b2c3"); // not a full digest: unchanged
   });
 
-  it("longue (> 40 caractères) → 39 caractères + « … »", () => {
+  it('long (over 40 characters) → 39 characters + "…"', () => {
     const long = "models/" + "x".repeat(60) + ".gguf";
     const out = shortVersion(long) as string;
     expect(out).toHaveLength(40);
@@ -36,7 +36,7 @@ describe("shortVersion", () => {
     expect(long.startsWith(out.slice(0, 39))).toBe(true);
   });
 
-  it("troncature sûre pour les paires de substitution (pas de moitié d'emoji)", () => {
+  it("safe truncation for surrogate pairs (no half emoji)", () => {
     const out = shortVersion("😀".repeat(50)) as string;
     expect(Array.from(out)).toHaveLength(40);
     expect(out).toBe("😀".repeat(39) + "…");
@@ -56,15 +56,15 @@ const KEYS: [string, string][] = [
   ["inference", "prefilterShort"],
 ];
 
-describe("i18n traçabilité", () => {
-  it.each(LOCALES)("clés présentes et non vides (%s)", (_, messages) => {
+describe("i18n traceability", () => {
+  it.each(LOCALES)("keys present and non-empty (%s)", (_, messages) => {
     for (const [ns, key] of KEYS) {
       expect(typeof messages[ns]?.[key]).toBe("string");
       expect(messages[ns][key].trim().length).toBeGreaterThan(0);
     }
   });
 
-  it("« version non enregistrée » réellement traduite", () => {
+  it('"version not recorded" actually translated', () => {
     const enText = (en as unknown as Messages).common.versionNotRecorded;
     for (const [lang, messages] of LOCALES) {
       if (lang !== "en") expect(messages.common.versionNotRecorded).not.toBe(enText);

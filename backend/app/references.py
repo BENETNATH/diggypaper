@@ -50,8 +50,8 @@ def to_ris(articles, notes: dict | None = None) -> str:
                 else source_label(getattr(a, "source", None), getattr(a, "native_id", None)),
             )
         )
-        rec.append(("DB", source_name(getattr(a, "source", None))))  # tag RIS « base de données »
-        rec.append(("C2", a.pmcid))  # Zotero lit le PMCID dans C2
+        rec.append(("DB", source_name(getattr(a, "source", None))))  # RIS "database" tag
+        rec.append(("C2", a.pmcid))  # Zotero reads the PMCID from C2
         url = f"https://doi.org/{a.doi}" if a.doi else None
         url = url or (f"https://pubmed.ncbi.nlm.nih.gov/{a.pmid}/" if a.pmid else None)
         rec += [("UR", url), ("L2", a.fulltext_url), ("LA", a.original_language)]
@@ -83,7 +83,7 @@ def to_bibtex(articles, notes: dict | None = None) -> str:
         used.add(key)
         y, m, _ = _ymd(a.pub_date)
         fields = {
-            "title": f"{{{_bib(a.title)}}}",  # accolades internes : casse conservée
+            "title": f"{{{_bib(a.title)}}}",  # inner braces: case preserved
             "author": " and ".join(_bib(_author(n_)) for n_ in a.authors or []),
             "journal": _bib(a.journal),
             "year": y,

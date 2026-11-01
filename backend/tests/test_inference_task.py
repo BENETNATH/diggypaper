@@ -267,9 +267,9 @@ async def test_run_inference_stops_when_cancelled(engine, session, fake_redis):
         async def infer(self, model, system_prompt, user_prompt) -> dict:
             out = await super().infer(model, system_prompt, user_prompt)
             if '{"ok": true}' in user_prompt:
-                return out  # warm-up : pas d'arrêt simulé pendant celui-ci
+                return out  # warm-up: no simulated stop during it
             row = await session.get(InferenceJob, job.id)
-            row.status, row.error = InferenceJobStatus.FAILED, "cancelled"  # clic sur « Arrêter »
+            row.status, row.error = InferenceJobStatus.FAILED, "cancelled"  # click on "Stop"
             await session.commit()
             return out
 
@@ -482,7 +482,7 @@ async def test_lock_busy_retries_task_countdown_30(monkeypatch):
         options = {"countdown": 30, "retries": 1}
 
         def apply_async(self, *args, **kwargs):
-            return None  # pas de resoumission réelle en test
+            return None  # no real resubmission in tests
 
     monkeypatch.setattr(task, "signature_from_request", lambda *args, **kwargs: FakeSig())
 
@@ -542,7 +542,7 @@ async def test_lock_busy_exhausted_retries_fails_job(engine, session, monkeypatc
         await asyncio.to_thread(_invoke)
     await session.refresh(job)
     assert job.status == InferenceJobStatus.FAILED
-    assert "modèle occupé" in job.error and "waiting_model" in job.error
+    assert "model busy" in job.error and "waiting_model" in job.error
     assert job.completed_at is not None
 
 
@@ -608,7 +608,7 @@ async def test_release_only_own_token(fake_redis):
     """Owner check: the release does not delete a key carrying another token."""
     key = "inference:lock:OLLAMA:x"
     await fake_redis.set(key, "token-proprire")
-    fake_redis.store[key] = "token-autre"  # lock expiré puis repris
+    fake_redis.store[key] = "token-autre"  # lock expired then taken over
     await _release_lock(fake_redis, key, "token-proprire")
     assert fake_redis.store.get(key) == "token-autre"
     await _release_lock(fake_redis, key, "token-autre")
@@ -962,7 +962,7 @@ async def test_heartbeat_lost_token_does_not_renew_nor_delete_foreign_lock(
 
     class Thief(FakeInference):
         async def infer(self, model, system_prompt, user_prompt):
-            fake_redis.store[key] = "token-autre-job"  # expiré puis repris
+            fake_redis.store[key] = "token-autre-job"  # expired then taken over
             return await super().infer(model, system_prompt, user_prompt)
 
     project, prompt = await _project_prompt(session)
@@ -1093,7 +1093,7 @@ async def test_lock_also_taken_on_prefilter_model(engine, session, fake_redis):
     )
     keys = {c[0] for c in fake_redis.set_calls}
     assert keys == {"inference:lock:OLLAMA:big:8b", "inference:lock:OLLAMA:small:1b"}
-    assert fake_redis.store == {}  # les deux relâchés
+    assert fake_redis.store == {}  # both released
 
 
 async def test_lock_prefilter_busy_releases_main_and_waits(engine, session, fake_redis):
@@ -1144,7 +1144,7 @@ async def test_lock_prefilter_same_model_single_key(engine, session, fake_redis)
         {"v": 0.9},
         True,
         float("nan"),
-        85,  # hors [0, 1] (échelle 0-100) : jamais auto-accepté
+        85,  # out of [0, 1] (0-100 scale): never auto-accepted
         "85",
         -0.1,
         1.5,
@@ -1571,4 +1571,4 @@ async def test_non_ollama_prefilter_never_rejecting_still_fills_job_snapshot_ver
     await session.refresh(job)
     assert job.model_info["prefilter"]["version"] == "small-echo"
     assert job.model_info["main"]["version"] is None
-    assert (await _pred_tuple(session))[2] is None  # la prédiction (étage 2) : pas d'écho
+    assert (await _pred_tuple(session))[2] is None  # the (stage 2) prediction: no echo

@@ -16,7 +16,7 @@ os.environ["ANON_SALT"] = "test-anon-salt"
 os.environ["ENCRYPTION_KEY"] = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 # Celery in eager mode (inline execution, no Redis broker) — batch 4A.
 os.environ["CELERY_EAGER"] = "true"
-os.environ["COOKIE_SECURE"] = "false"  # client de test en HTTP ; défaut applicatif : true
+os.environ["COOKIE_SECURE"] = "false"  # HTTP test client; app default: true
 
 import pytest
 from sqlalchemy import event

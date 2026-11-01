@@ -74,15 +74,15 @@ def validate_settings(settings: Settings) -> None:
     if settings.encryption_key == _DEV_ENCRYPTION_KEY:
         problems.append("ENCRYPTION_KEY")
     if len(settings.jwt_secret) < 32:
-        raise RuntimeError("JWT_SECRET trop court : 32 caractères minimum.")
+        raise RuntimeError("JWT_SECRET too short: 32 characters minimum.")
     from app.core.crypto import load_key
 
-    load_key()  # ENCRYPTION_KEY malformée : échec au démarrage, pas au premier chiffrement
+    load_key()  # malformed ENCRYPTION_KEY: fail at startup, not at the first encryption
     if problems:
         raise RuntimeError(
-            "Secrets par défaut (dev) détectés : définir "
-            + " et ".join(problems)
-            + " avant de démarrer l'application (valeurs non utilisables en production)."
+            "Default (dev) secrets detected: set "
+            + " and ".join(problems)
+            + " before starting the application (values not usable in production)."
         )
 
 

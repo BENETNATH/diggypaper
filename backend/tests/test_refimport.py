@@ -60,7 +60,7 @@ def test_ris():
     fmt, e = parse_references(RIS)
     assert fmt == "ris" and len(e) == 2
     assert (e[0]["doi"], e[0]["pmid"], e[0]["year"]) == ("10.2000/ris.1", "4242", 2019)
-    assert e[1]["doi"] == "10.3000/url.9"  # ponctuation finale retirée
+    assert e[1]["doi"] == "10.3000/url.9"  # trailing punctuation removed
 
 
 def test_csl_and_csv():

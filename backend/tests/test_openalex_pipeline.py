@@ -71,12 +71,12 @@ async def test_openalex_doi_link_sets_note_on_existing_row(engine):
         {"source": "crossref", "native_id": "10.1000/oa.1", "doi": "10.1000/oa.1", "title": "T1"},
     )
     result = await _import(engine, project, _fake())
-    assert result["imported"] == 1 and result.get("duplicates_doi") == 1  # W1 lié, W2 inséré
+    assert result["imported"] == 1 and result.get("duplicates_doi") == 1  # W1 linked, W2 inserted
     arts = await _articles(engine, project.id)
     by_nid = {a.native_id: a for a in arts}
     assert set(by_nid) == {"10.1000/oa.1", "W2"}
     a = by_nid["10.1000/oa.1"]
-    assert (a.source, a.native_id) == ("crossref", "10.1000/oa.1")  # identité intacte
+    assert (a.source, a.native_id) == ("crossref", "10.1000/oa.1")  # identity intact
     assert a.fulltext_note == "metadata_only"
     assert by_nid["W2"].source == "openalex" and by_nid["W2"].fulltext_note == "metadata_only"
 

@@ -62,7 +62,7 @@ def recommend(hw: dict) -> dict:
         profile, models = "small", [_TINY]
     return {
         "profile": profile,
-        "slow_cpu": not hw["avx2"] and not hw["gpu"],  # llama.cpp sans AVX2 : ×2 à ×3 plus lent
+        "slow_cpu": not hw["avx2"] and not hw["gpu"],  # llama.cpp without AVX2: 2x to 3x slower
         "models": [
             {"tag": t, "ram_gb": r, "kind": k, "fits": r <= max(ram - 4, 0)} for t, r, k in models
         ],

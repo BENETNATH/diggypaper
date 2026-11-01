@@ -56,7 +56,7 @@ async def test_query_volume_unknown_source_422(client, researcher_user, do_login
     pid = await _project(client, do_login)
 
     def no_network():
-        raise AssertionError("aucun appel réseau attendu")
+        raise AssertionError("no network call expected")
 
     monkeypatch.setattr(projects_api, "_make_http_client", no_network)
     resp = await client.post(

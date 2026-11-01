@@ -91,7 +91,7 @@ async def test_get_all_masks_secrets(session):
     result = await get_all(session)
     assert result["ncbi_api_key"] == MASK
     assert result["smtp_host"] == "mail.example.com"
-    assert result["llm_api_key"] is None  # non défini
+    assert result["llm_api_key"] is None  # not defined
 
 
 async def test_unknown_key_rejected(session):

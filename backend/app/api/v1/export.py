@@ -60,7 +60,7 @@ def export_dir() -> str:
     return os.environ.get("EXPORT_DIR", "/app/exports")
 
 
-_MAX_CELL = 32000  # limite Excel : 32 767 caractères par cellule
+_MAX_CELL = 32000  # Excel limit: 32 767 characters per cell
 
 
 def _cell(v):
@@ -94,13 +94,13 @@ def _model_rows(label: str, name: str | None, snap: dict | None) -> list[list]:
     snap = snap or {}
     rows = [
         [label, name],
-        [f"{label} · identifiant", snap.get("identifier") or "non enregistré"],
-        [f"{label} · version", snap.get("version") or "non enregistrée"],
+        [f"{label} · identifier", snap.get("identifier") or "not recorded"],
+        [f"{label} · version", snap.get("version") or "not recorded"],
     ]
     keys = ("endpoint", "parameter_size", "quantization", "family", "format", "size", "modified_at")
     details = {k: snap[k] for k in keys if snap.get(k)}
     if details:
-        rows.append([f"{label} · détails", details])
+        rows.append([f"{label} · details", details])
     return rows
 
 
@@ -108,7 +108,7 @@ def _import_source(job) -> str:
     """Database queried by an import; references / crate: mixed sources (Source column)."""
     if job.source:
         return source_name(job.source)
-    return "sources par article" if job.kind in ("references", "crate") else "non enregistrée"
+    return "per-article sources" if job.kind in ("references", "crate") else "not recorded"
 
 
 def build_workbook(project, articles, preds, annos, import_jobs, inf_job, user_email) -> bytes:
@@ -116,23 +116,23 @@ def build_workbook(project, articles, preds, annos, import_jobs, inf_job, user_e
     wb = Workbook()
 
     # --- Results: one line per article -----------------------------------
-    header = ["PMID", "PMCID", "DOI", "Titre", "Date de publication", "Journal"]
-    header += ["Premier auteur", "Dernier auteur", "Auteurs", "Types de publication", "Langue"]
-    header += ["Lien DOI", "Lien texte intégral / PDF", "Source", "Identifiant source"]
-    header += ["Texte analysé", "Statut IA", "Pertinence IA", "Modèle"]
-    header += ["Identifiant du modèle", "Version du modèle", "Décision IA"]
-    header += [f"IA · {f['label']}" for f in fields]
-    header += [f"Certitude · {f['label']}" for f in fields]
-    header += ["Extraits (IA)", "Raisonnement (IA)", "Annotations humaines", "Statut final"]
-    header += ["Relu par", "Statut de relecture", "Relu le"]
-    header += [f"Humain · {f['label']}" for f in fields] + ["Notes humaines", "Résumé (abstract)"]
+    header = ["PMID", "PMCID", "DOI", "Title", "Publication date", "Journal"]
+    header += ["First author", "Last author", "Authors", "Publication types", "Language"]
+    header += ["DOI link", "Full text / PDF link", "Source", "Source identifier"]
+    header += ["Analyzed text", "AI status", "AI relevance", "Model"]
+    header += ["Model identifier", "Model version", "AI decision"]
+    header += [f"AI · {f['label']}" for f in fields]
+    header += [f"Confidence · {f['label']}" for f in fields]
+    header += ["Extracts (AI)", "Reasoning (AI)", "Human annotations", "Final status"]
+    header += ["Reviewed by", "Review status", "Reviewed on"]
+    header += [f"Human · {f['label']}" for f in fields] + ["Human notes", "Abstract"]
     rows = []
     for a in articles:
         p, hs = preds.get(a.id), annos.get(a.id, [])
         pd_ = (p.decision_json or {}) if p else {}
         h = hs[-1] if hs else None
         hd = (h.decision_json or {}) if h else {}
-        final = "ANNOTÉ" if h else (p.status.value if p and p.status else "NON TRIÉ")
+        final = "ANNOTATED" if h else (p.status.value if p and p.status else "NOT TRIAGED")
         au = a.authors or []
         row = [a.pmid, a.pmcid, a.doi, a.title, a.pub_date, a.journal]
         row += [au[0] if au else None, au[-1] if len(au) > 1 else None, "; ".join(au)]
@@ -157,7 +157,7 @@ def build_workbook(project, articles, preds, annos, import_jobs, inf_job, user_e
         row += [h.notes if h else None, a.abstract]
         rows.append(row)
     ws = wb.active
-    ws.title = "Résultats"
+    ws.title = "Results"
     _sheet(ws, header, rows, {4: 60, 5: 12, 6: 28, 9: 40})
     for r in ws.iter_rows(min_row=2):
         for c in r:
@@ -170,31 +170,31 @@ def build_workbook(project, articles, preds, annos, import_jobs, inf_job, user_e
     # --- Summary ------------------------------------------------------------------
     counts: dict[str, int] = {}
     for row in rows:
-        counts[row[header.index("Statut final")]] = (
-            counts.get(row[header.index("Statut final")], 0) + 1
+        counts[row[header.index("Final status")]] = (
+            counts.get(row[header.index("Final status")], 0) + 1
         )
-    ws2 = wb.create_sheet("Résumé")
-    _sheet(ws2, ["Statut final", "Articles"], [[k, v] for k, v in sorted(counts.items())], {1: 28})
+    ws2 = wb.create_sheet("Summary")
+    _sheet(ws2, ["Final status", "Articles"], [[k, v] for k, v in sorted(counts.items())], {1: 28})
     ws2.append([])
     ws2.append(["Total", len(rows)])
-    ws2.append(["Avec texte intégral", sum(1 for a in articles if a.sections)])
+    ws2.append(["With full text", sum(1 for a in articles if a.sections)])
 
     # --- Project / method (reproducibility) -----------------------------------
-    ws3 = wb.create_sheet("Projet")
+    ws3 = wb.create_sheet("Project")
     info = [
-        ["Projet", project.title],
+        ["Project", project.title],
         ["Question", project.question],
-        ["Parties du texte lues", ", ".join(project.text_sections or ["methods"])],
-        ["Fenêtres de lecture", project.read_windows],
-        ["Exporté le", datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")],
-        ["Exporté par", user_email],
+        ["Text parts read", ", ".join(project.text_sections or ["methods"])],
+        ["Reading windows", project.read_windows],
+        ["Exported on", datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")],
+        ["Exported by", user_email],
         [],
-        ["Champs de réponse", "Type / options"],
+        ["Answer fields", "Type / options"],
     ]
     info += [
         [f["label"], f"{f['type']} {', '.join(f.get('options') or [])}".strip()] for f in fields
     ]
-    info += [[], ["Imports", "Date · source · articles importés"]]
+    info += [[], ["Imports", "Date · source · imported articles"]]
     info += [
         [
             j.query,
@@ -205,15 +205,15 @@ def build_workbook(project, articles, preds, annos, import_jobs, inf_job, user_e
     ]
     if inf_job is not None:
         res = inf_job.result_json or {}
-        info += [[], ["Dernière analyse", inf_job.created_at.strftime("%Y-%m-%d %H:%M")]]
-        snaps = inf_job.model_info or {}  # instantané figé ; jamais le registre vivant
-        info += _model_rows("Modèle (étage 2)", inf_job.model_used, snaps.get("main"))
+        info += [[], ["Last analysis", inf_job.created_at.strftime("%Y-%m-%d %H:%M")]]
+        snaps = inf_job.model_info or {}  # frozen snapshot; never the live registry
+        info += _model_rows("Model (stage 2)", inf_job.model_used, snaps.get("main"))
         if inf_job.prefilter_model:
             info += _model_rows(
-                "Pré-filtre (étage 1)", inf_job.prefilter_model, snaps.get("prefilter")
+                "Prefilter (stage 1)", inf_job.prefilter_model, snaps.get("prefilter")
             )
         else:
-            info.append(["Pré-filtre (étage 1)", inf_job.prefilter_model])
+            info.append(["Prefilter (stage 1)", inf_job.prefilter_model])
         info += [[k, v] for k, v in res.items()]
     for r in info:
         ws3.append([_cell(v) for v in r])
@@ -255,9 +255,9 @@ async def _load(db: AsyncSession, project, where=None, search=None):
                 .order_by(ArticlePrediction.created_at.nulls_first(), ArticlePrediction.id)
             )
         ).scalars():
-            preds[p.article_id] = p  # le plus récent écrase
+            preds[p.article_id] = p  # the most recent wins
         if search.kind == "blind":
-            preds = {}  # échantillon aveugle : les réponses de l'IA ne sortent pas
+            preds = {}  # blind sample: the AI answers do not come out
         for h in (
             await db.execute(
                 select(HumanAnnotation)
@@ -355,10 +355,10 @@ def _notes(articles, preds: dict, fields: list[dict]) -> dict:
         answers = "; ".join(f"{f['label']}: {dec[f['key']]}" for f in fields if f["key"] in dec)
         rel = f" ({round(p.confidence_score * 100)} %)" if p.confidence_score is not None else ""
         ident = f" ({p.model_identifier})" if p.model_identifier else ""
-        version = p.model_version or "non enregistrée"
+        version = p.model_version or "not recorded"
         out[a.id] = (
-            f"Diggypaper : {p.status.value if p.status else ''}{rel}. {answers}"
-            f" Modèle : {p.model_used}{ident}, version {version}."
+            f"Diggypaper: {p.status.value if p.status else ''}{rel}. {answers}"
+            f" Model: {p.model_used}{ident}, version {version}."
         ).strip()
     return out
 
@@ -393,7 +393,7 @@ async def _prisma_origin(db, project, scope) -> dict | None:
         await db.execute(select(func.count()).select_from(Article).where(lot_condition(lot)))
     ).scalar_one()
     spec = dict(scope.parent_spec or {})
-    if "ids" in spec:  # pas la liste des identifiants dans le diagramme / project.json
+    if "ids" in spec:  # not the list of identifiers in the diagram / project.json
         spec["n_ids"] = len(spec.pop("ids"))
     return {
         "name": (parent or scope).name,
@@ -626,7 +626,7 @@ async def start_crate_export(
         job is not None
         and job.status in ("PENDING", "RUNNING")
         and (job.search_id or (await default_search(db, project)).id) != scope.id
-    ):  # un export à la fois par projet : ne pas renvoyer celui d'une autre recherche sans le dire
+    ):  # one export at a time per project: do not silently return another search's
         raise HTTPException(status_code=409, detail="another export is in progress")
     if job is None or job.status not in ("PENDING", "RUNNING"):
         job = ExportJob(
@@ -659,7 +659,7 @@ async def download_crate(
     if job is None or job.project_id != project.id or job.status != "COMPLETED" or not job.filename:
         raise HTTPException(status_code=404, detail="export not found")
     path = Path(export_dir()) / job.filename
-    if not path.is_file():  # purgé (plus de 7 jours) : à relancer
+    if not path.is_file():  # purged (over 7 days): rerun needed
         raise HTTPException(status_code=410, detail="export expired")
     return FileResponse(
         path, media_type="application/zip", filename=f"{_slug(project)}-ro-crate.zip"

@@ -154,7 +154,7 @@ async def search_fulltext(
     async with httpx.AsyncClient(timeout=45.0) as http:
         try:
             await ft.refresh_article_metadata(db, article, http)
-        except Exception:  # noqa: BLE001 - NCBI indisponible : on cherche avec ce qu'on a
+        except Exception:  # noqa: BLE001 - NCBI unavailable: search with what we have
             logger.warning("metadata refresh failed for article %s", article.id, exc_info=True)
         source = await ft.complete_article(db, article, email, http)
     await db.commit()
@@ -191,7 +191,7 @@ async def match_fulltext_pdf(
         raise HTTPException(status_code=422, detail="a PDF file (max 25 MB) is required")
     try:
         sections = await asyncio.to_thread(pdf_to_sections, data)
-    except Exception:  # noqa: BLE001 - PDF corrompu / chiffré
+    except Exception:  # noqa: BLE001 - corrupted / encrypted PDF
         raise HTTPException(status_code=422, detail="unreadable PDF") from None
     if sum(len(s["text"]) for s in sections) < MIN_CHARS:
         raise HTTPException(status_code=422, detail="no text found in the PDF (scanned?)")
@@ -248,7 +248,7 @@ async def upload_fulltext(
         raise HTTPException(status_code=422, detail="a PDF file (max 25 MB) is required")
     try:
         sections = await asyncio.to_thread(pdf_to_sections, data)
-    except Exception:  # noqa: BLE001 - PDF corrompu / chiffré
+    except Exception:  # noqa: BLE001 - corrupted / encrypted PDF
         raise HTTPException(status_code=422, detail="unreadable PDF") from None
     if sum(len(s["text"]) for s in sections) < MIN_CHARS:
         raise HTTPException(status_code=422, detail="no text found in the PDF (scanned?)")
@@ -323,7 +323,7 @@ async def get_annotation(
     status), null if none."""
     article = await _require_article(db, project_id, article_id, user)
     scope = await _scope(db, project_id, search)
-    if scope.kind == "blind":  # aveugle : seulement SA relecture, jamais celle d'un autre relecteur
+    if scope.kind == "blind":  # blind: only their own review, never another reviewer's
         own = (
             await db.execute(
                 select(HumanAnnotation)

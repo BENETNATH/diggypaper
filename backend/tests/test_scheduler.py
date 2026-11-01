@@ -69,7 +69,7 @@ async def test_scheduled_search_waits_then_starts_on_results(client, session, co
         .scalars()
         .all()
     )
-    assert len(lot) == 2  # A1, A2 : acceptés par la recherche initiale
+    assert len(lot) == 2  # A1, A2: accepted by the initial search
     job = await session.get(InferenceJob, __import__("uuid").UUID(job_id))
     assert job.search_id == search.id and job.model_used == "Mdl"
     prompt = await session.get(PromptTemplate, job.prompt_template_id)
@@ -78,7 +78,7 @@ async def test_scheduled_search_waits_then_starts_on_results(client, session, co
     # one analysis at a time: nothing else starts while this one runs
     assert await start_ready(session, project) is None
     act = (await client.get(f"{base}/inference", params={"active": "true"})).json()["job"]
-    assert act["id"] == job_id  # le job actif du projet, quelle que soit la recherche affichée
+    assert act["id"] == job_id  # the project's active job, whatever the displayed search
 
 
 async def test_scheduled_on_same_lot_and_failures(client, session, corpus, started):  # noqa: F811

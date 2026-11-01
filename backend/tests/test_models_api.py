@@ -276,7 +276,7 @@ async def test_delete_ollama_model_no_call_for_openai_api_backend(
     client, session, admin_user, do_login
 ):
     def handler(req: httpx.Request) -> httpx.Response:
-        raise AssertionError("Ollama ne doit pas être appelé")
+        raise AssertionError("Ollama must not be called")
 
     await do_login("admin@lab.fr", "admin-pass-123")
     mid = (
@@ -301,7 +301,7 @@ async def test_delete_ollama_model_forbidden_before_ollama_call(
     """The permission check precedes any Ollama call (403, handler not called)."""
 
     def handler(req: httpx.Request) -> httpx.Response:
-        raise AssertionError("Ollama ne doit pas être appelé")
+        raise AssertionError("Ollama must not be called")
 
     from sqlalchemy import select
 
@@ -384,7 +384,7 @@ async def test_hf_decision_models_flagged_and_not_installable(
     }
     r = await client.post("/api/v1/models/hf/install", json={"repo": "ggml-org/Kev-4B-GGUF"})
     assert r.status_code == 422 and r.json()["detail"] == "decision_model"
-    assert m._PULLS == {}  # rien de lancé
+    assert m._PULLS == {}  # nothing started
 
 
 async def test_hf_files_sorted_for_cpu(client, admin_user, do_login, monkeypatch):
@@ -540,7 +540,7 @@ async def test_capabilities_host_mode_compose_default_not_configured(
     from app.settings.service import set_setting
 
     async def no_ping(url, path=""):
-        raise AssertionError("ping interdit : base résiduelle compose en mode host")
+        raise AssertionError("no ping: residual compose base in host mode")
 
     monkeypatch.setattr(m, "MODE", "host")
     monkeypatch.setattr(m, "_reachable", no_ping)
@@ -568,7 +568,7 @@ async def test_off_list_ollama_409(client, admin_user, do_login, monkeypatch):
     from app.api.v1 import models as m
 
     def handler(req: httpx.Request) -> httpx.Response:
-        raise AssertionError("Ollama ne doit pas être appelé")
+        raise AssertionError("Ollama must not be called")
 
     monkeypatch.setattr(m, "MODE", "off")
     await do_login("admin@lab.fr", "admin-pass-123")
@@ -586,7 +586,7 @@ async def test_off_pull_ollama_409_and_no_state(client, admin_user, do_login, mo
     resp = await client.post("/api/v1/models/ollama/pull", json={"name": "qwen3:4b"})
     assert resp.status_code == 409
     assert resp.json()["detail"] == "ollama_disabled_by_deployment"
-    assert m._PULLS == {}  # rien lancé
+    assert m._PULLS == {}  # nothing started
 
 
 async def test_off_register_ollama_409(client, admin_user, do_login, monkeypatch):
@@ -597,7 +597,7 @@ async def test_off_register_ollama_409(client, admin_user, do_login, monkeypatch
     resp = await client.post("/api/v1/models/ollama/register", json={"name": "m:1"})
     assert resp.status_code == 409
     assert resp.json()["detail"] == "ollama_disabled_by_deployment"
-    assert (await client.get("/api/v1/models")).json()["items"] == []  # aucune ligne créée
+    assert (await client.get("/api/v1/models")).json()["items"] == []  # no row created
 
 
 async def test_off_create_ollama_409_but_openai_api_still_201(
@@ -607,7 +607,7 @@ async def test_off_create_ollama_409_but_openai_api_still_201(
     from app.api.v1 import models as m
 
     def handler(req: httpx.Request) -> httpx.Response:
-        raise AssertionError("Ollama ne doit pas être appelé")
+        raise AssertionError("Ollama must not be called")
 
     monkeypatch.setattr(m, "MODE", "off")
     await do_login("admin@lab.fr", "admin-pass-123")
@@ -629,7 +629,7 @@ async def test_off_hf_install_409_before_hf_call(client, admin_user, do_login, m
     from app.api.v1 import models as m
 
     async def fake_hf(path, params=None):
-        raise AssertionError("HF ne doit pas être appelé en mode off")
+        raise AssertionError("HF must not be called in off mode")
 
     monkeypatch.setattr(m, "MODE", "off")
     monkeypatch.setattr(m, "_hf_get", fake_hf)
@@ -637,7 +637,7 @@ async def test_off_hf_install_409_before_hf_call(client, admin_user, do_login, m
     resp = await client.post("/api/v1/models/hf/install", json={"repo": "a/b"})
     assert resp.status_code == 409
     assert resp.json()["detail"] == "ollama_disabled_by_deployment"
-    assert m._PULLS == {}  # rien lancé
+    assert m._PULLS == {}  # nothing started
 
 
 async def test_host_compose_default_endpoints_refused(
@@ -648,7 +648,7 @@ async def test_host_compose_default_endpoints_refused(
     from app.settings.service import set_setting
 
     def handler(req: httpx.Request) -> httpx.Response:
-        raise AssertionError("Ollama ne doit pas être appelé")
+        raise AssertionError("Ollama must not be called")
 
     monkeypatch.setattr(m, "MODE", "host")
     await set_setting(session, "llm_api_base_url", "http://ollama:11434/v1")
@@ -671,7 +671,7 @@ async def test_host_compose_default_url_variants_detected(
     from app.settings.service import set_setting
 
     async def no_ping(url, path=""):
-        raise AssertionError("ping interdit : base résiduelle compose")
+        raise AssertionError("no ping: residual compose base")
 
     monkeypatch.setattr(m, "MODE", "host")
     monkeypatch.setattr(m, "_reachable", no_ping)
@@ -1112,7 +1112,7 @@ async def test_test_installed_model_locked_returns_busy_without_ping(
         resp = await client.post(f"/api/v1/models/{await _row_id(session, 'Q')}/test")
     assert resp.status_code == 200
     assert resp.json() == {"ok": False, "error": "model_busy"}
-    assert seen == []  # Ollama non contacté
+    assert seen == []  # Ollama not contacted
 
 
 async def test_test_installed_model_free_pings(

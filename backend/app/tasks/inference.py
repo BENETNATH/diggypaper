@@ -142,7 +142,7 @@ def inference_task(self, inference_job_id: str) -> dict:
         nonlocal result, error
         try:
             result = asyncio.run(_run_inference(inference_job_id))
-        except BaseException as exc:  # propagée au thread principal
+        except BaseException as exc:  # propagated to the main thread
             error = exc
 
     thread = threading.Thread(target=_run, name="inference")
@@ -188,7 +188,7 @@ async def _run_inference(
     else:
         engine, factory = _make_session_factory()
     client = http if http is not None else None
-    locks: list[tuple[str, str]] = []  # (key, token) des locks par modèle acquis
+    locks: list[tuple[str, str]] = []  # (key, token) of the per-model locks acquired
     redis_client = redis
     own_redis = False
     try:
@@ -233,7 +233,7 @@ async def _run_inference(
                     if m is None or m.backend_type == "OPENAI_API":
                         continue
                     key = model_lock_key(m.backend_type, m.model_identifier)
-                    if key not in keys:  # même modèle des deux côtés : une seule clé
+                    if key not in keys:  # same model on both sides: a single key
                         keys.append(key)
                 ttl = 0
                 if keys:
@@ -274,7 +274,7 @@ async def _run_inference(
                 await _record_failure(session, job, exc)
                 raise
             if stats.get("cancelled"):
-                return stats  # arrêtée par l'utilisateur : pas d'e-mail « terminée »
+                return stats  # stopped by the user: no "finished" e-mail
 
             # E-mail notification (best-effort, never breaks the job).
             mailer = await _make_mailer(session)
@@ -293,7 +293,7 @@ async def _run_inference(
         if own_redis:
             try:
                 await redis_client.aclose()
-            except Exception:  # noqa: BLE001 - fermer le client ne doit pas casser le job
+            except Exception:  # noqa: BLE001 - closing the client must not break the job
                 pass
         if engine is not None:
             await engine.dispose()
@@ -318,9 +318,9 @@ async def _renew_locks(redis_client, locks: list[tuple[str, str]], ttl: int) -> 
             if current == token:
                 await redis_client.expire(key, ttl)
             else:
-                logger.warning("inference: lock %s perdu (token différent), non renouvelé", key)
+                logger.warning("inference: lock %s lost (different token), not renewed", key)
         except Exception:  # noqa: BLE001
-            logger.warning("inference: renouvellement du lock %s en échec", key)
+            logger.warning("inference: renewing lock %s failed", key)
 
 
 async def _release_lock(redis_client, key: str, token: str) -> None:
@@ -336,7 +336,7 @@ async def _release_lock(redis_client, key: str, token: str) -> None:
         if current == token:
             await redis_client.delete(key)
     except Exception:  # noqa: BLE001
-        logger.warning("inference: release du lock %s en échec (le TTL expirera)", key)
+        logger.warning("inference: releasing lock %s failed (the TTL will expire)", key)
 
 
 async def _mark_model_busy_failed(inference_job_id: str) -> None:
@@ -356,13 +356,12 @@ async def _mark_model_busy_failed(inference_job_id: str) -> None:
                 return
             job.status = InferenceJobStatus.FAILED
             job.error = (
-                f"modèle occupé : abandonné après {_MODEL_BUSY_MAX_RETRIES} tentatives "
-                "(waiting_model)"
+                f"model busy: abandoned after {_MODEL_BUSY_MAX_RETRIES} attempts (waiting_model)"
             )
             job.completed_at = datetime.now(UTC)
             await session.commit()
     except Exception:  # noqa: BLE001
-        logger.exception("inference: marquage FAILED (modèle occupé, retries épuisées) en échec")
+        logger.exception("inference: marking FAILED (model busy, retries exhausted) failed")
     finally:
         if engine is not None:
             await engine.dispose()
@@ -376,8 +375,8 @@ async def _start_scheduled(session: AsyncSession, project_id) -> None:
         project = await session.get(Project, project_id)
         if project is not None:
             await start_ready(session, project)
-    except Exception:  # noqa: BLE001 - ne doit pas faire échouer l'analyse qui vient de finir
-        logger.exception("scheduler: démarrage de l'analyse programmée en échec")
+    except Exception:  # noqa: BLE001 - must not fail the analysis that just finished
+        logger.exception("scheduler: starting the scheduled analysis failed")
 
 
 async def _do_inference(
@@ -486,7 +485,7 @@ async def _do_inference(
     # rather than making the first article pay for it.
     for m, name in ((pre, job.prefilter_model), (main, job.model_used)):
         if m is not None and m.backend_type == "OPENAI_API":
-            continue  # backend distant : pas de chargement local
+            continue  # remote backend: no local loading
         ident = m.model_identifier if m is not None else (name or "")
         if ident:
             if heartbeat:
@@ -518,7 +517,7 @@ async def _do_inference(
             model, inference, system, user_prompt, name=job.model_used, meta=meta
         )
         if not isinstance(out, dict):
-            raise InferenceError("invalid_json")  # JSON valide mais pas un objet
+            raise InferenceError("invalid_json")  # valid JSON but not an object
         return out
 
     def note_served(stage: str, meta: dict) -> None:
@@ -541,7 +540,7 @@ async def _do_inference(
     for article in articles:
         if await cancelled():
             return {"cancelled": True, "processed": processed, **counts()}
-        if article.id in done_status:  # déjà fait avant l'interruption : on le compte, on saute
+        if article.id in done_status:  # already done before the interruption: count it, skip it
             st = done_status[article.id]
             auto_accepted += st == PredictionStatus.AUTO_ACCEPTED
             auto_rejected += st == REJECTED
@@ -549,7 +548,7 @@ async def _do_inference(
             processed += 1
             continue
         model_name = job.model_used
-        stage = "main"  # étage producteur de la prédiction (traçabilité)
+        stage = "main"  # stage producing the prediction (traceability)
         prediction = None
         try:
             if pre is not None:
@@ -561,7 +560,7 @@ async def _do_inference(
                 except InferenceError as exc:
                     if str(exc) != "invalid_json":
                         raise
-                    p1 = None  # étage 1 illisible : l'article passe à l'étage 2
+                    p1 = None  # stage 1 unreadable: the article goes to stage 2
                 if p1 is not None and _triage(p1.get("confidence_score")) == REJECTED:
                     prediction, model_name, stage = p1, pre.name, "prefilter"
                     prefiltered += 1
@@ -589,7 +588,7 @@ async def _do_inference(
         snap = job.model_info[stage] or {}
         if snap.get("backend") in (None, "OLLAMA"):
             version = snap.get("version")
-        else:  # local /v1 ou OPENAI_API : version = modèle renvoyé par le serveur
+        else:  # local /v1 or OPENAI_API: version = model returned by the server
             version = meta.get("served_model")
         session.add(
             ArticlePrediction(
@@ -611,7 +610,7 @@ async def _do_inference(
     validation = None
     if opts.get("validate") and gold_all:
         in_lot = {a.id for a in articles}
-        latest = {  # dernière prédiction de chaque article du lot dans cette recherche
+        latest = {  # latest prediction of each batch article in this search
             r.article_id: r.decision_json or {}
             for r in (
                 await session.execute(
@@ -676,7 +675,7 @@ async def _make_mailer(session: AsyncSession) -> Mailer | None:
         db_settings = {key: await get_setting(session, key) for key in _SMTP_SETTING_KEYS}
         return Mailer.from_settings(get_settings(), db_settings)
     except Exception:
-        logger.warning("inference: SMTP config invalide, notification e-mail skipée")
+        logger.warning("inference: invalid SMTP config, e-mail notification skipped")
         return None
 
 

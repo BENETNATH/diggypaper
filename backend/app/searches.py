@@ -38,7 +38,7 @@ async def default_search(db: AsyncSession, project: Project) -> Search:
         .scalars()
         .first()
     )
-    if s is None:  # créée à la première lecture, à partir des réglages du projet à cet instant
+    if s is None:  # created on first read, from the project settings at that moment
         s = Search(
             project_id=project.id,
             name=await next_search_name(db, project.id, project.created_at),

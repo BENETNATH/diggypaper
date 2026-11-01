@@ -89,7 +89,7 @@ async def _get_with_retry(http: httpx.AsyncClient, params: dict) -> httpx.Respon
             continue
         _raise_for_status(resp)
         return resp
-    raise HalError("unreachable")  # pragma: no cover — la boucle ci-dessus couvre
+    raise HalError("unreachable")  # pragma: no cover — the loop above covers it
 
 
 def _fq_bounded(bornes: DateBounds) -> str | None:
@@ -160,7 +160,7 @@ class HalAdapter:
 
     def __init__(self, http: httpx.AsyncClient, api_key: str | None = None) -> None:
         self._http = http
-        self._api_key = api_key  # ignoré : HAL ne prend pas de clé
+        self._api_key = api_key  # ignored: HAL takes no key
         self._last_count: int | None = None
 
     async def search_volume(self, query: str, bornes: DateBounds | None) -> int:
@@ -220,5 +220,5 @@ class HalAdapter:
             return None
         sections = pdf_to_sections(data)
         if not sections:
-            return None  # PDF sans texte extractible : « non disponible »
+            return None  # PDF with no extractable text: "not available"
         return None, sections

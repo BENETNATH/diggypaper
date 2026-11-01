@@ -136,7 +136,7 @@ async def test_external_test_rejects_url_secrets_before_any_call(
             )
             assert r.status_code == 422, url
             assert r.json()["detail"] == SECRETS_DETAIL and "SECRET" not in r.text
-    assert calls == []  # rien n'est parti vers l'extérieur
+    assert calls == []  # nothing left the process
 
 
 async def test_create_model_openai_api_rejects_url_secrets(client, session, admin_user, do_login):
@@ -163,8 +163,8 @@ async def test_patch_openai_identifier_rejects_secrets_and_bad_format(
     await do_login("admin@lab.fr", "admin-pass-123")
     bad = [f"{u}#gpt-4o" for u in BAD_URLS.values() if "#" not in u]
     bad += [
-        "gpt-4o",  # identifiant masqué renvoyé tel quel : refusé, la ligne n'est pas corrompue
-        "https://api.x.test/v1#",  # modèle vide
+        "gpt-4o",  # masked identifier returned as-is: rejected, the row is not corrupted
+        "https://api.x.test/v1#",  # empty model
         "#gpt-4o",  # URL vide
         "https://api.x.test/v1#SECRET-F#gpt-4o",  # deux « # »
     ]
@@ -213,7 +213,7 @@ async def test_legacy_row_with_secrets_masked_in_every_payload(
     session.add(m)
     await session.commit()
 
-    await _login(client, "alice@lab.fr", "alice-pass-123")  # propriétaire
+    await _login(client, "alice@lab.fr", "alice-pass-123")  # owner
     r = await client.get(f"{API}/models")
     _assert_no_secret(r.text)
     owner_view = _item(r, "Legacy")
@@ -249,7 +249,7 @@ async def test_legacy_row_with_secrets_masked_in_every_payload(
     [
         ("https://api.x.test/v1#FRAG-SECRET#gpt-4o", ("gpt-4o", "https://api.x.test")),
         ("https://u:pw-SECRET@api.x.test/v1", ("", "https://api.x.test")),  # sans « # »
-        ("llm-SECRET:8000/v1#gpt-4o", ("gpt-4o", None)),  # sans schéma : aucun endpoint
+        ("llm-SECRET:8000/v1#gpt-4o", ("gpt-4o", None)),  # no scheme: no endpoint
     ],
     ids=["fragment-legacy", "no-hash", "no-scheme"],
 )

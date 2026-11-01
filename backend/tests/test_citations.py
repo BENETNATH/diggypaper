@@ -13,13 +13,13 @@ from app.tasks import _import_pubmed
 ICITE = {
     "1": {"references": [10, 11], "cited_by": [20]},
     "2": {"references": [10], "cited_by": [20, 21]},
-    "3": {"references": [12], "cited_by": [1]},  # 1 est une graine : ignoré
+    "3": {"references": [12], "cited_by": [1]},  # 1 is a seed: ignored
 }
 
 
 def handler(request: httpx.Request) -> httpx.Response:
     if request.url.host == "icite.od.nih.gov":
-        assert "legacy" not in request.url.params  # sinon les champs changent de nom (vu en réel)
+        assert "legacy" not in request.url.params  # otherwise the names change (seen in the wild)
         pmids = request.url.params["pmids"].split(",")
         data = [{"pmid": int(p), **ICITE[p]} for p in pmids if p in ICITE]
         return httpx.Response(200, json={"data": data})

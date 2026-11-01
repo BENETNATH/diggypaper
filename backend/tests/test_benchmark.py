@@ -238,7 +238,7 @@ async def test_benchmark_variants_store_predictions_and_agreement(engine, sessio
     out = {(r["variant"]): r for r in res["results"]}
     assert (
         set(out) == {"strict", "libre"} and out["strict"]["f1_score"] is None
-    )  # pas de gold demandé
+    )  # no gold requested
     # agreement between variants measured without a reference
     from app.db.models import BenchmarkResult
 
@@ -270,14 +270,14 @@ async def test_benchmark_gold_examples_in_prompt_and_excluded_from_scoring(engin
 
 
 def test_benchmark_imports_without_resource(monkeypatch):
-    """Le module Unix ``resource`` est absent sous Windows : la task doit s'importer quand même
-    et renvoyer ``None`` pour la RAM."""
+    """The Unix ``resource`` module is absent on Windows: the task must still import
+    and return ``None`` for the RAM."""
     import importlib
     import sys
 
     import app.tasks.benchmark as benchmark
 
-    # ``None`` dans sys.modules fait lever ImportError à ``import resource``.
+    # ``None`` in sys.modules makes ``import resource`` raise ImportError.
     monkeypatch.setitem(sys.modules, "resource", None)
     try:
         importlib.reload(benchmark)

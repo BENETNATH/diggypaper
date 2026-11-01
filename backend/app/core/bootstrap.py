@@ -42,5 +42,5 @@ async def bootstrap_admin(settings: Settings) -> None:
                     role=UserRole.ADMIN,
                 )
             )
-            logger.info("Bootstrap : création du premier admin (ADMIN_EMAIL)")
+            logger.info("Bootstrap: creating the first admin (ADMIN_EMAIL)")
         await session.commit()

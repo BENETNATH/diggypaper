@@ -119,7 +119,7 @@ class ImportRequest(BaseModel):
     # NCBI term ([dp]) and into the bisection bounds for large result sets (fewer esearch calls).
     date_from: date | None = None
     date_to: date | None = None
-    source: str = "pubmed"  # base interrogée (registre des adapters)
+    source: str = "pubmed"  # queried database (adapters registry)
 
     @model_validator(mode="after")
     def _check_source(self) -> "ImportRequest":
@@ -194,7 +194,7 @@ async def latest_reviews(
         .order_by(HumanAnnotation.created_at.nulls_first(), HumanAnnotation.id)
     )
     for ann, u in rows:
-        out[ann.article_id] = (ann, u)  # la plus récente écrase
+        out[ann.article_id] = (ann, u)  # the most recent wins
     return out
 
 
@@ -293,7 +293,7 @@ async def create_project(payload: ProjectCreate, db: DbDep, user: UserDep) -> di
         text_sections=payload.text_sections,
     )
     db.add(project)
-    await db.flush()  # assigne project.id (défaut Python uuid4) pour la membership
+    await db.flush()  # assigns project.id (default Python uuid4) for the membership
     await default_search(db, project)
     db.add(
         ProjectMember(
@@ -505,7 +505,7 @@ async def trigger_import(
     project at a time, even in non-eager).
     """
     project = await _require_project_member(db, project_id, user)
-    await _require_lead_or_admin(db, project_id, user)  # un import ramène jusqu'à 5 000 articles
+    await _require_lead_or_admin(db, project_id, user)  # an import brings up to 5,000 articles
     if not payload.query.strip():
         raise HTTPException(status_code=422, detail="query must not be empty")
     if project.status == ProjectStatus.PROCESSING:
@@ -519,15 +519,15 @@ async def trigger_import(
         source=payload.source,
     )
     if celery_app.conf.task_always_eager:
-        status = job.state  # SUCCESS / FAILURE (le job est déjà terminé)
+        status = job.state  # SUCCESS / FAILURE (the job is already finished)
     else:
         status = "PENDING"
     return {"job_id": job.id, "status": status}
 
 
 class ReferencesRequest(BaseModel):
-    content: str = Field(min_length=1, max_length=5_000_000)  # fichier ou saisie collée
-    dry_run: bool = False  # analyse seulement : combien d'entrées, quels identifiants
+    content: str = Field(min_length=1, max_length=5_000_000)  # file or pasted input
+    dry_run: bool = False  # analysis only: how many entries, which identifiers
 
 
 @router.post(
@@ -548,7 +548,7 @@ async def import_references(
     await _require_lead_or_admin(db, project_id, user)
     try:
         fmt, entries = parse_references(payload.content)
-    except ValueError as exc:  # JSON mal formé
+    except ValueError as exc:  # malformed JSON
         raise HTTPException(status_code=422, detail="unreadable references file") from exc
     entries = dedupe(entries)
     if not entries:
@@ -657,7 +657,7 @@ def _answer_filters(search: Search, raw: str | None, pdec, hdec) -> list:
         elif types[key] == "boolean":  # Postgres 'true'/'false' ; SQLite (tests) 1/0
             yes = value is True or str(value).lower() in ("true", "1")
             conds.append(col.in_(["true", "1"] if yes else ["false", "0"]))
-        else:  # option de choix : égalité exacte
+        else:  # choice option: exact equality
             conds.append(col == str(value))
     return conds
 
@@ -693,7 +693,7 @@ def text_conditions(q: str | None) -> list:
     conds = []
     blob = search_blob()
     for word in (q or "").split()[:8]:
-        norm = func.lower(func.immutable_unaccent(word))  # même normalisation des deux côtés
+        norm = func.lower(func.immutable_unaccent(word))  # same normalization on both sides
         esc = func.replace(func.replace(func.replace(norm, "\\", "\\\\"), "%", "\\%"), "_", "\\_")
         conds.append(
             blob.like(
@@ -734,7 +734,7 @@ def article_filter(
     pstatus = latest(ArticlePrediction.status)
     pconf = latest(ArticlePrediction.confidence_score)
     pdec = latest(ArticlePrediction.decision_json)
-    hdec = (  # dernière relecture humaine : ses réponses priment sur celles du modèle
+    hdec = (  # latest human review: its answers take precedence over the model's
         select(HumanAnnotation.decision_json)
         .where(
             HumanAnnotation.article_id == Article.id,
@@ -752,7 +752,7 @@ def article_filter(
         .exists()
     )
     where = [lot_condition(search), *text_conditions(q)]
-    if fulltext is not None:  # texte intégral / résumé seul (même critère que les comptages)
+    if fulltext is not None:  # full text / abstract only (same criterion as the counts)
         where.append(
             Article.fulltext_source.is_not(None) if fulltext else Article.fulltext_source.is_(None)
         )
@@ -768,7 +768,7 @@ def article_filter(
         return where, pstatus, pconf, pdec, annotated
     if status == "NONE":
         where.append(pstatus.is_(None))
-    elif status == "TO_REVIEW":  # à relire : incertain ET pas encore annoté
+    elif status == "TO_REVIEW":  # to review: uncertain AND not yet annotated
         where += [pstatus == "NEEDS_HUMAN_REVIEW", ~annotated]
     elif status:
         where.append(pstatus == status)
@@ -850,7 +850,7 @@ async def list_articles(
             .where(lot_condition(scope), pstatus == "NEEDS_HUMAN_REVIEW", ~annotated)
         )
     ).scalar_one()
-    if mine is not None:  # aveugle : pas de répartition des résultats de l'IA
+    if mine is not None:  # blind: no distribution of the AI results
         stats = {"NONE": sum(stats.values()) - stats.get("TO_REVIEW", 0)}
         stats["TO_REVIEW"] = (
             await db.execute(
@@ -858,7 +858,7 @@ async def list_articles(
             )
         ).scalar_one()
 
-    def visible(a) -> bool:  # donnée de l'IA / d'autrui montrable pour cet article ?
+    def visible(a) -> bool:  # AI / others' data showable for this article?
         return mine is None or a.id in mine
 
     return {

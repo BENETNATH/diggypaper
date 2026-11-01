@@ -250,13 +250,13 @@ async def fetch_all_pmids(
         if n == 0:
             return
         if n <= PUBMED_WINDOW or lo == hi:
-            if n > PUBMED_WINDOW:  # plus de 9 999 articles un même jour : improbable
-                logger.warning("PubMed: %d résultats le %s, tronqués", n, lo)
+            if n > PUBMED_WINDOW:  # more than 9,999 articles in one day: unlikely
+                logger.warning("PubMed: %d results on %s, truncated", n, lo)
             for pmid in reversed(await fetch_pmids(term, api_key, http, PUBMED_WINDOW)):
-                found.setdefault(pmid)  # inversé : esearch renvoie les plus anciens d'abord
+                found.setdefault(pmid)  # reversed: esearch returns the oldest first
             return
         mid = lo + (hi - lo) // 2
-        await walk(mid + timedelta(days=1), hi)  # les plus récents d'abord
+        await walk(mid + timedelta(days=1), hi)  # most recent first
         await walk(lo, mid)
 
     # User bounds (optional); an absent bound falls back to the current default.
@@ -491,7 +491,7 @@ class PubMedAdapter:
     def __init__(self, http: httpx.AsyncClient, api_key: str | None) -> None:
         self._http = http
         self._api_key = api_key
-        self._last_count: int | None = None  # cache search_volume → réutilisé par iter_ids
+        self._last_count: int | None = None  # search_volume cache, reused by iter_ids
 
     async def search_volume(self, query: str, bornes: DateBounds | None) -> int:
         b = bornes or DateBounds()

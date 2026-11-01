@@ -56,7 +56,8 @@ async def _create_frozen_project(client, session, researcher_user) -> str:
     model = ModelRegistry(name="Kev-4B", model_identifier="kef/kev-4b")
     session.add(model)
     await session.commit()
-    session.add(ModelShare(model_id=model.id, project_id=project.id))  # modèle autorisé au projet
+    # model authorized for the project
+    session.add(ModelShare(model_id=model.id, project_id=project.id))
     await session.commit()
     return project_id, str(prompt.id)
 
@@ -369,16 +370,16 @@ async def test_extra_instructions_extend_the_generated_prompt(
         assert r.status_code == 202, r.text
         job = await session.get(InferenceJob, uuid.UUID(r.json()["job_id"]))
         ids.append(job.prompt_template_id)
-        job.status = InferenceJobStatus.COMPLETED  # une analyse à la fois
+        job.status = InferenceJobStatus.COMPLETED  # one analysis at a time
         await session.commit()
     assert ids[0] == ids[1]
     prompt = await session.get(PromptTemplate, ids[0])
     assert prompt.system_prompt.endswith("Additional instructions from the reviewer:\nOnly humans.")
     plain = await client.post(url, json={"model": "Kev-4B"})
     job = await session.get(InferenceJob, uuid.UUID(plain.json()["job_id"]))
-    assert job.prompt_template_id != ids[0]  # sans consigne : le prompt généré tout court
+    assert job.prompt_template_id != ids[0]  # no instruction: the generated prompt, plain
     count = (await session.execute(select(PromptTemplate))).scalars().all()
-    assert len(count) == 3  # le prompt de départ, avec consigne, sans consigne
+    assert len(count) == 3  # the starting prompt, with instruction, without instruction
 
 
 async def test_get_inference_status_exposes_model_info_snapshot(

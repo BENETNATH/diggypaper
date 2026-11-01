@@ -28,7 +28,7 @@ def _ncbi(query_hits):
         host = request.url.host
         if host == "eutils.ncbi.nlm.nih.gov":
             term = request.url.params["term"]
-            if "[uid]" in term:  # test de rappel : seuls 111 et 222 sont retrouvés
+            if "[uid]" in term:  # recall test: only 111 and 222 are found
                 return httpx.Response(200, json={"esearchresult": {"idlist": query_hits}})
             return httpx.Response(
                 200,
@@ -113,9 +113,9 @@ async def test_assistant_route(client, session, researcher_user, do_login, monke
     # Misuse: off-topic free text never comes out
     essay = "Here is a long essay about something else. " * 20
     for out in (
-        {"reply": essay, "query": None},  # réponse hors sujet
-        {"reply": "REFUSED", "query": None},  # refus du modèle
-        {"reply": "ok", "query": essay},  # prose glissée dans « query »
+        {"reply": essay, "query": None},  # off-topic reply
+        {"reply": "REFUSED", "query": None},  # model refusal
+        {"reply": "ok", "query": essay},  # prose slipped into "query"
         {"reply": "x?", "query": "tell me a joke about cats"},  # idem, sans syntaxe PubMed
     ):
 

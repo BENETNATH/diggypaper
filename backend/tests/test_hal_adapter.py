@@ -14,7 +14,7 @@ DOC = {
     "docid": "478278",
     "halId_s": "hal-00478278",
     "title_s": ["A title"],
-    "abstract_s": ["An abstract", ""],  # multivalué : la première non vide
+    "abstract_s": ["An abstract", ""],  # multivalued: the first non-empty
     "language_s": ["en"],
     "authFullName_s": ["Alice", "Bob"],
     "journalTitle_s": "J Clin",
@@ -96,7 +96,7 @@ async def test_iter_ids_cursor_pagination_and_limit():
     def handler(request: httpx.Request) -> httpx.Response:
         cursors.append(request.url.params.get("cursorMark"))
         rows = int(request.url.params["rows"])
-        if len(cursors) == 1:  # page 1 : 2 docs, doublon ignoré
+        if len(cursors) == 1:  # page 1: 2 docs, duplicate ignored
             docs = [{"halId_s": "hal-1"}, {"halId_s": "hal-1"}, {"halId_s": "hal-2"}]
             return _resp(9, docs, "c1")
         assert rows == 1  # page 2 : rows = limit - len(seen)
@@ -104,7 +104,7 @@ async def test_iter_ids_cursor_pagination_and_limit():
 
     async with _client(handler) as http:
         ad = HalAdapter(http, None)
-        ad._last_count = 9  # volume déjà fait (le pipeline appelle l'un avant l'autre)
+        ad._last_count = 9  # volume already done (the pipeline calls one before the other)
         ids = [nid async for nid in ad.iter_ids("q", DateBounds(), limit=3)]
     assert ids == ["hal-1", "hal-2", "hal-3"]
     assert cursors == ["*", "c1"]
@@ -219,7 +219,7 @@ async def test_fetch_fulltext_unavailable(monkeypatch):
 
     async with _client(lambda r: _resp(0, [])) as http:
         ad = HalAdapter(http, None)
-        assert await ad.fetch_fulltext(FILE_URL) is None  # refusé
+        assert await ad.fetch_fulltext(FILE_URL) is None  # rejected
         assert await ad.fetch_fulltext("") is None  # vide : pas d'appel
 
 

@@ -10,7 +10,7 @@ type Messages = { models: Record<string, string> };
 function tFor(messages: Messages) {
   return (key: string, values?: Record<string, string | number>) => {
     const raw = messages.models[key];
-    if (typeof raw !== "string") throw new Error(`clé manquante : models.${key}`);
+    if (typeof raw !== "string") throw new Error(`missing key: models.${key}`);
     return raw.replace(/\{(\w+)\}/g, (_, k: string) => String(values?.[k] ?? `{${k}}`));
   };
 }

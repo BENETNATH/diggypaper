@@ -179,7 +179,7 @@ async def test_get_project_as_member(client, session, researcher_user, do_login)
     assert data["status"] == "DRAFT"
     assert data["article_count"] == 2
     assert data["created_by"] == str(researcher_user.id)
-    assert data["role_in_project"] == "LEAD"  # créateur → LEAD dans project_members
+    assert data["role_in_project"] == "LEAD"  # creator → LEAD in project_members
 
 
 async def test_get_project_invited_lead_role_in_payload(client, session, researcher_user, do_login):
@@ -189,7 +189,7 @@ async def test_get_project_invited_lead_role_in_payload(client, session, researc
     ``isProjectLead()`` false in the UI and the Recherches page showed
     "Only a project lead can create searches" to a real LEAD."""
     owner = await _make_user(session, "owner@lab.fr", UserRole.RESEARCHER, "owner-pass-123")
-    owner.can_create_projects = True  # le helper local crée des invités par défaut
+    owner.can_create_projects = True  # the local helper creates invites by default
     await session.commit()
     await do_login("owner@lab.fr", "owner-pass-123", consent=True)
     project_id = await _create_project(client)
@@ -532,7 +532,7 @@ async def test_list_jobs(client, session, researcher_user, do_login, engine, mon
     _mock_ncbi_for_task(monkeypatch, engine, ["111"])
     resp = await client.post(f"/api/v1/projects/{project_id}/import", json={"query": "cancer"})
     assert resp.status_code == 202
-    assert resp.json()["status"] == "SUCCESS"  # m1 : statut réel en eager
+    assert resp.json()["status"] == "SUCCESS"  # m1: real status in eager
     resp = await client.get(f"/api/v1/projects/{project_id}/jobs")
     assert resp.status_code == 200
     jobs = resp.json()["jobs"]
@@ -573,7 +573,7 @@ async def test_import_failure_jobs_no_key_leak(
     )
     resp = await client.post(f"/api/v1/projects/{project_id}/import", json={"query": "cancer"})
     assert resp.status_code == 202
-    assert resp.json()["status"] == "FAILURE"  # eager : statut réel
+    assert resp.json()["status"] == "FAILURE"  # eager: real status
     resp = await client.get(f"/api/v1/projects/{project_id}/jobs")
     assert resp.status_code == 200
     jobs = resp.json()["jobs"]

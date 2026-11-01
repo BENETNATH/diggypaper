@@ -168,7 +168,7 @@ async def test_download_pdf_refuses_redirect_to_internal_host(monkeypatch):
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
         assert await _download_pdf("https://open.example/a.pdf", http) is None
-    assert hits == ["open.example"]  # le saut interne n'a jamais été requêté
+    assert hits == ["open.example"]  # the internal skip was never requested again
 
 
 # --- is the PDF really this article? ---------------------------------------------------
@@ -184,7 +184,7 @@ def test_pdf_matches_article_title_doi_and_unverifiable():
     from app.fulltext import pdf_matches_article as match
 
     ok = _sec("Berger. An Automated machine-vision based INDEX for Rett syndrome in mouse models. ")
-    assert match(TITLE, None, ok) is True  # casse, tirets, ponctuation ignorés
+    assert match(TITLE, None, ok) is True  # case, dashes, punctuation ignored
     other = _sec("Deep learning for protein folding prediction across large genomes " * 5)
     assert match(TITLE, None, other) is False
     # badly extracted title, but the article's DOI at the top of the document
@@ -435,7 +435,7 @@ async def test_search_fulltext_relaunch_for_one_article(
 
     async def fake_refresh(db, art, http):
         calls.append("refresh")
-        art.pmcid = "PMC42"  # le préprint a été publié entre-temps
+        art.pmcid = "PMC42"  # the preprint was published in the meantime
 
     async def fake_find(pmid, pmcid, doi, email, http, title=None):
         calls.append((pmcid, title))
@@ -501,11 +501,11 @@ def test_doi_must_match_exactly_not_as_a_prefix():
 
     head = "Cell. doi: 10.1016/j.cell.2020.12.003 Published online."
     assert doi_in(head, "10.1016/j.cell.2020.12.003")
-    assert doi_in(head, "10.1016/J.CELL.2020.12.003")  # casse ignorée
-    assert not doi_in(head, "10.1016/j.cell.2020.1")  # préfixe d'un autre DOI
+    assert doi_in(head, "10.1016/J.CELL.2020.12.003")  # case ignored
+    assert not doi_in(head, "10.1016/j.cell.2020.1")  # prefix of another DOI
     assert not doi_in(head, "10.1016/j.cell.2020.12")
     assert doi_in("see 10.1016/j.cell.2020.12.003.", "10.1016/j.cell.2020.12.003")  # point final
     assert doi_in(
         "doi 10.1016/j.cell.2020.12.\n003", "10.1016/j.cell.2020.12.003"
-    )  # coupé en ligne
+    )  # cut across lines
     assert not doi_in(head, None)

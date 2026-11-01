@@ -71,7 +71,7 @@ async def test_default_search_covers_the_whole_corpus(client, corpus):
     items = (await client.get(f"/api/v1/projects/{project.id}/searches")).json()["items"]
     assert len(items) == 1 and items[0]["is_default"] and items[0]["lot_size"] == 4
     assert items[0]["predicted"] == 4
-    assert re.fullmatch(r"\d{6}-1", items[0]["name"])  # AAMMJJ-n, pas de libellé français
+    assert re.fullmatch(r"\d{6}-1", items[0]["name"])  # YYMMDD-n, no French label
 
 
 async def test_derive_search_from_answers_and_scope_results(client, session, corpus):
@@ -95,7 +95,7 @@ async def test_derive_search_from_answers_and_scope_results(client, session, cor
     assert await titles(client, project, search=s["id"]) == ["A1", "A2"]
     assert await titles(client, project) == ["A1", "A2", "A3", "A4"]
     items = (await client.get(f"{base}/articles", params={"search": s["id"]})).json()["items"]
-    assert all(i["prediction_status"] is None for i in items)  # aucune prédiction ici
+    assert all(i["prediction_status"] is None for i in items)  # no prediction here
     # a re-read in the new search does not touch the initial search
     r = await client.post(
         f"{base}/articles/{arts[0].id}/annotation", params={"search": s["id"]}, json={"ai": False}
@@ -236,7 +236,7 @@ async def test_gold_from_reviews_any_member_with_source_link(client, session, co
     # the re-read then changes: the gold stays frozen but flags itself as stale
     import asyncio
 
-    await asyncio.sleep(1.1)  # SQLite : created_at à la seconde
+    await asyncio.sleep(1.1)  # SQLite: created_at to the second
     await client.post(f"{base}/articles/{arts[0].id}/annotation", json={"ai": True})
     by = {i["article_title"]: i for i in (await client.get(f"{base}/gold")).json()["items"]}
     assert by["A1"]["ground_truth_json"]["ai"] is False and by["A1"]["stale"] is True
@@ -272,8 +272,8 @@ async def test_gold_is_shared_by_searches_with_the_same_question(client, session
     golds = {}
     for key, sid in (("same", same["id"]), ("other", other["id"])):
         golds[key] = (await client.get(f"{base}/gold", params={"search": sid})).json()["items"]
-    assert len(golds["same"]) == 1  # même définition : la référence vaut aussi ici
-    assert golds["other"] == []  # autre question : autre vérité
+    assert len(golds["same"]) == 1  # same definition: the reference also counts here
+    assert golds["other"] == []  # other question: other truth
 
 
 async def test_blind_sample_hides_predictions_until_reviewed(client, session, corpus):
@@ -347,7 +347,7 @@ async def test_blind_search_hides_model_and_other_reviewers_everywhere(
     base = f"/api/v1/projects/{project.id}"
     s = await _blind_search(client, project)
     sid = __import__("uuid").UUID(s["id"])
-    for a in arts:  # l'IA a répondu dans cette recherche
+    for a in arts:  # the AI answered in this search
         session.add(
             ArticlePrediction(
                 article_id=a.id,
@@ -393,8 +393,8 @@ async def test_blind_search_hides_model_and_other_reviewers_everywhere(
 async def test_blind_list_shows_only_the_callers_own_review(
     client, session, corpus, do_login, researcher_user
 ):
-    """Aveugle : une fois SA relecture faite, la liste projette SA relecture, pas la dernière
-    en date d'un autre membre (fuite review / answers / confidence / by)."""
+    """Blind: once their own review is done, the list projects their review, not the
+    most recent one of another member (review / answers / confidence / by leak)."""
     import asyncio
 
     project, arts = corpus
@@ -415,12 +415,12 @@ async def test_blind_list_shows_only_the_callers_own_review(
         items = (await client.get(f"{base}/articles", params={"search": s["id"]})).json()["items"]
         return next(i for i in items if i["id"] == aid)
 
-    # A (LEAD) relit d'abord, puis B relit le même article plus tard
+    # A (LEAD) reviews first, then B reviews the same article later
     await annotate(False, 0.2)
     b = await _member(session, project, "b@lab.fr")
     await _member(session, project, "c@lab.fr")
     await do_login("b@lab.fr", "member-pass-123", consent=True)
-    await asyncio.sleep(1.1)  # created_at à la seconde : B est bien « la plus récente »
+    await asyncio.sleep(1.1)  # created_at to the second: B is truly "the most recent"
     await annotate(True, 0.8)
 
     # B voit SA relecture
@@ -429,7 +429,7 @@ async def test_blind_list_shows_only_the_callers_own_review(
     assert mine_b["confidence"] == 0.8
     assert [x["value"] for x in mine_b["answers"] if x["key"] == "ai"] == [True]
 
-    # A voit SA relecture, pas celle de B (pourtant plus récente)
+    # A sees their own review, not B's (although more recent)
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     mine_a = await listed()
     assert mine_a["review"]["by"] == (researcher_user.full_name or researcher_user.email)
@@ -437,7 +437,7 @@ async def test_blind_list_shows_only_the_callers_own_review(
     assert [x["value"] for x in mine_a["answers"] if x["key"] == "ai"] == [False]
     assert mine_a["annotated"] is True
 
-    # C n'a rien relu : aucune relecture (ni A ni B) ne lui est montrée
+    # C reviewed nothing: no review (A's nor B's) is shown to them
     await do_login("c@lab.fr", "member-pass-123", consent=True)
     none_c = await listed()
     assert none_c["review"] is None and none_c["answers"] == []
@@ -448,7 +448,7 @@ async def test_only_lead_or_author_can_refresh_a_gold_reference(client, session,
     project, arts = corpus
     base = f"/api/v1/projects/{project.id}"
     await client.post(f"{base}/articles/{arts[0].id}/annotation", json={"ai": True})
-    await client.post(f"{base}/gold/from-reviews", json={})  # ajouté par le LEAD
+    await client.post(f"{base}/gold/from-reviews", json={})  # added by the LEAD
     await _member(session, project, "ann2@lab.fr")
     await do_login("ann2@lab.fr", "member-pass-123", consent=True)
     import asyncio
@@ -456,7 +456,7 @@ async def test_only_lead_or_author_can_refresh_a_gold_reference(client, session,
     await asyncio.sleep(1.1)
     await client.post(f"{base}/articles/{arts[0].id}/annotation", json={"ai": False})
     r = await client.post(f"{base}/gold/from-reviews", json={"refresh": True})
-    assert r.json()["updated"] == 0  # pas la référence d'un autre
+    assert r.json()["updated"] == 0  # not the other's reference
     g = (await client.get(f"{base}/gold")).json()["items"][0]
     assert g["ground_truth_json"]["ai"] is True
 
@@ -470,7 +470,7 @@ async def test_deleting_a_search_keeps_the_gold_shared_with_the_initial_one(
         await client.post(
             f"{base}/searches", json={"name": "enfant", "selection": {"answers": {"ai": True}}}
         )
-    ).json()  # même question que l'initiale
+    ).json()  # same question as the initial one
     await client.post(
         f"{base}/articles/{arts[0].id}/annotation",
         params={"search": child["id"]},
@@ -492,7 +492,7 @@ def test_metrics_tolerate_untyped_model_outputs():
     preds = {1: {}, 2: {"ai": "false", "confidence_score": "0.2"}}  # 1 : sortie invalide
     s = metrics.score(fields, preds, gold)
     assert s["invalid"] == 1
-    rel = s["relevance"]  # l'invalide sur un gold négatif est une ERREUR (faux positif)
+    rel = s["relevance"]  # invalidating a negative gold is an ERROR (false positive)
     assert (rel["fp"], rel["fn"], rel["tn"]) == (1, 1, 0)
     assert s["items"]["ai"]["n"] == 1 and s["items"]["ai"]["fn"] == 1  # "false" ≠ vrai
 
@@ -569,15 +569,15 @@ async def test_quick_text_search_on_title_authors_pmid_and_doi(client, session, 
         assert r.status_code == 200, r.text
         return sorted(i["title"] for i in r.json()["items"]), r.json()["total"]
 
-    assert (await found("GAIT"))[0] == ["Deep learning of mouse gait"]  # titre, casse ignorée
+    assert (await found("GAIT"))[0] == ["Deep learning of mouse gait"]  # title, case ignored
     assert (await found("dupont"))[0] == ["Deep learning of mouse gait"]  # auteur
-    assert (await found("smith mouse"))[0] == ["Deep learning of mouse gait"]  # mots cumulés (ET)
+    assert (await found("smith mouse"))[0] == ["Deep learning of mouse gait"]  # words ANDed
     assert (await found("smith zebrafish"))[0] == []  # ET : pas de correspondance commune
     assert (await found("10.1/xyz"))[0] == ["Rat 100% sure_thing"]  # DOI
     assert (await found("nature"))[0] == ["Rat 100% sure_thing"]  # journal
     assert (await found("555012"))[0] == ["Zebrafish tracking"]  # PMID
-    assert (await found("100%"))[0] == ["Rat 100% sure_thing"]  # % littéral, pas un joker
-    assert (await found("sure_t"))[0] == ["Rat 100% sure_thing"]  # _ littéral
+    assert (await found("100%"))[0] == ["Rat 100% sure_thing"]  # % literal, not a wildcard
+    assert (await found("sure_t"))[0] == ["Rat 100% sure_thing"]  # _ literal
     assert (await found("a%"))[0] == []  # pas de joker
     # total (pagination) and combined filters
     assert (await found("   "))[1] == 4  # que des espaces : pas de filtre
@@ -605,7 +605,7 @@ async def test_filter_results_by_full_text_or_abstract_only(client, session, cor
     assert await total("articles", fulltext="false") == 2
     assert await total("articles") == 4
     assert await total("articles", fulltext="true", status="AUTO_ACCEPTED") == 1  # se combine
-    ris = await total("export.ris", fulltext="true")  # les références suivent le filtre
+    ris = await total("export.ris", fulltext="true")  # references follow the filter
     assert ris.count("TY  - ") == 2
 
 
@@ -624,11 +624,11 @@ async def test_quick_search_ignores_accents_and_case(client, session, corpus):
         assert r.status_code == 200, r.text
         return sorted(i["title"] for i in r.json()["items"])
 
-    assert await found("etude SOMMEIL") == ["Étude du sommeil chez la souris"]  # sans accents
-    assert await found("Étude") == ["Étude du sommeil chez la souris"]  # avec accents
-    assert await found("SMITH dupont") == ["Étude du sommeil chez la souris"]  # auteurs
+    assert await found("etude SOMMEIL") == ["Étude du sommeil chez la souris"]  # without accents
+    assert await found("Étude") == ["Étude du sommeil chez la souris"]  # with accents
+    assert await found("SMITH dupont") == ["Étude du sommeil chez la souris"]  # authors
     assert await found("epidemiologie francaise") == ["Ordinary title"]  # journal
-    assert await found("100%") == []  # % et _ restent littéraux
+    assert await found("100%") == []  # % and _ stay literal
 
 
 # --- model traceability + version (spec 2026-10-29-tracabilite-modele-version §4) ---
@@ -723,9 +723,9 @@ async def test_blind_search_export_hides_model_identifier_and_version(
         f"/api/v1/projects/{project.id}/export.xlsx", params={"search": s["id"]}
     )
     assert resp.status_code == 200
-    head, *rows = list(load_workbook(io.BytesIO(resp.content))["Résultats"].values)
+    head, *rows = list(load_workbook(io.BytesIO(resp.content))["Results"].values)
     assert rows
-    for col in ("Modèle", "Identifiant du modèle", "Version du modèle"):
+    for col in ("Model", "Model identifier", "Model version"):
         assert all(r[head.index(col)] is None for r in rows)
 
     out = tmp_path / "blind.zip"

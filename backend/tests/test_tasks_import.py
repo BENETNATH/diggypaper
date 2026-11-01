@@ -150,7 +150,7 @@ async def test_import_pubmed_inserts_articles_and_freezes(engine):
     by_pmid = {a.pmid: a for a in articles}
     assert by_pmid["111"].pmcid == "PMC111"
     assert by_pmid["111"].methods_text == "Randomised design."
-    assert by_pmid["111"].fulltext_source == "pmc"  # compté « avec texte intégral »
+    assert by_pmid["111"].fulltext_source == "pmc"  # counted "with full text"
     assert by_pmid["111"].title == "Title 111"
     assert by_pmid["111"].abstract == "Abstract 111."
     assert by_pmid["111"].original_language == "en"
@@ -630,7 +630,7 @@ async def test_import_real_path_eager_no_delay_mock(engine, monkeypatch):
     jobs = await _jobs_for(engine, project.id)
     assert len(jobs) == 1
     assert jobs[0].status == ImportJobStatus.COMPLETED
-    assert jobs[0].job_id is not None  # l'id Celery est persisté
+    assert jobs[0].job_id is not None  # the Celery id is persisted
 
 
 # --- import_pubmed_task (wrapper sync) ---

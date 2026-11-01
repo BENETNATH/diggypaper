@@ -235,7 +235,7 @@ async def resend_invitation(invitation_id: uuid.UUID, db: DbDep, admin: AdminDep
         try:
             await mailer.send(to=inv.email, subject=subject, body=body)
             sent = True
-        except Exception:  # noqa: BLE001 - SMTP en panne : on renvoie le lien à la place
+        except Exception:  # noqa: BLE001 - SMTP down: return the link instead
             logger.exception("invitation resend failed")
     return {"email_sent": sent, "link": None if sent else link}
 

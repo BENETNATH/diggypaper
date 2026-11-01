@@ -121,7 +121,7 @@ def _parse_work(w: dict) -> dict:
         "language": w.get("language"),
         "journal": ((w.get("primary_location") or {}).get("source") or {}).get("display_name"),
         "pub_date": w.get("publication_date"),
-        "fulltext_note": "metadata_only",  # D2 : source métadonnées seulement
+        "fulltext_note": "metadata_only",  # D2: metadata-only source
     }
     doi = (w.get("doi") or "").removeprefix(_DOI_PREFIX)
     if doi:
@@ -221,7 +221,7 @@ class OpenAlexAdapter:
         return metas
 
     async def fetch_fulltext(self, id: str) -> tuple[str, list[dict]] | None:
-        return None  # source métadonnées seulement (→ fulltext_note "metadata_only")
+        return None  # metadata-only source (→ fulltext_note "metadata_only")
 
     def _key_params(self) -> dict | None:
         return {"api_key": self._api_key} if self._api_key else None

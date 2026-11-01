@@ -107,9 +107,9 @@ async def test_anonymize_is_idempotent(client, engine, session, researcher_user,
     assert resp2.status_code == 204
     hash2, ann_hash2, email2 = await _fresh_user_and_annotation(engine)
 
-    assert hash2 == hash1  # anonymized_hash inchangé
-    assert ann_hash2 == ann_hash1  # annotator_hash inchangé
-    assert email2 == email1  # email anonymisé non régénéré
+    assert hash2 == hash1  # anonymized_hash unchanged
+    assert ann_hash2 == ann_hash1  # annotator_hash unchanged
+    assert email2 == email1  # anonymized email not regenerated
 
 
 async def test_anonymized_admin_cannot_invite(client, admin_user, mock_mailer, do_login):

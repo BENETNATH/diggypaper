@@ -1,11 +1,11 @@
 import { detectSwipe, SWIPE_THRESHOLD } from "@/lib/swipe";
 
 describe("detectSwipe", () => {
-  it("détecte un swipe à droite", () => {
+  it("detects a right swipe", () => {
     expect(detectSwipe({ x: 100, y: 100 }, { x: 200, y: 105 })).toBe("right");
   });
 
-  it("détecte un swipe à gauche", () => {
+  it("detects a left swipe", () => {
     expect(detectSwipe({ x: 200, y: 100 }, { x: 100, y: 105 })).toBe("left");
   });
 
@@ -17,7 +17,7 @@ describe("detectSwipe", () => {
     expect(detectSwipe({ x: 100, y: 100 }, { x: 120, y: 100 })).toBe("none");
   });
 
-  it("utilise le seuil par défaut", () => {
+  it("uses the default threshold", () => {
     // dx = 50 = threshold → swipe
     expect(detectSwipe({ x: 0, y: 0 }, { x: SWIPE_THRESHOLD, y: 0 })).toBe("right");
     // dx = 49 < threshold → none

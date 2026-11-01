@@ -25,8 +25,8 @@ def test_resolve_lang_qvalue_edge_cases():
     # q absent -> 1.0; q=0 -> excluded; unknown code -> ignored; tie -> order of appearance.
     assert resolve_lang("en;q=0.5,fr;q=0.9") == "fr"
     assert resolve_lang("fr;q=0") == "en"  # q=0 → exclu, fallback en
-    assert resolve_lang("xx,en;q=0.3") == "en"  # code inconnu ignoré
-    assert resolve_lang("en;q=0.9,fr;q=0.9") == "en"  # égalité → 1re dans l'ordre
+    assert resolve_lang("xx,en;q=0.3") == "en"  # unknown code ignored
+    assert resolve_lang("en;q=0.9,fr;q=0.9") == "en"  # tie → first in order
 
 
 def test_resolve_lang_fallback_en():
@@ -87,10 +87,10 @@ def test_default_language_from_env(monkeypatch):
     get_settings.cache_clear()
     try:
         assert default_lang() == "fr" and resolve_lang(None) == "fr"
-        assert resolve_lang("de") == "de"  # l'en-tête explicite prime
+        assert resolve_lang("de") == "de"  # the explicit header wins
         monkeypatch.setenv("DEFAULT_LANGUAGE", "xx")
         get_settings.cache_clear()
-        assert default_lang() == "en"  # valeur invalide : repli sûr
+        assert default_lang() == "en"  # invalid value: safe fallback
     finally:
         monkeypatch.delenv("DEFAULT_LANGUAGE", raising=False)
         get_settings.cache_clear()

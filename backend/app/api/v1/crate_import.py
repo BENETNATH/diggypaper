@@ -20,7 +20,7 @@ router = APIRouter(prefix="/projects", tags=["crate-import"])
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 UserDep = Annotated[User, Depends(get_current_user)]
 
-MAX_UPLOAD = 1024**3  # 1 Go (un crate avec beaucoup de PDF est gros)
+MAX_UPLOAD = 1024**3  # 1 Go (a crate with many PDFs is big)
 
 
 def upload_dir() -> Path:

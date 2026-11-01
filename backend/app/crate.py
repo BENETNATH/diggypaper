@@ -178,16 +178,16 @@ def project_info(project, fields, import_jobs, inf_job, models: dict, prompt) ->
 
     def model_info(name, stage):
         snap = (inf_job.model_info or {}).get(stage)
-        if snap:  # instantané figé au démarrage du job (aucun secret par construction)
+        if snap:  # snapshot frozen at job start (no secret by construction)
             cfg = {k: snap.get(k) for k in ("name", "backend", "identifier")}
-            if snap.get("endpoint"):  # même modèle sur un autre serveur = autre empreinte
+            if snap.get("endpoint"):  # same model on another server = different fingerprint
                 cfg["endpoint"] = snap["endpoint"]
             return {**snap, "config_sha256": sha256_json(cfg)}
-        m = models.get(name)  # ancien job : repli sur le registre vivant, sans secret d'URL
+        m = models.get(name)  # old job: fall back to the live registry, without URL secret
         if not name or m is None:
             return {"name": name}
         backend = str(m.backend_type) if m.backend_type else None
-        ident, endpoint = public_model_ref(backend, m.model_identifier)  # jamais la clé API
+        ident, endpoint = public_model_ref(backend, m.model_identifier)  # never the API key
         cfg = {"name": m.name, "backend": backend, "identifier": ident}
         if endpoint:
             cfg["endpoint"] = endpoint
@@ -292,13 +292,13 @@ def build_graph(project, articles, keys: dict, files: dict, info: dict, now: str
         }
     )
     labels = {
-        "README.md": "Description du contenu",
-        "project.json": "Projet, requêtes, modèles et prompt",
-        "extraction.csv": "Tableau d'extraction",
-        "results.xlsx": "Résultats complets (Excel)",
-        "references.ris": "Références (RIS : Zotero, EndNote, Mendeley)",
-        "references.bib": "Références (BibTeX)",
-        "prisma.svg": "Diagramme de flux PRISMA 2020",
+        "README.md": "Content description",
+        "project.json": "Project, queries, models and prompt",
+        "extraction.csv": "Extraction table",
+        "results.xlsx": "Full results (Excel)",
+        "references.ris": "References (RIS: Zotero, EndNote, Mendeley)",
+        "references.bib": "References (BibTeX)",
+        "prisma.svg": "PRISMA 2020 flow diagram",
     }
     graph += [file_entity(p, labels[p]) for p in top]
 
@@ -341,8 +341,8 @@ def build_graph(project, articles, keys: dict, files: dict, info: dict, now: str
         )
         root["hasPart"].append({"@id": folder})
         names_ = {
-            "metadata.json": "Métadonnées, réponses IA et humaines",
-            "fulltext.md": "Texte intégral",
+            "metadata.json": "Metadata, AI and human answers",
+            "fulltext.md": "Full text",
             "abstract.md": "Abstract",
             "fulltext.pdf": "PDF",
         }
@@ -405,22 +405,22 @@ Export RO-Crate (Diggypaper) — {datetime.now(UTC):%Y-%m-%d}.
 
 {project.question or ""}
 
-- `ro-crate-metadata.json` : description JSON-LD de tout le contenu
-- `project.json` : question, champs, requêtes d'import (source, requête, bornes), modèles
-  (empreintes), prompt
-- `prisma.svg` : diagramme de flux PRISMA 2020 (effectifs aussi dans `project.json`)
-- `references.ris` / `references.bib` : références à importer dans Zotero, EndNote, JabRef…
-- `extraction.csv` / `results.xlsx` : tableau d'extraction (réponses IA, certitudes, relecture)
-- Licence : {get_settings().crate_license_name} pour les métadonnées, réponses et relectures ;
-  les textes intégraux et PDF conservent la licence de leurs ayants droit.
-- `articles/<clé>/` : un dossier par article ({n_articles}) — `metadata.json`, `fulltext.md`
-  ({n_text} avec texte intégral, sinon `abstract.md`) et `fulltext.pdf` ({n_pdf} conservés)
+- `ro-crate-metadata.json` : JSON-LD description of the whole content
+- `project.json` : question, fields, import queries (source, query, bounds), models
+  (fingerprints), prompt
+- `prisma.svg` : PRISMA 2020 flow diagram (counts also in `project.json`)
+- `references.ris` / `references.bib` : references to import into Zotero, EndNote, JabRef…
+- `extraction.csv` / `results.xlsx` : extraction table (AI answers, confidences, review)
+- License: {get_settings().crate_license_name} for the metadata, answers and reviews;
+  full texts and PDFs keep the license of their rights holders.
+- `articles/<key>/` : one folder per article ({n_articles}) — `metadata.json`, `fulltext.md`
+  ({n_text} with full text, otherwise `abstract.md`) and `fulltext.pdf` ({n_pdf} kept)
 
-Dans `metadata.json`, chaque entrée `human` conserve l'identifiant et la date de l'annotation,
-les réponses, les notes et les `evidence_quotes` enregistrés (null si absents).
-`reviewer_ref` est un pseudonyme propre au projet, dérivé de l'empreinte salée utilisée lors
-de la suppression du compte ; il reste stable après cette suppression si l'e-mail et le sel
-n'ont pas changé, et il est null si l'identité n'est plus disponible. Aucun nom ou e-mail n'est
-ajouté à ces entrées (`results.xlsx` contient, lui, les noms des relecteurs). Ces citations ne
-constituent ni une vérification de source ni une évaluation de leur soutien aux réponses.
+In `metadata.json`, each `human` entry keeps the annotator's identifier and the annotation
+date, the answers, the notes and the recorded `evidence_quotes` (null if absent).
+`reviewer_ref` is a project-local pseudonym, derived from the salted fingerprint used at
+account deletion; it stays stable after that deletion if the e-mail and the salt have not
+changed, and it is null if the identity is no longer available. No name or e-mail is added
+to these entries (`results.xlsx` does contain the reviewers' names). These citations are
+neither a source verification nor an evaluation of their support for the answers.
 """

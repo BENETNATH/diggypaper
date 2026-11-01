@@ -104,7 +104,7 @@ def _arts(*sources):
 def test_prisma_identified_label_lists_sources():
     """The "identified" label lists the sources actually present + the imported
     lists; the pubmed+refs case stays identical to the current one."""
-    articles = _arts(None)  # lignes sans source (jobs antérieurs à la migration 0030)
+    articles = _arts(None)  # rows without a source (jobs prior to migration 0030)
     pubmed_refs = [_job("pubmed"), _job(None, kind="references")]
     counts = prisma.prisma_counts(articles, {}, {}, pubmed_refs)
     svg = prisma.render_svg(counts, "fr", *prisma.identified_parts(articles, pubmed_refs))

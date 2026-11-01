@@ -29,7 +29,7 @@ async def test_get_masks_secrets_and_nulls(client, session, admin_user, do_login
     data = resp.json()
     assert data["GLOBAL"]["ncbi_api_key"] == MASK
     assert data["GLOBAL"]["smtp_host"] == "mail.example.com"
-    assert data["GLOBAL"]["llm_api_key"] is None  # non défini → null
+    assert data["GLOBAL"]["llm_api_key"] is None  # not defined → null
 
 
 async def test_get_project_scope_via_query_param(client, session, admin_user, do_login):
@@ -432,7 +432,7 @@ async def test_put_partial_failure_rolls_back(client, session, admin_user, do_lo
     async def flaky_set_setting(*args, **kwargs):
         nonlocal calls
         calls += 1
-        if calls == 2:  # la 2e clé (smtp_port) échoue
+        if calls == 2:  # the 2nd key (smtp_port) fails
             raise RuntimeError("boom")
         return await real_set_setting(*args, **kwargs)
 

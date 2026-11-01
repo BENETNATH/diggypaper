@@ -85,7 +85,7 @@ async def start_ready(db: AsyncSession, project: Project) -> str | None:
             .first()
         )
         if last is None or last.status != InferenceJobStatus.COMPLETED:
-            continue  # l'origine n'a pas (encore) fini : on attend
+            continue  # the origin has not (yet) finished: wait
         ids = await select_articles(db, project, Selection(**cfg["selection"]))
         if not ids:
             await _fail(db, s, "empty_selection")

@@ -21,8 +21,8 @@ def resolve_mode() -> str:
     raw = os.environ.get("OLLAMA_MODE", "").strip().lower()
     if raw in MODES:
         return raw
-    if raw:  # vide ≠ invalide : pas de warning
-        logger.warning("OLLAMA_MODE invalide (%r) : 'docker' appliqué", raw)
+    if raw:  # empty is not invalid: no warning
+        logger.warning("invalid OLLAMA_MODE (%r): 'docker' applied", raw)
     return "docker"
 
 

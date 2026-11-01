@@ -74,7 +74,7 @@ async def anonymize(
     user.email = f"anonymized-{uuid.uuid4().hex[:12]}@invalid.local"  # m5 : 12 hex
     user.hashed_password = ""
     user.full_name = None
-    user.role = UserRole.RESEARCHER  # F2 : dégradation (plus d'accès admin résiduel)
+    user.role = UserRole.RESEARCHER  # F2: downgrade (no residual admin access)
     user.anonymized_hash = anonymized_hash
     await db.commit()
     return Response(status_code=204)

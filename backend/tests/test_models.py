@@ -61,16 +61,16 @@ EXPECTED_TABLES = {
     "article_predictions",
     "human_annotations",
     "system_settings",
-    "import_jobs",  # lot 4A : jobs d'import PubMed (query + statut + résultat/erreur)
-    "inference_jobs",  # lot 5 : jobs d'inférence massive (statut + statistiques)
-    "article_files",  # PDF conservés (RO-Crate)
+    "import_jobs",  # batch 4A: PubMed import jobs (query + status + result/error)
+    "inference_jobs",  # batch 5: bulk inference jobs (status + statistics)
+    "article_files",  # kept PDFs (RO-Crate)
     "export_jobs",  # export RO-Crate asynchrone
-    "model_shares",  # droits d'usage des modèles
+    "model_shares",  # model usage rights
     "invitations",  # invitations en attente
     "searches",  # recherches : question + lot d'articles
-    "search_articles",  # lot figé d'une recherche
-    "benchmark_predictions",  # réponses de chaque variante du banc d'essai
-    "password_resets",  # jetons de réinitialisation de mot de passe (hash)
+    "search_articles",  # frozen batch of a search
+    "benchmark_predictions",  # answers of each benchmark variant
+    "password_resets",  # password reset tokens (hashed)
 }
 
 
@@ -511,7 +511,7 @@ def test_article_predictions_columns():
     }
     assert c["id"].primary_key
     for col in ("model_identifier", "model_version"):
-        assert isinstance(c[col].type, String) and c[col].nullable  # NULL = données anciennes
+        assert isinstance(c[col].type, String) and c[col].nullable  # NULL = old data
     assert fk(c["article_id"]).column is Article.__table__.c.id
     assert fk(c["article_id"]).ondelete == "CASCADE"
     assert fk(c["prompt_template_id"]).column is PromptTemplate.__table__.c.id

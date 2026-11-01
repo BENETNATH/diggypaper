@@ -56,7 +56,7 @@ async def test_fetch_pmids_default_retmax_is_configured_cap():
 
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/entrez/eutils/esearch.fcgi"
-        assert request.url.params["retmax"] == "5000"  # IMPORT_MAX_ARTICLES (défaut)
+        assert request.url.params["retmax"] == "5000"  # IMPORT_MAX_ARTICLES (default)
         return httpx.Response(200, json={"esearchresult": {"idlist": ["1", "2"]}})
 
     async with _client(handler) as http:
@@ -144,7 +144,7 @@ async def test_esearch_retry_on_429_honours_retry_after(monkeypatch):
     async with _client(handler) as http:
         assert await search_volume("cancer", None, http) == 3
     assert calls["n"] == 2
-    assert waits[-1] == 7.0  # Retry-After respecté (pas le backoff par défaut)
+    assert waits[-1] == 7.0  # Retry-After respected (not the default backoff)
 
 
 async def test_retry_after_is_capped(monkeypatch):
@@ -386,7 +386,7 @@ async def test_fetch_methods_extracts_methods_section():
 
 async def test_fetch_methods_none_without_pmcid():
     def handler(request: httpx.Request) -> httpx.Response:
-        raise AssertionError("NCBI ne doit pas être appelé sans pmcid")
+        raise AssertionError("NCBI must not be called without a pmcid")
 
     async with _client(handler) as http:
         assert await fetch_methods("", http) is None
@@ -432,7 +432,7 @@ def test_parse_biblio_metadata():  # noqa: E501
     a, b = _parse_pubmed_xml(xml)
     assert (a["journal"], a["pub_date"], a["doi"]) == ("Nature", "2024-05", "10.1/x")
     assert a["authors"] == ["Doe J", "The Group", "Poe P"] and a["pub_types"] == ["Review"]
-    assert (b["journal"], b["pub_date"]) == ("J Neu", "2022-12-31")  # date électronique d'abord
+    assert (b["journal"], b["pub_date"]) == ("J Neu", "2022-12-31")  # electronic date first
 
 
 def test_sections_drop_latex_and_mark_display_formulas():
@@ -484,9 +484,9 @@ async def test_fetch_all_pmids_splits_queries_over_the_ncbi_window(monkeypatch):
     monkeypatch.setattr(pubmed, "fetch_pmids", pmids)
     got = await fetch_all_pmids("sleep", None, None, count=40, limit=10**9)
     assert sorted(got) == sorted(records) and len(set(got)) == 40  # tous, sans doublon
-    assert got[0] == "1039"  # les plus récents d'abord
+    assert got[0] == "1039"  # most recent first
     capped = await fetch_all_pmids("sleep", None, None, count=40, limit=12)
-    assert len(capped) == 12 and capped[0] == "1039"  # plafond configurable : on garde les récents
+    assert len(capped) == 12 and capped[0] == "1039"  # configurable cap: keep the recent ones
 
 
 async def test_fetch_all_pmids_bisection_uses_user_date_bounds(monkeypatch):
@@ -528,7 +528,7 @@ async def test_fetch_all_pmids_bisection_uses_user_date_bounds(monkeypatch):
         date_to=date(2021, 1, 20),
     )
     assert sorted(got) == sorted(records) and len(set(got)) == 10
-    assert got[0] == "1009"  # le plus récent
+    assert got[0] == "1009"  # the most recent
     for term in terms:  # chaque feuillet reste dans [2021/01/05, 2021/01/20]
         lo, hi = (
             date.fromisoformat(x.replace("/", "-"))
@@ -614,7 +614,7 @@ async def test_fetch_all_pmids_only_date_to_keeps_default_lo(monkeypatch):
         date.fromisoformat(x.replace("/", "-"))
         for x in re.findall(r'"(\d{4}/\d\d/\d\d)"', terms[0])
     )
-    assert (lo, hi) == (date(1800, 1, 1), date(2021, 1, 20))  # borne basse par défaut inchangée
+    assert (lo, hi) == (date(1800, 1, 1), date(2021, 1, 20))  # default lower bound unchanged
 
 
 async def test_fetch_all_pmids_user_dates_cap_keeps_most_recent(monkeypatch):
@@ -652,7 +652,7 @@ async def test_fetch_all_pmids_user_dates_cap_keeps_most_recent(monkeypatch):
         date_from=date(2021, 1, 1),
         date_to=date(2021, 1, 30),
     )
-    assert len(got) == 12 and got[0] == "1029"  # les plus récents de la plage
+    assert len(got) == 12 and got[0] == "1029"  # the most recent of the range
 
 
 async def test_fetch_all_pmids_no_dates_unchanged_bounds(monkeypatch):
@@ -684,7 +684,7 @@ async def test_fetch_all_pmids_no_dates_unchanged_bounds(monkeypatch):
     monkeypatch.setattr(pubmed, "search_volume", volume)
     monkeypatch.setattr(pubmed, "fetch_pmids", pmids)
     got = await fetch_all_pmids("sleep", None, None, count=40, limit=10**9)
-    assert sorted(got) == sorted(records) and len(set(got)) == 40  # tout est récupéré
+    assert sorted(got) == sorted(records) and len(set(got)) == 40  # everything is retrieved
     lo, hi = (
         date.fromisoformat(x.replace("/", "-"))
         for x in re.findall(r'"(\d{4}/\d\d/\d\d)"', terms[0])
@@ -809,7 +809,7 @@ async def test_fetch_all_pmids_bisection_query_with_dp_keeps_leaf_subrange(monke
             for x in re.findall(r'"(\d{4}/\d\d/\d\d)"', term)
         )
         assert date(2021, 1, 5) <= lo <= hi <= date(2021, 1, 20)
-    assert len(terms) < 100  # convergence bornée
+    assert len(terms) < 100  # bounded convergence
 
 
 def test_import_cap_zero_means_unlimited(monkeypatch):
@@ -819,4 +819,4 @@ def test_import_cap_zero_means_unlimited(monkeypatch):
     monkeypatch.setattr(get_settings(), "import_max_articles", 0)
     assert _esearch_max() == UNLIMITED
     monkeypatch.setattr(get_settings(), "import_max_articles", 50000)
-    assert _esearch_max() == 50000  # plus de plafond de 10 000 codé en dur
+    assert _esearch_max() == 50000  # no more hard-coded 10,000 cap

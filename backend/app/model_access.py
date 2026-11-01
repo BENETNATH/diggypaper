@@ -24,7 +24,7 @@ def access_filter(user: User, project_id: uuid.UUID | None = None):
         return true()
     if project_id is not None:
         project_scope = ModelShare.project_id == project_id
-    else:  # vue d'ensemble : partages faits à l'un de mes projets
+    else:  # overview: shares made to one of my projects
         project_scope = ModelShare.project_id.in_(
             select(ProjectMember.project_id).where(ProjectMember.user_id == user.id)
         )

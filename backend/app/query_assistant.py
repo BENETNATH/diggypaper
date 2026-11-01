@@ -14,11 +14,11 @@ import httpx
 from app.pubmed import explain_query, fetch_pmids
 from app.refimport import epmc_pmids_by_doi, parse_references
 
-MAX_QUERY = 2000  # même plafond que l'import
-MAX_MESSAGES = 8  # 4 échanges : de quoi affiner une requête, pas tenir une conversation
+MAX_QUERY = 2000  # same cap as the import
+MAX_MESSAGES = 8  # 4 exchanges: enough to refine a query, not to hold a conversation
 MAX_USER_CHARS = 1000
-MAX_REPLY = 600  # explication jointe à une requête valide
-MAX_QUESTION = 300  # question de clarification (quand il n'y a pas encore de requête)
+MAX_REPLY = 600  # explanation attached to a valid query
+MAX_QUESTION = 300  # clarification question (when there is no query yet)
 REFUSED = "REFUSED"
 
 #: Syntax rules specific to each engine (the rest of the prompt is shared).

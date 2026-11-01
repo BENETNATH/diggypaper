@@ -51,7 +51,7 @@ celery_app.conf.update(
 # running are marked interrupted (PENDING jobs stay queued and will be processed).
 from celery.signals import worker_ready  # noqa: E402
 
-_INTERRUPTED = "Interrompu par un redémarrage du serveur : relancez l'opération."
+_INTERRUPTED = "Interrupted by a server restart: please rerun the operation."
 
 
 async def _mark_interrupted(engine=None) -> int:
@@ -109,7 +109,7 @@ async def _mark_interrupted(engine=None) -> int:
             )
             stuck = (Project.status == ProjectStatus.PROCESSING, Project.id.not_in(busy))
             has_articles = select(Article.project_id)
-            await s.execute(  # complément d'un corpus existant : on y revient
+            await s.execute(  # top-up of an existing corpus: back to FROZEN
                 update(Project)
                 .where(*stuck, Project.id.in_(has_articles))
                 .values(status=ProjectStatus.FROZEN)
@@ -138,16 +138,16 @@ def _recover_interrupted_jobs(**_kwargs) -> None:
     try:
         validate_settings(get_settings())
     except Exception as exc:  # noqa: BLE001
-        log.error("secrets invalides côté worker : %s", exc)
+        log.error("invalid secrets on the worker side: %s", exc)
 
     # One worker performs the recovery: with two workers (main + ingestion), the
     # one starting up would mark the other's RUNNING jobs FAILED.
     if os.environ.get("RECOVER_INTERRUPTED", "1").strip().lower() in {"0", "false", "no"}:
-        log.info("récupération des jobs interrompus désactivée (RECOVER_INTERRUPTED=0)")
+        log.info("recovery of interrupted jobs disabled (RECOVER_INTERRUPTED=0)")
         return
     try:
         n = asyncio.run(_mark_interrupted())
         if n:
-            log.warning("%d job(s) interrompu(s) marqués FAILED", n)
-    except Exception:  # noqa: BLE001 - ne doit jamais empêcher le worker de démarrer
-        log.exception("récupération des jobs interrompus en échec")
+            log.warning("%d interrupted job(s) marked FAILED", n)
+    except Exception:  # noqa: BLE001 - must never prevent the worker from starting
+        log.exception("recovery of interrupted jobs failed")

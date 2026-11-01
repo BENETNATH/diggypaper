@@ -214,7 +214,7 @@ def import_pubmed_task(
                     source=source,
                 )
             )
-        except BaseException as exc:  # propagée au thread principal
+        except BaseException as exc:  # propagated to the main thread
             error = exc
 
     thread = threading.Thread(target=_run, name="import-pubmed")
@@ -350,8 +350,8 @@ async def _do_import(
     truncated = count > _esearch_max()
     if truncated:
         logger.warning(
-            "import truncated: count=%d > %d (project %s) — seuls les %d premiers articles "
-            "sont importés",
+            "import truncated: count=%d > %d (project %s) — only the first %d articles "
+            "are imported",
             count,
             _esearch_max(),
             project.id,
@@ -391,7 +391,7 @@ async def _do_import(
             "fulltext": fulltext,
             "total_count": count,
         }
-        await session.commit()  # m6 : commit fréquent (résilience partielle)
+        await session.commit()  # m6: frequent commit (partial resilience)
 
     for batch in _chunks(pmids, _EFETCH_BATCH):
         try:
@@ -440,7 +440,7 @@ async def _do_import(
                     logger.exception("article insert failed for %s %s", source, native_id)
                     failed += 1
             done += 1
-            await progress()  # à chaque article : le full text PMC prend ~0,3 s/article
+            await progress()  # per article: the PMC full text takes ~0.3 s/article
     return await _finish_success(
         session,
         project,
@@ -659,7 +659,7 @@ async def _file_meta(e: dict, email: str, client: httpx.AsyncClient) -> tuple[di
     cr = await crossref(e["doi"], email, client) if e["doi"] else None
     src = cr or e
     if cr is None and e["doi"] and not e["title"]:
-        return None, "crossref"  # DOI inconnu et rien d'autre à enregistrer
+        return None, "crossref"  # unknown DOI and nothing else to store
     if not (src.get("title") or e.get("title")):
         return None, "crossref"
     year = src.get("year") or e.get("year")
@@ -799,7 +799,7 @@ async def _link_doi_article(
     if row is None:
         return
     bib = _biblio(meta)
-    bib.pop("pub_types")  # spec D3 : champs complétés, pas pub_types
+    bib.pop("pub_types")  # spec D3: completed fields, no pub_types
     fills = {
         "pmid": meta.get("pmid"),
         "pmcid": meta.get("pmcid"),
@@ -807,7 +807,7 @@ async def _link_doi_article(
         "abstract": meta.get("abstract"),
         **bib,
         "original_language": _map_language(meta.get("language")),
-        "fulltext_note": meta.get("fulltext_note"),  # D2 : posé si vide, jamais écrasé
+        "fulltext_note": meta.get("fulltext_note"),  # D2: set if empty, never overridden
     }
     for col, val in fills.items():
         if val and not getattr(row, col):

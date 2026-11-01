@@ -48,9 +48,9 @@ async def _load_user(request: Request, db: AsyncSession) -> User:
     user = await db.get(User, user_id)
     if user is None:
         raise HTTPException(status_code=401, detail="Invalid token")
-    if claims.get("tv", 0) != (user.token_version or 0):  # mot de passe changé / déconnecté
+    if claims.get("tv", 0) != (user.token_version or 0):  # password changed / logged out
         raise HTTPException(status_code=401, detail="Invalid token")
-    if user.is_active is False:  # compte désactivé par un admin : session coupée immédiatement
+    if user.is_active is False:  # account disabled by an admin: session cut immediately
         raise HTTPException(status_code=401, detail="Account disabled")
     return user
 

@@ -66,7 +66,7 @@ async def test_disk_alert_goes_to_admins_once_a_day(session, exports, monkeypatc
     assert await maintenance.disk_alert(session, mailer) is True
     assert [m[0] for m in mailer.sent] == ["admin@lab.fr"]
     assert "espace disque faible" in mailer.sent[0][1]
-    assert await maintenance.disk_alert(session, mailer) is False  # déjà prévenu aujourd'hui
+    assert await maintenance.disk_alert(session, mailer) is False  # already warned today
     old = os.path.getmtime(exports / ".disk_alert") - 2 * 86400
     os.utime(exports / ".disk_alert", (old, old))
     assert await maintenance.disk_alert(session, mailer) is True  # le lendemain
@@ -157,7 +157,7 @@ async def test_admin_storage_and_keep_endpoints(
     )
     await maintenance.retention_sweep(session, FakeMailer())
     got = (await client.get(f"/api/v1/projects/{project.id}")).json()
-    assert got["retention_delete_on"]  # suppression programmée, visible des responsables
+    assert got["retention_delete_on"]  # deletion scheduled, visible to the leads
     r = await client.post(f"/api/v1/projects/{project.id}/keep")
     assert r.status_code == 200
     assert (await client.get(f"/api/v1/projects/{project.id}")).json()[
@@ -167,4 +167,4 @@ async def test_admin_storage_and_keep_endpoints(
     out = await maintenance.retention_sweep(
         session, FakeMailer(), datetime.now(UTC) + timedelta(days=20)
     )
-    assert out == {"warned": 0, "deleted": 0}  # « Conserver » vaut activité
+    assert out == {"warned": 0, "deleted": 0}  # "Keep" counts as activity

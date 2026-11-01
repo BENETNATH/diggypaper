@@ -7,7 +7,7 @@ def test_ollama_mode_absent_defaults_docker(monkeypatch):
     """Flag absent → docker (invariant : comportement actuel)."""
     monkeypatch.delenv("OLLAMA_MODE", raising=False)
     assert ollama_mode.resolve_mode() == "docker"
-    assert ollama_mode.MODE == "docker"  # lu à l'import, défaut docker
+    assert ollama_mode.MODE == "docker"  # read at import, default docker
 
 
 def test_ollama_mode_invalid_defaults_docker_with_warning(monkeypatch, caplog):

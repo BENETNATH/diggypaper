@@ -121,7 +121,7 @@ async def invite_member(
         try:
             await mailer.send(to=payload.email, subject=subject, body=body)
             sent = True
-        except Exception:  # noqa: BLE001 - SMTP en panne : on renvoie le lien à la place
+        except Exception:  # noqa: BLE001 - SMTP down: return the link instead
             logger.exception("project invitation e-mail failed")
     return {"status": status, "email_sent": sent, "link": link if is_new and not sent else None}
 
@@ -149,5 +149,5 @@ async def remove_member(
             raise HTTPException(status_code=409, detail="cannot remove the last lead")
     await db.delete(member)
     await db.flush()
-    await purge_orphans(db, [user_id])  # plus aucun projet : le compte disparaît
+    await purge_orphans(db, [user_id])  # no more project: the account disappears
     await db.commit()

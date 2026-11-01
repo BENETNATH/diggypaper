@@ -135,7 +135,7 @@ async def invite(
         if mailer is None:
             raise RuntimeError("SMTP not configured")
         await mailer.send(to=payload.email, subject=subject, body=body)
-    except Exception:  # noqa: BLE001 - SMTP absent/en panne : l'admin transmet le lien lui-même
+    except Exception:  # noqa: BLE001 - SMTP missing/down: the admin forwards the link themselves
         logger.warning("invitation e-mail not sent", exc_info=True)
         return JSONResponse({"email_sent": False, "link": link}, status_code=202)
     return JSONResponse({"email_sent": True, "link": None}, status_code=202)
@@ -171,7 +171,7 @@ async def register(
     if not email:
         raise HTTPException(status_code=401, detail="Invalid or expired invitation token")
     invitation = None
-    if claims.get("iid"):  # invitation suivie : introuvable = révoquée par un admin / un LEAD
+    if claims.get("iid"):  # tracked invitation: not found = revoked by an admin / a LEAD
         try:
             invitation = await db.get(Invitation, uuid.UUID(claims["iid"]))
         except ValueError:
@@ -280,7 +280,7 @@ async def update_me(
 
 class PasswordChange(BaseModel):
     current_password: str
-    new_password: str = Field(min_length=8)  # même politique que l'inscription
+    new_password: str = Field(min_length=8)  # same policy as registration
 
 
 @router.post(
@@ -297,7 +297,7 @@ async def change_password(
     if not await asyncio.to_thread(verify_password, payload.current_password, user.hashed_password):
         raise HTTPException(status_code=403, detail=t(request.state.lang, "invalid_credentials"))
     user.hashed_password = await asyncio.to_thread(hash_password, payload.new_password)
-    user.token_version = (user.token_version or 0) + 1  # coupe les autres sessions
+    user.token_version = (user.token_version or 0) + 1  # cuts the other sessions
     await db.commit()
 
 
@@ -381,7 +381,7 @@ async def password_reset_confirm(
     if user is None:
         raise HTTPException(status_code=404, detail="invalid_token")
     user.hashed_password = await asyncio.to_thread(hash_password, payload.new_password)
-    user.token_version = (user.token_version or 0) + 1  # coupe les autres sessions
+    user.token_version = (user.token_version or 0) + 1  # cuts the other sessions
     reset.consumed_at = datetime.now(UTC)
     await db.commit()
     return {"detail": "ok"}
@@ -395,7 +395,7 @@ async def logout(request: Request, db: Annotated[AsyncSession, Depends(get_db)])
         user.token_version = (user.token_version or 0) + 1
         await db.commit()
     except HTTPException:
-        pass  # déjà déconnecté / token invalide : on efface juste le cookie
+        pass  # already logged out / invalid token: just wipe the cookie
     response = Response(status_code=204)
     response.delete_cookie(ACCESS_TOKEN_COOKIE, path="/")
     return response

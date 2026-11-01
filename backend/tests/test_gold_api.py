@@ -84,8 +84,8 @@ async def test_create_gold_article_not_in_project_422(client, session, researche
 async def test_from_reviews_rejects_article_ids_of_another_project(
     client, session, researcher_user, do_login
 ):
-    """Un identifiant d'article d'un autre projet (portant une relecture « legacy »,
-    ``search_id`` NULL) ne doit jamais créer de référence dans le projet appelant."""
+    """An article id from another project (carrying a legacy review,
+    ``search_id`` NULL) must never create a reference in the calling project."""
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     project, _ = await _make_project_with_article(session, researcher_user)
     other = Project(title="Other", created_by=researcher_user.id)

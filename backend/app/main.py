@@ -42,8 +42,8 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     try:
         await bootstrap_admin(settings)
-    except Exception:  # noqa: BLE001 - le bootstrap ne doit pas bloquer le démarrage
-        logger.exception("Bootstrap admin en échec (continuer sans admin)")
+    except Exception:  # noqa: BLE001 - the bootstrap must not block startup
+        logger.exception("Admin bootstrap failed (continuing without admin)")
     yield
 
 

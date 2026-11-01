@@ -150,7 +150,7 @@ async def test_warmup_absorbs_failure():
         return httpx.Response(503, json={"error": "busy"})
 
     svc = OpenAICompatibleService("http://llm.test/v1", http=_client(handler))
-    await warmup(svc, "qwen3:4b")  # ne lève pas
+    await warmup(svc, "qwen3:4b")  # does not raise
 
 
 # --- Configurable request body (llm_extra_body) ---
@@ -321,7 +321,7 @@ async def test_infer_native_body_merges_extra_body_options_think():
     )
     await svc.infer("Kev-4B", "SYS", "USR")
     body = captured["body"]
-    assert body["options"] == {"num_ctx": 16384, "temperature": 0.0}  # options fusionnées
+    assert body["options"] == {"num_ctx": 16384, "temperature": 0.0}  # options merged
     assert body["think"] is False
     assert body["format"] == "json"
 
@@ -506,7 +506,7 @@ async def test_infer_with_decides_endpoint_per_model_on_shared_default(session):
     assert [p for p, _ in calls] == ["/v1/chat/completions", "/api/chat"]
     v1_body = calls[0][1]
     assert v1_body["model"] == "llama-big"
-    assert v1_body["options"] == {"num_ctx": 8192}  # backend local : corps additionnel appliqué
+    assert v1_body["options"] == {"num_ctx": 8192}  # local backend: extra body applied
     assert v1_body["response_format"] == {"type": "json_object"}
 
 
@@ -727,15 +727,15 @@ async def test_infer_with_meta_openai_api_served_model(monkeypatch):
     [
         ("https://api.x.test/v1#gpt-4o", ("gpt-4o", "https://api.x.test")),
         ("https://bob:pw@api.x.test:8443/v1?key=K#gpt-4o", ("gpt-4o", "https://api.x.test:8443")),
-        ("https://api.x.test/v1", (None, "https://api.x.test")),  # sans « # » : pas de modèle
-        ("pas-une-url", (None, None)),  # ni « # » ni URL : jamais la chaîne entière
+        ("https://api.x.test/v1", (None, "https://api.x.test")),  # no "#": no model
+        ("pas-une-url", (None, None)),  # neither "#" nor a URL: never the whole string
         ("https://api.x.test:99999/v1#m", ("m", None)),  # port invalide
         ("https://api.x.test:abc/v1#m", ("m", None)),
-        ("http://[::1]:8080/v1#m", ("m", "http://[::1]:8080")),  # IPv6 : crochets conservés
+        ("http://[::1]:8080/v1#m", ("m", "http://[::1]:8080")),  # IPv6: brackets kept
         (
             "https://api.x.test/v1#FRAG#gpt-4o",
             ("gpt-4o", "https://api.x.test"),
-        ),  # « # » hérités : le modèle est après le DERNIER
+        ),  # inherited "#": the model is after the LAST one
     ],
 )
 def test_public_model_ref_openai_api(identifier, expected):
@@ -762,5 +762,5 @@ async def test_model_snapshot_failure_log_hides_url_and_secrets(caplog):
     with caplog.at_level(logging.DEBUG):
         snap = await model_snapshot(_model("OLLAMA", "qwen3:4b"), svc)
     assert snap["version"] is None
-    assert "model_snapshot" in caplog.text  # le warning est bien émis
+    assert "model_snapshot" in caplog.text  # the warning is actually emitted
     assert "SECRET" not in caplog.text and "llm.test" not in caplog.text

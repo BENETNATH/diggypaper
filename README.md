@@ -1,123 +1,123 @@
 # Diggypaper
 
-Plateforme **souveraine et collaborative de revue systématique de littérature**.
-On importe un corpus depuis PubMed, Europe PMC, OpenAlex ou HAL, on récupère les textes intégraux ouverts, on pose
-une ou plusieurs questions au corpus, des modèles (qui tournent sur CPU, sans cloud) trient
-et extraient les réponses, puis des relecteurs humains valident ou corrigent. Les résultats
-s'exportent en tableur, en RO-Crate et en diagramme PRISMA.
+A **sovereign, collaborative systematic literature review platform**.
+You import a corpus from PubMed, Europe PMC, OpenAlex or HAL, retrieve open full texts, ask one
+or more questions to the corpus, models (running on CPU, without the cloud) triage
+and extract the answers, then human reviewers validate or correct them. The results
+export to spreadsheet, RO-Crate and PRISMA diagram.
 
-> Interface en français, anglais, allemand et espagnol. RGPD *privacy by design*.
+> Interface in French, English, German and Spanish. GDPR *privacy by design*.
 
 ---
 
-## Fonctionnalités
+## Features
 
-### Constituer le corpus
-- **Import multi-sources** : PubMed, Europe PMC, OpenAlex (métadonnées) ou HAL
-  (thèses, HDR, dépôts français), par requête, avec le volume attendu avant import, un plafond
-  réglable (`IMPORT_MAX_ARTICLES`), le dédoublonnage — par DOI, entre sources — et les
-  métadonnées (journal, date, auteurs, DOI).
-- **Import d'un RO-Crate** : un zip exporté par Diggypaper (Projets → « Importer un RO-Crate »,
-  jusqu'à 1 Go) recrée un projet : question et items, articles, textes intégraux, PDF, réponses du
-  modèle (certitudes, extraits de preuve) et réponses humaines finales. Le crate ne contient qu'une
-  recherche : elle devient la recherche initiale. Les relectures sont attribuées à la personne qui
-  importe, sans note de pertinence ; le gold, les autres recherches et l'équipe ne sont pas dans
-  le crate. Le zip est vérifié (structure, tailles, chemins) avant toute lecture.
-- **Assistant de requête PubMed** : on décrit sa recherche en texte libre, un modèle (au choix
-  parmi ceux du compte) propose une requête, on affine en discutant. Chaque proposition est
-  vérifiée par PubMed : nombre de résultats, termes inconnus (un MeSH inventé est signalé) et, si
-  on donne des articles attendus (DOI / PMID), combien la requête en retrouve. Le modèle est
-  borné côté serveur : il ne peut servir qu'à cela (sorties hors requête refusées, conversation
-  et débit limités).
-- **Liste de références** à la place d'une recherche : DOI ou PMID collés (un par ligne), ou
-  export BibTeX, RIS, CSL JSON ou CSV de Zotero / EndNote / Mendeley. Chaque entrée est
-  complétée via PubMed (Europe PMC pour retrouver le PMID d'un DOI), sinon Crossref, sinon les
-  données du fichier ; les doublons sont ignorés et les références non résolues listées.
-- **Enrichissement par citations** : à partir de tout ou partie du corpus (sans analyse
-  préalable), ajoute les références et les citants des articles de départ (iCite, NIH). Les
-  candidats les plus liés aux articles de départ entrent d'abord (seuil et plafond réglables,
-  estimation avant import) ; une recherche est créée sur les nouveaux articles pour que le
-  modèle valide leur inclusion. L'origine de chaque article (PubMed, liste, citation) est
-  conservée et apparaît dans le PRISMA (« identification par d'autres méthodes »).
-- **Textes intégraux libres d'accès** : PMC, puis Europe PMC, Unpaywall et OpenAlex
-  (manuscrits acceptés, dépôts institutionnels, préprints bioRxiv / medRxiv / arXiv). Les
-  articles sans copie ouverte restent en résumé seul. Aucune source pirate.
-- **PDF déposé à la main** (accès institutionnel) : le texte est extrait et sectionné ; on
-  vérifie que le PDF correspond bien à l'article (titre, à défaut DOI) avant de l'adopter.
-- **Dépôt de PDF en lot** : plusieurs PDF d'un coup, chacun rattaché à l'article dont il porte
-  le titre (ou le DOI) ; les cas ambigus ou sans correspondance sont signalés.
-- **Recherche relancée par article** : relit la notice PubMed (un préprint publié change de
-  PMCID ou de DOI) puis cherche à nouveau le texte intégral.
+### Building the corpus
+- **Multi-source import** : PubMed, Europe PMC, OpenAlex (metadata) or HAL
+  (theses, HDR, French repositories), by query, with the expected volume before import, an
+  adjustable cap (`IMPORT_MAX_ARTICLES`), deduplication — by DOI, across sources — and the
+  metadata (journal, date, authors, DOI).
+- **RO-Crate import** : a zip exported by Diggypaper (Projects → « Import a RO-Crate »,
+  up to 1 GB) recreates a project: question and items, articles, full texts, PDF, model answers
+  (certainties, evidence excerpts) and final human answers. The crate contains only one
+  search: it becomes the initial search. Reviews are attributed to the person who
+  imports, without a relevance note; the gold, the other searches and the team are not in
+  the crate. The zip is verified (structure, sizes, paths) before any reading.
+- **PubMed query assistant** : you describe your search in free text, a model (chosen
+  from those in your account) proposes a query, you refine it by discussing. Each proposal is
+  verified by PubMed: number of results, unknown terms (an invented MeSH is flagged) and, if
+  you give expected articles (DOI / PMID), how many the query retrieves. The model is
+  bounded server-side: it can only serve this purpose (out-of-query outputs refused, conversation
+  and rate limited).
+- **Reference list** instead of a search: DOIs or PMIDs pasted (one per line), or
+  BibTeX, RIS, CSL JSON or CSV export from Zotero / EndNote / Mendeley. Each entry is
+  completed via PubMed (Europe PMC to find the PMID of a DOI), otherwise Crossref, otherwise the
+  file data; duplicates are ignored and unresolved references are listed.
+- **Citation enrichment** : from all or part of the corpus (no prior
+  analysis), adds the references and the citing articles of the starting articles (iCite, NIH). The
+  candidates most related to the starting articles come in first (threshold and cap adjustable,
+  estimate before import); a search is created on the new articles so the
+  model validates their inclusion. The origin of each article (PubMed, list, citation) is
+  kept and appears in the PRISMA («identification by other methods»).
+- **Open-access full texts** : Europe PMC (full-text XML), then Unpaywall and OpenAlex
+  (accepted manuscripts, institutional repositories, bioRxiv / medRxiv / arXiv preprints). Articles
+  without an open copy stay abstract-only. No pirate sources.
+- **Manually deposited PDF** (institutional access): the text is extracted and sectioned; you
+  verify that the PDF actually matches the article (title, DOI if absent) before adopting it.
+- **Batch PDF deposit** : several PDFs at once, each attached to the article whose
+  title (or DOI) it carries; ambiguous cases or without a match are reported.
+- **Re-search per article** : re-reads the PubMed record (a published preprint changes its
+  PMCID or DOI) then looks for the full text again.
 
-### Poser des questions au corpus : les recherches
-Un projet contient plusieurs **recherches**. Une recherche, c'est une **question** (ses items de
-réponse : oui/non, choix, texte libre) posée à un **lot d'articles**, avec ses propres résultats,
-relectures, analyses et références. Le lot est tout le corpus, ou un sous-ensemble choisi par
-critères — par exemple « les articles où la recherche 1 a répondu oui », avec relecture humaine
-ou texte intégral, dans une plage de pertinence, un tirage au hasard ou une liste. On pose ainsi
-une seconde question aux seuls articles retenus par la première, sans rien réanalyser.
-- **Recherches successives** : on programme la recherche 2 pendant que la 1 tourne : elle démarre
-  seule dès que la 1 a fini, sur ses résultats (avec des critères : acceptés par l'IA, réponse à un
-  item…) ou sur le même lot. Une seule analyse tourne à la fois dans un projet, les suivantes
-  attendent leur tour. La question d'une recherche déjà analysée ou relue ne se modifie plus :
-  une nouvelle recherche est créée sur le même lot.
-- Choix des **parties du texte** lues par les modèles (résumé, méthodes, résultats…).
-- **Modèles génératifs** (Ollama en local, ou toute API compatible OpenAI) : réponses
-  structurées, texte libre et citations de preuve. La page *Modèles* lit les ressources du
-  serveur (RAM, cœurs, AVX2, GPU) et recommande un modèle adapté.
-- **Pré-filtre** rapide (petit modèle sur titre + résumé) avant le modèle principal, **triage automatique** (accepté, rejeté,
-  à relire) selon des seuils de confiance, estimation du temps, **reprise** d'une analyse
-  interrompue et **arrêt** d'une analyse en cours (les articles déjà traités sont conservés).
+### Asking questions to the corpus: the searches
+A project contains several **searches**. A search is a **question** (its answer
+items: yes/no, choice, free text) asked to a **batch of articles**, with its own results,
+reviews, analyses and references. The batch is the whole corpus, or a subset chosen by
+criteria — for example «articles where search 1 answered yes», with human review
+or full text, within a relevance range, a random draw or a list. This way
+you ask a second question only to the articles retained by the first, without re-analyzing anything.
+- **Successive searches** : you schedule search 2 while search 1 is running: it starts
+  on its own as soon as search 1 is done, on its results (with criteria: accepted by the AI, answer to an
+  item…) or on the same batch. Only one analysis runs at a time in a project, the following
+  ones wait their turn. The question of an already analyzed or reviewed search can no longer be modified:
+  a new search is created on the same batch.
+- Choice of **text parts** read by the models (abstract, methods, results…).
+- **Generative models** (local Ollama, or any OpenAI-compatible API): structured
+  answers, free text and evidence citations. The *Models* page reads the resources of the
+  server (RAM, cores, AVX2, GPU) and recommends a suitable model.
+- Fast **pre-filter** (small model on title + abstract) before the main model, **automatic triage** (accepted, rejected,
+  to re-read) according to confidence thresholds, time estimate, **resume** of an interrupted analysis
+  and **stop** of a running analysis (already processed articles are kept).
 
-### Gold standard, échantillon à l'aveugle et benchmark
-- **Gold standard** : une référence vient d'une **relecture humaine**. N'importe quel membre du
-  projet ajoute une relecture au gold depuis la fiche article, ou toutes les relectures d'un coup.
-  Chaque référence est une copie figée, avec un lien vers sa fiche d'origine, son relecteur et
-  son statut (validée, corrigée, à l'aveugle) ; elle est signalée « obsolète » si la relecture a
-  changé depuis. Le gold vaut pour toutes les recherches de même question.
-- **Échantillon à l'aveugle**, avant l'analyse complète : N articles tirés au hasard (N réglable)
-  à relire **sans voir les réponses de l'IA**, pour constituer un gold non biaisé.
-- **Éduquer les modèles** : à chaque analyse, case « utiliser N exemples du gold dans le prompt »
-  (ces exemples sont exclus de la notation) et case « valider les résultats avec le gold » (rappel,
-  précision, F1 de la pertinence et de chaque item).
-- **Benchmark** (mise au point) : mêmes modèles et mêmes articles (un sous-lot), plusieurs
-  **formulations de prompt** en saisie libre, pour trouver les meilleures questions et la meilleure
-  sortie. Les variantes sont classées selon un **critère défini sur un item de la question** (par
-  défaut le rappel de la pertinence), avec l'accord entre variantes, le détail par item, la
-  liste des articles où elles divergent et, si on le demande, la notation contre le gold.
+### Gold standard, blind sample and benchmark
+- **Gold standard** : a reference comes from a **human review**. Any member of the
+  project adds a review to the gold from the article card, or all reviews at once.
+  Each reference is a frozen copy, with a link to its original card, its reviewer and
+  its status (validated, corrected, blind); it is flagged «obsolete» if the review has
+  changed since. The gold applies to all searches with the same question.
+- **Blind sample**, before the full analysis: N articles drawn at random (N adjustable)
+  to review **without seeing the AI's answers**, to build an unbiased gold.
+- **Educate the models** : at each analysis, checkbox «use N gold examples in the prompt»
+  (these examples are excluded from the scoring) and checkbox «validate the results with the gold» (recall,
+  precision, F1 of the relevance and of each item).
+- **Benchmark** (tuning): same models and same articles (a sub-batch), several
+  **prompt formulations** in free entry, to find the best questions and the best
+  output. The variants are ranked according to a **criterion defined on an item of the question** (by
+  default the recall of the relevance), with the agreement between variants, the detail per item, the
+  list of articles where they diverge and, if asked, the scoring against the gold.
 
-### Relire
-- Fiche de relecture : texte avec **surlignage des preuves**, réponses du modèle et certitude
-  par item, **validation, correction ou complément** par le relecteur, avec enregistrement du
-  statut (validé, corrigé, saisi à la main) et de la personne qui a relu.
-- File de relecture dédiée aux articles incertains, parcours **au doigt** (swipe) sur mobile.
-- Liste des résultats avec **filtres sur les réponses** (par item), statut de l'IA, statut de
-  relecture ; les réponses affichées sont celles de la relecture quand elle existe. La file de
-  relecture suit les filtres et le tri de la liste.
+### Reviewing
+- Review card: text with **evidence highlighting**, model answers and certainty
+  per item, **validation, correction or complement** by the reviewer, with recording of the
+  status (validated, corrected, entered by hand) and of the person who reviewed.
+- Review queue dedicated to uncertain articles, **finger** (swipe) navigation on mobile.
+- Results list with **filters on the answers** (per item), AI status, review status;
+  the displayed answers are those of the review when it exists. The queue of
+  review follows the filters and sort of the list.
 
-### Exporter et documenter
-- **Tableur XLSX** (réponses IA, relectures, certitudes, liens), **références RIS et BibTeX**.
-- **Archive RO-Crate** (articles, PDF, prédictions, annotations, paramètres de l'analyse :
-  tout ce qu'il faut pour reproduire), générée en tâche de fond, avec sa licence (`CRATE_LICENSE_*`).
-- **Diagramme de flux PRISMA 2020** (SVG et PDF) calculé depuis les données du projet.
+### Exporting and documenting
+- **XLSX spreadsheet** (AI answers, reviews, certainties, links), **RIS and BibTeX references**.
+- **RO-Crate archive** (articles, PDF, predictions, annotations, parameters of the analysis:
+  everything needed to reproduce), generated in a background task, with its license (`CRATE_LICENSE_*`).
+- **PRISMA 2020 flow diagram** (SVG and PDF) computed from the project data.
 
-### Travailler à plusieurs
-- **Comptes** : l'administrateur invite des **créateurs** de projets ; ceux-ci invitent des
-  collègues, simples **invités** dont le compte disparaît quand ils n'ont plus de projet.
-- **Rôles par projet** : responsable de projet (LEAD) et annotateur. Invitations par e-mail dans la
-  langue de la personne invitée.
-- **Modèles** : registre des modèles, **partage** d'un modèle ou d'une clé avec des personnes
-  ou un projet, modèles externes **personnels** ; les clés sont chiffrées (AES-256-GCM). Un
-  compte ne peut utiliser que les modèles qu'il possède ou qu'on lui a partagés.
-- **Administration** : liste des comptes (modifier, désactiver, supprimer avec ou sans leurs
-  projets), invitations en attente, tous les projets, réglages SMTP / NCBI / LLM.
+### Working together
+- **Accounts** : the administrator invites **creators** of projects; those invite
+  colleagues, simple **guests** whose account disappears when they no longer have a project.
+- **Roles per project** : project lead (LEAD) and annotator. Invitations by e-mail in the
+  language of the invited person.
+- **Models** : registry of models, **sharing** of a model or of a key with people
+  or a project, external models that are **personal** ; keys are encrypted (AES-256-GCM). An
+  account can only use the models it owns or that have been shared with it.
+- **Administration** : list of accounts (modify, deactivate, delete with or without their
+  projects), pending invitations, all projects, SMTP / NCBI / LLM settings.
 
-### Souveraineté et sécurité
-- **100 % CPU, hébergé chez soi** : aucune donnée n'est envoyée à un service cloud (hors
-  interrogation des API publiques PubMed, Europe PMC, Unpaywall, OpenAlex).
-- **RGPD** : consentement, anonymisation des annotations à la suppression d'un compte.
-- Session par cookie httpOnly révocable, limitation de débit, contrôle des URL sortantes,
-  neutralisation des formules dans les exports, sauvegarde et restauration scriptées.
+### Sovereignty and security
+- **100% CPU, self-hosted** : no data is sent to a cloud service (except
+  querying the public APIs PubMed, Europe PMC, Unpaywall, OpenAlex).
+- **GDPR** : consent, anonymization of the annotations on the deletion of an account.
+- Session by httpOnly revocable cookie, rate limiting, control of outbound URLs,
+  neutralization of formulas in the exports, scripted backup and restore.
 
 ---
 
@@ -125,42 +125,42 @@ une seconde question aux seuls articles retenus par la première, sans rien réa
 
 ```
 ┌─────────────────────────────┐        ┌──────────────────────────────┐
-│  Frontend (Next.js 14)      │  HTTP  │  Backend (FastAPI)           │
+│  Frontend (Next.js 16)      │  HTTP  │  Backend (FastAPI)           │
 │  App Router + Tailwind      │ ─────► │  /api/v1/*                   │
 │  next-intl (fr/en/de/es)    │ same-  │  JWT cookie · i18n · rate-   │
 │  react-swipeable            │ origin │  limiting · CORS (opt)       │
 └─────────────────────────────┘  proxy └──────────────┬───────────────┘
         (dev: rewrite /api/v1)                        │
-                                                      ▼
-                              ┌────────────────────────────────────────┐
-                              │  PostgreSQL (SQLAlchemy 2.0 async)     │
-                              │  Redis (Celery broker + result)        │
-                              │  LLM local (Ollama / llama.cpp)        │
-                              │  NCBI E-utilities (PubMed/PMC)         │
-                              └────────────────────────────────────────┘
+                                                       ▼
+                               ┌────────────────────────────────────────┐
+                               │  PostgreSQL (SQLAlchemy 2.0 async)     │
+                               │  Redis (Celery broker + result)        │
+                               │  LLM local (Ollama / llama.cpp)        │
+                               │  NCBI E-utilities (PubMed/PMC)         │
+                               └────────────────────────────────────────┘
 ```
 
 - **Backend** : FastAPI + Pydantic v2, PostgreSQL + SQLAlchemy 2.0 async + Alembic,
-  Celery + Redis (ingestion PubMed, inférence batch), FastAPI-Mail.
-- **Frontend** : Next.js 14 (App Router) + TypeScript + Tailwind + next-intl +
-  react-swipeable. Composants UI sur **design tokens** (OKLCH, light/dark).
-- **Modèles** : modèles génératifs (endpoint OpenAI-compatible `/v1/chat/completions` :
-  Ollama, API externe).
-  Réglages SMTP / NCBI / LLM gérés en base (chiffrés) ou, à défaut, par variables d'environnement.
+  Celery + Redis (PubMed ingestion, batch inference), FastAPI-Mail.
+- **Frontend** : Next.js 16 (App Router) + TypeScript + Tailwind + next-intl +
+  react-swipeable. UI components on **design tokens** (OKLCH, light/dark).
+- **Models** : generative models (OpenAI-compatible endpoint `/v1/chat/completions` :
+  Ollama, external API).
+  SMTP / NCBI / LLM settings managed in the database (encrypted) or, failing that, by environment variables.
 
 ---
 
-## Prérequis
+## Prerequisites
 
 - Python ≥ 3.12
-- Node.js ≥ 20 (Next.js 14)
+- Node.js ≥ 20 (Next.js 16)
 - PostgreSQL 14+
 - Redis 7+
-- (Optionnel) Ollama ou llama.cpp pour l'inférence
+- (Optional) Ollama or llama.cpp for inference
 
 ---
 
-## Démarrage rapide
+## Quick start
 
 ### 1. Backend
 
@@ -169,20 +169,20 @@ cd backend
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
-# Configurer l'environnement
-cp .env.example .env          # puis éditer (secrets, DATABASE_URL, REDIS_URL)
+# Configure the environment
+cp .env.example .env          # then edit (secrets, DATABASE_URL, REDIS_URL)
 
 # Migrations
 alembic upgrade head
 
-# Lancer l'API
+# Start the API
 uvicorn app.main:app --factory --reload --port 8000
 
-# Lancer le worker Celery (ingestion PubMed / inférence)
+# Start the Celery worker (PubMed ingestion / inference)
 celery -A app.celery_app.celery_app worker --loglevel=info
 ```
 
-> En dev sans broker : `CELERY_EAGER=true` exécute les tâches inline.
+> In dev without a broker: `CELERY_EAGER=true` runs the tasks inline.
 
 ### 2. Frontend
 
@@ -193,96 +193,96 @@ cp .env.example .env.local    # NEXT_PUBLIC_API_ORIGIN=http://localhost:8000
 npm run dev                   # http://localhost:3000
 ```
 
-En dev, le frontend proxy `/api/v1/*` vers `NEXT_PUBLIC_API_ORIGIN` (pas de CORS).
-En prod, c'est nginx qui fait le proxy same-origin.
+In dev, the frontend proxies `/api/v1/*` to `NEXT_PUBLIC_API_ORIGIN` (no CORS).
+In prod, nginx does the same-origin proxy.
 
 ---
 
 ## Configuration
 
-Voir [`.env.example`](.env.example) (racine) pour la liste complète.
+See [`.env.example`](.env.example) (root) for the full list.
 
 **Backend** (`backend/.env`) : `DATABASE_URL`, `JWT_SECRET`, `ANON_SALT`,
 `ENCRYPTION_KEY`, `REDIS_URL`, `CELERY_EAGER`, `APP_BASE_URL`, `SMTP_*`,
 `CORS_ORIGINS`, `ACCESS_TOKEN_EXPIRE_MINUTES`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`.
 
-> **Bootstrap du premier admin** : au démarrage, si `ADMIN_EMAIL`/`ADMIN_PASSWORD`
-> sont définis et qu'aucun admin n'existe, le compte est créé (idempotent). C'est le
-> mécanisme pour démarrer l'app à l'état vide — sans admin, on ne peut ni inviter
-> ni configurer. Ensuite, l'admin invite les autres utilisateurs (email → `/register?token=…`).
+> **Bootstrap of the first admin** : at startup, if `ADMIN_EMAIL`/`ADMIN_PASSWORD`
+> are defined and no admin exists, the account is created (idempotent). That is the
+> mechanism to start the app in an empty state — without an admin, you can neither invite
+> nor configure. Then, the admin invites the other users (email → `/register?token=…`).
 
-**Frontend** (env de build) : `NEXT_PUBLIC_API_ORIGIN`, `NEXT_PUBLIC_API_BASE`.
+**Frontend** (build env) : `NEXT_PUBLIC_API_ORIGIN`, `NEXT_PUBLIC_API_BASE`.
 
-**Géré en base (chiffré)** : `llm_api_base_url`, `llm_api_key`,
-`ncbi_api_key`, `smtp_*` — via l'API settings ou l'UI Paramètres.
+**Managed in the database (encrypted)** : `llm_api_base_url`, `llm_api_key`,
+`ncbi_api_key`, `smtp_*` — via the settings API or the Settings UI.
 
-> **Fail-fast** : le backend refuse de démarrer si `JWT_SECRET`, `ANON_SALT` ou
-> `ENCRYPTION_KEY` sont encore les valeurs de dev par défaut.
+> **Fail-fast** : the backend refuses to start if `JWT_SECRET`, `ANON_SALT` or
+> `ENCRYPTION_KEY` are still the default dev values.
 
 ---
 
 ## Production (Docker)
 
-Stack de base (nginx, frontend, backend, worker, postgres, redis) + services de modèles
-**optionnel** (ollama : voir « Modèles »). nginx est le **seul service exposé**, tout
-le reste reste sur le réseau interne de Docker.
+Base stack (nginx, frontend, backend, worker, postgres, redis) + model services
+**optional** (ollama : see «Models»). nginx is the **only exposed service**, everything
+else stays on the internal Docker network.
 
 ```
-reverse proxy TLS (établissement)            ← HTTPS, certificat, HSTS
+reverse proxy TLS (establishment)            ← HTTPS, certificate, HSTS
   └── nginx (127.0.0.1:8080)
         ├── /api/v1/*  ──►  backend (FastAPI/uvicorn, :8000)
         └── /*         ──►  frontend (Next.js, :3000)
 
-backend ──►  postgres (16)  ·  redis (7)  ◄──  worker (Celery, tâches générales)
-                                                    └──  worker-ingest (imports, 1 process)
-backend / worker ──►  ollama (optionnel)  ·  API externe de votre choix
+backend ──►  postgres (16)  ·  redis (7)  ◄──  worker (Celery, general tasks)
+                                                     └──  worker-ingest (imports, 1 process)
+backend / worker ──►  ollama (optional)  ·  external API of your choice
 ```
 
 ### Quick-start
 
 ```bash
-# 1. Générer l'environnement : secrets aléatoires (JWT, ANON, chiffrement AES), port, admin
-python3 scripts/setup_env.py --yes   # ou sans --yes : interactif (recommandé)
-#    puis éditer .env si besoin (APP_BASE_URL, SMTP_*, ADMIN_*, …) — chmod 600 déjà posé
+# 1. Generate the environment: random secrets (JWT, ANON, AES encryption), port, admin
+python3 scripts/setup_env.py --yes   # or without --yes: interactive (recommended)
+#    then edit .env if needed (APP_BASE_URL, SMTP_*, ADMIN_*, …) — chmod 600 already set
 
-# 2. Démarrer la stack (build + up)
-make up                       # ou : docker compose up -d --build
+# 2. Start the stack (build + up)
+make up                       # or: docker compose up -d --build
 
-# 3. Vérifier
-make ps                       # état des services
-make logs                     # logs en temps réel
+# 3. Verify
+make ps                       # service status
+make logs                     # live logs
 ```
 
-Ne recopiez pas `.env.example` tel quel : ses valeurs sont celles de développement et le
-backend **refuse de démarrer** avec elles (fail-fast sur `JWT_SECRET`, `ANON_SALT`,
-`ENCRYPTION_KEY` — voir `backend/app/core/config.py`).
+Do not copy `.env.example` as-is: its values are those of development and the
+backend **refuses to start** with them (fail-fast on `JWT_SECRET`, `ANON_SALT`,
+`ENCRYPTION_KEY` — see `backend/app/core/config.py`).
 
-Les migrations Alembic sont appliquées au démarrage du backend ; le worker attend qu'il
-soit prêt. Les services redémarrent seuls après un reboot (`restart: unless-stopped`) et
-les logs Docker sont limités (5 × 10 Mo par service).
+The Alembic migrations are applied at backend startup; the worker waits for it to
+be ready. The services restart themselves after a reboot (`restart: unless-stopped`) and
+the Docker logs are limited (5 × 10 MB per service).
 
-> **Windows** : cloner avec les fins de ligne LF (le dépôt les impose pour les `*.sh` via
-> `.gitattributes`). Un `entrypoint.sh` en CRLF fait échouer le backend avec
-> « exec ./entrypoint.sh: no such file or directory ».
+> **Windows** : clone with LF line endings (the repo enforces them for the `*.sh` files via
+> `.gitattributes`). An `entrypoint.sh` in CRLF fails the backend with
+> «exec ./entrypoint.sh: no such file or directory».
 
-### HTTPS : reverse proxy devant nginx
+### HTTPS: reverse proxy in front of nginx
 
-Diggypaper ne gère pas TLS lui-même : placez-le derrière le reverse proxy de votre
-établissement (Apache, Traefik, Caddy, nginx…) qui porte le certificat. Réglages :
+Diggypaper does not handle TLS itself: place it behind your establishment's reverse proxy
+(Apache, Traefik, Caddy, nginx…) which holds the certificate. Settings:
 
-| Variable (`.env`) | Valeur |
+| Variable (`.env`) | Value |
 |-------------------|--------|
-| `APP_BASE_URL` | URL publique **https** (`https://diggypaper.exemple.fr`) : liens des e-mails |
-| `COOKIE_SECURE` | `true` (défaut) — le cookie de session n'est envoyé qu'en HTTPS. `false` seulement pour un essai en HTTP local |
-| `NGINX_BIND` | `127.0.0.1` (défaut) si le proxy tourne sur la **même machine** ; `0.0.0.0` (ou l'IP d'une interface) s'il est sur une autre machine — filtrez alors le port par pare-feu |
-| `NGINX_PORT` | port local d'nginx (défaut `8080`) |
-| `TRUSTED_PROXY_CIDR` | adresse ou réseau du proxy, vu depuis nginx (ex. `172.16.0.0/12` si le proxy est sur la même machine, via la passerelle Docker). **Indispensable** : sans lui, toutes les requêtes semblent venir du proxy et la limitation de débit par IP s'applique à tout le monde d'un coup |
+| `APP_BASE_URL` | public **https** URL (`https://diggypaper.exemple.fr`) : links of the e-mails |
+| `COOKIE_SECURE` | `true` (default) — the session cookie is sent over HTTPS only. `false` only for a local HTTP trial |
+| `NGINX_BIND` | `127.0.0.1` (default) if the proxy runs on the **same machine** ; `0.0.0.0` (or the IP of an interface) if it is on another machine — filter the port by firewall then |
+| `NGINX_PORT` | local port of nginx (default `8080`) |
+| `TRUSTED_PROXY_CIDR` | address or network of the proxy, as seen from nginx (e.g. `172.16.0.0/12` if the proxy is on the same machine, via the Docker gateway). **Required** : without it, all requests appear to come from the proxy and the per-IP rate limiting is applied to everyone at once |
 
-Le proxy doit transmettre `Host`, `X-Forwarded-For` et `X-Forwarded-Proto`, et poser
-`Strict-Transport-Security`. nginx (interne) ajoute les en-têtes `X-Content-Type-Options`,
-`X-Frame-Options`, `Referrer-Policy`, `Content-Security-Policy` et masque sa version ;
-il **ne croit jamais** un `X-Forwarded-For` venant d'un client (il le remplace par l'IP
-réelle). Exemple de bloc pour un nginx frontal :
+The proxy must forward `Host`, `X-Forwarded-For` and `X-Forwarded-Proto`, and set
+`Strict-Transport-Security`. nginx (internal) adds the headers `X-Content-Type-Options`,
+`X-Frame-Options`, `Referrer-Policy`, `Content-Security-Policy` and masks its version;
+it **never trusts** an `X-Forwarded-For` coming from a client (it replaces it with the real IP).
+Example block for a front nginx:
 
 ```nginx
 server {
@@ -301,171 +301,171 @@ server {
 }
 ```
 
-### Mettre à jour une installation existante
+### Updating an existing installation
 
-Après `git pull`, avant `docker compose up -d --build` :
+After `git pull`, before `docker compose up -d --build` :
 
-1. **Services de modèles.** Laya et Kev (modèles de décision) sont retirés : peu fiables en
-   zéro-shot sur des revues de littérature. Les modèles correspondants sont désactivés en base
-   (les prédictions déjà produites sont conservées). Retirez `laya` de `COMPOSE_PROFILES`,
-   `LAYA_URL` et `KEV_URL` de votre `.env` (`docker compose up -d --remove-orphans` arrête leur
-   conteneur). Ollama reste un profil optionnel :
-   ```bash
-   COMPOSE_PROFILES=ollama
-   ```
-   Sans modèle local (API externe seulement), ne mettez rien : aucun service de modèle ne démarre.
-2. **Cookies.** `COOKIE_SECURE` vaut `true` par défaut : derrière HTTPS rien à faire ; pour un accès
-   HTTP simple, mettez `COOKIE_SECURE=false`.
-3. **Port.** nginx n'écoute plus que sur `127.0.0.1` ; si le reverse proxy est sur une autre machine,
+1. **Model services.** Laya and Kev (decision models) are removed: unreliable in
+   zero-shot on literature reviews. The corresponding models are disabled in the database
+   (predictions already produced are kept). Remove `laya` from `COMPOSE_PROFILES`,
+   `LAYA_URL` and `KEV_URL` from your `.env` (`docker compose up -d --remove-orphans` stops their
+   container). Ollama remains an optional profile:
+    ```bash
+    COMPOSE_PROFILES=ollama
+    ```
+    Without a local model (external API only), put nothing: no model service starts.
+2. **Cookies.** `COOKIE_SECURE` is `true` by default: behind HTTPS nothing to do; for plain
+   HTTP access, set `COOKIE_SECURE=false`.
+3. **Port.** nginx now listens on `127.0.0.1` only; if the reverse proxy is on another machine,
    `NGINX_BIND=0.0.0.0`.
-4. **Sauvegardez** (`scripts/backup.sh`) : les migrations ajoutent les recherches (chaque projet
-   reçoit une « Recherche initiale » qui reprend ses résultats, relectures et références).
-5. Les conteneurs backend et worker tournent désormais sans root ; leurs volumes sont réparés au
-   démarrage.
+4. **Back up** (`scripts/backup.sh`): the migrations add the searches (each project
+   receives an «Initial Search» that takes over its results, reviews and references).
+5. The backend and worker containers now run without root; their volumes are repaired at
+   startup.
 
-### Comptes
+### Accounts
 
-- **Admin** : créé au premier démarrage (`ADMIN_EMAIL`/`ADMIN_PASSWORD`). Il invite des
-  **créateurs** (page *Administration → Utilisateurs*) : ils peuvent créer des projets et
-  y inviter des collègues.
-- **Invités** (invités à un projet par un créateur de projets) : ne peuvent pas créer de projet ;
-  leur compte est supprimé automatiquement quand ils n'ont plus aucun projet. Un
-  créateur ou un admin n'est jamais supprimé automatiquement.
+- **Admin** : created at first startup (`ADMIN_EMAIL`/`ADMIN_PASSWORD`). The admin invites
+  **creators** (page *Administration → Users*) : they can create projects and
+  invite colleagues in them.
+- **Guests** (invited to a project by a project creator): cannot create a project;
+  their account is deleted automatically when they no longer have any project. A
+  creator or an admin is never deleted automatically.
 
-### Capacité et limites
+### Capacity and limits
 
-| Variable | Rôle |
+| Variable | Role |
 |----------|------|
-| `WORKER_CONCURRENCY` | tâches de fond en parallèle (analyses, exports, benchmarks) — défaut `3` ; les imports tournent sur `worker-ingest` (1 process, file `ingest`) pour rester sous le plafond NCBI |
-| `IMPORT_MAX_ARTICLES` | plafond d'articles par import — défaut `5000` ; `0` = illimité (au-delà de 10 000 résultats, la requête est découpée par date de publication, les plus récents d'abord) |
-| `TASK_SOFT_TIME_LIMIT` | durée max d'une tâche en secondes — `0` = aucune |
-| `*_MEM_LIMIT` | `OLLAMA_`, `WORKER_`, `INGEST_`, `BACKEND_`, `FRONTEND_` : plafonds mémoire (défauts 24g, 8g, 2g, 2g, 1g) |
-| `DISK_ALERT_PERCENT` / `DISK_ALERT_FREE_GB` | alerte disque (e-mail aux admins, bandeau) — défauts `85` % / `5` Go |
-| `PROJECT_RETENTION_DAYS` | jours d'inactivité avant d'avertir les responsables d'un projet — `0` (défaut) = jamais de suppression automatique |
-| `PROJECT_RETENTION_GRACE_DAYS` | délai de grâce avant suppression, après l'avertissement — défaut `14` |
-| `PRIVACY_URL` | lien « politique de confidentialité » affiché à la première connexion |
+| `WORKER_CONCURRENCY` | background tasks in parallel (analyses, exports, benchmarks) — default `3` ; imports run on `worker-ingest` (1 process, queue `ingest`) to stay under the NCBI cap |
+| `IMPORT_MAX_ARTICLES` | cap on articles per import — default `5000` ; `0` = unlimited (beyond 10,000 results, the query is split by publication date, the most recent first) |
+| `TASK_SOFT_TIME_LIMIT` | max duration of a task in seconds — `0` = none |
+| `*_MEM_LIMIT` | `OLLAMA_`, `WORKER_`, `INGEST_`, `BACKEND_`, `FRONTEND_` : memory caps (defaults 24g, 8g, 2g, 2g, 1g) |
+| `DISK_ALERT_PERCENT` / `DISK_ALERT_FREE_GB` | disk alert (e-mail to the admins, banner) — defaults `85`% / `5` GB |
+| `PROJECT_RETENTION_DAYS` | days of inactivity before warning the leads of a project — `0` (default) = never automatic deletion |
+| `PROJECT_RETENTION_GRACE_DAYS` | grace period before deletion, after the warning — default `14` |
+| `PRIVACY_URL` | «privacy policy» link displayed at first login |
 
-Les PDF d'articles sont stockés dans PostgreSQL : prévoir de la place (jusqu'à 25 Mo par
-fichier). La page *Paramètres* (admin) montre l'espace disque, le poids des PDF et les projets
-(taille, inactivité) ; le worker (celery beat, toutes les 6 h) envoie une alerte aux admins quand
-le disque dépasse le seuil. Avec `PROJECT_RETENTION_DAYS`, les responsables d'un projet inactif
-sont prévenus par e-mail, puis le projet est supprimé à l'issue du délai de grâce sauf activité ou
-clic sur « Conserver ce projet ». Seuls les responsables de projet peuvent lancer un import, un export RO-Crate ou remplacer le
-texte intégral d'un article (les exports tableur, références et PRISMA sont ouverts à tout membre).
+Article PDFs are stored in PostgreSQL: plan for space (up to 25 MB per
+file). The *Settings* page (admin) shows the disk space, the weight of the PDFs and the projects
+(size, inactivity); the worker (celery beat, every 6 h) sends an alert to the admins when
+the disk exceeds the threshold. With `PROJECT_RETENTION_DAYS`, the leads of an inactive project
+are warned by e-mail, then the project is deleted at the end of the grace period unless activity or
+a click on «Keep this project». Only project leads can start an import, an RO-Crate export or replace the
+full text of an article (spreadsheet, references and PRISMA exports are open to any member).
 
-### Sauvegarde et restauration
+### Backup and restore
 
-Tout ce qui compte est dans la base PostgreSQL (comptes, projets, articles, PDF,
-annotations, modèles et clés chiffrées).
-
-```bash
-scripts/backup.sh                              # un pg_dump compressé dans ./backups (14 j conservés)
-scripts/restore.sh backups/diggypaper-….sql.gz # REMPLACE la base courante (confirmation demandée)
-TARGET_DB=essai scripts/restore.sh <fichier>   # vérifier une sauvegarde dans une base à part
-```
-
-Planification : `0 2 * * * cd /chemin/diggypaper && scripts/backup.sh >> backups/backup.log 2>&1`.
-**Copiez `./backups` et votre `.env` hors de la machine** : sans `ENCRYPTION_KEY`, les clés
-API chiffrées de la base sont illisibles. L'export RO-Crate sert à la reproductibilité,
-pas de sauvegarde (il n'inclut ni comptes, ni modèles, ni partages ; pas d'import pour
-l'instant). `docker compose down -v` **efface** les volumes.
-
-### Réseau sortant
-
-Les modèles externes saisis par un utilisateur et les téléchargements de PDF ouverts
-sont refusés vers des adresses internes (contrôle à chaque appel). La fenêtre de
-réécriture DNS entre la vérification et la connexion n'est pas fermée : pour une
-instance exposée à des utilisateurs non fiables, filtrez aussi la sortie des conteneurs
-`backend`/`worker` vers votre réseau interne (pare-feu / proxy de sortie).
-
-### Modèles : ce qui fonctionne, et ce qu'on déploie
-
-Le tri utilise un **modèle génératif** qui répond en JSON (décision, items, citations). Deux
-voies, au choix, dans `.env` puis `docker compose up -d --build` :
+Everything that matters is in the PostgreSQL database (accounts, projects, articles, PDF,
+annotations, models and encrypted keys).
 
 ```bash
-COMPOSE_PROFILES=ollama          # modèles locaux (sinon : aucun service de modèle)
-# LLM_API_BASE_URL=http://ollama:11434/v1   # défaut du compose
+scripts/backup.sh                              # a compressed pg_dump in ./backups (14 days kept)
+scripts/restore.sh backups/diggypaper-….sql.gz # REPLACES the current database (confirmation required)
+TARGET_DB=test scripts/restore.sh <file>      # verify a backup in a separate database
 ```
 
-| Voie | Déploiement | Usage |
+Scheduling: `0 2 * * * cd /path/to/diggypaper && scripts/backup.sh >> backups/backup.log 2>&1`.
+**Copy `./backups` and your `.env` off the machine** : without `ENCRYPTION_KEY`, the
+encrypted API keys of the database are unreadable. The RO-Crate export serves reproducibility,
+not backup (it includes neither accounts, nor models, nor shares; it can be
+re-imported, but the team and the gold stay behind). `docker compose down -v` **erases** the volumes.
+
+### Outbound network
+
+External models entered by a user and open PDF downloads
+are refused towards internal addresses (checked at each call). The
+DNS rewrite window between verification and connection is not closed: for an
+instance exposed to untrusted users, also filter the outbound of the
+`backend`/`worker` containers to your internal network (firewall / egress proxy).
+
+### Models: what works, and what we deploy
+
+The triage uses a **generative model** that answers in JSON (decision, items, citations). Two
+ways, to choose in `.env` then `docker compose up -d --build` :
+
+```bash
+COMPOSE_PROFILES=ollama          # local models (otherwise: no model service)
+# LLM_API_BASE_URL=http://ollama:11434/v1   # default of the compose
+```
+
+| Way | Deployment | Usage |
 |------|-------------|-------|
-| **Ollama** (Qwen, Gemma, Llama… en GGUF) | profil `ollama` | local et souverain ; vitesse selon le CPU/GPU |
-| **API externe** (OpenAI, Mistral, serveur interne…) | rien : URL + clé dans *Modèles* | rapide, pas de matériel ; les articles quittent le serveur |
+| **Ollama** (Qwen, Gemma, Llama… in GGUF) | profile `ollama` | local and sovereign; speed depending on CPU/GPU |
+| **External API** (OpenAI, Mistral, internal server…) | nothing: URL + key in *Models* | fast, no hardware; the articles leave the server |
 
-- La page *Modèles* détecte les ressources du serveur (cœurs, RAM, AVX2, GPU) et recommande un
-  modèle adapté, installable en un clic : moins de 16 Go de RAM → très petit modèle (ou API
-  externe) ; 16–32 Go → ~4B ; 32 Go et plus → « mixture d'experts » 30B (3B actifs) ; GPU → ~12B.
-  Les modèles conseillés sont de type *instruct* (sans mode « réflexion », qui multiplie le
-  temps par article). Sans AVX2 ni GPU, l'inférence locale est 2 à 3 fois plus lente. Les temps
-  affichés sont des ordres de grandeur : mesurez toujours la précision sur votre gold (*Benchmarks*).
-- Chaque compte peut enregistrer ses propres modèles externes (clé chiffrée) et les partager avec
-  des comptes ou des projets ; seuls les modèles qu'un compte possède ou qu'on lui a partagés
-  sont utilisables. Un modèle partagé dépense les crédits de son propriétaire.
-- Les modèles de décision sans chat (Laya, Kev…) ne sont plus pris en charge : la recherche
-  Hugging Face les signale et refuse de les installer.
+- The *Models* page detects the resources of the server (cores, RAM, AVX2, GPU) and recommends a
+  suitable model, installable in one click: less than 16 GB of RAM → very small model (or
+  external API); 16–32 GB → ~4B; 32 GB and more → «mixture of experts» 30B (3B active); GPU → ~12B.
+  The recommended models are *instruct* type (without «reflection» mode, which multiplies the
+  time per article). Without AVX2 nor GPU, local inference is 2 to 3 times slower. The times
+  displayed are orders of magnitude: always measure the precision on your gold (*Benchmarks*).
+- Each account can register its own external models (encrypted key) and share them with
+  accounts or projects; only the models an account owns or that have been shared with it
+  are usable. A shared model spends the credits of its owner.
+- Decision models without chat (Laya, Kev…) are no longer supported: the
+  Hugging Face search flags them and refuses to install them.
 
-**GPU sur Windows (Docker Desktop)** : pas de passthrough d'iGPU Intel dans
-Docker Desktop (NVIDIA uniquement) — un Ollama en conteneur reste sur CPU,
-aucun flag ne change cela. Pour exploiter l'Arc 130T : Ollama **natif
-Windows** avec `OLLAMA_IGPU_ENABLE=1`, `OLLAMA_VULKAN=1`, `OLLAMA_NUM_GPU=999`,
-puis `LLM_API_BASE_URL=http://host.docker.internal:11434/v1` dans le `.env`
-(le compose supporte déjà l'override).
+**GPU on Windows (Docker Desktop)** : no passthrough of Intel iGPU in
+Docker Desktop (NVIDIA only) — a containerized Ollama stays on CPU,
+no flag changes that. To exploit the Arc 130T: Ollama **native
+Windows** with `OLLAMA_IGPU_ENABLE=1`, `OLLAMA_VULKAN=1`, `OLLAMA_NUM_GPU=999`,
+then `LLM_API_BASE_URL=http://host.docker.internal:11434/v1` in the `.env`
+(the compose already supports the override).
 
-### Cibles Makefile
+### Makefile targets
 
-| Cible | Action |
+| Target | Action |
 |-------|--------|
-| `make up` | Build + démarrage de la stack |
-| `make down` | Arrêt de la stack |
-| `make build` | Builder les images |
-| `make logs` | Logs en temps réel |
-| `make ps` | État des services |
+| `make up` | Build + start of the stack |
+| `make down` | Stop of the stack |
+| `make build` | Build the images |
+| `make logs` | Live logs |
+| `make ps` | Service status |
 
 ---
 
-## API (extraits)
+## API (excerpts)
 
-Toutes les routes sont sous `/api/v1`. Auth par cookie JWT (httpOnly, Secure par défaut,
-SameSite=Strict, révoqué au changement de mot de passe et à la déconnexion). Rôles : `LEAD` / `ANNOTATOR` / `ADMIN`.
+All routes are under `/api/v1`. Auth by JWT cookie (httpOnly, Secure by default,
+SameSite=Strict, revoked on password change and on logout). Roles: `LEAD` / `ANNOTATOR` / `ADMIN`.
 
-| Méthode | Route | Description |
+| Method | Route | Description |
 |---------|-------|-------------|
-| POST | `/auth/register` | Inscription (token d'invitation) |
-| POST | `/auth/login` | Connexion (cookie JWT) |
-| GET | `/projects` | Projets de l'utilisateur (+role, +article_count) |
-| POST | `/projects` | Créer un projet |
-| POST | `/projects/{id}/import` | Lancer l'import PubMed |
-| GET | `/projects/{id}/articles` | Liste des articles |
-| GET | `/projects/{id}/articles/{aid}` | Article + texte méthodes |
-| POST | `/projects/{id}/articles/{aid}/annotation` | Soumettre une annotation |
-| GET/POST | `/projects/{id}/searches` | Recherches (question + lot d'articles) ; `?search=<id>` sur les routes de résultats |
-| POST | `/projects/{id}/searches/preview` | Nombre d'articles d'une sélection |
-| GET/POST | `/projects/{id}/gold` · `/gold/from-reviews` | Références (gold) et ajout depuis les relectures |
-| GET/POST | `/projects/{id}/prompts` | Prompts versionnés |
-| GET/POST | `/projects/{id}/benchmarks` | Benchmarks (métriques) |
-| GET/POST | `/projects/{id}/inference` | Inférence (job) |
-| GET/PUT | `/admin/settings` | Settings par scope (secrets masqués) |
-| POST | `/admin/settings/smtp/test` | Test d'envoi email |
-| DELETE | `/users/me/anonymize` | Anonymisation RGPD |
+| POST | `/auth/register` | Registration (invitation token) |
+| POST | `/auth/login` | Login (JWT cookie) |
+| GET | `/projects` | User's projects (+role, +article_count) |
+| POST | `/projects` | Create a project |
+| POST | `/projects/{id}/import` | Start the PubMed import |
+| GET | `/projects/{id}/articles` | List of articles |
+| GET | `/projects/{id}/articles/{aid}` | Article + methods text |
+| POST | `/projects/{id}/articles/{aid}/annotation` | Submit an annotation |
+| GET/POST | `/projects/{id}/searches` | Searches (question + batch of articles) ; `?search=<id>` on the results routes |
+| POST | `/projects/{id}/searches/preview` | Number of articles of a selection |
+| GET/POST | `/projects/{id}/gold` · `/gold/from-reviews` | References (gold) and addition from the reviews |
+| GET/POST | `/projects/{id}/prompts` | Versioned prompts |
+| GET/POST | `/projects/{id}/benchmarks` | Benchmarks (metrics) |
+| GET/POST | `/projects/{id}/inference` | Inference (job) |
+| GET/PUT | `/admin/settings` | Settings by scope (secrets masked) |
+| POST | `/admin/settings/smtp/test` | Test email send |
+| DELETE | `/users/me/anonymize` | GDPR anonymization |
 
 ---
 
 ## Tests
 
 ```bash
-# Backend (100 % offline : SQLite in-memory, SMTP/NCBI/LLM mockés)
+# Backend (100% offline: SQLite in-memory, SMTP/NCBI/LLM mocked)
 cd backend && source .venv/bin/activate
 pytest -q
 ruff check . && ruff format .
 
-# Intégration continue : .github/workflows/ci.yml (ruff, pytest, tsc, lint, jest, build)
-# Dépendances Python figées dans backend/constraints.txt (utilisées par l'image et la CI).
+# Continuous integration: .github/workflows/ci.yml (ruff, pytest, tsc, lint, jest, build)
+# Python dependencies frozen in backend/constraints.txt (used by the image and the CI).
 
 # Frontend
 cd frontend
-npx jest          # tests des libs pures (highlight, swipe)
-npm run build     # compile + type-check + lint
+npx jest          # lib + component tests (search, benchmark, highlight, source, ModelRef…)
+npm run build     # compile + type-check
 npm run lint
 ```
 
@@ -475,48 +475,48 @@ npm run lint
 
 ```
 diggypaper/
-├── .env.example              # variables d'env (backend + frontend)
+├── .env.example              # env variables (backend + frontend)
 ├── backend/
 │   ├── app/
 │   │   ├── api/v1/           # routes (auth, projects, prompts, gold, …)
 │   │   ├── core/             # config, crypto (AES-256-GCM), deps
-│   │   ├── db/               # modèles SQLAlchemy + session
-│   │   ├── pubmed/           # client NCBI E-utilities (throttle, erreurs propres)
-│   │   ├── inference/        # service LLM OpenAI-compatible
-│   │   ├── settings/         # réglages et secrets chiffrés
-│   │   ├── tasks/            # tâches Celery (import, benchmark, inférence)
+│   │   ├── db/               # SQLAlchemy models + session
+│   │   ├── pubmed/           # NCBI E-utilities client (throttle, clean errors)
+│   │   ├── inference/        # OpenAI-compatible LLM service
+│   │   ├── settings/         # settings and encrypted secrets
+│   │   ├── tasks/            # Celery tasks (import, benchmark, inference)
 │   │   ├── emails/           # FastAPI-Mail (DB > env)
 │   │   └── main.py           # app factory (middleware + routers)
-│   ├── alembic/              # migrations (0001 → 0004)
-│   └── tests/                # 22 suites, offline
+│   ├── alembic/              # migrations (0001 → 0033)
+│   └── tests/                # 54 suites / 789 tests, offline
 └── frontend/
     ├── src/app/              # routes (login, register, projects/[id]/*)
     ├── src/components/ui/    # design system (Button, Field, Card, Feedback)
     ├── src/lib/              # api.ts, auth.tsx, highlight.ts, swipe.ts
     ├── src/messages/         # i18n (fr, en, de, es)
-    └── tailwind.config.ts    # tokens sémantiques
+    └── tailwind.config.ts    # semantic tokens
 ```
 
 ---
 
-## Design system & qualité UI
+## Design system & UI quality
 
-L'interface est construite selon des règles de production (pas du « vibe coding ») :
+The interface is built according to production rules (not «vibe coding»):
 
-- **Design tokens** (3 niveaux : primitives OKLCH → sémantiques → composants).
-  Jamais de valeur hex brute dans un composant. Light + dark, couleurs avec teinte
-  (pas de gris/noir pur).
-- **Performance** (règles Vercel) : fetch parallèle (`Promise.all`), polling
-  conditionnel (uniquement pendant qu'un job est actif), skeletons de chargement,
-  re-renders maîtrisés.
-- **Accessibilité WCAG 2.2** : labels natifs, `role="alert"`/`status`, focus visible
-  (≥ 2 px, contraste ≥ 3:1), erreurs identifiées par texte + icône (pas couleur
-  seule), cibles ≥ 32 px, `prefers-reduced-motion` respecté.
-- **Typographie** : Geist (next/font), échelle de spacing 8 px, motion
+- **Design tokens** (3 levels: OKLCH primitives → semantic → components).
+  Never a raw hex value in a component. Light + dark, colors with hue
+  (no pure gray/black).
+- **Performance** (Vercel rules): parallel fetch (`Promise.all`), polling
+  conditional (only while a job is active), loading skeletons,
+  controlled re-renders.
+- **WCAG 2.2 accessibility**: native labels, `role="alert"`/`status`, visible focus
+  (≥ 2 px, contrast ≥ 3:1), errors identified by text + icon (not color
+  alone), targets ≥ 32 px, `prefers-reduced-motion` respected.
+- **Typography**: Geist (next/font), 8 px spacing scale, motion
   `cubic-bezier(0.16,1,0.3,1)` 120–180 ms.
 
 ---
 
-## Licence
+## License
 
-MIT — voir [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE).

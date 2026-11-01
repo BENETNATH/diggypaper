@@ -162,7 +162,7 @@ async def test_register_integrity_error_catcher(session):
 async def test_login_ok_sets_secure_httponly_cookie(client, researcher_user, do_login, monkeypatch):
     from app.core.config import get_settings
 
-    assert type(get_settings()).model_fields["cookie_secure"].default is True  # défaut = prod
+    assert type(get_settings()).model_fields["cookie_secure"].default is True  # default = prod
     monkeypatch.setattr(get_settings(), "cookie_secure", True)
     resp = await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     assert resp.status_code == 200

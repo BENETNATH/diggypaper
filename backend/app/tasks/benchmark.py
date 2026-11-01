@@ -17,7 +17,7 @@ import uuid
 
 try:
     import resource  # Unix seulement : absent sous Windows
-except ImportError:  # pragma: no cover - dépend de la plateforme
+except ImportError:  # pragma: no cover - platform-dependent
     resource = None
 
 from sqlalchemy import select
@@ -84,7 +84,7 @@ def benchmark_task(benchmark_run_id: str) -> dict:
         nonlocal result, error
         try:
             result = asyncio.run(_run_benchmark(benchmark_run_id))
-        except BaseException as exc:  # propagée au thread principal
+        except BaseException as exc:  # propagated to the main thread
             error = exc
 
     thread = threading.Thread(target=_run, name="benchmark")
@@ -126,7 +126,7 @@ async def _run_benchmark(
             if run is None:
                 raise LookupError(f"benchmark run not found: {benchmark_run_id}")
             if run.status in (BenchmarkStatus.FAILED, BenchmarkStatus.COMPLETED):
-                return {}  # arrêté avant de démarrer, ou redélivré
+                return {}  # stopped before starting, or redelivered
             run.status = BenchmarkStatus.RUNNING
             await session.commit()
 
@@ -169,7 +169,7 @@ async def _do_benchmark(
     """Benchmark body: each (model, variant) answers each article of the lot."""
     base_project = await session.get(Project, run.project_id)
     search = await get_search(session, base_project, run.search_id)
-    project = ScopedProject(base_project, search)  # question / items / parties de la recherche
+    project = ScopedProject(base_project, search)  # question / items / parts of the search
     fields = project_fields(project)
     lot = (
         (
@@ -248,11 +248,11 @@ async def _do_benchmark(
                         fill_prompt(user_schema, article, project.text_sections),
                     )
                     if not isinstance(prediction, dict):
-                        raise InferenceError("invalid_json")  # JSON valide mais pas un objet
+                        raise InferenceError("invalid_json")  # valid JSON but not an object
                 except InferenceError as exc:
                     if str(exc) != "invalid_json":
                         raise
-                    prediction, error = {}, "invalid_json"  # sortie non-JSON : réponse fausse
+                    prediction, error = {}, "invalid_json"  # non-JSON output: wrong answer
                 took = time.monotonic() - start
                 total_time += took
                 preds[article.id] = prediction
@@ -303,7 +303,7 @@ async def _do_benchmark(
                 )
             res.details = details
             pending.append(res)
-        if len(by_variant) > 1:  # accord entre variantes (sans référence)
+        if len(by_variant) > 1:  # agreement between variants (no reference)
             agree = metrics.agreement(by_variant, fields)
             for r in pending:
                 r.details = {**(r.details or {}), "agreement": agree.get(r.variant)}
@@ -323,7 +323,7 @@ async def _do_benchmark(
             )
         base = getattr(inference, "base_url", None)
         if model.backend_type == BackendType.OLLAMA and isinstance(base, str):
-            await unload_ollama(base, model.model_identifier)  # libère la RAM avant le suivant
+            await unload_ollama(base, model.model_identifier)  # frees RAM before the next one
         await session.commit()
 
     run.status = BenchmarkStatus.COMPLETED

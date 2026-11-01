@@ -127,7 +127,7 @@ async def ensure_prompt(
     p = PromptTemplate(
         project_id=project.id,
         version_number=f"v{len(existing) + 1}.0",
-        title="Généré depuis la question" + (" + consigne" if extra and extra.strip() else ""),
+        title="Generated from the question" + (" + instruction" if extra and extra.strip() else ""),
         system_prompt=system,
         user_prompt_schema=user,
         prompt_type=PromptType.EXTRACTION,

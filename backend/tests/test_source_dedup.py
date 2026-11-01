@@ -146,8 +146,8 @@ async def test_doi_duplicate_other_identity_linked_fills_and_fulltext(engine):
         "references",
         "10.1000/ABC",
     )
-    assert existing.source is None and existing.native_id is None  # identité intacte
-    assert existing.pmcid == "PMC111"  # champ vide complété
+    assert existing.source is None and existing.native_id is None  # identity intact
+    assert existing.pmcid == "PMC111"  # empty field completed
     assert existing.sections and existing.fulltext_source == "pmc"
     assert existing.fulltext_url == "https://pmc.ncbi.nlm.nih.gov/articles/PMC111/"
 
