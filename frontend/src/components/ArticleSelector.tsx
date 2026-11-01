@@ -49,8 +49,9 @@ export function ArticleSelector({
   const [error, setError] = useState<string | null>(null);
 
   const set = (patch: Partial<Selection>) => onChange({ ...value, ...patch });
-  // Criteria filter analysis results: meaningless before the first analysis.
-  const hasPredictions = searches.some((s) => s.predicted > 0);
+  // The analysis criteria (AI decision, answers, review, confidence) only exist on a
+  // batch that was itself analysed; the full-text filter works on any batch.
+  const analysed = (origin?.predicted ?? 0) > 0;
   const answers = useMemo(
     () => Object.fromEntries(Object.entries(value.answers ?? {}).map(([k, v]) => [k, String(v)])),
     [value.answers]
@@ -89,11 +90,21 @@ export function ArticleSelector({
         <select
           value={origin?.id ?? ""}
           onChange={(e) => {
-            // The items differ from one search to the next: we restart without answer filters.
+            // The items differ from one search to the next: we restart without answer filters,
+            // and without analysis criteria when the new batch was never analysed.
             const id = e.target.value;
+            const next = searches.find((s) => s.id === id);
             set({
               from_search_id: id === initial?.id ? undefined : id,
               answers: undefined,
+              ...((next?.predicted ?? 0) > 0
+                ? {}
+                : {
+                    status: undefined,
+                    reviewed: undefined,
+                    confidence_min: undefined,
+                    confidence_max: undefined,
+                  }),
             });
           }}
           className={`${selectCls} max-w-md`}
@@ -104,11 +115,12 @@ export function ArticleSelector({
             </option>
           ))}
         </select>
-        {hasPredictions && <span className="text-xs text-muted">{t("selFromHint")}</span>}
+        {analysed && <span className="text-xs text-muted">{t("selFromHint")}</span>}
       </label>
 
-      {hasPredictions && (
-        <div className="flex flex-wrap items-end gap-3 rounded-lg border border-border bg-surface p-3">
+      <div className="flex flex-wrap items-end gap-3 rounded-lg border border-border bg-surface p-3">
+        {analysed && (
+          <>
         <label className="flex flex-col gap-0.5 text-xs text-muted">
           {t("selStatus")}
           <select
@@ -141,6 +153,8 @@ export function ArticleSelector({
             <option value="false">{t("reviewedNo")}</option>
           </select>
         </label>
+          </>
+        )}
         <label className="flex flex-col gap-0.5 text-xs text-muted">
           {t("selFulltext")}
           <select
@@ -153,6 +167,8 @@ export function ArticleSelector({
             <option value="false">{t("fulltextNo")}</option>
           </select>
         </label>
+        {analysed && (
+          <>
         <label className="flex flex-col gap-0.5 text-xs text-muted">
           {t("selConfMin")}
           <input
@@ -175,8 +191,9 @@ export function ArticleSelector({
             className={inputCls}
           />
         </label>
-        </div>
-      )}
+          </>
+        )}
+      </div>
 
       <div className="flex flex-wrap items-end gap-3 rounded-lg border border-border bg-surface p-3">
         <label className="flex flex-col gap-0.5 text-xs text-muted">
