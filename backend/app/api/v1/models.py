@@ -59,6 +59,28 @@ UserDep = Annotated[User, Depends(get_current_user)]
 _BACKENDS = {"OLLAMA", "LLAMA_CPP", "TRANSFORMERS", "OPENAI_API"}
 
 
+def _ping_error(exc: InferenceError) -> str:
+    """Fixed error code for ping responses.
+
+    The exception message is only compared, never passed through: nothing
+    derived from the exception flows into the response body.
+    """
+    code = str(exc)
+    if code == "timeout":
+        return "timeout"
+    if code == "connection_error":
+        return "connection_error"
+    if code == "invalid_response":
+        return "invalid_response"
+    if code == "invalid_json":
+        return "invalid_json"
+    if code == "url_not_allowed":
+        return "url_not_allowed"
+    if code.startswith("HTTP "):
+        return "http_error"
+    return "inference_error"
+
+
 class ModelCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     backend_type: str = "OLLAMA"
@@ -198,7 +220,7 @@ async def _register(
                 name=name, backend_type=backend, model_identifier=identifier, ram_usage_mb=ram
             )
         )
-    else:  # modèle pré-rempli (seed) : on met à jour l'identifiant réellement installé
+    else:  # pre-filled (seed) model: update the actually installed identifier
         exists.model_identifier = identifier
         exists.is_active = True
     await db.commit()
@@ -227,8 +249,8 @@ async def capabilities(db: DbDep, user: UserDep) -> dict:
         base = await _ollama_base(db)
         if MODE == "host" and base == COMPOSE_ROOT:
             logger.warning(
-                "OLLAMA_MODE=host mais llm_api_base_url pointe encore sur le conteneur du "
-                "compose (%s) : définir LLM_API_BASE_URL sur l'Ollama de la machine hôte",
+                "OLLAMA_MODE=host but llm_api_base_url still points at the compose "
+                "container (%s): set LLM_API_BASE_URL to the host machine's Ollama",
                 base,
             )
         configured = bool(base) and not (MODE == "host" and base == COMPOSE_ROOT)
@@ -386,7 +408,7 @@ async def test_external(payload: ExternalModel, user: UserDep) -> dict:
     try:
         await svc.infer(payload.model, 'Reply with the JSON {"ok": true}.', "ping")
     except InferenceError as exc:
-        return {"ok": False, "error": str(exc)}
+        return {"ok": False, "error": _ping_error(exc)}
     return {"ok": True}
 
 
@@ -447,7 +469,7 @@ async def _model_busy(m: ModelRegistry) -> bool:
     try:
         return await r.get(model_lock_key(m.backend_type, m.model_identifier)) is not None
     except (RedisError, OSError):
-        logger.warning("test modèle : lock %s illisible (Redis)", m.name)
+        logger.warning("model test: unreadable lock %s (Redis)", m.name)
         return False
     finally:
         await r.aclose()
@@ -466,14 +488,14 @@ async def test_installed(model_id: uuid.UUID, db: DbDep, user: UserDep) -> dict:
         raise HTTPException(status_code=404, detail="model not found")
     _require_owner_or_admin(m, user)
     if m.backend_type == "OLLAMA":
-        await _require_ollama(db)  # mode off / host + base compose : pas d'appel (409)
+        await _require_ollama(db)  # off mode / host + compose base: no call (409)
     if m.backend_type != "OPENAI_API" and await _model_busy(m):
-        return {"ok": False, "error": "model_busy"}  # une analyse génère déjà sur ce modèle
+        return {"ok": False, "error": "model_busy"}  # an analysis is already running on this model
     default = await make_inference_service(db)
     try:
         await infer_with(m, default, 'Reply with the JSON {"ok": true}.', "ping")
     except InferenceError as exc:
-        return {"ok": False, "error": str(exc)}
+        return {"ok": False, "error": _ping_error(exc)}
     return {"ok": True}
 
 
@@ -513,7 +535,7 @@ async def delete_model(model_id: uuid.UUID, db: DbDep, user: UserDep) -> None:
         raise HTTPException(status_code=404, detail="model not found")
     _require_owner_or_admin(m, user)
     if m.backend_type == "OLLAMA":
-        await _require_admin(user)  # poids serveur : jamais sur le seul invariant owner_id NULL
+        await _require_admin(user)  # server weight: never on the single owner_id NULL invariant
     if await _in_use(db, m.name):
         raise HTTPException(status_code=409, detail="model_in_use")
     if m.backend_type == "OLLAMA":
@@ -732,7 +754,7 @@ class HFInstall(BaseModel):
 async def install_hf(payload: HFInstall, db: DbDep, user: UserDep) -> dict:
     """Installs a model found on Hugging Face (followed via GET /models/ollama -> pulls)."""
     await _require_admin(user)
-    await _require_ollama(db)  # AVANT tout appel HF
+    await _require_ollama(db)  # BEFORE any HF call
     info = await _hf_get(f"/api/models/{payload.repo}")
     if isinstance(info, dict) and "decision-model" in (info.get("tags") or []):
         raise HTTPException(status_code=422, detail="decision_model")  # pas de chat : inutilisable

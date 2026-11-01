@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
-"""Générer le .env de diggypaper à partir de .env.example.
+"""Generate diggypaper's .env from .env.example.
 
-Auto-génère les secrets (JWT_SECRET, ANON_SALT, ENCRYPTION_KEY), demande les
-valeurs clés (port, admin, SMTP), préserve les commentaires de .env.example,
-et écrit .env en chmod 600. Refuse d'écraser un .env existant sans --force.
+Auto-generates the secrets (JWT_SECRET, ANON_SALT, ENCRYPTION_KEY), asks for
+the key values (port, admin, SMTP), preserves the .env.example comments and
+writes .env with chmod 600. Refuses to overwrite an existing .env without
+--force.
 
-Usage :
-    python3 scripts/setup_env.py            # interactif
-    python3 scripts/setup_env.py --yes      # valeurs par défaut (auto, non interactif)
-    python3 scripts/setup_env.py --force    # régénérer (écrase le .env existant)
+Usage:
+    python3 scripts/setup_env.py            # interactive
+    python3 scripts/setup_env.py --yes      # default values (auto, non-interactive)
+    python3 scripts/setup_env.py --force    # regenerate (overwrites the existing .env)
 """
 
 from __future__ import annotations
@@ -24,7 +25,7 @@ ENV = ROOT / ".env"
 
 
 def _gen_secrets() -> dict[str, str]:
-    """Secrets auto-générés (jamais demandés)."""
+    """Auto-generated secrets (never prompted for)."""
     return {
         "JWT_SECRET": secrets.token_urlsafe(48),
         "ANON_SALT": secrets.token_urlsafe(32),
@@ -39,29 +40,29 @@ def _ask(prompt: str, default: str = "") -> str:
 
 def _interactive() -> dict[str, str]:
     vals: dict[str, str] = {}
-    print("  --- Valeurs interactives ---")
+    print("  --- Interactive values ---")
 
-    port = _ask("Port nginx", "8080")
+    port = _ask("Nginx port", "8080")
     while not port.isdigit():
-        port = _ask("Port nginx (entier)", "8080")
+        port = _ask("Nginx port (integer)", "8080")
     vals["NGINX_PORT"] = port
 
-    vals["APP_BASE_URL"] = _ask("URL publique de l'app", "http://localhost:8000")
-    vals["ADMIN_EMAIL"] = _ask("Email admin bootstrap (vide = désactivé)", "")
+    vals["APP_BASE_URL"] = _ask("Public URL of the app", "http://localhost:8000")
+    vals["ADMIN_EMAIL"] = _ask("Bootstrap admin email (empty = disabled)", "")
 
-    gen = input("  Générer un mot de passe admin aléatoire ? [O/n]: ").strip().lower()
-    if gen in ("", "o", "y", "yes"):
+    gen = input("  Generate a random admin password? [Y/n]: ").strip().lower()
+    if gen in ("", "y", "yes"):
         vals["ADMIN_PASSWORD"] = secrets.token_urlsafe(12)
-        print(f"  ADMIN_PASSWORD: {vals['ADMIN_PASSWORD']}")
-        print("  [!] À conserver — il ne sera plus affiché.")
+        # Never printed: the password only lives in .env (chmod 600).
+        print("  ADMIN_PASSWORD: generated (stored in .env, chmod 600)")
     else:
         while True:
-            vals["ADMIN_PASSWORD"] = input("  Mot de passe admin (min 8): ").strip()
+            vals["ADMIN_PASSWORD"] = input("  Admin password (min 8): ").strip()
             if len(vals["ADMIN_PASSWORD"]) >= 8:
                 break
-            print("  [ERREUR] Trop court (min 8).")
+            print("  [ERROR] Too short (min 8).")
 
-    if input("  Configurer SMTP ? [n/O]: ").strip().lower() in ("y", "yes", "o"):
+    if input("  Configure SMTP? [n/Y]: ").strip().lower() in ("y", "yes"):
         vals["SMTP_HOST"] = _ask("SMTP host", "smtp.gmail.com")
         vals["SMTP_PORT"] = _ask("SMTP port", "587")
         vals["SMTP_USER"] = _ask("SMTP user", "")
@@ -81,17 +82,17 @@ def _defaults() -> dict[str, str]:
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Générer le .env de diggypaper.")
-    ap.add_argument("--force", action="store_true", help="Écraser le .env existant")
-    ap.add_argument("--yes", action="store_true", help="Valeurs par défaut, sans interaction")
+    ap = argparse.ArgumentParser(description="Generate diggypaper's .env.")
+    ap.add_argument("--force", action="store_true", help="Overwrite the existing .env")
+    ap.add_argument("--yes", action="store_true", help="Default values, no interaction")
     args = ap.parse_args()
 
     if not ENV_EXAMPLE.exists():
-        print(f"[ERREUR] {ENV_EXAMPLE} introuvable.")
+        print(f"[ERROR] {ENV_EXAMPLE} not found.")
         sys.exit(1)
 
     if ENV.exists() and not args.force:
-        print(f"[SKIP] {ENV} existe déjà. Utilisez --force pour régénérer.")
+        print(f"[SKIP] {ENV} already exists. Use --force to regenerate.")
         sys.exit(0)
 
     overrides = {**_gen_secrets(), **(_defaults() if args.yes else _interactive())}
@@ -100,16 +101,16 @@ def main() -> None:
     out: list[str] = []
     for line in lines:
         stripped = line.strip()
-        # Titre : retirer le marqueur (EXEMPLE).
-        if "(EXEMPLE)" in line:
-            line = line.replace("(EXEMPLE)", "")
-        # Clé connue non commentée (KEY=value) → remplacer la valeur.
+        # Title: strip the (EXAMPLE) marker.
+        if "(EXAMPLE)" in line:
+            line = line.replace("(EXAMPLE)", "")
+        # Known uncommented key (KEY=value) -> replace the value.
         if stripped and not stripped.startswith("#") and "=" in line:
             key = line.split("=", 1)[0].strip()
             if key in overrides:
                 out.append(f"{key}={overrides[key]}")
                 continue
-        # Clé connue commentée (ex. # SMTP_FROM=...) → décommenter si valeur fournie.
+        # Known commented key (e.g. # SMTP_FROM=...) -> uncomment if a value is provided.
         if stripped.startswith("#") and "=" in stripped:
             ckey = stripped[1:].strip().split("=", 1)[0].strip()
             if ckey in overrides:
@@ -119,10 +120,10 @@ def main() -> None:
 
     ENV.write_text("\n".join(out) + "\n")
     ENV.chmod(0o600)
-    print(f"[OK] {ENV} créé (chmod 600).")
-    print("  Secrets générés : JWT_SECRET, ANON_SALT, ENCRYPTION_KEY")
+    print(f"[OK] {ENV} created (chmod 600).")
+    print("  Generated secrets: JWT_SECRET, ANON_SALT, ENCRYPTION_KEY")
     if args.yes:
-        print(f"  ADMIN_PASSWORD: {overrides['ADMIN_PASSWORD']}")
+        print("  ADMIN_PASSWORD: generated (stored in .env, chmod 600)")
 
 
 if __name__ == "__main__":

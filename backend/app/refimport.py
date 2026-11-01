@@ -22,6 +22,9 @@ EPMC_SEARCH = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
 
 _DOI = re.compile(r"10\.\d{4,9}/[^\s\"'<>\\{}]+", re.I)
 _PMID_LABEL = re.compile(r"(?:pmid|pubmed(?:/|\.ncbi\.nlm\.nih\.gov/)?)\W{0,3}(\d{1,9})\b", re.I)
+# One quantifier: the previous \s*,?\s* backtracked quadratically on long runs of spaces.
+_BIB_FIELD = re.compile(r"[\s,]*([\w-]+)\s*=\s*")
+_BIB_VALUE = re.compile(r"[^,\s]*")
 
 
 def clean_doi(value: str | None) -> str | None:
@@ -91,7 +94,7 @@ def _bibtex_fields(body: str) -> dict[str, str]:
     """Fields of a BibTeX entry: ``name = {…}`` | "…" | number (balanced braces)."""
     fields, i, n = {}, 0, len(body)
     while i < n:
-        m = re.compile(r"\s*,?\s*([\w-]+)\s*=\s*").match(body, i)
+        m = _BIB_FIELD.match(body, i)
         if not m:
             break
         name, i = m.group(1).lower(), m.end()
@@ -111,7 +114,7 @@ def _bibtex_fields(body: str) -> dict[str, str]:
                 j += 1
             value, i = body[i + 1 : j], j + 1
         else:
-            m2 = re.compile(r"[^,\s]*").match(body, i)
+            m2 = _BIB_VALUE.match(body, i)
             value, i = m2.group(0), m2.end()
         fields[name] = value
     return fields
@@ -243,6 +246,21 @@ def parse_csv(text: str) -> list[dict]:
     return out
 
 
+def _csv_header(first_line: str) -> bool:
+    """CSV sniff: first line starts with a bare or quoted key / item type / title / doi cell."""
+    s = first_line.lstrip()
+    if s[:1] == '"':
+        s = s[1:]
+    for kw in ("key", "item type", "title", "doi"):
+        if not s.lower().startswith(kw):
+            continue
+        rest = s[len(kw) :]
+        if rest[:1] == '"':
+            rest = rest[1:]
+        return rest.lstrip()[:1] == ","
+    return False
+
+
 def parse_references(content: str) -> tuple[str, list[dict]]:
     """Detects the format → (format, usable entries: at least one DOI, PMID or title)."""
     text = content.lstrip("\ufeff").strip()
@@ -252,9 +270,7 @@ def parse_references(content: str) -> tuple[str, list[dict]]:
         fmt, parse = "ris", parse_ris
     elif re.search(r"^\s*@\w+\s*\{", text, re.M):
         fmt, parse = "bibtex", parse_bibtex
-    elif re.match(
-        r"\s*\"?(key|item type|title|doi)\"?\s*,", text.splitlines()[0] if text else "", re.I
-    ):
+    elif _csv_header(text.splitlines()[0] if text else ""):
         fmt, parse = "csv", parse_csv
     else:
         fmt, parse = "list", parse_plain
