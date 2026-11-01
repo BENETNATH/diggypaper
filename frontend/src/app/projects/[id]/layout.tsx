@@ -17,8 +17,7 @@ import { useHasMounted } from "@/lib/useHasMounted";
 const STEPS = [
   { key: "overview", href: "", needsCorpus: false, leadOnly: false, optional: false },
   { key: "import", href: "/import", needsCorpus: false, leadOnly: true, optional: false },
-  { key: "searches", href: "/searches", needsCorpus: true, leadOnly: false, optional: false },
-  { key: "inference", href: "/inference", needsCorpus: true, leadOnly: true, optional: false },
+  { key: "inference", href: "/inference", needsCorpus: true, leadOnly: false, optional: false },
   { key: "articles", href: "/articles", needsCorpus: true, leadOnly: false, optional: false },
   { key: "team", href: "/team", needsCorpus: false, leadOnly: false, optional: false },
   { key: "gold", href: "/gold", needsCorpus: true, leadOnly: false, optional: true },
@@ -277,7 +276,7 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
               ))}
             </select>
           </label>
-          <Link href={withSearch(`${base}/searches`, searchId)} className="text-primary hover:underline">
+          <Link href={withSearch(`${base}/inference`, searchId)} className="text-primary hover:underline">
             {t("allSearches")} →
           </Link>
         </div>

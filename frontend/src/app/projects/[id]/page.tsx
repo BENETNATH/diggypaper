@@ -255,7 +255,7 @@ function ProjectDashboard() {
             {t("searchesTitle")} <span className="text-sm font-normal text-muted">{shown.length}</span>
           </h2>
           {isLead && hasCorpus && (
-            <Link href={withSearch(`/projects/${projectId}/searches?new=1`, initial?.id)}>
+            <Link href={withSearch(`/projects/${projectId}/inference?new=1`, initial?.id)}>
               <Button size="sm" variant="secondary">
                 + {t("newSearch")}
               </Button>

@@ -181,7 +181,7 @@ function ResultsContent() {
     } catch {
       /* storage unavailable: the Searches page opens without prefill */
     }
-    router.push(withSearch(`/projects/${projectId}/searches`, searchId));
+    router.push(withSearch(`/projects/${projectId}/inference?new=1`, searchId));
   }
 
   if (error) return <ErrorBanner message={error} onRetry={() => void load()} />;

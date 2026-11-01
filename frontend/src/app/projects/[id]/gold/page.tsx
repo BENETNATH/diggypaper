@@ -2,15 +2,17 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
-import { deleteGold, getProject, goldFromReviews, listGold, GoldArticle, SchemaField } from "@/lib/api";
+import { createSearch, deleteGold, getProject, goldFromReviews, listGold, GoldArticle, SchemaField } from "@/lib/api";
+import { useApiError } from "@/lib/errorMsg";
 import { useAuth } from "@/lib/auth";
 import { isProjectLead } from "@/lib/role";
-import { withSearch } from "@/lib/search";
-import { useSearchId, useSearches } from "@/lib/useSearch";
+import { currentSearch, withSearch } from "@/lib/search";
+import { notifySearchesChanged, storeSearchId, useSearchId, useSearches } from "@/lib/useSearch";
 import { RequireAuth } from "@/components/RequireAuth";
 import { Button } from "@/components/ui/Button";
+import { Field, Input } from "@/components/ui/Field";
 import { Badge, Card } from "@/components/ui/Card";
 import { Skeleton, ErrorBanner, EmptyState } from "@/components/ui/Feedback";
 
@@ -18,6 +20,8 @@ import { Skeleton, ErrorBanner, EmptyState } from "@/components/ui/Feedback";
 const RELEVANT_AT = 0.5;
 /** Below this, the gold is too small to measure anything reliable. */
 const MIN_GOLD = 30;
+/** Default size of the blind sample (unbiased gold standard). */
+const DEFAULT_BLIND_N = 40;
 
 function Stat({ label, value, tone }: { label: string; value: number; tone?: string }) {
   return (
@@ -30,11 +34,15 @@ function Stat({ label, value, tone }: { label: string; value: number; tone?: str
 
 function GoldContent() {
   const t = useTranslations("gold");
+  const ts = useTranslations("searches");
   const ta = useTranslations("articles");
   const locale = useLocale();
+  const errText = useApiError();
+  const router = useRouter();
   const projectId = useParams<{ id: string }>().id;
   const searchId = useSearchId(projectId);
   const { searches } = useSearches(projectId, searchId);
+  const current = currentSearch(searches, searchId);
 
   const [gold, setGold] = useState<GoldArticle[] | null>(null);
   const { user } = useAuth();
@@ -44,6 +52,9 @@ function GoldContent() {
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null); // "all" or the id of the current row
+  // Blind sample (moved here from the old Questions tab): the whole blind/gold flow lives in Gold.
+  const [blindN, setBlindN] = useState(DEFAULT_BLIND_N);
+  const [blindBusy, setBlindBusy] = useState(false);
 
   const load = useCallback(() => {
     return Promise.all([listGold(projectId, searchId), getProject(projectId, searchId)])
@@ -96,6 +107,25 @@ function GoldContent() {
     void act(g.id, () => deleteGold(projectId, g.id));
   };
 
+  /** Creates a blind sample (a "blind" search) and opens the re-review. */
+  async function handleBlind() {
+    setBlindBusy(true);
+    setError(null);
+    try {
+      const from = current && !current.is_default ? current.id : undefined;
+      const s = await createSearch(projectId, {
+        kind: "blind",
+        selection: { from_search_id: from, sample_n: blindN, seed: Math.floor(Math.random() * 1e9) },
+      });
+      storeSearchId(projectId, s.id);
+      notifySearchesChanged();
+      router.push(withSearch(`/projects/${projectId}/annotate?queue=all`, s.id));
+    } catch (err) {
+      setError(errText(err));
+      setBlindBusy(false);
+    }
+  }
+
   const answer = (v: unknown): string => (typeof v === "boolean" ? (v ? ta("yes") : ta("no")) : String(v ?? "—"));
 
   if (error && !gold) return <ErrorBanner message={error} onRetry={() => void load()} />;
@@ -120,6 +150,28 @@ function GoldContent() {
         <p className="rounded-lg bg-success/10 p-3 text-sm text-foreground" role="status">
           {note}
         </p>
+      )}
+
+      {lead ? (
+        <Card title={ts("blindTitle")}>
+          <p className="text-sm text-muted">{ts("blindIntro")}</p>
+          <div className="mt-3 flex flex-wrap items-end gap-3">
+            <Field label={ts("blindN")}>
+              <Input
+                type="number"
+                min={1}
+                value={blindN}
+                onChange={(e) => setBlindN(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                className="w-28"
+              />
+            </Field>
+            <Button loading={blindBusy} onClick={() => void handleBlind()}>
+              {ts("blindCreate")}
+            </Button>
+          </div>
+        </Card>
+      ) : (
+        <p className="text-sm text-muted">{ts("leadOnly")}</p>
       )}
 
       {gold.length > 0 && (

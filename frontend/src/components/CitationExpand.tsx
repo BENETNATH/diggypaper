@@ -67,7 +67,7 @@ export function CitationExpand({ projectId, onStarted }: { projectId: string; on
         hint={t("citNoSearchesHint")}
         action={
           <Link
-            href={`/projects/${projectId}/searches`}
+            href={`/projects/${projectId}/inference`}
             className="text-sm font-medium text-primary hover:underline"
           >
             {t("citNoSearchesLink")} →
