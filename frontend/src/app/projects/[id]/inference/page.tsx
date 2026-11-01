@@ -79,6 +79,14 @@ function AnalysisRow({ s, projectId, locale }: { s: SearchInfo; projectId: strin
         <p className="mt-0.5 line-clamp-1 text-sm text-muted" title={s.question}>
           {s.question}
         </p>
+        {s.fields?.length ? (
+          <p
+            className="mt-0.5 truncate text-xs text-muted"
+            title={`${t("fieldsLabel")}: ${s.fields.map((f) => f.label).join(", ")}`}
+          >
+            {t("fieldsLabel")}: {s.fields.map((f) => f.label).join(" · ")}
+          </p>
+        ) : null}
         <p className="mt-0.5 text-xs text-muted">
           {tp("lotSize", { n: s.lot_size })}
           {s.created_at ? ` · ${new Date(s.created_at).toLocaleDateString(locale)}` : ""}
@@ -475,6 +483,7 @@ function AnalyseContent() {
                           </option>
                         ))}
                       </Select>
+                      <span className="text-xs text-muted">{t("stage1Hint")}</span>
                     </div>
                     <div className="flex flex-col gap-2">
                       <p className="text-sm font-semibold text-foreground">{t("stage2")}</p>
