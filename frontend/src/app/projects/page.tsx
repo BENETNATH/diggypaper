@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useAuth } from "@/lib/auth";
 import { listProjects, createProject, importCrate, Project } from "@/lib/api";
@@ -13,6 +14,7 @@ import { Skeleton, ErrorBanner, EmptyState } from "@/components/ui/Feedback";
 
 function ProjectsContent() {
   const t = useTranslations("projects");
+  const router = useRouter();
   const { user } = useAuth();
   const canCreate = user?.can_create_projects ?? false;
   const [projects, setProjects] = useState<Project[] | null>(null);
@@ -47,7 +49,7 @@ function ProjectsContent() {
         description: description || undefined,
         default_language: language,
       });
-      window.location.href = `/projects/${project.id}`;
+      router.push(`/projects/${project.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "error");
       setCreating(false);
@@ -60,7 +62,7 @@ function ProjectsContent() {
     setError(null);
     try {
       const r = await importCrate(file);
-      window.location.href = `/projects/${r.project_id}/import`;
+      router.push(`/projects/${r.project_id}/import`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "error");
       setImporting(false);

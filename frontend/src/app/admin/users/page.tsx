@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import {
   AdminInvitation,
@@ -184,6 +184,12 @@ function AdminContent() {
   const [projects, setProjects] = useState<AdminProject[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ text: string; link?: string | null } | null>(null);
+  const noticeRef = useRef<HTMLDivElement>(null);
+
+  // Bring the confirmation into view (the invite form is above the pending list).
+  useEffect(() => {
+    if (notice) noticeRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [notice]);
 
   const load = useCallback(() => {
     Promise.all([listAdminUsers(), listAdminInvitations(), listAdminProjects()])
@@ -288,7 +294,7 @@ function AdminContent() {
 
       <Card title={t("invitesTitle", { n: invites.length })}>
         {notice && (
-          <div className="mb-3 rounded-lg bg-surface-muted p-3 text-sm">
+          <div ref={noticeRef} className="mb-3 rounded-lg bg-surface-muted p-3 text-sm">
             <p className="text-foreground">{notice.text}</p>
             {notice.link && (
               <input readOnly value={notice.link} onFocus={(e) => e.currentTarget.select()} className="mt-2 w-full rounded border border-border bg-surface p-2 font-mono text-xs" />

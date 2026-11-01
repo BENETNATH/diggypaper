@@ -471,7 +471,9 @@ export async function logout(): Promise<void> {
   try {
     await request("/auth/logout", { method: "POST" });
   } finally {
-    window.location.href = "/login";
+    // A hard reload (not router.push): wipe client state (per-search filters
+    // in sessionStorage, cached documents) between two users of the same tab.
+    window.location.href = "/login"; // eslint-disable-line @next/next/no-location-assign-relative-destination
   }
 }
 

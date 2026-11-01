@@ -62,7 +62,7 @@ export default function LoginPage() {
       // New device (no remembered language choice): we take the account's language.
       if (!readLocaleCookie() && u.language_preference) {
         writeLocaleCookie(u.language_preference);
-        window.location.assign("/projects");
+        router.push("/projects");
         return;
       }
       router.push("/projects");

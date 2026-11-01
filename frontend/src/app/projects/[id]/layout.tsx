@@ -2,7 +2,7 @@
 
 import { ReactNode, useEffect, useState } from "react";
 import Link from "next/link";
-import { useParams, usePathname } from "next/navigation";
+import { useParams, usePathname, useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { cancelInference, deleteProject, getProject, getInference, listJobs, ImportJob, InferenceJob, Project } from "@/lib/api";
 import { Menu, MenuItem } from "@/components/ui/Menu";
@@ -31,6 +31,7 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const id = useParams<{ id: string }>().id;
   const pathname = usePathname();
+  const router = useRouter();
   const [project, setProject] = useState<Project | null>(null);
 
   // Current search. The layout is rendered on the server: until the client has mounted, we
@@ -149,7 +150,7 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
     if (!window.confirm(t("deleteConfirm"))) return;
     try {
       await deleteProject(id);
-      window.location.href = "/projects";
+      router.push("/projects");
     } catch {
       window.alert(t("deleteFailed"));
     }
