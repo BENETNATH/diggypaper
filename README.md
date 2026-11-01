@@ -39,9 +39,10 @@ export to spreadsheet, RO-Crate and PRISMA diagram.
   estimate before import); a search is created on the new articles so the
   model validates their inclusion. The origin of each article (PubMed, list, citation) is
   kept and appears in the PRISMA («identification by other methods»).
-- **Open-access full texts** : Europe PMC (full-text XML), then Unpaywall and OpenAlex
-  (accepted manuscripts, institutional repositories, bioRxiv / medRxiv / arXiv preprints). Articles
-  without an open copy stay abstract-only. No pirate sources.
+- **Open-access full texts** : Europe PMC (full-text XML), then open PDFs from Unpaywall,
+  arXiv, OpenAlex and Crossref (publisher versions, accepted manuscripts, preprints), with
+  Semantic Scholar as a last resort; for HAL records the deposited main file is re-requested.
+  Articles without an open copy stay abstract-only. No pirate sources.
 - **Manually deposited PDF** (institutional access): the text is extracted and sectioned; you
   verify that the PDF actually matches the article (title, DOI if absent) before adopting it.
 - **Batch PDF deposit** : several PDFs at once, each attached to the article whose
@@ -114,7 +115,8 @@ you ask a second question only to the articles retained by the first, without re
 
 ### Sovereignty and security
 - **100% CPU, self-hosted** : no data is sent to a cloud service (except
-  querying the public APIs PubMed, Europe PMC, Unpaywall, OpenAlex).
+  querying the public APIs PubMed, Europe PMC, Unpaywall, OpenAlex, Crossref,
+  Semantic Scholar and HAL).
 - **GDPR** : consent, anonymization of the annotations on the deletion of an account.
 - Session by httpOnly revocable cookie, rate limiting, control of outbound URLs,
   neutralization of formulas in the exports, scripted backup and restore.

@@ -98,6 +98,124 @@ async def test_find_open_fulltext_nothing_found():
         )
 
 
+# --- new open sources: arXiv, Crossref, Semantic Scholar (all DOI-keyed) ----------
+
+
+def test_arxiv_pdf_url():
+    from app.fulltext import _arxiv_pdf
+
+    assert _arxiv_pdf("10.48550/arXiv.1706.03762") == "https://arxiv.org/pdf/1706.03762"
+    assert _arxiv_pdf("10.1/x") is None
+    assert _arxiv_pdf(None) is None
+
+
+async def test_pdf_candidates_crossref_and_s2_only_as_last_resort():
+    from app.fulltext import _pdf_candidates
+
+    hits: list[str] = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        url = str(req.url)
+        hits.append(url)
+        if "unpaywall" in url:
+            return httpx.Response(200, json={"oa_locations": []})
+        if "openalex" in url:
+            return httpx.Response(200, json={"locations": []})
+        if "crossref" in url:
+            return httpx.Response(
+                200,
+                json={
+                    "message": {
+                        "link": [
+                            {
+                                "URL": "https://j.org/vor.pdf",
+                                "content-type": "application/pdf",
+                                "content-version": "vor",
+                            },
+                            {"URL": "https://j.org/landing", "content-type": "text/html"},
+                        ]
+                    }
+                },
+            )
+        if "semanticscholar" in url:
+            return httpx.Response(
+                200, json={"openAccessPdf": {"url": "https://s2.org/p.pdf", "status": "BRONZE"}}
+            )
+        return httpx.Response(404)
+
+    # Crossref returns the official PDF → a "published" candidate; S2 must NOT be consulted
+    # (it is rate-limited without a key and only asked when the others found nothing).
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        cands = await _pdf_candidates(None, "10.1/x", "a@b.fr", http)
+    assert cands == [("https://j.org/vor.pdf", "published")]
+    assert not any("semanticscholar" in h for h in hits)
+
+    # Nothing else found → Semantic Scholar is the last resort.
+    def empty(req: httpx.Request) -> httpx.Response:
+        url = str(req.url)
+        if "crossref" in url:
+            return httpx.Response(200, json={"message": {"link": []}})
+        if "semanticscholar" in url:
+            return httpx.Response(
+                200, json={"openAccessPdf": {"url": "https://s2.org/p.pdf", "status": "BRONZE"}}
+            )
+        return httpx.Response(200, json={})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(empty)) as http:
+        cands = await _pdf_candidates(None, "10.1/x", "a@b.fr", http)
+    assert cands == [("https://s2.org/p.pdf", "published")]
+
+
+async def test_pdf_candidates_arxiv_doi_is_a_preprint_candidate():
+    from app.fulltext import _pdf_candidates
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={})  # Unpaywall / OpenAlex / Crossref: nothing
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        cands = await _pdf_candidates(None, "10.48550/arXiv.1706.03762", "a@b.fr", http)
+    # arXiv is a preprint: ranked last among candidates.
+    assert ("https://arxiv.org/pdf/1706.03762", "preprint") in cands
+
+
+async def test_find_open_fulltext_via_crossref_published_pdf():
+    pdf = make_pdf([TITLE] + [BODY[i : i + 80] for i in range(0, 2400, 80)])
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        url = str(req.url)
+        if "europepmc" in url and "search" in url:
+            return httpx.Response(200, json={"resultList": {"result": []}})
+        if "unpaywall" in url:
+            return httpx.Response(200, json={"oa_locations": []})
+        if "openalex" in url:
+            return httpx.Response(200, json={"locations": []})
+        if "crossref" in url:
+            return httpx.Response(
+                200,
+                json={
+                    "message": {
+                        "link": [
+                            {
+                                "URL": "https://j.org/vor.pdf",
+                                "content-type": "application/pdf",
+                                "content-version": "vor",
+                            }
+                        ]
+                    }
+                },
+            )
+        if url == "https://j.org/vor.pdf":
+            return httpx.Response(200, content=pdf)
+        return httpx.Response(404)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        secs, source, url, pdf_bytes = await find_open_fulltext(
+            None, None, "10.1/x", "a@b.fr", http, TITLE
+        )
+    assert source == "pdf:published" and url == "https://j.org/vor.pdf" and pdf_bytes == pdf
+    assert secs
+
+
 async def test_upload_pdf_sets_fulltext(client, session, researcher_user, do_login):
     import uuid
 
@@ -407,6 +525,90 @@ async def test_batch_fulltext_continues_after_source_write_failure(
     assert second.fulltext_source == "europepmc"
     job = await session.scalar(select(ImportJob).where(ImportJob.project_id == project.id))
     assert job.status == ImportJobStatus.COMPLETED
+
+
+# --- HAL last resort: re-request the deposited main file ----------------------------
+
+
+async def test_complete_article_hal_retry_is_the_last_resort(
+    session, article_with_pdf, monkeypatch
+):
+    """A HAL article with no DOI-based match gets its deposited file re-requested."""
+    art = article_with_pdf
+    art.source = "hal"
+    art.native_id = "hal-0123"
+    art.doi = None  # a HAL thesis without a DOI: identifier sources find nothing
+    await session.commit()
+    monkeypatch.setattr(
+        "app.fulltext.find_open_fulltext", AsyncMock(return_value=([], None, None, None))
+    )
+    pdf = make_pdf([TITLE] + [BODY[i : i + 80] for i in range(0, 2400, 80)])
+
+    async def fake_fetch_metadata(self, ids):
+        assert ids == ["hal-0123"]
+        return [{"native_id": "hal-0123", "fulltext_id": "https://hal.org/main.pdf"}]
+
+    async def fake_download(url, http):
+        assert url == "https://hal.org/main.pdf"
+        return pdf
+
+    import app.hal as hal_mod
+
+    monkeypatch.setattr(hal_mod.HalAdapter, "fetch_metadata", fake_fetch_metadata)
+    monkeypatch.setattr("app.fulltext._download_pdf", fake_download)
+    async with httpx.AsyncClient() as http:
+        assert await complete_article(session, art, "a@b.fr", http) == "hal"
+    await session.commit()
+    await session.refresh(art)
+    assert art.fulltext_source == "hal" and art.fulltext_url == "https://hal.org/main.pdf"
+    assert await _pdf_data(session, art.id) == [pdf]
+
+
+async def test_hal_retry_does_not_run_for_other_sources(session, article_with_pdf, monkeypatch):
+    """The HAL file is only re-requested for HAL articles, never for the others."""
+    art = article_with_pdf
+    art.source = "pubmed"
+    art.native_id = "123"
+    await session.commit()
+    monkeypatch.setattr(
+        "app.fulltext.find_open_fulltext", AsyncMock(return_value=([], None, None, None))
+    )
+
+    async def boom(*_):
+        raise AssertionError("HAL retry must not run for a PubMed article")
+
+    monkeypatch.setattr("app.fulltext._hal_retry", boom)
+    async with httpx.AsyncClient() as http:
+        assert await complete_article(session, art, "a@b.fr", http) is None
+
+
+async def test_hal_retry_no_file_or_wrong_doc(monkeypatch):
+    import app.hal as hal_mod
+    from app.fulltext import _hal_retry
+
+    art = type("A", (), {"native_id": "hal-1", "title": TITLE, "doi": None})()
+
+    async def fake_fetch_no_file(self, ids):
+        return [{"native_id": "hal-1"}]  # no fulltext_id: the record has no deposited file
+
+    monkeypatch.setattr(hal_mod.HalAdapter, "fetch_metadata", fake_fetch_no_file)
+    async with httpx.AsyncClient() as http:
+        assert await _hal_retry(art, http) == ([], None, None)
+
+    # A deposited file that is actually another document is rejected (title mismatch).
+    body = [BODY[i : i + 80] for i in range(0, 2400, 80)]
+    wrong = make_pdf(["Cancer genomics of rare tumours"] + body)
+
+    async def fake_fetch_with_file(self, ids):
+        return [{"native_id": "hal-1", "fulltext_id": "https://hal.org/f.pdf"}]
+
+    async def fake_download(url, http):
+        return wrong
+
+    monkeypatch.setattr(hal_mod.HalAdapter, "fetch_metadata", fake_fetch_with_file)
+    monkeypatch.setattr("app.fulltext._download_pdf", fake_download)
+    async with httpx.AsyncClient() as http:
+        assert await _hal_retry(art, http) == ([], None, None)
 
 
 async def test_upload_pdf_of_another_article_needs_force(

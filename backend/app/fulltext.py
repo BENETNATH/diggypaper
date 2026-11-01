@@ -1,9 +1,12 @@
 """Full text outside PMC: legal open sources (open access, preprints).
 
 Order: Europe PMC JATS full text (by PMCID, found via the PMID if needed) → open
-PDFs listed by Unpaywall then OpenAlex (editor versions, accepted manuscript,
-bioRxiv/medRxiv/arXiv preprints). Articles truly paywalled with no open copy stay
-without full text (abstract only); no pirate source.
+PDFs listed by Unpaywall, arXiv, OpenAlex and Crossref (publisher versions, accepted
+manuscripts, preprints), then Semantic Scholar as a last resort (rate-limited without
+a key). For HAL records, the deposited main file is re-requested if nothing else
+matched. Sources are keyed by identifiers (DOI/PMID), so they work for any import
+source (PubMed, Europe PMC, OpenAlex, HAL, file). Articles truly paywalled with no
+open copy stay without full text (abstract only); no pirate source.
 """
 
 from __future__ import annotations
@@ -28,6 +31,9 @@ logger = logging.getLogger(__name__)
 EPMC = "https://www.ebi.ac.uk/europepmc/webservices/rest"
 OPENALEX = "https://api.openalex.org/works"
 UNPAYWALL = "https://api.unpaywall.org/v2"
+CROSSREF = "https://api.crossref.org/works"
+S2 = "https://api.semanticscholar.org/graph/v1/paper"
+_ARXIV_DOI = re.compile(r"^10\.48550/arxiv\.(.+)$", re.IGNORECASE)
 
 MIN_CHARS = 1500  # below: landing page / paywall, not an article
 MAX_PDF_BYTES = 25 * 1024 * 1024
@@ -38,6 +44,14 @@ _VERSIONS = {
     "submittedVersion": "preprint",
     "acceptedVersion": "accepted",
     "publishedVersion": "published",
+}
+_XREF_VERSION = {"vor": "published", "am": "accepted", "cr": "accepted", "preprint": "preprint"}
+_S2_VERSION = {
+    "BRONZE": "published",
+    "SILVER": "published",
+    "GOLD": "published",
+    "HYBRID": "published",
+    "GREEN": "accepted",
 }
 _UA = {"User-Agent": "Diggypaper/1.0 (systematic review; open-access full text)"}
 
@@ -123,16 +137,48 @@ async def _epmc_ids(
     return row.get("pmcid"), row.get("doi")
 
 
+def _arxiv_pdf(doi: str | None) -> str | None:
+    """Direct arXiv PDF URL if this DOI is an arXiv DOI (``10.48550/arXiv.{id}``)."""
+    if not doi:
+        return None
+    m = _ARXIV_DOI.match(doi)
+    return f"https://arxiv.org/pdf/{m.group(1)}" if m else None
+
+
+async def _crossref_pdfs(doi: str, email: str, http: httpx.AsyncClient) -> list[tuple[str, str]]:
+    """The publisher's official PDF links (Crossref ``link``), version mapped."""
+    data = await _get_json(http, f"{CROSSREF}/{quote(doi, safe='/')}", {"mailto": email})
+    out: list[tuple[str, str]] = []
+    for link in ((data or {}).get("message") or {}).get("link") or []:
+        if link.get("content-type") == "application/pdf" and link.get("URL"):
+            out.append((link["URL"], _XREF_VERSION.get(link.get("content-version"), "")))
+    return out
+
+
+async def _s2_pdf(doi: str, http: httpx.AsyncClient) -> list[tuple[str, str]]:
+    """Semantic Scholar's open-access PDF. Degrades gracefully: no key → rate-limited (429 → [])."""
+    data = await _get_json(http, f"{S2}/DOI:{quote(doi, safe='/')}", {"fields": "openAccessPdf"})
+    oa = (data or {}).get("openAccessPdf") or {}
+    if not oa.get("url"):
+        return []
+    return [(oa["url"], _S2_VERSION.get(oa.get("status"), ""))]
+
+
 async def _pdf_candidates(
     pmid: str | None, doi: str | None, email: str, http: httpx.AsyncClient
 ) -> list[tuple[str, str]]:
-    """[(PDF url, version)]: Unpaywall then OpenAlex, final versions first."""
+    """[(PDF url, version)]: Unpaywall, arXiv, OpenAlex, Crossref, then Semantic Scholar as a
+    last resort (rate-limited without a key: only asked when the others found nothing),
+    final versions first."""
     found: list[tuple[str, str]] = []
     if doi:
         up = await _get_json(http, f"{UNPAYWALL}/{quote(doi, safe='/')}", {"email": email})
         for loc in (up or {}).get("oa_locations") or []:
             if loc.get("url_for_pdf"):
                 found.append((loc["url_for_pdf"], _VERSIONS.get(loc.get("version"), "")))
+        ax = _arxiv_pdf(doi)
+        if ax:
+            found.append((ax, "preprint"))
     ref = f"doi:{quote(doi, safe='/')}" if doi else (f"pmid:{pmid}" if pmid else None)
     if ref:
         oa = await _get_json(
@@ -141,6 +187,10 @@ async def _pdf_candidates(
         for loc in (oa or {}).get("locations") or []:
             if loc.get("pdf_url"):
                 found.append((loc["pdf_url"], _VERSIONS.get(loc.get("version"), "")))
+    if doi:
+        found += await _crossref_pdfs(doi, email, http)
+    if doi and not found:  # last resort: do not hammer a rate-limited endpoint per article
+        found += await _s2_pdf(doi, http)
     seen: set[str] = set()
     unique = [(u, v) for u, v in found if not (u in seen or seen.add(u))]
     rank = {"published": 0, "accepted": 1, "": 2, "preprint": 3}
@@ -332,6 +382,35 @@ async def refresh_article_metadata(session: AsyncSession, art, http: httpx.Async
             setattr(art, key, value)
 
 
+async def _hal_retry(art, http: httpx.AsyncClient) -> tuple[list[dict], str | None, bytes | None]:
+    """Last resort for HAL articles: re-request the deposited main file.
+
+    The file may have been uploaded to HAL after the import (theses are updated), or
+    the import download may have failed transiently. Returns ``(sections, url, pdf)``
+    or 3 × empty.
+    """
+    from app.hal import HalAdapter  # lazy: breaks the fulltext <-> hal import cycle
+
+    adapter = HalAdapter(http)
+    metas = await adapter.fetch_metadata([art.native_id])
+    url = next((m.get("fulltext_id") for m in metas if m.get("native_id") == art.native_id), None)
+    if not url:
+        return [], None, None
+    data = await _download_pdf(url, http)
+    if data is None:
+        return [], None, None
+    try:
+        sections = pdf_to_sections(data)
+    except Exception:  # noqa: BLE001 - unreadable/encrypted PDF: give up on this record
+        logger.info("hal pdf unreadable for %s", art.native_id)
+        return [], None, None
+    if not long_enough(sections):
+        return [], None, None
+    if art.title and pdf_matches_article(art.title, art.doi, sections) is False:
+        return [], None, None  # the deposited file is another document
+    return sections, url, data
+
+
 async def complete_article(
     session: AsyncSession, art, email: str, http: httpx.AsyncClient
 ) -> str | None:
@@ -344,6 +423,9 @@ async def complete_article(
     sections, source, url, pdf = await find_open_fulltext(
         art.pmid, art.pmcid, art.doi, email, http, art.title
     )
+    if not sections and art.source == "hal" and art.native_id:
+        sections, url, pdf = await _hal_retry(art, http)
+        source = "hal" if sections else None
     if not sections:
         return None
     await _apply_fulltext(session, art, sections, source, url, pdf)
