@@ -384,6 +384,7 @@ export function errorKey(detail: string | undefined): string | null {
   if (d === "ambiguous") return "errors.ambiguous";
   if (d.includes("not found")) return "errors.notFound";
   if (d === "conflict") return "errors.conflict";
+  if (d === "rate_limited") return "errors.rateLimited";
   return null;
 }
 

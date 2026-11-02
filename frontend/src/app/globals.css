@@ -30,6 +30,10 @@
   /* L=0.50: 6.12:1 on white, 5.29:1 on bg-warning/10, 4.55:1 on bg-warning/20 (Badge yellow), 5.48:1 on bg-surface-muted (WCAG 1.4.3). */
   --warning: oklch(0.50 0.15 75);
 
+  /* Surlignage de preuve (EvidenceHighlighter) — teinte jaune/ambre */
+  --highlight-bg: oklch(0.965 0.1 92);
+  --highlight-fg: oklch(0.41 0.1 46);
+
   /* Focus (WCAG 2.4.11 : ≥ 2px, contraste ≥ 3:1) */
   --focus: oklch(0.55 0.19 258);
 
@@ -59,6 +63,8 @@
     --danger-foreground: oklch(0.15 0.01 260);
     --success: oklch(0.7 0.15 155);
     --warning: oklch(0.8 0.14 75);
+    --highlight-bg: oklch(0.38 0.09 88);
+    --highlight-fg: oklch(0.9 0.06 95);
     --focus: oklch(0.7 0.19 258);
   }
 }
@@ -95,6 +101,14 @@
 @layer utilities {
   .text-balance {
     text-wrap: balance;
+  }
+  /* Surlignage de preuve (EvidenceHighlighter) : teinte jaune/ambre en tokens
+     (couleurs du thème light + dark, pas de classes Tailwind hardcodées). */
+  .evidence-highlight {
+    background: var(--highlight-bg);
+    color: var(--highlight-fg);
+    border-radius: 2px;
+    padding-inline: 2px;
   }
   /* Flash ponctuel d'un surlignage (clique sur un extrait du formulaire →
      EvidenceHighlighter scrolle le texte et fait clignoter le mark). */

@@ -68,7 +68,7 @@ function ProfileContent() {
       const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }));
       const a = document.createElement("a");
       a.href = url;
-      a.download = "diggypaper-mes-donnees.json";
+      a.download = "diggypaper-export.json";
       a.click();
       URL.revokeObjectURL(url);
     }, t("exported"));

@@ -238,3 +238,37 @@ async def test_query_volume_openalex_error_502(client, researcher_user, do_login
     assert resp.status_code == 502
     assert resp.json() == {"error": "openalex_unavailable"}
     assert "openalex.org" not in resp.text
+
+
+async def test_query_volume_hal_error_502(client, researcher_user, do_login, monkeypatch):
+    """HAL errors (400 exhausted, 503 after retries, timeout) → 502 {error: hal_unavailable},
+    no URL (same contract as the other sources)."""
+    import app.api.v1.projects as projects_api
+    import app.hal as hal
+
+    pid = await _project(client, do_login)
+
+    async def _noop(_delay: float) -> None:
+        return None
+
+    monkeypatch.setattr(hal, "_sleep", _noop)
+
+    def _client_502(status_code=None, timeout=False):
+        def handler(_request: httpx.Request) -> httpx.Response:
+            if timeout:
+                raise httpx.ConnectTimeout("boom")
+            return httpx.Response(status_code, json={})
+
+        real = httpx.AsyncClient
+        monkeypatch.setattr(
+            projects_api, "_make_http_client", lambda: real(transport=httpx.MockTransport(handler))
+        )
+
+    for status_code, timeout in ((400, False), (503, False), (None, True)):
+        _client_502(status_code, timeout)
+        resp = await client.post(
+            f"/api/v1/projects/{pid}/query-volume", json={"query": "p53", "source": "hal"}
+        )
+        assert resp.status_code == 502, resp.text
+        assert resp.json() == {"error": "hal_unavailable"}
+        assert "archives-ouvertes.fr" not in resp.text

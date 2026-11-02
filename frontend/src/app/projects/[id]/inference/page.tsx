@@ -58,7 +58,7 @@ function Stat({ label, value, tone }: { label: string; value: number; tone?: str
 }
 
 /** One row of the "analyses performed" list: the question, its state and a link to its results. */
-function AnalysisRow({ s, projectId, locale }: { s: SearchInfo; projectId: string; locale: string }) {
+export function AnalysisRow({ s, projectId, locale }: { s: SearchInfo; projectId: string; locale: string }) {
   const t = useTranslations("searches");
   const tj = useTranslations("jobs");
   const tp = useTranslations("project");
@@ -90,6 +90,7 @@ function AnalysisRow({ s, projectId, locale }: { s: SearchInfo; projectId: strin
         <p className="mt-0.5 text-xs text-muted">
           {tp("lotSize", { n: s.lot_size })}
           {s.created_at ? ` · ${new Date(s.created_at).toLocaleDateString(locale)}` : ""}
+          {s.last_job && <> · <ModelRef name={s.last_job.model} version={s.last_job.model_version} /></>}
         </p>
       </div>
       <Link href={withSearch(`/projects/${projectId}/articles`, s.id)}>

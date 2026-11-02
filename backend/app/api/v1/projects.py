@@ -43,6 +43,7 @@ from app.db.models import (
     UserRole,
 )
 from app.europepmc import EpmcError
+from app.hal import HalError
 from app.openalex import OpenAlexError
 from app.pubmed import NCBIError, _esearch_max
 from app.refimport import dedupe, parse_references
@@ -629,6 +630,9 @@ async def query_volume(
     except OpenAlexError as exc:
         logger.error("query-volume OpenAlex error: %s", exc)
         return JSONResponse(status_code=502, content={"error": "openalex_unavailable"})
+    except HalError as exc:
+        logger.error("query-volume HAL error: %s", exc)
+        return JSONResponse(status_code=502, content={"error": "hal_unavailable"})
     return {"count": count, "max": _esearch_max()}
 
 

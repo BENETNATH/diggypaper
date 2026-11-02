@@ -12,7 +12,8 @@
     "next": "Next",
     "previous": "Previous",
     "retry": "Retry",
-    "close": "Close"
+    "close": "Close",
+    "adminOnly": "Access restricted to administrators."
   },
   "jobs": {
     "status_PENDING": "Pending",
@@ -27,7 +28,8 @@
     "noMatch": "No article in this project matches this PDF.",
     "ambiguous": "Several articles match: upload the PDF from the article page.",
     "notFound": "Resource not found.",
-    "conflict": "This operation is not possible in the current state."
+    "conflict": "This operation is not possible in the current state.",
+    "rateLimited": "Too many requests, please try again in a few minutes."
   },
   "nav": {
     "appName": "Diggypaper",
@@ -602,7 +604,7 @@
     "panelCollapsedHint": "Expand to create a new question and run it.",
     "chainLabel": "Chain: run once \"{name}\" has finished",
     "chainHint": "Only one analysis runs at a time per project; this one will start as soon as the current analysis finishes.",
-    "workersBusy": "Workers are busy: an analysis is already running in \"{name}\".",
+    "workersBusy": "An analysis is already running in “{name}”.",
     "queuedNext": "Queued: \"{name}\" will start once the current analysis finishes.",
     "relaunch": "Relaunch (same question)",
     "goldSectionTitle": "Gold standard & benchmark",

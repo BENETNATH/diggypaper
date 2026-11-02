@@ -9,7 +9,7 @@ interface EvidenceHighlighterProps {
   text: string;
   /** Verbatim excerpts to highlight (the form's: model answer or added by hand). */
   quotes: string[] | null | undefined;
-  /** Tailwind class of the `<mark>` (two-color). */
+  /** Class of the `<mark>` (theme tokens, light + dark). */
   markClassName?: string;
   /** If provided: a floating "+" appears on the selected text and adds the excerpt. */
   onAdd?: (quote: string) => void;
@@ -25,7 +25,7 @@ interface EvidenceHighlighterProps {
 export function EvidenceHighlighter({
   text,
   quotes,
-  markClassName = "bg-yellow-200 text-amber-900 rounded-sm px-0.5",
+  markClassName = "evidence-highlight",
   onAdd,
   focus,
 }: EvidenceHighlighterProps) {
@@ -69,10 +69,16 @@ export function EvidenceHighlighter({
       // Centers the mark in the panel, regardless of the page position.
       const offset = markRect.top - boxRect.top + scroller.scrollTop;
       const targetTop = offset - scroller.clientHeight / 2 + markRect.height / 2;
-      scroller.scrollTo({ top: targetTop, behavior: "smooth" });
+      // prefers-reduced-motion: no smooth scroll (same guard as inference/page.tsx).
+      const behavior: ScrollBehavior =
+        typeof window.matchMedia === "function" &&
+        !window.matchMedia("(prefers-reduced-motion: reduce)").matches
+          ? "smooth"
+          : "auto";
+      scroller.scrollTo({ top: targetTop, behavior });
       // The panel itself outside the window (mobile): we bring it into the viewport.
       if (boxRect.top < 0 || boxRect.bottom > window.innerHeight) {
-        window.scrollBy({ top: boxRect.top, behavior: "smooth" });
+        window.scrollBy({ top: boxRect.top, behavior });
       }
       return offset;
     };

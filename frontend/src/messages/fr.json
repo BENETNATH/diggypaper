@@ -12,7 +12,8 @@
     "next": "Suivant",
     "previous": "Précédent",
     "retry": "Réessayer",
-    "close": "Fermer"
+    "close": "Fermer",
+    "adminOnly": "Accès réservé aux administrateurs."
   },
   "jobs": {
     "status_PENDING": "En attente",
@@ -27,7 +28,8 @@
     "noMatch": "Aucun article du projet ne correspond à ce PDF.",
     "ambiguous": "Plusieurs articles possibles : déposez le PDF depuis la fiche de l'article.",
     "notFound": "Ressource introuvable.",
-    "conflict": "Cette opération est impossible dans l'état actuel."
+    "conflict": "Cette opération est impossible dans l'état actuel.",
+    "rateLimited": "Trop de requêtes, réessayez dans quelques minutes."
   },
   "nav": {
     "appName": "Diggypaper",
@@ -602,7 +604,7 @@
     "panelCollapsedHint": "Dépliez pour créer une nouvelle question et la lancer.",
     "chainLabel": "Enchaîner : lancer une fois « {name} » a terminé",
     "chainHint": "Une seule analyse tourne à la fois dans le projet ; celle-ci démarrera dès que l'analyse en cours sera finie.",
-    "workersBusy": "Les workers sont occupés : une analyse est déjà en cours dans « {name} ».",
+    "workersBusy": "Une analyse est déjà en cours dans « {name} ».",
     "queuedNext": "En file : « {name} » démarrera dès que l'analyse en cours sera finie.",
     "relaunch": "Relancer (même question)",
     "goldSectionTitle": "Gold standard & benchmark",
