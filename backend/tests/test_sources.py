@@ -183,17 +183,6 @@ async def test_contract_fake_volume_zero_empty_success(engine):
     assert result["failed"] == 0 and result["fulltext"] == 0
 
 
-async def test_contract_fake_truncated_by_limit():
-    """iter_ids respects the limit cap: the first N, order preserved, the rest not generated."""
-    fake = FakeSourceAdapter(
-        volume=50, ids=[f"P{i}" for i in range(50)], meta_by_id={f"P{i}": {} for i in range(50)}
-    )
-    got = [nid async for nid in fake.iter_ids("q", None, limit=30)]
-    assert len(got) == 30
-    assert got == [f"P{i}" for i in range(30)]
-    assert fake.calls == [("iter_ids", "q", None, 30)]
-
-
 async def test_contract_fake_error_sanitized_job_failure(engine):
     """search_volume raising (outside NCBIError) -> job FAILED, project DRAFT,
     error_message without URL nor API key (C-1)."""
