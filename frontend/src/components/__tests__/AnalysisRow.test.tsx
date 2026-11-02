@@ -2,8 +2,12 @@ import { render, screen } from "@testing-library/react";
 import { AnalysisRow } from "@/app/projects/[id]/inference/page";
 import { SearchInfo } from "@/lib/api";
 
-// i18n keys returned as-is: the test does not depend on the message files.
-jest.mock("next-intl", () => ({ useTranslations: () => (key: string) => key }));
+// i18n keys returned as-is (with their params): the test does not depend on the message files.
+jest.mock("next-intl", () => ({
+  useLocale: () => "fr",
+  useTranslations: () => (key: string, params?: Record<string, unknown>) =>
+    params ? `${key}:${Object.values(params).join(":")}` : key,
+}));
 
 const search: SearchInfo = {
   id: "s1",
@@ -30,6 +34,33 @@ describe("AnalysisRow", () => {
     const { container } = render(<AnalysisRow s={search} projectId="p1" locale="fr" />);
     expect(container.textContent).toContain("qwen3:8b");
     expect(container.textContent).toContain("v42");
+  });
+
+  // spec 2026-11-02-legacy-questions §2: no ghost question
+  it("question null: the noQuestion label, no ghost question text or title", () => {
+    render(<AnalysisRow s={{ ...search, question: null }} projectId="p1" locale="fr" />);
+    const p = screen.getByText("noQuestion");
+    expect(p).toBeInTheDocument();
+    expect(p).not.toHaveAttribute("title");
+  });
+
+  // spec 2026-11-02-legacy-questions §3: real progress, always shown
+  it("blind search: reviewed/lot progress", () => {
+    const { container } = render(
+      <AnalysisRow
+        s={{ ...search, kind: "blind", reviewed: 3, predicted: 0 }}
+        projectId="p1"
+        locale="fr"
+      />
+    );
+    expect(container.textContent).toContain("progressReviewed:3:10");
+    expect(container.textContent).not.toContain("progressAnalysed");
+  });
+
+  it("standard search: predicted/lot progress (including 0)", () => {
+    const { container } = render(<AnalysisRow s={search} projectId="p1" locale="fr" />);
+    expect(container.textContent).toContain("progressAnalysed:0:10");
+    expect(container.textContent).not.toContain("progressReviewed");
   });
 
   it("model_version null: the \"version not recorded\" label", () => {

@@ -24,6 +24,14 @@ def test_check_fields_rejects_bad_input():
             check_fields(bad)
 
 
+def test_build_system_prompt_requires_the_question():
+    """spec 2026-11-02-legacy-questions §1: no legacy fallback question in the prompt."""
+    with pytest.raises(ValueError, match="question is required"):
+        build_system_prompt(None, [])
+    with pytest.raises(ValueError, match="question is required"):
+        build_system_prompt("   ", FIELDS)
+
+
 def test_validate_metrics_prompt():
     ok = {"design": "RCT", "blinded": True, "confidence_score": 0.5}
     assert validate_decision(FIELDS, ok) == []
@@ -66,6 +74,8 @@ async def test_articles_prediction_status_and_auto_prompt(
 
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     project, article = await _make_project_with_article(session, researcher_user)
+    project.question = "Which design?"  # a prompt needs a real question (no legacy fallback)
+    await session.commit()
     base = f"/api/v1/projects/{project.id}"
     r = (await client.get(f"{base}/articles")).json()
     assert r["items"][0]["prediction_status"] is None and r["stats"] == {"NONE": 1, "TO_REVIEW": 0}

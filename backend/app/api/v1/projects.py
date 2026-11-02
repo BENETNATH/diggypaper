@@ -47,7 +47,7 @@ from app.hal import HalError
 from app.openalex import OpenAlexError
 from app.pubmed import NCBIError, _esearch_max
 from app.refimport import dedupe, parse_references
-from app.schema import DEFAULT_QUESTION, check_fields, project_fields
+from app.schema import check_fields, project_fields
 from app.searches import default_search, definition_hash, get_search, in_search, lot_condition
 from app.settings.service import get_setting
 from app.sources import DateBounds
@@ -257,7 +257,7 @@ def _project_payload(
         "created_by": str(project.created_by) if project.created_by else None,
         "default_language": project.default_language,
         "text_sections": src.text_sections or DEFAULT_KINDS,
-        "question": src.question or DEFAULT_QUESTION,
+        "question": src.question,
         "read_windows": src.read_windows,
         "fields": project_fields(src),
         "custom_schema": src.fields is not None,

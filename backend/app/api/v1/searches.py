@@ -33,9 +33,8 @@ from app.db.models import (
 )
 from app.model_access import usable_models
 from app.scheduler import selection_dict, start_ready
-from app.schema import DEFAULT_QUESTION, check_fields
+from app.schema import check_fields
 from app.searches import (
-    default_search,
     definition_hash,
     get_search,
     in_search,
@@ -232,7 +231,7 @@ def _payload(s: Search, stats: dict, parent: Search | None, author: User | None)
         "name": s.name,
         "kind": s.kind,
         "is_default": s.is_default,
-        "question": s.question or DEFAULT_QUESTION,
+        "question": s.question,
         # The search's own items (None: no question -> no answer filters; no
         # fallback to DEFAULT_FIELDS, which would show a legacy hardcoded question).
         "fields": s.fields or [],
@@ -260,8 +259,6 @@ async def _full_payload(db: AsyncSession, s: Search) -> dict:
 @router.get("/{project_id}/searches")
 async def list_searches(project_id: uuid.UUID, db: DbDep, user: UserDep) -> dict:
     project = await _require_project_member(db, project_id, user)
-    await default_search(db, project)
-    await db.commit()
     rows = (
         (
             await db.execute(
@@ -281,8 +278,6 @@ async def project_overview(project_id: uuid.UUID, db: DbDep, user: UserDep) -> d
     """Overview: global corpus figures (distinct articles, all searches
     together) and state of each search."""
     project = await _require_project_member(db, project_id, user)
-    await default_search(db, project)
-    await db.commit()
     in_project = Article.project_id == project.id
 
     async def count(stmt) -> int:
@@ -418,12 +413,11 @@ async def delete_search(
     project_id: uuid.UUID, search_id: uuid.UUID, db: DbDep, user: UserDep
 ) -> None:
     """Deletes the search with its results, re-reads, analyses and references. The
-    initial search cannot be deleted."""
+    references (gold) are kept: attached to a sibling of the same definition, or
+    project-global (search_id NULL) when the initial search is deleted without one."""
     project = await _require_project_member(db, project_id, user)
     await _require_lead_or_admin(db, project_id, user)
     s = await get_search(db, project, search_id)
-    if s.is_default:
-        raise HTTPException(status_code=409, detail="the initial search cannot be deleted")
     # The gold is shared by the searches with the same question: we attach it to one of them
     # rather than erase it with this search.
     heir = (
@@ -441,6 +435,11 @@ async def delete_search(
     if heir is not None:
         await db.execute(
             update(GoldArticle).where(GoldArticle.search_id == s.id).values(search_id=heir)
+        )
+    elif s.is_default:
+        # The initial search's references stay project-global (NULL rows: gold_condition).
+        await db.execute(
+            update(GoldArticle).where(GoldArticle.search_id == s.id).values(search_id=None)
         )
     await db.delete(s)
     await db.commit()

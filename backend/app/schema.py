@@ -14,7 +14,6 @@ import re
 TYPES = ("boolean", "choice", "text")
 STANDARD_KEYS = ("confidence_score", "field_confidence", "evidence_quotes", "reasoning_summary")
 
-DEFAULT_QUESTION = "Does the study use AI-based behavior analysis, and which animal sex is studied?"
 DEFAULT_FIELDS = [
     {"key": "use_ai_behavior", "label": "Uses AI behavior analysis", "type": "boolean"},
     {
@@ -90,6 +89,8 @@ def validate_decision(fields: list[dict], data: dict) -> list[str]:
 
 def build_system_prompt(question: str | None, fields: list[dict]) -> str:
     """Generated system prompt: question + exact JSON schema asked of the model."""
+    if not (question or "").strip():
+        raise ValueError("question is required")
     lines = []
     for f in fields:
         if f["type"] == "boolean":
@@ -115,7 +116,7 @@ def build_system_prompt(question: str | None, fields: list[dict]) -> str:
     return (
         "You are a scientific literature screening assistant. Read the article text "
         "(in EN, FR, DE or ES) and answer this question:\n"
-        f"{(question or DEFAULT_QUESTION).strip()}\n\n"
+        f"{question.strip()}\n\n"
         f"Return ONLY a valid JSON object matching this schema:\n{schema}\n"
         "No markdown wrappers, no text outside the JSON. If the text does not allow "
         "an answer, lower confidence_score."

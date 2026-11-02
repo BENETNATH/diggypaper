@@ -165,6 +165,18 @@ async def test_list_projects_401_no_auth(client, session, researcher_user):
 # --- GET /projects/{id} ---
 
 
+async def test_project_payload_returns_null_question_without_legacy_fallback(
+    client, session, researcher_user, do_login
+):
+    """spec 2026-11-02-legacy-questions §1: no legacy question in the project payload."""
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    resp = await client.post("/api/v1/projects", json={"title": "T"})
+    assert resp.status_code == 201
+    assert resp.json()["question"] is None
+    data = (await client.get(f"/api/v1/projects/{resp.json()['id']}")).json()
+    assert data["question"] is None and data["question_set"] is False
+
+
 async def test_get_project_as_member(client, session, researcher_user, do_login):
     """GET /projects/{id} by a member (200): status, article count, created_by."""
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)

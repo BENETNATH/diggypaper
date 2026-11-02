@@ -25,6 +25,15 @@ async def _make_project_with_lead(session, lead_user, other_user=None):
     return project
 
 
+async def test_generate_prompt_without_question_is_422(client, session, researcher_user, do_login):
+    """spec 2026-11-02-legacy-questions §1: a search without a question cannot generate a prompt."""
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project = await _make_project_with_lead(session, researcher_user)  # question is None
+    resp = await client.post(f"/api/v1/projects/{project.id}/prompts/generate")
+    assert resp.status_code == 422
+    assert resp.json()["detail"] == "no question set for this search"
+
+
 async def test_create_prompt_lead(client, session, researcher_user, do_login):
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     project = await _make_project_with_lead(session, researcher_user)

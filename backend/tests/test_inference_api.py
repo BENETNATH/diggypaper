@@ -362,6 +362,12 @@ async def test_extra_instructions_extend_the_generated_prompt(
 
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     project_id, _ = await _create_frozen_project(client, session, researcher_user)
+    # the generated prompt needs a question (no legacy fallback); the initial search
+    # was created at project creation, so it carries it
+    from app.searches import default_search
+
+    (await default_search(session, await session.get(Project, uuid.UUID(project_id)))).question = "Q?"
+    await session.commit()
     _mock_inference_task(monkeypatch)
     url = f"/api/v1/projects/{project_id}/inference"
     ids = []

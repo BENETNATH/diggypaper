@@ -74,6 +74,7 @@ function LotBar({ s }: { s: SearchInfo }) {
 
 function SearchRow({ s, projectId, isLead, hasCorpus }: { s: SearchInfo; projectId: string; isLead: boolean; hasCorpus: boolean }) {
   const t = useTranslations("project");
+  const ts = useTranslations("searches");
   const open = (page: string) => withSearch(`/projects/${projectId}/${page}`, s.id);
   const blind = s.kind === "blind";
   const analysedPct = pct(s.predicted, s.lot_size);
@@ -91,9 +92,13 @@ function SearchRow({ s, projectId, isLead, hasCorpus }: { s: SearchInfo; project
             {s.schedule_state === "waiting" && <Badge color="gray">{t("scheduled")}</Badge>}
             {s.schedule_state === "failed" && <Badge color="red">{t("scheduleFailed")}</Badge>}
           </div>
-          <p className="mt-0.5 line-clamp-2 text-sm text-muted" title={s.question}>
-            {s.question}
-          </p>
+          {s.question ? (
+            <p className="mt-0.5 line-clamp-2 text-sm text-muted" title={s.question}>
+              {s.question}
+            </p>
+          ) : (
+            <p className="mt-0.5 line-clamp-2 text-sm text-muted">{ts("noQuestion")}</p>
+          )}
           {s.schedule_state === "waiting" && s.parent && (
             <p className="mt-0.5 text-xs text-muted">{t("scheduledAfter", { name: s.parent.name })}</p>
           )}
@@ -191,7 +196,6 @@ function ProjectDashboard() {
   const toReviewTotal = overview.searches.reduce((a, s) => a + s.to_review, 0);
   const imports = (jobs ?? []).filter((j) => j.kind !== "fulltext");
   const lastJob = imports.length > 0 ? imports[imports.length - 1] : null;
-  const initial = overview.searches.find((s) => s.is_default);
   const shown = overview.searches.filter((s) => !isUntouched(s));
 
   return (
@@ -254,13 +258,6 @@ function ProjectDashboard() {
           <h2 className="text-base font-semibold text-foreground">
             {t("searchesTitle")} <span className="text-sm font-normal text-muted">{shown.length}</span>
           </h2>
-          {isLead && hasCorpus && (
-            <Link href={withSearch(`/projects/${projectId}/inference?new=1`, initial?.id)}>
-              <Button size="sm" variant="secondary">
-                + {t("newSearch")}
-              </Button>
-            </Link>
-          )}
         </div>
         {overview.articles === 0 ? (
           <p className="rounded-lg border border-dashed border-border p-4 text-sm text-muted">
@@ -275,7 +272,7 @@ function ProjectDashboard() {
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary/40 bg-primary/5 p-4 text-sm text-foreground">
             <span>{t("noSearchYet", { n: overview.articles })}</span>
             {isLead && (
-              <Link href={`/projects/${projectId}/inference`}>
+              <Link href={`/projects/${projectId}/inference?new=1`}>
                 <Button>{t("runAnalysis")} →</Button>
               </Link>
             )}

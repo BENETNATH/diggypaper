@@ -10,6 +10,7 @@ import { ModelRef } from "@/components/ModelRef";
 import {
   createSearch,
   cancelInference,
+  deleteSearch,
   getInference,
   getProject,
   getPrompt,
@@ -35,7 +36,7 @@ import { ValidationView } from "@/components/ValidationView";
 import { Card, Badge, statusColor } from "@/components/ui/Card";
 import { EmptyState, ErrorBanner, Skeleton } from "@/components/ui/Feedback";
 import { JobProgress } from "@/components/JobProgress";
-import { cleanSelection, isUntouched, withSearch } from "@/lib/search";
+import { cleanSelection, isUntouched, searchStoreKey, withSearch } from "@/lib/search";
 import {
   notifySearchesChanged,
   storeSearchId,
@@ -58,7 +59,20 @@ function Stat({ label, value, tone }: { label: string; value: number; tone?: str
 }
 
 /** One row of the "analyses performed" list: the question, its state and a link to its results. */
-export function AnalysisRow({ s, projectId, locale }: { s: SearchInfo; projectId: string; locale: string }) {
+export function AnalysisRow({
+  s,
+  projectId,
+  locale,
+  isLead = false,
+  onDelete,
+}: {
+  s: SearchInfo;
+  projectId: string;
+  locale: string;
+  /** Lead or admin (same rule as the server: the row's delete endpoint). */
+  isLead?: boolean;
+  onDelete?: () => void;
+}) {
   const t = useTranslations("searches");
   const tj = useTranslations("jobs");
   const tp = useTranslations("project");
@@ -76,9 +90,13 @@ export function AnalysisRow({ s, projectId, locale }: { s: SearchInfo; projectId
             </Badge>
           )}
         </div>
-        <p className="mt-0.5 line-clamp-1 text-sm text-muted" title={s.question}>
-          {s.question}
-        </p>
+        {s.question ? (
+          <p className="mt-0.5 line-clamp-1 text-sm text-muted" title={s.question}>
+            {s.question}
+          </p>
+        ) : (
+          <p className="mt-0.5 line-clamp-1 text-sm text-muted">{t("noQuestion")}</p>
+        )}
         {s.fields?.length ? (
           <p
             className="mt-0.5 truncate text-xs text-muted"
@@ -89,15 +107,32 @@ export function AnalysisRow({ s, projectId, locale }: { s: SearchInfo; projectId
         ) : null}
         <p className="mt-0.5 text-xs text-muted">
           {tp("lotSize", { n: s.lot_size })}
+          {" · "}
+          {s.kind === "blind"
+            ? t("progressReviewed", { done: s.reviewed, total: s.lot_size })
+            : t("progressAnalysed", { done: s.predicted, total: s.lot_size })}
           {s.created_at ? ` · ${new Date(s.created_at).toLocaleDateString(locale)}` : ""}
           {s.last_job && <> · <ModelRef name={s.last_job.model} version={s.last_job.model_version} /></>}
         </p>
       </div>
-      <Link href={withSearch(`/projects/${projectId}/articles`, s.id)}>
-        <Button size="sm" variant="secondary">
-          {t("open")}
-        </Button>
-      </Link>
+      <div className="flex shrink-0 items-center gap-2">
+        <Link href={withSearch(`/projects/${projectId}/articles`, s.id)}>
+          <Button size="sm" variant="secondary">
+            {t("open")}
+          </Button>
+        </Link>
+        {isLead && onDelete && (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              if (window.confirm(t("deleteConfirm", { name: s.name }))) onDelete();
+            }}
+          >
+            {t("delete")}
+          </Button>
+        )}
+      </div>
     </li>
   );
 }
@@ -276,8 +311,9 @@ function AnalyseContent() {
     }
   }
 
-  // A chained analysis is only offered while its base search is still being analysed.
-  const chainable = !!current && (current.predicted ?? 0) < (current.lot_size ?? 0);
+  // A chained analysis is only offered while its base search is still being analysed
+  // (busy: the project's in-progress analysis job — nothing running, no chaining).
+  const chainable = !!busy && !!current && (current.predicted ?? 0) < (current.lot_size ?? 0);
   const queued = (searches ?? []).filter((s) => s.schedule_state === "waiting");
   const workersBusy = !!busy && busy.search_id && busy.search_id !== current?.id;
 
@@ -297,6 +333,21 @@ function AnalyseContent() {
       setError(errText(err));
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  /** Deletes a search (lead/admin); the list refreshes, the error stays on the banner. */
+  async function handleDelete(s: SearchInfo) {
+    setError(null);
+    try {
+      await deleteSearch(projectId, s.id);
+      if (searchId === s.id) {
+        // the selection pointed at the deleted row: back to the project's default search
+        sessionStorage.removeItem(searchStoreKey(projectId));
+      }
+      notifySearchesChanged();
+    } catch (err) {
+      setError(errText(err));
     }
   }
 
@@ -694,7 +745,14 @@ function AnalyseContent() {
             {searches
               .filter((s) => !isUntouched(s))
               .map((s) => (
-                <AnalysisRow key={s.id} s={s} projectId={projectId} locale={locale} />
+                <AnalysisRow
+                  key={s.id}
+                  s={s}
+                  projectId={projectId}
+                  locale={locale}
+                  isLead={isLead}
+                  onDelete={() => void handleDelete(s)}
+                />
               ))}
           </ul>
         </div>

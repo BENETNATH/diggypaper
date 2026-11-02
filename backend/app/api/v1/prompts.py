@@ -112,6 +112,8 @@ async def ensure_prompt(
     """Prompt generated from the question + items of the search (default the project's);
     reuses the identical one, else a new version. ``extra``: instruction from the lead."""
     src = search or project
+    if not (src.question or "").strip():
+        raise HTTPException(status_code=422, detail="no question set for this search")
     system = build_system_prompt(src.question, project_fields(src))
     if extra and extra.strip():
         system += f"\n\nAdditional instructions from the reviewer:\n{extra.strip()}"

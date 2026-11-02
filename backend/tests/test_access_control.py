@@ -146,6 +146,7 @@ async def test_platform_model_needs_a_share_and_inference_checks_it(
 
     project = await _project(session, alice)
     project.status = ProjectStatus.FROZEN
+    project.question = "Q?"  # the generated prompt needs a question
     model = ModelRegistry(name="Kev", model_identifier="kev:q4")
     session.add_all(
         [model, PromptTemplate(project_id=project.id, version_number="v1", system_prompt="S")]

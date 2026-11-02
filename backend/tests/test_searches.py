@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.db.models import (
     Article,
     ArticlePrediction,
+    GoldArticle,
     HumanAnnotation,
     InferenceJob,
     InferenceJobStatus,
@@ -33,6 +34,9 @@ async def corpus(session, researcher_user, client, do_login):
     project = Project(title="P", created_by=researcher_user.id, question="Q ?", fields=FIELDS)
     session.add(project)
     await session.commit()
+    from app.searches import default_search
+
+    await default_search(session, project)  # as create_project does
     session.add(
         ProjectMember(
             project_id=project.id,
@@ -72,6 +76,29 @@ async def test_default_search_covers_the_whole_corpus(client, corpus):
     assert len(items) == 1 and items[0]["is_default"] and items[0]["lot_size"] == 4
     assert items[0]["predicted"] == 4
     assert re.fullmatch(r"\d{6}-1", items[0]["name"])  # YYMMDD-n, no French label
+
+
+async def test_search_payload_returns_null_question_without_legacy_fallback(
+    client, session, researcher_user, do_login
+):
+    """spec 2026-11-02-legacy-questions §1: the payload carries the real value (null)."""
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project = Project(title="Pas de question", created_by=researcher_user.id)
+    session.add(project)
+    await session.commit()
+    session.add(
+        ProjectMember(
+            project_id=project.id,
+            user_id=researcher_user.id,
+            role_in_project=ProjectMemberRole.LEAD,
+        )
+    )
+    from app.searches import default_search
+
+    await default_search(session, project)
+    await session.commit()
+    items = (await client.get(f"/api/v1/projects/{project.id}/searches")).json()["items"]
+    assert items and items[0]["question"] is None
 
 
 async def test_derive_search_from_answers_and_scope_results(client, session, corpus):
@@ -133,10 +160,10 @@ async def test_selection_sample_reviewed_and_errors(client, session, corpus):
     # 'confidence' bounded
     sel = {"confidence_min": 0.5}
     assert (await client.post(f"{base}/searches/preview", json=sel)).json() == {"count": 2}
-    # deletion: the initial search is protected
+    # deletion: any search, including the initial one (spec 2026-11-02-legacy-questions §6)
     sid = (await client.get(f"{base}/searches")).json()["items"][0]["id"]
-    assert (await client.delete(f"{base}/searches/{sid}")).status_code == 409
     assert (await client.delete(f"{base}/searches/{a['id']}")).status_code == 204
+    assert (await client.delete(f"{base}/searches/{sid}")).status_code == 204
 
 
 async def test_non_lead_cannot_create_and_foreign_search_is_404(
@@ -459,6 +486,34 @@ async def test_only_lead_or_author_can_refresh_a_gold_reference(client, session,
     assert r.json()["updated"] == 0  # not the other's reference
     g = (await client.get(f"{base}/gold")).json()["items"][0]
     assert g["ground_truth_json"]["ai"] is True
+
+
+async def test_deleting_the_initial_search(client, session, corpus):
+    """spec 2026-11-02-legacy-questions §6: the initial search is deletable; the read
+    routes do not recreate it; its references survive (project-global, search_id NULL)
+    and stay visible via gold_condition; the next analysis need recreates it."""
+    from app.searches import default_search, gold_condition
+
+    project, arts = corpus
+    base = f"/api/v1/projects/{project.id}"
+    # a reference attached to the initial search
+    await client.post(f"{base}/articles/{arts[0].id}/annotation", json={"ai": True})
+    await client.post(f"{base}/gold/from-reviews", json={})
+    initial = (await client.get(f"{base}/searches")).json()["items"][0]
+    assert (await client.delete(f"{base}/searches/{initial['id']}")).status_code == 204
+    # the list and the overview do not recreate it on read
+    assert (await client.get(f"{base}/searches")).json()["items"] == []
+    assert (await client.get(f"{base}/overview")).json()["searches"] == []
+    # the reference survived, reattached project-global (NULL: no heir)
+    row = (await session.execute(select(GoldArticle))).scalars().all()
+    assert len(row) == 1 and row[0].search_id is None
+    # still visible via gold_condition once the default search is needed again
+    recreated = await default_search(session, project)  # on-demand creation (analysis need)
+    assert recreated.is_default and recreated.question == project.question
+    cond = await gold_condition(session, project, recreated)
+    assert (
+        (await session.execute(select(GoldArticle).where(cond))).scalars().all() == row
+    )
 
 
 async def test_deleting_a_search_keeps_the_gold_shared_with_the_initial_one(

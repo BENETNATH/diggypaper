@@ -162,7 +162,8 @@ export interface SearchInfo {
   name: string;
   kind: SearchKind;
   is_default: boolean;
-  question: string;
+  /** The real question; null when none was set (no legacy fallback). */
+  question: string | null;
   fields: SchemaField[];
   text_sections: string[] | null;
   parent: { id: string; name: string } | null;
