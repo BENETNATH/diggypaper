@@ -196,6 +196,27 @@ def test_clean_doi_normalizes_prefixes_and_case():
     assert {clean_doi(v) for v in variants} == {"10.1000/abc.1"}
 
 
+def test_clean_doi_keeps_sici_brackets_but_cuts_html_tags():
+    """Old Wiley SICI DOIs contain ``<...::...>``; HTML/JATS tags still end the DOI."""
+    sici = "10.1002/(SICI)1097-0258(19980430)17:8<857::AID-SIM777>3.0.CO;2-E"
+    assert clean_doi(sici) == sici.lower()
+    assert clean_doi(f"<a>{sici}</a>") == sici.lower()
+    assert clean_doi("10.1000/abc</a>") == "10.1000/abc"
+    assert clean_doi("10.1000/abc<jats:p>x") == "10.1000/abc"
+
+
+async def test_distinct_sici_dois_same_issue_both_imported(engine):
+    """Two distinct articles whose SICI DOIs only differ inside ``<...>`` must not share a
+    dedup key (the second used to be dropped as a DOI duplicate)."""
+    a = "10.1002/(SICI)1097-0258(19980430)17:8&lt;857::AID-SIM777&gt;3.0.CO;2-E"
+    b = "10.1002/(SICI)1097-0258(19980430)17:8&lt;873::AID-SIM779&gt;3.0.CO;2-B"
+    project = await _make_project(engine)
+    result, _ = await _import(engine, project, [("111", a, None), ("222", b, None)])
+    assert result["imported"] == 2
+    assert "duplicates_doi" not in result
+    assert len(await _articles(engine, project.id)) == 2
+
+
 def test_prisma_counts_doi_duplicates():
     """PRISMA: DOI duplicates skipped at import count in "identified" and in
     "duplicates removed"."""
@@ -207,3 +228,87 @@ def test_prisma_counts_doi_duplicates():
     counts = prisma.prisma_counts(articles, {}, {}, [job])
     assert counts["identified"] == 3
     assert counts["duplicates"] == 1
+
+
+async def test_record_failure_after_failed_flush_still_marks_job_failed(engine):
+    """A failed flush rolls the session back and expires its objects: logging
+    ``project.id`` used to raise before the job was set FAILED (job RUNNING / project
+    PROCESSING forever → every later import answered 409)."""
+    from sqlalchemy.exc import IntegrityError
+
+    from app.db.models import ImportJob, ImportJobStatus
+    from app.tasks import _record_failure
+
+    project = await _make_project(engine, {"pmid": "9", "title": "t"})
+    async with _factory(engine)() as session:
+        proj = await session.get(Project, project.id)
+        job = ImportJob(project_id=proj.id, query="q", source="pubmed", kind="import")
+        session.add(job)
+        proj.status = ProjectStatus.PROCESSING
+        await session.commit()
+        session.add(Article(project_id=proj.id, pmid="9"))  # uq_articles_project_pmid
+        with pytest.raises(IntegrityError) as caught:
+            await session.flush()
+        await _record_failure(session, proj, job, caught.value, restore=ProjectStatus.DRAFT)
+    async with _factory(engine)() as session:
+        assert (await session.get(Project, project.id)).status == ProjectStatus.DRAFT
+        assert (await session.get(ImportJob, job.id)).status == ImportJobStatus.FAILED
+
+
+@pytest.mark.parametrize("held_doi", ["10.1000/a", "10.1000/old"])
+async def test_reimport_of_present_identity_is_plain_reimport(engine, held_doi):
+    """Re-importing an identity already in the project never counts as a DOI duplicate,
+    even when another row carries (or now holds) its DOI: job COMPLETED, project FROZEN."""
+    from app.db.models import ImportJob, ImportJobStatus
+
+    project = await _make_project(
+        engine,
+        {"pmid": "111", "source": "pubmed", "native_id": "111", "doi": held_doi},
+        {"source": "crossref", "native_id": "10.1000/a", "doi": "10.1000/a"},
+    )
+    result, _ = await _import(engine, project, [("111", "10.1000/a", None)])
+    assert result["imported"] == 0 and result["failed"] == 0
+    assert "duplicates_doi" not in result
+    async with _factory(engine)() as session:
+        assert (await session.get(Project, project.id)).status == ProjectStatus.FROZEN
+        job = (await session.execute(select(ImportJob))).scalars().one()
+        assert job.status == ImportJobStatus.COMPLETED
+
+
+async def test_doi_link_never_copies_a_pmid_owned_by_another_row(engine):
+    """The DOI row gets the incoming PMID only if no other row owns it
+    (uq_articles_project_pmid): no IntegrityError, the import completes."""
+    project = await _make_project(
+        engine,
+        {"source": "crossref", "native_id": "10.1000/a", "doi": "10.1000/a"},
+        {"source": "europepmc", "native_id": "E1", "pmid": "111"},
+    )
+    result, _ = await _import(engine, project, [("111", "10.1000/a", None)])
+    assert result["failed"] == 0 and result["duplicates_doi"] == 1
+    arts = {a.source: a for a in await _articles(engine, project.id)}
+    assert arts["crossref"].pmid is None and arts["europepmc"].pmid == "111"
+
+
+async def test_job_insert_and_processing_status_share_one_transaction(engine, monkeypatch):
+    """Guard atomicity: the job row and PROCESSING go out in the SAME first commit (the
+    project row is locked FOR UPDATE on PostgreSQL), so two queued imports cannot both
+    pass the one-import-at-a-time check."""
+    from app.db.models import ImportJob
+
+    seen: list[tuple[bool, object]] = []
+    real_commit = AsyncSession.commit
+
+    async def spy(self):
+        if not seen:
+            seen.append(
+                (
+                    any(isinstance(o, ImportJob) for o in self.new),
+                    next(p.status for p in self.identity_map.values() if isinstance(p, Project)),
+                )
+            )
+        await real_commit(self)
+
+    project = await _make_project(engine)
+    monkeypatch.setattr(AsyncSession, "commit", spy)
+    await _import(engine, project, [])
+    assert seen[0] == (True, ProjectStatus.PROCESSING)

@@ -20,7 +20,8 @@ from app.fulltext import _get_json
 CROSSREF = "https://api.crossref.org/works"
 EPMC_SEARCH = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
 
-_DOI = re.compile(r"10\.\d{4,9}/[^\s\"'<>\\{}]+", re.I)
+# ``<...::...>`` is kept (old Wiley SICI DOIs); any other ``<`` (HTML/JATS tag) ends the DOI.
+_DOI = re.compile(r"10\.\d{4,9}/(?:[^\s\"'<>\\{}]|<[^\s<>]*::[^\s<>]*>)+", re.I)
 _PMID_LABEL = re.compile(r"(?:pmid|pubmed(?:/|\.ncbi\.nlm\.nih\.gov/)?)\W{0,3}(\d{1,9})\b", re.I)
 # One quantifier: the previous \s*,?\s* backtracked quadratically on long runs of spaces.
 _BIB_FIELD = re.compile(r"[\s,]*([\w-]+)\s*=\s*")

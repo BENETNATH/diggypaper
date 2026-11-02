@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from test_tasks_import import _efetch_xml, _make_project
 
 from app import citations
-from app.db.models import Article, Search, SearchArticle
+from app.db.models import Article, ImportJob, Search, SearchArticle
 from app.tasks import _import_pubmed
 
 ICITE = {
@@ -77,6 +77,9 @@ async def test_import_citations_adds_candidates_and_creates_search(engine):
         )
     # candidates: 11 (1 seed), 20 (2), 21 (1) outside the corpus; 10 is already in the corpus
     assert result["imported"] == 3 and result["candidates"] == 4 and result["search_id"]
+    async with factory() as s:
+        job = (await s.execute(select(ImportJob).where(ImportJob.kind == "citations"))).scalar_one()
+        assert job.source == "pubmed"
     async with factory() as s:
         new = (await s.execute(select(Article).where(Article.origin == "citation"))).scalars().all()
         by_pmid = {a.pmid: a for a in new}

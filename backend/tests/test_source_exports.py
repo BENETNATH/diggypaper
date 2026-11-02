@@ -91,6 +91,13 @@ async def test_xlsx_projet_sheet_import_sources(client, session, researcher_user
                 status=ImportJobStatus.COMPLETED,
                 result_json={"imported": 2},
             ),
+            ImportJob(
+                project_id=uuid.UUID(pid),
+                query="crate (3)",
+                kind="crate",
+                status=ImportJobStatus.COMPLETED,
+                result_json={"imported": 3},
+            ),
         ]
     )
     await session.commit()
@@ -101,6 +108,7 @@ async def test_xlsx_projet_sheet_import_sources(client, session, researcher_user
     assert "PubMed" in info["cancer AND mice"] and info["cancer AND mice"].endswith("· 12")
     assert "not recorded" in info["old query"]
     assert "per-article sources" in info["references (2)"]
+    assert "per-article sources" in info["crate (3)"]
 
 
 async def test_ris_db_tag_and_bibtex_source_field(client, session, researcher_user, do_login):

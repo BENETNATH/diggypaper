@@ -45,12 +45,10 @@ def to_ris(articles, notes: dict | None = None) -> str:
         rec.append(
             (
                 "AN",
-                f"PMID:{a.pmid}"
-                if a.pmid
-                else source_label(getattr(a, "source", None), getattr(a, "native_id", None)),
+                f"PMID:{a.pmid}" if a.pmid else source_label(a.source, a.native_id),
             )
         )
-        rec.append(("DB", source_name(getattr(a, "source", None))))  # RIS "database" tag
+        rec.append(("DB", source_name(a.source)))  # RIS "database" tag
         rec.append(("C2", a.pmcid))  # Zotero reads the PMCID from C2
         url = f"https://doi.org/{a.doi}" if a.doi else None
         url = url or (f"https://pubmed.ncbi.nlm.nih.gov/{a.pmid}/" if a.pmid else None)
@@ -58,7 +56,9 @@ def to_ris(articles, notes: dict | None = None) -> str:
         rec += [("KW", t) for t in a.pub_types or []]
         rec.append(("N1", _clean((notes or {}).get(a.id))))
         rec.append(("ER", ""))
-        out += [f"{k}  - {v}" for k, v in rec if v is not None and (v != "" or k == "ER")]
+        # Every value goes through _clean: a line break would forge RIS records.
+        cleaned = [(k, _clean(str(v))) for k, v in rec if v is not None]
+        out += [f"{k}  - {v}" for k, v in cleaned if v or k == "ER"]
         out.append("")
     return "\r\n".join(out)
 
@@ -91,7 +91,7 @@ def to_bibtex(articles, notes: dict | None = None) -> str:
             "doi": a.doi or "",
             "pmid": a.pmid or "",
             "pmcid": a.pmcid or "",
-            "source": _bib(source_label(getattr(a, "source", None), getattr(a, "native_id", None))),
+            "source": _bib(source_label(a.source, a.native_id)),
             "url": f"https://doi.org/{a.doi}" if a.doi else "",
             "abstract": _bib(a.abstract),
             "language": a.original_language or "",

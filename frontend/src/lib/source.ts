@@ -11,7 +11,8 @@ const NAMES: Record<string, string> = {
 const ID_KINDS: Record<string, string> = { pubmed: "PMID", crossref: "DOI" };
 
 /** Readable name of a source ("europepmc" → "Europe PMC"); `null` if the code is unknown. */
-export const sourceName = (code: string): string | null => NAMES[code] ?? null;
+export const sourceName = (code: string): string | null =>
+  Object.hasOwn(NAMES, code) ? NAMES[code] : null;
 
 export function sourceLabel(
   source: string | null | undefined,
@@ -19,8 +20,9 @@ export function sourceLabel(
   fileLabel: string,
 ): string | null {
   if (!source) return null;
-  const name = source === "file" ? fileLabel : (NAMES[source] ?? source);
+  const name =
+    source === "file" ? fileLabel : Object.hasOwn(NAMES, source) ? NAMES[source] : source;
   if (!nativeId) return name;
-  const kind = ID_KINDS[source];
+  const kind = Object.hasOwn(ID_KINDS, source) ? ID_KINDS[source] : undefined;
   return kind ? `${name} ${kind} ${nativeId}` : `${name} ${nativeId}`;
 }

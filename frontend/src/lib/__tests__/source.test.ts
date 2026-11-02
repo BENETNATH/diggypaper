@@ -1,4 +1,4 @@
-import { sourceLabel } from "@/lib/source";
+import { sourceLabel, sourceName } from "@/lib/source";
 import en from "@/messages/en.json";
 import fr from "@/messages/fr.json";
 import de from "@/messages/de.json";
@@ -30,6 +30,12 @@ describe("sourceLabel", () => {
   it("source inconnue (phases suivantes) : code brut + identifiant", () => {
     expect(sourceLabel("medline", "t-0000", "x")).toBe("medline t-0000");
     expect(sourceLabel("medline", null, "x")).toBe("medline");
+  });
+
+  it("Object.prototype names are plain unknown codes, not built-ins", () => {
+    expect(sourceLabel("constructor", "x", "f")).toBe("constructor x");
+    expect(sourceLabel("toString", null, "f")).toBe("toString");
+    expect(sourceName("constructor")).toBeNull();
   });
 
   it("no source (old data) → null: the caller shows its fallback", () => {

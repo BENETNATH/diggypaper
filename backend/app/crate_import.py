@@ -22,6 +22,7 @@ from pathlib import Path
 
 from app.article_text import classify_title
 from app.fulltext import MAX_PDF_BYTES
+from app.inference import clean_meta
 from app.schema import check_fields
 
 MAX_JSON = 5 * 1024 * 1024
@@ -189,10 +190,11 @@ def read_article(zf: zipfile.ZipFile, key: str) -> dict:
         pass
     date = _clean(meta.get("pub_date"), 20)
     pmid = _clean(meta.get("pmid"), 20)
-    source = _clean(meta.get("source"), 50)
-    native_id = _clean(meta.get("native_id"), 200)
-    if source is None and pmid:  # old crate: only the PubMed search had a PMID
-        source, native_id = "pubmed", pmid
+    source = clean_meta(meta.get("source"), 50)  # no control characters (RIS export)
+    native_id = clean_meta(meta.get("native_id"), 200)
+    # Old crate: only the PubMed search had a PMID. Identity is a (source, native_id) pair.
+    source = source or ("pubmed" if pmid else None)
+    native_id = (native_id or (pmid if source == "pubmed" else None)) if source else None
     return {
         "source": source,
         "native_id": native_id,

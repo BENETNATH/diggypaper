@@ -357,7 +357,7 @@ def build_graph(project, articles, keys: dict, files: dict, info: dict, now: str
             {
                 "@id": f"#import-{i}",
                 "@type": "SearchAction",
-                "name": " ".join(filter(None, ["Import", source_name(q.get("source"))])),
+                "name": f"Import {source_name(q.get('source')) or ''}".strip(),
                 "query": q["query"],
                 "startTime": q["date"],
                 "result": {"@id": "extraction.csv"},

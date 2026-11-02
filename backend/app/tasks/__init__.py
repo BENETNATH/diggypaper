@@ -35,6 +35,7 @@ from datetime import UTC, date, datetime
 import httpx
 from celery import current_task
 from sqlalchemy import and_, or_, select
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.dialects.postgresql import insert as _pg_insert
 from sqlalchemy.dialects.sqlite import insert as _sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -271,7 +272,9 @@ async def _import_pubmed(
             raise LookupError(f"invalid project id: {project_id}") from exc
 
         async with factory() as session:
-            project = await session.get(Project, project_uuid)
+            # Row lock (ignored on SQLite) held until the first commit, which sets PROCESSING
+            # together with the job INSERT: two queued imports cannot both pass the guard.
+            project = await session.get(Project, project_uuid, with_for_update=True)
             if project is None:
                 raise LookupError(f"project not found: {project_id}")
             # M2: state guard — only a DRAFT project can be imported
@@ -291,10 +294,10 @@ async def _import_pubmed(
                 or ("references" if refs is not None else "import"),
             )
             session.add(job)
-            await session.commit()  # PENDING (server_default)
+            project.status = ProjectStatus.PROCESSING  # m10
+            await session.commit()  # job PENDING (server_default) + PROCESSING, atomically
             job.status = ImportJobStatus.RUNNING
             job.result_json = {"phase": "searching"}
-            project.status = ProjectStatus.PROCESSING  # m10
             await session.commit()
 
             try:
@@ -372,6 +375,7 @@ async def _do_import(
     # re-inserted — the PMID map dedupes across sources when the DOI is unknown on one side.
     doi_owners: dict[str, set] = {}
     pmid_owners: dict[str, set] = {}
+    present: set[tuple] = set()  # identities already in the project: plain re-import path
     for pmid, doi, src, nid in (
         await session.execute(
             select(Article.pmid, Article.doi, Article.source, Article.native_id).where(
@@ -379,6 +383,7 @@ async def _do_import(
             )
         )
     ).all():
+        present.add((src, nid))
         if key := clean_doi(doi):
             doi_owners.setdefault(key, set()).add((src, nid))
         if pmid:
@@ -420,15 +425,26 @@ async def _do_import(
                         "origin_ref": str(job.id),
                     }
                     identity, doi = (source, native_id), clean_doi(meta.get("doi"))
-                    others = doi_owners.get(doi, set()) - {identity} if doi else set()
-                    if not others and (pmid := meta.get("pmid")):
+                    # An identity already in the project is a plain re-import (conflict
+                    # → neither imported nor failed), never a DOI duplicate.
+                    reimport = identity in present
+                    others = (
+                        doi_owners.get(doi, set()) - {identity} if doi and not reimport else set()
+                    )
+                    if not others and not reimport and (pmid := meta.get("pmid")):
                         others = pmid_owners.get(pmid, set()) - {identity}
                     if others:
                         # DOI carried by another existing identity (archi § 3): attachment to the
-                        # row (empty fields + full text if absent) — no duplicate.
-                        await _link_doi_article(session, project.id, meta, others, client, adapter)
+                        # row (empty fields + full text if absent) — no duplicate. A PMID owned
+                        # by another row is not copied (uq_articles_project_pmid).
+                        link_meta = (
+                            meta | {"pmid": None} if meta.get("pmid") in pmid_owners else meta
+                        )
+                        await _link_doi_article(
+                            session, project.id, link_meta, others, client, adapter
+                        )
                         duplicates_doi += 1
-                    elif doi and doi in import_dois:
+                    elif not reimport and doi and doi in import_dois:
                         # A record of this same import already carries the DOI: skip (no
                         # full text for nothing) — phase 2 behavior.
                         duplicates_doi += 1
@@ -847,7 +863,10 @@ async def _record_failure(
     traceback with the URL or the NCBI key).
     """
     error = _sanitize_error(exc)
-    logger.error("import failed (project %s): %s", project.id, error)
+    # A failed flush rolls the session back and expires ``project``: reading ``project.id``
+    # would raise (PendingRollbackError) and the job would stay RUNNING forever. The
+    # identity key survives expiry.
+    logger.error("import failed (project %s): %s", sa_inspect(project).identity[0], error)
     try:
         await session.rollback()
         job.status = ImportJobStatus.FAILED

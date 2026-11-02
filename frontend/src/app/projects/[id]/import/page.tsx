@@ -137,6 +137,9 @@ function JobProgress({ job, onRetry }: { job: ImportJob; onRetry?: (job: ImportJ
       {job.kind === "import" && job.status === "COMPLETED" && num(r.imported) > num(r.fulltext) && (
         <p className="text-xs text-muted">{t("fulltextHint")}</p>
       )}
+      {job.kind === "import" && job.status === "COMPLETED" && num(r.duplicates_doi) > 0 && (
+        <p className="text-xs text-muted">{t("refsDuplicates", { n: num(r.duplicates_doi) })}</p>
+      )}
       {job.status === "FAILED" && job.error && (
         <p className="rounded-lg bg-danger/10 p-3 text-sm text-danger">{job.error}</p>
       )}

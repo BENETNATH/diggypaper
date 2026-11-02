@@ -634,3 +634,60 @@ async def test_crate_config_sha256_covers_endpoint(session, tmp_path):
     cfg = {"name": "GPT", "backend": "OPENAI_API", "identifier": "gpt-4o"}
     assert shas[2]["config_sha256"] == sha256_json(cfg)
     assert shas[0]["config_sha256"] == sha256_json({**cfg, "endpoint": "https://a.test"})
+
+
+def _read_meta(meta: dict) -> dict:
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("articles/k/metadata.json", json.dumps(meta))
+    with zipfile.ZipFile(buf) as z:
+        return ci.read_article(z, "k")
+
+
+def test_read_article_identity_is_consistent():
+    """Old crate (PMID only) → pubmed identity; ``pubmed`` without native_id → the PMID; a
+    native_id without source gets the source of the PMID rule or none at all."""
+    assert _read_meta({"pmid": "111"})["native_id"] == "111"
+    got = _read_meta({"pmid": "111", "source": "pubmed"})
+    assert (got["source"], got["native_id"]) == ("pubmed", "111")
+    got = _read_meta({"native_id": "W1"})
+    assert (got["source"], got["native_id"]) == (None, None)
+    got = _read_meta({"pmid": "111", "native_id": "W1"})
+    assert (got["source"], got["native_id"]) == ("pubmed", "W1")
+    got = _read_meta({"pmid": "111", "source": "openalex", "native_id": "W1"})
+    assert (got["source"], got["native_id"]) == ("openalex", "W1")
+    got = _read_meta({"pmid": "111", "source": "openalex"})
+    assert (got["source"], got["native_id"]) == ("openalex", None)
+
+
+def test_crate_source_cannot_inject_ris_records():
+    """``source`` / ``native_id`` from the crate are control-character free, and RIS values
+    never carry a line break: no forged record in the export."""
+    from types import SimpleNamespace
+
+    from app.references import to_ris
+
+    evil = "x\r\nER  - \r\n\r\nTY  - JOUR\r\nTI  - Injected record"
+    got = _read_meta({"source": evil, "native_id": evil, "title": "T"})
+    assert "\r" not in got["source"] and "\n" not in got["source"]
+    assert "\r" not in got["native_id"] and "\n" not in got["native_id"]
+    # Root cause: even if a raw value reached the model, to_ris neutralizes it.
+    art = SimpleNamespace(
+        id=1,
+        pub_date=None,
+        title="T",
+        authors=None,
+        journal=None,
+        abstract=None,
+        doi=None,
+        pmid=None,
+        pmcid=None,
+        source=evil,
+        native_id=evil,
+        fulltext_url=None,
+        original_language=None,
+        pub_types=None,
+    )
+    out = to_ris([art])
+    assert out.count("TY  - ") == 1
+    assert out.count("ER  - ") == 1

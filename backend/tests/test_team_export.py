@@ -783,6 +783,7 @@ def test_bibtex_note_ending_with_backslash_stays_balanced():
     a = SimpleNamespace(
         id=uuid.uuid4(), pmid="1", doi=None, pmcid=None, title="T", authors=[], journal=None,
         pub_date="2024", abstract=None, original_language=None, pub_types=[], fulltext_url=None,
+        source=None, native_id=None,
     )  # fmt: skip
     bib = to_bibtex([a], {a.id: "Modèle : m\\"})
     assert "\\" not in bib.split("note", 1)[1]
