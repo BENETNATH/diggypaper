@@ -95,6 +95,10 @@ class PredictionStatus(enum.StrEnum):
     AUTO_ACCEPTED = "AUTO_ACCEPTED"
     AUTO_REJECTED = "AUTO_REJECTED"
     NEEDS_HUMAN_REVIEW = "NEEDS_HUMAN_REVIEW"
+    # Processing failed (invalid JSON / provider error): the article has no
+    # usable prediction, but the failure is visible per-article (badge) instead
+    # of a silent skip (the job keeps running, only the counter increments).
+    ERROR = "ERROR"
 
 
 class SettingScope(enum.StrEnum):

@@ -78,7 +78,7 @@ export interface Article {
   last_author?: string | null;
   pub_types?: string[];
   answers?: { key: string; label: string; value: unknown; confidence: number | null; source?: "human" | "model" }[];
-  prediction_status?: "AUTO_ACCEPTED" | "AUTO_REJECTED" | "NEEDS_HUMAN_REVIEW" | null;
+  prediction_status?: "AUTO_ACCEPTED" | "AUTO_REJECTED" | "NEEDS_HUMAN_REVIEW" | "ERROR" | null;
   confidence?: number | null;
   annotated?: boolean;
   review?: Review | null;
@@ -109,7 +109,7 @@ export interface ArticlePrediction {
   decision_json: Record<string, unknown> | null;
   confidence_score: number | null;
   evidence_quotes: string[] | null;
-  status: "AUTO_ACCEPTED" | "AUTO_REJECTED" | "NEEDS_HUMAN_REVIEW";
+  status: "AUTO_ACCEPTED" | "AUTO_REJECTED" | "NEEDS_HUMAN_REVIEW" | "ERROR";
   created_at: string | null;
 }
 
@@ -174,7 +174,7 @@ export interface SearchInfo {
   predicted: number;
   reviewed: number;
   /** Distribution of the AI results in the batch ({} for a blind search). */
-  breakdown: Partial<Record<"AUTO_ACCEPTED" | "AUTO_REJECTED" | "NEEDS_HUMAN_REVIEW" | "NONE", number>>;
+  breakdown: Partial<Record<"AUTO_ACCEPTED" | "AUTO_REJECTED" | "NEEDS_HUMAN_REVIEW" | "ERROR" | "NONE", number>>;
   /** Uncertain, not yet re-reviewed. */
   to_review: number;
   last_job: { status: InferenceJob["status"]; model: string; model_version?: string | null } | null;

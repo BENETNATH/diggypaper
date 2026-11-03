@@ -183,6 +183,7 @@
     "legendAccepted": "accepted",
     "legendReview": "to review",
     "legendRejected": "rejected",
+    "legendError": "errored",
     "notAnalysedYet": "Not analysed yet.",
     "blindHint": "Blind review: {done} / {total} articles reviewed.",
     "analysedShort": "analysed",

@@ -10,6 +10,7 @@ const STATUS_DOT: Record<string, string> = {
   AUTO_ACCEPTED: "bg-success",
   AUTO_REJECTED: "bg-danger",
   NEEDS_HUMAN_REVIEW: "bg-warning",
+  ERROR: "bg-danger",
 };
 
 /** Technical value ("BOTH_SEXES") → "both sexes"; free text stays as-is. */

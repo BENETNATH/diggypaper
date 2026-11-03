@@ -47,6 +47,7 @@ function LotBar({ s }: { s: SearchInfo }) {
     { key: "acc", n: b.AUTO_ACCEPTED ?? 0, cls: "bg-success", label: t("legendAccepted") },
     { key: "rev", n: b.NEEDS_HUMAN_REVIEW ?? 0, cls: "bg-warning", label: t("legendReview") },
     { key: "rej", n: b.AUTO_REJECTED ?? 0, cls: "bg-danger", label: t("legendRejected") },
+    { key: "err", n: b.ERROR ?? 0, cls: "bg-danger/50", label: t("legendError") },
   ];
   // The unanalyzed share is the bar background: name it in the legend only when non-zero.
   const rest = lot - parts.reduce((a, p) => a + p.n, 0);

@@ -578,6 +578,18 @@ async def _do_inference(
             if code != "invalid_json" and not code.startswith("provider_error_"):
                 raise
             invalid += 1
+            # Persist the failure per-article (badge in the UI) instead of a silent
+            # skip; decision_json carries the error code, not a usable prediction.
+            session.add(
+                ArticlePrediction(
+                    article_id=article.id,
+                    search_id=search.id,
+                    prompt_template_id=prompt.id,
+                    model_used=model_name,
+                    status=PredictionStatus.ERROR,
+                    decision_json={"error": code},
+                )
+            )
             await _progress(session, job, processed, len(articles), invalid, counts())
             continue
         confidence = metrics.confidence(prediction.get("confidence_score"))
@@ -624,6 +636,9 @@ async def _do_inference(
                         ArticlePrediction.article_id.in_(in_lot),
                         # not the predictions of an earlier run (article with invalid output here)
                         ArticlePrediction.created_at >= (job.resume_after or job.created_at),
+                        # ERROR predictions (invalid output) carry no usable decision:
+                        # exclude them from scoring, fall back to the previous run's row.
+                        ArticlePrediction.status != PredictionStatus.ERROR,
                     )
                     .order_by(ArticlePrediction.created_at.nulls_first(), ArticlePrediction.id)
                 )

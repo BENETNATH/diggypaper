@@ -184,6 +184,7 @@
     "legendAccepted": "validés",
     "legendReview": "à relire",
     "legendRejected": "écartés",
+    "legendError": "en erreur",
     "notAnalysedYet": "Pas encore analysée.",
     "blindHint": "Relecture à l'aveugle : {done} / {total} articles relus.",
     "analysedShort": "analysés",

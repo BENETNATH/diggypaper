@@ -59,6 +59,7 @@ export function statusColor(status: string): keyof typeof BADGE_COLORS {
     case "VALIDATED":
       return "green";
     case "FAILED":
+    case "ERROR":
     case "AUTO_REJECTED":
       return "red";
     case "RUNNING":

@@ -129,6 +129,68 @@ async def test_run_inference_completes(engine, session, fake_redis):
     assert all(p.status == PredictionStatus.AUTO_ACCEPTED for p in preds)
 
 
+async def test_run_inference_error_marks_article(engine, session, fake_redis):
+    """An article failing (invalid JSON) gets a per-article ERROR prediction (badge),
+    while the job keeps running the rest (no fatal raise)."""
+    project = Project(title="P", created_by=None, status=ProjectStatus.FROZEN)
+    session.add(project)
+    await session.commit()
+    prompt = PromptTemplate(
+        project_id=project.id,
+        version_number="v1.0",
+        system_prompt="SYS",
+        user_prompt_schema="Article Text:\n{methods_text}",
+    )
+    session.add(prompt)
+    await session.commit()
+    model = ModelRegistry(name="Kev-4B", model_identifier="kef/kev-4b")
+    session.add(model)
+    await session.commit()
+    await _seed(session, project, prompt, model, n_articles=2)
+    job = InferenceJob(
+        project_id=project.id,
+        prompt_template_id=prompt.id,
+        model_used="Kev-4B",
+        status=InferenceJobStatus.PENDING,
+    )
+    session.add(job)
+    await session.commit()
+
+    # Warm-up first (prompt contains '{"ok": true}'), then article 1 raises
+    # invalid_json (per-article ERROR), article 2 is fine (AUTO_ACCEPTED).
+    class BadFirstInference:
+        def __init__(self):
+            self.i = 0
+
+        async def infer(self, model, system_prompt, user_prompt) -> dict:
+            if '{"ok": true}' in user_prompt:  # warm-up
+                return {"ok": True}
+            if self.i == 0:
+                self.i += 1
+                raise InferenceError("invalid_json")
+            self.i += 1
+            return {
+                "use_ai_behavior": True,
+                "animal_sex": "BOTH_SEXES",
+                "confidence_score": 0.9,
+                "evidence_quotes": [],
+                "reasoning_summary": "ok",
+            }
+
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    result = await _run_inference(
+        str(job.id), session_factory=factory, inference=BadFirstInference(), redis=fake_redis
+    )
+    assert result["invalid_json"] == 1
+    assert result["auto_accepted"] == 1
+    await session.refresh(job)
+    assert job.status == InferenceJobStatus.COMPLETED
+    preds = (await session.execute(select(ArticlePrediction))).scalars().all()
+    errors = [p for p in preds if p.status == PredictionStatus.ERROR]
+    assert len(errors) == 1
+    assert errors[0].decision_json == {"error": "invalid_json"}
+
+
 async def test_run_inference_triage_mixed(engine, session, fake_redis):
     """Varied confidences -> mixed triage (AUTO_ACCEPTED / AUTO_REJECTED / NEEDS_HUMAN_REVIEW)."""
     project = Project(title="P", created_by=None, status=ProjectStatus.FROZEN)

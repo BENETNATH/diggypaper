@@ -183,6 +183,7 @@
     "legendAccepted": "validados",
     "legendReview": "por revisar",
     "legendRejected": "descartados",
+    "legendError": "en error",
     "notAnalysedYet": "Aún sin analizar.",
     "blindHint": "Revisión a ciegas: {done} / {total} artículos revisados.",
     "analysedShort": "analizados",

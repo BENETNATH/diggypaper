@@ -183,6 +183,7 @@
     "legendAccepted": "angenommen",
     "legendReview": "zu prüfen",
     "legendRejected": "verworfen",
+    "legendError": "Fehler",
     "notAnalysedYet": "Noch nicht analysiert.",
     "blindHint": "Blinde Prüfung: {done} / {total} Artikel geprüft.",
     "analysedShort": "analysiert",
