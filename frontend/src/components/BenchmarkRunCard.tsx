@@ -64,7 +64,7 @@ export function BenchmarkRunCard({
   useEffect(() => {
     if (active) loaded.current = false; // re-read when the run ends
     if (!open && active) return; // nothing to show yet while running
-    if (!open && loaded.current) return;
+    if (loaded.current) return; // already loaded: no re-fetch (avoids the flash on open)
     let stale = false;
     setResults(null);
     setError(null);
