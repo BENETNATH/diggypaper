@@ -134,6 +134,8 @@ function GoldContent() {
   const relevant = gold.filter((g) => Number(g.ground_truth_json.confidence_score ?? 0) >= RELEVANT_AT).length;
   const bySource = (pred: (g: GoldArticle) => boolean) => gold.filter(pred).length;
   const initialId = searches?.find((s) => s.is_default)?.id;
+  // Blind sample bounds: the current analysis's lot (no bound until the searches load).
+  const blindMax = current?.lot_size ?? undefined;
 
   return (
     <div className="flex flex-col gap-4">
@@ -156,16 +158,17 @@ function GoldContent() {
         <Card title={ts("blindTitle")}>
           <p className="text-sm text-muted">{ts("blindIntro")}</p>
           <div className="mt-3 flex flex-wrap items-end gap-3">
-            <Field label={ts("blindN")}>
+            <Field label={ts("blindN")} hint={blindMax ? t("blindNHint", { n: blindMax }) : undefined}>
               <Input
                 type="number"
                 min={1}
+                max={blindMax}
                 value={blindN}
                 onChange={(e) => setBlindN(Math.max(1, parseInt(e.target.value, 10) || 1))}
                 className="w-28"
               />
             </Field>
-            <Button loading={blindBusy} onClick={() => void handleBlind()}>
+            <Button variant="secondary" loading={blindBusy} onClick={() => void handleBlind()}>
               {ts("blindCreate")}
             </Button>
           </div>

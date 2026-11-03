@@ -67,10 +67,20 @@ const runningJob = {
   result: { done: 1, total: 10 },
 } as unknown as api.InferenceJob;
 
+const completedJob = {
+  id: "j2",
+  project_id: "p1",
+  search_id: "s1",
+  status: "COMPLETED",
+  result: { done: 10, total: 10, auto_accepted: 6, auto_rejected: 1, needs_review: 3 },
+  model_used: "Kev",
+} as unknown as api.InferenceJob;
+
 function mount(overrides: {
   user: { role?: string };
   roleInProject: string | null;
   busy?: api.InferenceJob | null;
+  job?: api.InferenceJob | null;
   searches?: SearchInfo[];
 }) {
   mockUseAuth.mockReturnValue({ user: overrides.user, loading: false });
@@ -86,7 +96,7 @@ function mount(overrides: {
   listGold.mockResolvedValue([]);
   (api.previewSelection as jest.Mock).mockResolvedValue({ count: 4 });
   getInference.mockImplementation((_p: string, _s?: string, all?: boolean) =>
-    Promise.resolve(all ? (overrides.busy ?? null) : null)
+    Promise.resolve(all ? (overrides.busy ?? null) : (overrides.job ?? null))
   );
   return render(
     <Suspense fallback={null}>
@@ -179,5 +189,60 @@ describe("inference page — delete a search (spec §5 + §6)", () => {
     expect(screen.queryByText("progressTitle")).not.toBeInTheDocument();
     expect(screen.getByText("S1")).toBeInTheDocument();
     sessionStorage.removeItem("diggy:search:p1");
+  });
+});
+
+// spec 2026-11-02-frontend-vocabulary-a11y-polish §3, §4, §5, §8
+describe("inference page — « à lancer » section, aria-live, polish", () => {
+  const touched = { ...search, predicted: 2 };
+
+  it("untouched analysis: the « à lancer » section renders it; « analyses réalisées » hidden", async () => {
+    mount({ user: { role: "RESEARCHER" }, roleInProject: "LEAD" });
+    await panelOpen();
+    expect(screen.getByText("toLaunch")).toBeInTheDocument();
+    expect(screen.getByText("badgeToLaunch")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "launch" })).toBeInTheDocument();
+    expect(screen.queryByText("listTitle")).not.toBeInTheDocument();
+  });
+
+  it("only launched analyses: the list is shown, no « à lancer » section", async () => {
+    mount({ user: { role: "RESEARCHER" }, roleInProject: "LEAD", searches: [touched] });
+    await panelOpen();
+    expect(screen.getByText("listTitle")).toBeInTheDocument();
+    expect(screen.queryByText("toLaunch")).not.toBeInTheDocument();
+    expect(screen.queryByText("badgeToLaunch")).not.toBeInTheDocument();
+  });
+
+  it("empty state NOT shown while an untouched analysis exists (non-lead)", async () => {
+    mount({ user: { role: "RESEARCHER" }, roleInProject: "ANNOTATOR" });
+    await screen.findByText("leadOnly");
+    expect(screen.getByText("toLaunch")).toBeInTheDocument();
+    expect(screen.queryByText("emptyHint")).not.toBeInTheDocument();
+  });
+
+  it("empty state shown when no analysis exists at all (non-lead)", async () => {
+    mount({ user: { role: "RESEARCHER" }, roleInProject: "ANNOTATOR", searches: [] });
+    await screen.findByText("leadOnly");
+    expect(screen.getByText("emptyHint")).toBeInTheDocument();
+    expect(screen.queryByText("toLaunch")).not.toBeInTheDocument();
+  });
+
+  it("collapsed panel button: « + Créer » (panelCreate)", async () => {
+    mount({ user: { role: "RESEARCHER" }, roleInProject: "LEAD", searches: [touched] });
+    await panelOpen();
+    expect(screen.getByText(/\+ panelCreate/)).toBeInTheDocument();
+  });
+
+  it("completed job: the « aller à la relecture » action is offered", async () => {
+    mount({ user: { role: "RESEARCHER" }, roleInProject: "LEAD", searches: [touched], job: completedJob });
+    await panelOpen();
+    expect(await screen.findByText("annotateReview")).toBeInTheDocument();
+  });
+
+  it("the avancement card wrapper carries aria-live=polite", async () => {
+    mount({ user: { role: "RESEARCHER" }, roleInProject: "LEAD", searches: [touched], job: completedJob });
+    await panelOpen();
+    const card = await screen.findByText("progressTitle");
+    expect(card.closest("[aria-live]")).toHaveAttribute("aria-live", "polite");
   });
 });

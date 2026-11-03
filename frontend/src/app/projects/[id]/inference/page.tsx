@@ -65,6 +65,7 @@ export function AnalysisRow({
   locale,
   isLead = false,
   onDelete,
+  toLaunch = false,
 }: {
   s: SearchInfo;
   projectId: string;
@@ -72,6 +73,8 @@ export function AnalysisRow({
   /** Lead or admin (same rule as the server: the row's delete endpoint). */
   isLead?: boolean;
   onDelete?: () => void;
+  /** Never-launched initial analysis: badge + « Lancer » instead of « Ouvrir ». */
+  toLaunch?: boolean;
 }) {
   const t = useTranslations("searches");
   const tj = useTranslations("jobs");
@@ -81,6 +84,7 @@ export function AnalysisRow({
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-medium text-foreground">{s.name}</span>
+          {toLaunch && <Badge color="blue">{t("badgeToLaunch")}</Badge>}
           {s.is_default && <Badge color="blue">{tp("badgeInitial")}</Badge>}
           {s.kind !== "standard" && <Badge color="gray">{t(`kind_${s.kind}`)}</Badge>}
           {s.schedule_state === "waiting" && <Badge color="gray">{t("scheduledBadge")}</Badge>}
@@ -105,7 +109,7 @@ export function AnalysisRow({
             {t("fieldsLabel")}: {s.fields.map((f) => f.label).join(" · ")}
           </p>
         ) : null}
-        <p className="mt-0.5 text-xs text-muted">
+        <p className="mt-0.5 text-xs text-muted" aria-live="polite">
           {tp("lotSize", { n: s.lot_size })}
           {" · "}
           {s.kind === "blind"
@@ -116,11 +120,18 @@ export function AnalysisRow({
         </p>
       </div>
       <div className="flex shrink-0 items-center gap-2">
-        <Link href={withSearch(`/projects/${projectId}/articles`, s.id)}>
-          <Button size="sm" variant="secondary">
-            {t("open")}
-          </Button>
-        </Link>
+        {toLaunch ? (
+          // selects the analysis and opens the pre-filled creation panel
+          <Link href={`/projects/${projectId}/inference?search=${s.id}&new=1`}>
+            <Button size="sm">{t("launch")}</Button>
+          </Link>
+        ) : (
+          <Link href={withSearch(`/projects/${projectId}/articles`, s.id)}>
+            <Button size="sm" variant="secondary">
+              {t("open")}
+            </Button>
+          </Link>
+        )}
         {isLead && onDelete && (
           <Button
             size="sm"
@@ -608,7 +619,7 @@ function AnalyseContent() {
             <div className="flex flex-wrap items-center gap-3">
               <p className="text-sm text-muted">{t("panelCollapsedHint")}</p>
               <Button variant="secondary" onClick={() => setPanelOpen(true)}>
-                + {t("panelTitle")}
+                + {t("panelCreate")}
               </Button>
             </div>
           )}
@@ -619,7 +630,7 @@ function AnalyseContent() {
 
       {/* Follow the analysis of the current search, with worker / chaining state on the gauge. */}
       {(job || active || workersBusy) && (
-        <div ref={progressRef}>
+        <div ref={progressRef} aria-live="polite">
           <Card title={t("progressTitle")}>
             {active || workersBusy ? (
               <JobProgress
@@ -737,28 +748,53 @@ function AnalyseContent() {
         </div>
       </Card>
 
-      {/* All the analyses performed, each with a link to its results. */}
-      {searches && searches.some((s) => !isUntouched(s)) ? (
-        <div>
-          <h2 className="mb-2 text-sm font-semibold text-foreground">{t("listTitle")}</h2>
-          <ul className="flex flex-col gap-2">
-            {searches
-              .filter((s) => !isUntouched(s))
-              .map((s) => (
-                <AnalysisRow
-                  key={s.id}
-                  s={s}
-                  projectId={projectId}
-                  locale={locale}
-                  isLead={isLead}
-                  onDelete={() => void handleDelete(s)}
-                />
-              ))}
-          </ul>
-        </div>
+      {/* The never-launched initial analyses first, then the analyses performed, each with a link. */}
+      {searches && searches.length > 0 ? (
+        <>
+          {searches.some(isUntouched) && (
+            <div>
+              <h2 className="mb-2 text-sm font-semibold text-foreground">{t("toLaunch")}</h2>
+              <ul className="flex flex-col gap-2">
+                {searches
+                  .filter(isUntouched)
+                  .map((s) => (
+                    <AnalysisRow
+                      key={s.id}
+                      s={s}
+                      projectId={projectId}
+                      locale={locale}
+                      isLead={isLead}
+                      toLaunch
+                      onDelete={() => void handleDelete(s)}
+                    />
+                  ))}
+              </ul>
+            </div>
+          )}
+          {searches.some((s) => !isUntouched(s)) && (
+            <div>
+              <h2 className="mb-2 text-sm font-semibold text-foreground">{t("listTitle")}</h2>
+              <ul className="flex flex-col gap-2">
+                {searches
+                  .filter((s) => !isUntouched(s))
+                  .map((s) => (
+                    <AnalysisRow
+                      key={s.id}
+                      s={s}
+                      projectId={projectId}
+                      locale={locale}
+                      isLead={isLead}
+                      onDelete={() => void handleDelete(s)}
+                    />
+                  ))}
+              </ul>
+            </div>
+          )}
+        </>
       ) : searches ? (
-        // The creation panel (above) is already open for a lead on a fresh project:
-        // the empty state would repeat it. Members without the form still see it.
+        // No analysis at all (launched or to launch). The creation panel (above) is already
+        // open for a lead on a fresh project: the empty state would repeat it. Members
+        // without the form still see it.
         isLead && panelOpen ? null : (
           <EmptyState
             title={tLead("empty")}
@@ -766,7 +802,7 @@ function AnalyseContent() {
             action={
               isLead ? (
                 <Button variant="secondary" onClick={() => setPanelOpen(true)}>
-                  + {t("panelTitle")}
+                  + {t("panelCreate")}
                 </Button>
               ) : undefined
             }

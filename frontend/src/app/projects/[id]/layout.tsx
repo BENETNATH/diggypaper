@@ -276,7 +276,7 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
               ))}
             </select>
           </label>
-          <Link href={withSearch(`${base}/inference`, searchId)} className="text-primary hover:underline">
+          <Link href={withSearch(`${base}/inference`, searchId)} className="ml-3 text-primary hover:underline">
             {t("allSearches")} →
           </Link>
         </div>

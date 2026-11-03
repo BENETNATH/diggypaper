@@ -26,9 +26,9 @@ import { Spinner, ErrorBanner } from "@/components/ui/Feedback";
 
 const pct = (n: number, d: number): number => (d > 0 ? Math.round((n / d) * 100) : 0);
 
-function Kpi({ label, value, sub }: { label: string; value: ReactNode; sub?: ReactNode }) {
+function Kpi({ label, value, sub, title }: { label: string; value: ReactNode; sub?: ReactNode; title?: string }) {
   return (
-    <div className="rounded-lg border border-border bg-surface px-3 py-2.5">
+    <div className="rounded-lg border border-border bg-surface px-3 py-2.5" title={title}>
       <div className="text-xs text-muted">{label}</div>
       <div className="mt-0.5 text-xl font-semibold tabular-nums text-foreground">{value}</div>
       {sub && <div className="text-xs text-muted">{sub}</div>}
@@ -77,6 +77,7 @@ function SearchRow({ s, projectId, isLead, hasCorpus }: { s: SearchInfo; project
   const ts = useTranslations("searches");
   const open = (page: string) => withSearch(`/projects/${projectId}/${page}`, s.id);
   const blind = s.kind === "blind";
+  const untouched = isUntouched(s);
   const analysedPct = pct(s.predicted, s.lot_size);
   const reviewedPct = pct(s.reviewed, s.lot_size);
   const running = s.last_job?.status === "RUNNING" || s.last_job?.status === "PENDING";
@@ -86,6 +87,7 @@ function SearchRow({ s, projectId, isLead, hasCorpus }: { s: SearchInfo; project
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="font-semibold text-foreground">{s.name}</h3>
+            {untouched && <Badge color="blue">{ts("badgeToLaunch")}</Badge>}
             {s.is_default && <Badge color="blue">{t("badgeInitial")}</Badge>}
             {s.kind !== "standard" && <Badge color="gray">{t(`kind_${s.kind}`)}</Badge>}
             {running && <Badge color="yellow">{t("running")}</Badge>}
@@ -112,22 +114,31 @@ function SearchRow({ s, projectId, isLead, hasCorpus }: { s: SearchInfo; project
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
-          <Link href={open("articles")}>
-            <Button size="sm" variant="secondary">
-              {t("openResults")}
-            </Button>
-          </Link>
-          {s.to_review > 0 && (
-            <Link href={open("annotate?queue=review")}>
-              <Button size="sm">{t("reviewN", { n: s.to_review })}</Button>
+          {untouched ? (
+            // never launched: one action — select the analysis and open the pre-filled panel
+            <Link href={`/projects/${projectId}/inference?search=${s.id}&new=1`}>
+              <Button size="sm">{ts("launch")} →</Button>
             </Link>
-          )}
-          {isLead && hasCorpus && !running && s.schedule_state !== "waiting" && (
-            <Link href={open("inference")}>
-              <Button size="sm" variant="ghost">
-                {s.predicted > 0 ? t("rerun") : t("analyse")}
-              </Button>
-            </Link>
+          ) : (
+            <>
+              <Link href={open("articles")}>
+                <Button size="sm" variant="secondary">
+                  {t("openResults")}
+                </Button>
+              </Link>
+              {s.to_review > 0 && (
+                <Link href={open("annotate?queue=review")}>
+                  <Button size="sm">{t("reviewN", { n: s.to_review })}</Button>
+                </Link>
+              )}
+              {isLead && hasCorpus && !running && s.schedule_state !== "waiting" && (
+                <Link href={open("inference")}>
+                  <Button size="sm" variant="ghost">
+                    {s.predicted > 0 ? t("rerun") : t("analyse")}
+                  </Button>
+                </Link>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -196,7 +207,8 @@ function ProjectDashboard() {
   const toReviewTotal = overview.searches.reduce((a, s) => a + s.to_review, 0);
   const imports = (jobs ?? []).filter((j) => j.kind !== "fulltext");
   const lastJob = imports.length > 0 ? imports[imports.length - 1] : null;
-  const shown = overview.searches.filter((s) => !isUntouched(s));
+  // launched + to-launch: the never-launched initial analyses are shown with their own badge
+  const shown = overview.searches;
 
   return (
     <div className="flex flex-col gap-5">
@@ -242,13 +254,15 @@ function ProjectDashboard() {
           label={t("kpiAnalysed")}
           value={`${pct(overview.analysed, overview.articles)} %`}
           sub={t("outOf", { n: overview.analysed })}
+          title={t("kpiScopeAll")}
         />
         <Kpi
           label={t("kpiReviewed")}
           value={`${pct(overview.reviewed, overview.articles)} %`}
           sub={t("outOf", { n: overview.reviewed })}
+          title={t("kpiScopeAll")}
         />
-        <Kpi label={t("kpiToReview")} value={toReviewTotal.toLocaleString()} />
+        <Kpi label={t("kpiToReview")} value={toReviewTotal.toLocaleString()} title={t("kpiScopeAll")} />
         <Kpi label={t("kpiGold")} value={overview.gold.toLocaleString()} />
       </section>
 

@@ -115,3 +115,90 @@ describe("project dashboard (spec 2026-11-02-legacy-questions §7)", () => {
     expect(all.es.inference.scopeNewHint).not.toMatch(/\bpreguntas\b/i);
   });
 });
+
+// spec 2026-11-02-frontend-vocabulary-a11y-polish §4, §7
+describe("project dashboard — to-launch + KPI scope", () => {
+  const untouched: api.SearchInfo = {
+    id: "s2",
+    name: "S2",
+    kind: "standard",
+    is_default: true,
+    question: "q?",
+    fields: [],
+    text_sections: null,
+    parent: null,
+    parent_spec: null,
+    created_at: null,
+    created_by: null,
+    lot_size: 5,
+    predicted: 0,
+    reviewed: 0,
+    breakdown: {},
+    to_review: 0,
+    last_job: null,
+  };
+
+  function mountWithSearches(searches: api.SearchInfo[]) {
+    mockUseAuth.mockReturnValue({ user: { role: "RESEARCHER" }, loading: false });
+    getProject.mockResolvedValue(project);
+    getOverview.mockResolvedValue({ ...overview, searches });
+    listJobs.mockResolvedValue([]);
+    listModels.mockResolvedValue([{ id: "m1", name: "Kev" } as unknown as api.ModelInfo]);
+    return render(
+      <Suspense fallback={null}>
+        <ProjectPage />
+      </Suspense>
+    );
+  }
+
+  it("counter « Analyses N » counts the to-launch analysis too", async () => {
+    mountWithSearches([untouched]);
+    expect(await screen.findByRole("heading", { name: /Analyses 1/ })).toBeInTheDocument();
+  });
+
+  it("untouched card: badge « À lancer » + single CTA « Lancer → », no Résultats/Relire/Relancer", async () => {
+    mountWithSearches([untouched]);
+    await screen.findByRole("heading", { name: /Analyses 1/ });
+    expect(screen.getByText("À lancer")).toBeInTheDocument();
+    const cta = screen.getByRole("button", { name: "Lancer →" });
+    expect(cta.closest("a")).toHaveAttribute("href", "/projects/p1/inference?search=s2&new=1");
+    expect(screen.queryByText("Résultats")).not.toBeInTheDocument();
+    expect(screen.queryByText("Relancer")).not.toBeInTheDocument();
+    expect(screen.queryByText("Analyser")).not.toBeInTheDocument();
+  });
+
+  it("KPI tooltip kpiScopeAll on the 3 aggregated KPIs", async () => {
+    mountWithSearches([untouched]);
+    await screen.findByRole("heading", { name: /Analyses 1/ });
+    expect(screen.getAllByTitle("sur toutes les analyses du projet")).toHaveLength(3);
+  });
+});
+
+// spec 2026-11-02-frontend-vocabulary-a11y-polish — copy pins (valeur FR attendue)
+describe("copy pins (FR values)", () => {
+  /* eslint-disable @typescript-eslint/no-require-imports */
+  const all = {
+    fr: require("../../messages/fr.json"),
+    en: require("../../messages/en.json"),
+    de: require("../../messages/de.json"),
+    es: require("../../messages/es.json"),
+  };
+  /* eslint-enable @typescript-eslint/no-require-imports */
+
+  it("searches.deleteConfirm preserves the gold references (« préservées »)", () => {
+    expect(all.fr.searches.deleteConfirm).toContain("préservées");
+    for (const m of Object.values(all)) expect(m.searches.deleteConfirm).toBeTruthy();
+  });
+
+  it("articles.startReview = « Relire »", () => {
+    expect(all.fr.articles.startReview).toBe("Relire");
+  });
+
+  it("common.versionNotRecordedHelp present in the 4 locales", () => {
+    for (const m of Object.values(all)) expect(m.common.versionNotRecordedHelp).toBeTruthy();
+  });
+
+  it("project.searchLabel = « Analyse : »", () => {
+    expect(all.fr.project.searchLabel).toBe("Analyse :");
+  });
+});

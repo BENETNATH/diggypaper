@@ -63,6 +63,24 @@ describe("AnalysisRow", () => {
     expect(container.textContent).not.toContain("progressReviewed");
   });
 
+  // spec 2026-11-02-frontend-vocabulary-a11y-polish §3: polling-updated status is announced
+  it("meta line (progress) carries aria-live=polite", () => {
+    const { container } = render(<AnalysisRow s={search} projectId="p1" locale="fr" />);
+    const meta = Array.from(container.querySelectorAll("p")).find((p) => p.textContent?.includes("progressAnalysed"));
+    expect(meta).toBeDefined();
+    expect(meta).toHaveAttribute("aria-live", "polite");
+  });
+
+  // spec 2026-11-02-frontend-vocabulary-a11y-polish §4: to-launch variant
+  it("toLaunch: badge \"À lancer\" + primary \"Lancer\" action (no \"Ouvrir\")", () => {
+    const { container } = render(<AnalysisRow s={search} projectId="p1" locale="fr" toLaunch />);
+    expect(screen.getByText("badgeToLaunch")).toBeInTheDocument();
+    const launch = screen.getByRole("button", { name: "launch" });
+    expect(launch.closest("a")).toHaveAttribute("href", "/projects/p1/inference?search=s1&new=1");
+    expect(screen.queryByText("open")).not.toBeInTheDocument();
+    expect(container.querySelector("a[href*='/articles']")).toBeNull();
+  });
+
   it("model_version null: the \"version not recorded\" label", () => {
     const { container } = render(
       <AnalysisRow

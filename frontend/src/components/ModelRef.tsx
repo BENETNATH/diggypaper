@@ -32,7 +32,9 @@ export function ModelRef({
           )}
         </>
       ) : (
-        <span className="italic">{t("versionNotRecorded")}</span>
+        <span className="italic" title={t("versionNotRecordedHelp")}>
+          {t("versionNotRecorded")}
+        </span>
       )}
     </span>
   );
