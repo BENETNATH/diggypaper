@@ -77,10 +77,10 @@ def test_agreement_between_variants_and_disagreements():
 
 
 def test_disagrees_free_form_text():
-    # No schema fields: free-form answers diverge when the text differs
-    assert metrics.disagrees([{"content": "a"}, {"content": "b"}], []) is True
+    # No schema fields: free-form answers have no objective disagreement by default
+    assert metrics.disagrees([{"content": "a"}, {"content": "b"}], []) is False
     assert metrics.disagrees([{"content": "a"}, {"content": "a"}], []) is False
-    assert metrics.disagrees([{"thought": "a"}, {"thought": "b"}], []) is True
+    assert metrics.disagrees([{"thought": "a"}, {"thought": "b"}], []) is False
     assert metrics.disagrees([{"content": "a"}, None], []) is False
     # an empty decision counts as no answer, like None
     assert metrics.disagrees([{"content": "a"}, {}], []) is False
@@ -96,21 +96,21 @@ def test_disagrees_free_form_text():
     # a single answer without any error is still not a divergence
     assert metrics.disagrees([{}, {"content": "a"}], [], errors=[None, None]) is False
     assert metrics.disagrees([{"content": "a"}, None], [], errors=[None, "invalid_json"]) is True
-    # structured answers (model-invented keys) diverge too
+    # structured answers (model-invented keys): still free-form, no disagreement
     assert (
         metrics.disagrees(
             [{"type_test": "unique", "hauteur_eau_cm": 20}, {"content": "autre forme"}], []
         )
-        is True
+        is False
     )
 
 
 def test_disagrees_free_form_with_default_fields():
-    # Schema fields never answered (free-form prompts): compare the raw answers
+    # Schema fields never answered (free-form prompts): no structured comparison possible
     fields = [{"key": "use_ai_behavior", "label": "AI", "type": "boolean"}]
-    assert metrics.disagrees([{"content": "a"}, {"content": "b"}], fields) is True
+    assert metrics.disagrees([{"content": "a"}, {"content": "b"}], fields) is False
     assert metrics.disagrees([{"content": "a"}, {"content": "a"}], fields) is False
-    assert metrics.disagrees([{"type_test": "unique"}, {"text": "autre forme"}], fields) is True
+    assert metrics.disagrees([{"type_test": "unique"}, {"text": "autre forme"}], fields) is False
     # a schema key answered: the structured comparison applies
     assert (
         metrics.disagrees([{"use_ai_behavior": True}, {"use_ai_behavior": True}], fields) is False

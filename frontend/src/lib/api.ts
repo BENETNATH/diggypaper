@@ -1128,6 +1128,43 @@ export const listBenchmarkArticles = (
     })}`
   );
 
+/** Aggregated votes per variant + the current user's own votes. */
+export interface BenchmarkVotes {
+  by_variant: Record<string, number>;
+  my_votes: Record<string, string>; // article_id -> model_name
+  total: number;
+}
+
+export async function getBenchmarkVotes(
+  projectId: string,
+  runId: string
+): Promise<BenchmarkVotes> {
+  return request<BenchmarkVotes>(`/projects/${projectId}/benchmarks/${runId}/votes`);
+}
+
+export async function castBenchmarkVote(
+  projectId: string,
+  runId: string,
+  articleId: string,
+  model: string,
+  variant?: string | null
+): Promise<void> {
+  await request(`/projects/${projectId}/benchmarks/${runId}/articles/${articleId}/vote`, {
+    method: "PUT",
+    body: JSON.stringify({ model_name: model, variant: variant ?? null }),
+  });
+}
+
+export async function removeBenchmarkVote(
+  projectId: string,
+  runId: string,
+  articleId: string
+): Promise<void> {
+  await request(`/projects/${projectId}/benchmarks/${runId}/articles/${articleId}/vote`, {
+    method: "DELETE",
+  });
+}
+
 // --- Inference (MODULE 4) ---------------------------------------------------
 
 export async function triggerInference(

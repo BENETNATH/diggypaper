@@ -507,6 +507,7 @@
     "variant": "Variant",
     "primary": "Main criterion",
     "agreement": "Agreement",
+    "votes": "Votes",
     "nScored": "n scored",
     "details": "Details",
     "useForAnalysis": "Use for analysis",

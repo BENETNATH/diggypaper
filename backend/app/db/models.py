@@ -551,6 +551,35 @@ class BenchmarkPrediction(Base):
     seconds: Mapped[float | None] = mapped_column(Float)
 
 
+class BenchmarkVote(Base):
+    """Human preference vote on a benchmark article: which variant (model × prompt)
+    does this member prefer? One vote per member per article, modifiable."""
+
+    __tablename__ = "benchmark_votes"
+    __table_args__ = (
+        Index("ix_benchmark_votes_run_id", "benchmark_run_id"),
+        UniqueConstraint(
+            "benchmark_run_id", "article_id", "user_id", name="uq_benchmark_votes_run_article_user"
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, **_uuid_pk())
+    benchmark_run_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("benchmark_runs.id", ondelete="CASCADE"), nullable=False
+    )
+    article_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("articles.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    model_name: Mapped[str] = mapped_column(String, nullable=False)
+    variant: Mapped[str | None] = mapped_column(String)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class PromptTemplate(Base):
     __tablename__ = "prompt_templates"
     __table_args__ = (Index("ix_prompt_templates_project_id", "project_id"),)

@@ -24,6 +24,7 @@ from app.db.models import (
     BenchmarkResult,
     BenchmarkRun,
     BenchmarkStatus,
+    BenchmarkVote,
     GoldArticle,
     ProjectMember,
     ProjectMemberRole,
@@ -437,4 +438,110 @@ async def benchmark_articles(
         "page": page,
         "per_page": per_page,
         "items": items[start : start + per_page],
+    }
+
+
+class VoteBody(BaseModel):
+    model_name: str = Field(..., min_length=1)
+    variant: str | None = None
+
+
+@router.put("/{project_id}/benchmarks/{run_id}/articles/{article_id}/vote")
+async def cast_vote(
+    project_id: uuid.UUID,
+    run_id: uuid.UUID,
+    article_id: uuid.UUID,
+    body: VoteBody,
+    db: DbDep,
+    user: UserDep,
+) -> dict:
+    """Set or change this member's preferred variant for an article."""
+    await _require_project_member(db, project_id, user)
+    run = await db.get(BenchmarkRun, run_id)
+    if run is None or run.project_id != project_id:
+        raise HTTPException(status_code=404, detail="benchmark run not found")
+    existing = (
+        await db.execute(
+            select(BenchmarkVote).where(
+                BenchmarkVote.benchmark_run_id == run_id,
+                BenchmarkVote.article_id == article_id,
+                BenchmarkVote.user_id == user.id,
+            )
+        )
+    ).scalar_one_or_none()
+    if existing:
+        existing.model_name = body.model_name
+        existing.variant = body.variant
+    else:
+        db.add(
+            BenchmarkVote(
+                benchmark_run_id=run_id,
+                article_id=article_id,
+                user_id=user.id,
+                model_name=body.model_name,
+                variant=body.variant,
+            )
+        )
+    await db.commit()
+    return {"ok": True}
+
+
+@router.delete("/{project_id}/benchmarks/{run_id}/articles/{article_id}/vote", status_code=204)
+async def remove_vote(
+    project_id: uuid.UUID,
+    run_id: uuid.UUID,
+    article_id: uuid.UUID,
+    db: DbDep,
+    user: UserDep,
+) -> None:
+    """Remove this member's vote for an article."""
+    await _require_project_member(db, project_id, user)
+    run = await db.get(BenchmarkRun, run_id)
+    if run is None or run.project_id != project_id:
+        raise HTTPException(status_code=404, detail="benchmark run not found")
+    existing = (
+        await db.execute(
+            select(BenchmarkVote).where(
+                BenchmarkVote.benchmark_run_id == run_id,
+                BenchmarkVote.article_id == article_id,
+                BenchmarkVote.user_id == user.id,
+            )
+        )
+    ).scalar_one_or_none()
+    if existing:
+        await db.delete(existing)
+        await db.commit()
+
+
+@router.get("/{project_id}/benchmarks/{run_id}/votes")
+async def get_votes(
+    project_id: uuid.UUID,
+    run_id: uuid.UUID,
+    db: DbDep,
+    user: UserDep,
+) -> dict:
+    """Aggregated votes per variant + the current user's own votes (for the checkmarks)."""
+    await _require_project_member(db, project_id, user)
+    run = await db.get(BenchmarkRun, run_id)
+    if run is None or run.project_id != project_id:
+        raise HTTPException(status_code=404, detail="benchmark run not found")
+    votes = (
+        (
+            await db.execute(select(BenchmarkVote).where(BenchmarkVote.benchmark_run_id == run_id))
+        )
+        .scalars()
+        .all()
+    )
+    # Aggregate per variant
+    by_variant: dict[str, int] = {}
+    my_votes: dict[str, str] = {}  # article_id -> model_name
+    for v in votes:
+        key = f"{v.model_name}|{v.variant or ''}"
+        by_variant[key] = by_variant.get(key, 0) + 1
+        if v.user_id == user.id:
+            my_votes[str(v.article_id)] = v.model_name
+    return {
+        "by_variant": by_variant,
+        "my_votes": my_votes,
+        "total": len(votes),
     }

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
-import { listBenchmarkArticles, BenchmarkArticleRow, SchemaField } from "@/lib/api";
+import { listBenchmarkArticles, BenchmarkArticleRow, SchemaField, getBenchmarkVotes, castBenchmarkVote, removeBenchmarkVote, BenchmarkVotes } from "@/lib/api";
 import { relevanceOf, showValue } from "@/lib/benchmark";
 import { withSearch } from "@/lib/search";
 import { Button } from "@/components/ui/Button";
@@ -132,6 +132,7 @@ export function BenchmarkDisagreements({
   const [page, setPage] = useState(1);
   const [data, setData] = useState<{ total: number; items: BenchmarkArticleRow[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [votes, setVotes] = useState<BenchmarkVotes | null>(null);
 
   // Reset the result when the query (run / filter / page) changes.
   const queryKey = `${projectId}:${runId}:${onlyDisagree}:${page}`;
@@ -166,6 +167,25 @@ export function BenchmarkDisagreements({
     }, 10_000);
     return () => clearInterval(id);
   }, [projectId, runId, live, page]);
+
+  // Fetch votes (for the checkmarks).
+  useEffect(() => {
+    getBenchmarkVotes(projectId, runId)
+      .then(setVotes)
+      .catch(() => {});
+  }, [projectId, runId]);
+
+  const handleVote = async (articleId: string, model: string, variant: string | null) => {
+    if (!votes || !data) return;
+    const current = votes.my_votes[articleId];
+    if (current === model) {
+      await removeBenchmarkVote(projectId, runId, articleId);
+    } else {
+      await castBenchmarkVote(projectId, runId, articleId, model, variant);
+    }
+    const updated = await getBenchmarkVotes(projectId, runId);
+    setVotes(updated);
+  };
 
   const pages = data ? Math.max(1, Math.ceil(data.total / PER_PAGE)) : 1;
 
@@ -209,7 +229,23 @@ export function BenchmarkDisagreements({
               </div>
             )}
             {row.outputs.map((o) => (
-              <div key={`${o.model}\u0000${o.variant ?? ""}`} className="rounded-lg bg-surface-muted p-2">
+              <div
+                key={`${o.model}\u0000${o.variant ?? ""}`}
+                className="relative rounded-lg bg-surface-muted p-2"
+              >
+                {!o.error && (
+                  <button
+                    type="button"
+                    onClick={() => handleVote(row.article_id, o.model, o.variant ?? null)}
+                    className="absolute right-2 top-2 text-lg transition-colors"
+                    style={{
+                      color: votes?.my_votes[row.article_id] === o.model ? "var(--color-success, #22c55e)" : "var(--color-muted, #9ca3af)",
+                    }}
+                    aria-label={votes?.my_votes[row.article_id] === o.model ? "Retirer le vote" : "Préférer cette réponse"}
+                  >
+                    ✓
+                  </button>
+                )}
                 <p className="mb-1 truncate text-xs font-semibold text-foreground" title={`${o.model} · ${o.variant ?? ""}`}>
                   {o.model}
                   {o.variant ? ` · ${o.variant}` : ""}

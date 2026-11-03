@@ -70,6 +70,7 @@ EXPECTED_TABLES = {
     "searches",  # recherches : question + lot d'articles
     "search_articles",  # frozen batch of a search
     "benchmark_predictions",  # answers of each benchmark variant
+    "benchmark_votes",  # human preference votes per variant
     "password_resets",  # password reset tokens (hashed)
 }
 

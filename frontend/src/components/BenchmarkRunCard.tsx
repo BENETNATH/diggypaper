@@ -3,7 +3,7 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
-import { createPrompt, getBenchmark, BenchmarkResult, BenchmarkRun, SearchInfo } from "@/lib/api";
+import { createPrompt, getBenchmark, getBenchmarkVotes, BenchmarkResult, BenchmarkRun, SearchInfo, BenchmarkVotes } from "@/lib/api";
 import { pct, primaryParts, rankResults, resultKey, savedPromptVersion } from "@/lib/benchmark";
 import { withSearch } from "@/lib/search";
 import { BenchmarkDisagreements } from "@/components/BenchmarkDisagreements";
@@ -55,6 +55,7 @@ export function BenchmarkRunCard({
   const [busy, setBusy] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null); // variant name of the last copied prompt
   const [copyError, setCopyError] = useState(false);
+  const [votes, setVotes] = useState<BenchmarkVotes | null>(null);
   const saved = useRef<Record<string, string>>({}); // prompts already saved (avoids duplicates)
   const loaded = useRef(false); // results already fetched (avoids re-fetching on open/close)
 
@@ -83,6 +84,14 @@ export function BenchmarkRunCard({
       stale = true;
     };
   }, [open, active, projectId, run.id, run.status]);
+
+  // Fetch votes for the ranking table (only when the run is finished).
+  useEffect(() => {
+    if (active) return;
+    getBenchmarkVotes(projectId, run.id)
+      .then(setVotes)
+      .catch(() => {});
+  }, [projectId, run.id, run.status, active]);
 
   const ranked = results ? rankResults(results) : [];
   const crit = primaryParts(ranked.find((r) => r.details?.primary)?.details?.primary, fields);
@@ -244,6 +253,7 @@ export function BenchmarkRunCard({
                       {hasGold && <th className={th}>{t("f1")}</th>}
                       {hasGold && <th className={th}>{t("accuracy")}</th>}
                       {withAgreement && <th className={th}>{t("agreement")}</th>}
+                      {votes && votes.total > 0 && <th className={th}>{t("votes")}</th>}
                       <th className={th}>{t("time")}</th>
                       <th className={th}>{t("nScored")}</th>
                       {withErrors && <th className={th}>{t("errors")}</th>}
@@ -270,6 +280,11 @@ export function BenchmarkRunCard({
                             {hasGold && <td className={td}>{pct(r.f1_score)}</td>}
                             {hasGold && <td className={td}>{pct(r.accuracy)}</td>}
                             {withAgreement && <td className={td}>{pct(r.details?.agreement)}</td>}
+                            {votes && votes.total > 0 && (
+                              <td className={`${td} font-medium text-foreground`}>
+                                {votes.by_variant[`${r.model_name}|${r.variant ?? ""}`] ?? 0}
+                              </td>
+                            )}
                             <td className={td}>{r.execution_time_seconds != null ? `${r.execution_time_seconds.toFixed(1)} s` : "—"}</td>
                             <td className={td}>{r.n_scored ?? "—"}</td>
                             {withErrors && (

@@ -204,7 +204,9 @@ def disagrees(
     first = seen[0]
     keys = _effective_keys(fields, seen)
     if not keys:
-        return any(_norm(_free_text(o)) != _norm(_free_text(first)) for o in seen[1:])
+        # Free-text answers: no objective agreement to validate by default.
+        # Structured fields are required for a meaningful disagreement signal.
+        return False
     return any(
         relevant(o) != relevant(first) or any(_norm(o.get(k)) != _norm(first.get(k)) for k in keys)
         for o in seen[1:]
