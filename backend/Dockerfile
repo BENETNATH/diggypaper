@@ -1,5 +1,10 @@
 FROM python:3.12-slim
 
+# Build-time commit SHA (passed from docker compose): lets the /ci-status endpoint
+# report the CI state of the exact commit running.
+ARG COMMIT_SHA=unknown
+ENV COMMIT_SHA=$COMMIT_SHA
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1

@@ -991,7 +991,8 @@
   "footer": {
     "source": "Quellcode (GitHub)",
     "license": "MIT-Lizenz",
-    "credit": "© Benoit Petit-Demoulière (PHEN-ICS)"
+    "credit": "© Benoit Petit-Demoulière (PHEN-ICS)",
+    "ciState": "CI-Status des deployed Commits"
   },
   "searches": {
     "title": "Analysen",

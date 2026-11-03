@@ -26,6 +26,7 @@ from app.api.v1 import (
     team,
     users,
 )
+from app.ci import ci_state, commit_sha
 from app.core.bootstrap import bootstrap_admin
 from app.core.config import get_settings, validate_settings
 from app.crate import app_version
@@ -93,5 +94,14 @@ def create_app() -> FastAPI:
     async def version() -> dict:
         """The Diggypaper version (semver) — public, shown in the footer and the crate."""
         return {"version": app_version()}
+
+    @app.get("/api/v1/ci-status", include_in_schema=False)
+    async def ci_status() -> dict:
+        """CI state of the running commit (green/red/unknown) — public, shown in the footer.
+
+        Uses the build-time COMMIT_SHA (unknown in dev); the public GitHub API is
+        queried non-authenticated and cached a few minutes per SHA.
+        """
+        return ci_state(commit_sha())
 
     return app

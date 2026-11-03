@@ -991,7 +991,8 @@
   "footer": {
     "source": "Source code (GitHub)",
     "license": "MIT License",
-    "credit": "© Benoit Petit-Demoulière (PHEN-ICS)"
+    "credit": "© Benoit Petit-Demoulière (PHEN-ICS)",
+    "ciState": "CI state of the deployed commit"
   },
   "searches": {
     "title": "Analyses",

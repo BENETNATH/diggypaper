@@ -68,7 +68,11 @@ services:
     #   - /dev/kfd                    # AMD only
 
   backend:
-    build: ./backend
+    build:
+      context: ./backend
+      args:
+        # Build-time commit SHA: lets /ci-status report the CI state of the running commit.
+        COMMIT_SHA: ${COMMIT_SHA:-unknown}
     restart: unless-stopped
     logging: *logging
     mem_limit: ${BACKEND_MEM_LIMIT:-2g}
