@@ -20,7 +20,6 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [consent, setConsent] = useState(false);
-  const [consentRequired, setConsentRequired] = useState(false);
   const [privacyUrl, setPrivacyUrl] = useState<string | null>(null);
   const [configLoaded, setConfigLoaded] = useState(false);
 
@@ -68,7 +67,6 @@ export default function LoginPage() {
       router.push("/projects");
     } catch (err) {
       if (err instanceof ApiError && err.status === 403) {
-        setConsentRequired(true);
         setError(t("consentRequired"));
       } else {
         setError(err instanceof Error ? err.message : t("unknownError"));
@@ -106,23 +104,23 @@ export default function LoginPage() {
               autoComplete="current-password"
             />
           </Field>
-          {/* GDPR consent: asked only once (the server remembers it). */}
-          {consentRequired && (
-            <>
-              {/* no privacy URL: do not cite a policy the user cannot read */}
-              <Checkbox
-                label={configLoaded && !privacyUrl ? t("consentLabelNoPolicy") : t("consentLabel")}
-                checked={consent}
-                onChange={(e) => setConsent(e.target.checked)}
-              />
-              <p className="-mt-2 text-xs text-muted">{t("consentFirstLogin")}</p>
-              {privacyUrl && (
-                <a href={privacyUrl} target="_blank" rel="noopener noreferrer" className="-mt-2 text-xs text-primary hover:underline">
-                  {t("privacyPolicy")}
-                </a>
-              )}
-            </>
-          )}
+          {/* GDPR consent: always visible before the first login attempt (the
+              server only requires it while the user has not yet consented —
+              the checkbox stays inert for returning users). */}
+          <>
+            {/* no privacy URL: do not cite a policy the user cannot read */}
+            <Checkbox
+              label={configLoaded && !privacyUrl ? t("consentLabelNoPolicy") : t("consentLabel")}
+              checked={consent}
+              onChange={(e) => setConsent(e.target.checked)}
+            />
+            <p className="-mt-2 text-xs text-muted">{t("consentFirstLogin")}</p>
+            {privacyUrl && (
+              <a href={privacyUrl} target="_blank" rel="noopener noreferrer" className="-mt-2 text-xs text-primary hover:underline">
+                {t("privacyPolicy")}
+              </a>
+            )}
+          </>
           <Button type="submit" loading={loading}>
             {t("loginButton")}
           </Button>
