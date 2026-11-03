@@ -1,0 +1,41 @@
+# managed: harness — CI : commit messages + tests des gates
+# Installé par init.sh dans .github/workflows/harness.yml
+name: harness
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  # Les messages de commits d'une PR : Conventional Commits + pas
+  # d'attribution IA (les commits restent ceux de l'utilisateur).
+  commits:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check commit messages
+        run: |
+          git log --format=%H%x00%B%x00 "${{ github.event.pull_request.base.sha }}..HEAD" \
+            | python3 scripts/check_commits.py -
+
+  # Les gates du harness sont testés en continu (review gate, check commits,
+  # loop complet hooks).
+  harness-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install pytest
+        run: pip install pytest
+      - name: Run gate tests
+        run: python -m pytest scripts/tests -q

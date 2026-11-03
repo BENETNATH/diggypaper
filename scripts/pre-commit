@@ -1,0 +1,6 @@
+#!/bin/sh
+# managed: harness
+# Review gate : refuse tout commit dont un fichier staged n'a pas été vu
+# par la review (scripts/review.py record). Waiver user-only :
+# scripts/waive-review.sh (réservé à l'utilisateur).
+exec python3 "$(dirname "$0")/review.py" check

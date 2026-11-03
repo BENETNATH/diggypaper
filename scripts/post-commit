@@ -1,0 +1,6 @@
+#!/bin/sh
+# managed: harness
+# Le waiver est valable pour un commit exactement : il est retiré après
+# le commit qui a bénéficié.
+g="$(git rev-parse --git-dir 2>/dev/null)" || exit 0
+rm -f "$g/hermes-review-waived"

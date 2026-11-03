@@ -1,0 +1,24 @@
+#!/bin/sh
+# managed: harness
+# pre-push : exécute les linters du repo AVANT le push (parité avec le CI GitHub).
+# Le push est bloqué si un linter échoue. Détecte les layouts :
+#   python : ruff (racine ou backend/)          — check + format --check
+#   js/ts  : npm run lint (racine ou frontend/) — si package.json a un script "lint"
+# Repo sans linter détecté : le hook passe silencieusement.
+fail=0
+for d in . backend; do
+  if [ -f "$d/pyproject.toml" ] && command -v ruff >/dev/null 2>&1; then
+    echo "harness pre-push: ruff ($d)"
+    (cd "$d" && ruff check . && ruff format --check .) || fail=1
+  fi
+done
+for d in . frontend; do
+  if [ -f "$d/package.json" ] && grep -q '"lint"' "$d/package.json" 2>/dev/null; then
+    echo "harness pre-push: npm run lint ($d)"
+    (cd "$d" && npm run lint) || fail=1
+  fi
+done
+if [ "$fail" -ne 0 ]; then
+  echo "harness pre-push: linter en échec — corriger avant de pusher (le CI GitHub bloquerait le push)." >&2
+  exit 1
+fi
