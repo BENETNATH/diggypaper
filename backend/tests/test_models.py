@@ -528,7 +528,12 @@ def test_article_predictions_columns():
     assert isinstance(c["decision_json"].type, JSON)
     assert isinstance(c["confidence_score"].type, Float)
     assert isinstance(c["evidence_quotes"].type, JSON)
-    assert c["status"].type.enums == ["AUTO_ACCEPTED", "AUTO_REJECTED", "NEEDS_HUMAN_REVIEW"]
+    assert c["status"].type.enums == [
+        "AUTO_ACCEPTED",
+        "AUTO_REJECTED",
+        "NEEDS_HUMAN_REVIEW",
+        "ERROR",
+    ]
     assert c["status"].server_default.arg == "NEEDS_HUMAN_REVIEW"
 
 
