@@ -526,9 +526,7 @@ async def get_votes(
     if run is None or run.project_id != project_id:
         raise HTTPException(status_code=404, detail="benchmark run not found")
     votes = (
-        (
-            await db.execute(select(BenchmarkVote).where(BenchmarkVote.benchmark_run_id == run_id))
-        )
+        (await db.execute(select(BenchmarkVote).where(BenchmarkVote.benchmark_run_id == run_id)))
         .scalars()
         .all()
     )

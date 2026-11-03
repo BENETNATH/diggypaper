@@ -96,6 +96,13 @@ function BenchmarksContent() {
     setError(null);
     try {
       await retryBenchmarkErrors(projectId, runId);
+      // Optimistic update: mark the run as PENDING so the polling kicks in
+      // (the celery task changes the status in the DB a moment later).
+      setRuns((prev) =>
+        prev
+          ? prev.map((r) => (r.id === runId ? { ...r, status: "PENDING" } : r))
+          : prev
+      );
       await load();
     } catch (err) {
       setError(toError(err));
