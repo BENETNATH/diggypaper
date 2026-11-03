@@ -237,9 +237,11 @@ export function BenchmarkDisagreements({
                   <button
                     type="button"
                     onClick={() => handleVote(row.article_id, o.model, o.variant ?? null)}
-                    className="absolute right-2 top-2 text-lg transition-colors"
+                    className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full text-sm transition-colors"
                     style={{
-                      color: votes?.my_votes[row.article_id] === o.model ? "var(--color-success, #22c55e)" : "var(--color-muted, #9ca3af)",
+                      backgroundColor: votes?.my_votes[row.article_id] === o.model ? "var(--color-success, #22c55e)" : "var(--color-surface, #e5e7eb)",
+                      color: votes?.my_votes[row.article_id] === o.model ? "#fff" : "var(--color-muted, #9ca3af)",
+                      fontWeight: votes?.my_votes[row.article_id] === o.model ? 700 : 400,
                     }}
                     aria-label={votes?.my_votes[row.article_id] === o.model ? "Retirer le vote" : "Préférer cette réponse"}
                   >
