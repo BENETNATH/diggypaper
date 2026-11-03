@@ -14,6 +14,7 @@
     "retry": "Reintentar",
     "close": "Cerrar",
     "adminOnly": "Acceso restringido a administradores.",
+    "skipToContent": "Saltar al contenido principal",
     "versionNotRecordedHelp": "La versión del modelo no se registró en este job."
   },
   "jobs": {
@@ -68,7 +69,7 @@
     "registerButton": "Crear cuenta",
     "email": "Correo electrónico",
     "password": "Contraseña",
-    "passwordMin": "Mínimo 8 caracteres",
+    "passwordMin": "Mínimo 12 caracteres",
     "fullName": "Nombre completo",
     "token": "Token de invitación",
     "registerWithCode": "Tengo un código de invitación",
@@ -901,7 +902,7 @@
     "passwordTitle": "Contraseña",
     "currentPassword": "Contraseña actual",
     "newPassword": "Nueva contraseña",
-    "newPasswordHint": "Mínimo 8 caracteres.",
+    "newPasswordHint": "Mínimo 12 caracteres.",
     "changePassword": "Cambiar contraseña",
     "passwordChanged": "Contraseña cambiada",
     "dataTitle": "Mis datos (RGPD)",

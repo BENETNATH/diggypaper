@@ -21,7 +21,7 @@ services:
     image: postgres:18-alpine
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-diggypaper}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-diggypaper}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD manquant dans .env}
       POSTGRES_DB: ${POSTGRES_DB:-diggypaper}
     volumes:
       - pgdata:/var/lib/postgresql
@@ -87,7 +87,7 @@ services:
       LLM_EXTRA_BODY: '${LLM_EXTRA_BODY:-{"think": false, "options": {"num_ctx": 16384}}}'  # additional LLM body (local backends): num_ctx anti-truncation, no thinking mode
       DEFAULT_LANGUAGE: ${DEFAULT_LANGUAGE:-fr}
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:8080}  # base of the email links (invitations, exports)
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-diggypaper}:${POSTGRES_PASSWORD:-diggypaper}@postgres:5432/${POSTGRES_DB:-diggypaper}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-diggypaper}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD manquant dans .env}@postgres:5432/${POSTGRES_DB:-diggypaper}
       REDIS_URL: redis://redis:6379/0
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET manquant dans .env}
       ANON_SALT: ${ANON_SALT:?ANON_SALT manquant dans .env}
@@ -127,7 +127,7 @@ services:
       OLLAMA_MODE: ${OLLAMA_MODE:-docker}  # docker | host | off — deployment flag (see header)
       LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-120}  # timeout per LLM call (raise on CPU: cold start + prefill)
       LLM_EXTRA_BODY: '${LLM_EXTRA_BODY:-{"think": false, "options": {"num_ctx": 16384}}}'  # additional LLM body (local backends): num_ctx anti-truncation, no thinking mode
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-diggypaper}:${POSTGRES_PASSWORD:-diggypaper}@postgres:5432/${POSTGRES_DB:-diggypaper}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-diggypaper}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD manquant dans .env}@postgres:5432/${POSTGRES_DB:-diggypaper}
       REDIS_URL: redis://redis:6379/0
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET manquant dans .env}
       ANON_SALT: ${ANON_SALT:?ANON_SALT manquant dans .env}
@@ -169,7 +169,7 @@ services:
     environment:
       LLM_API_BASE_URL: ${LLM_API_BASE_URL:-http://ollama:11434/v1}
       OLLAMA_MODE: ${OLLAMA_MODE:-docker}  # docker | host | off — deployment flag (see header)
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-diggypaper}:${POSTGRES_PASSWORD:-diggypaper}@postgres:5432/${POSTGRES_DB:-diggypaper}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-diggypaper}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD manquant dans .env}@postgres:5432/${POSTGRES_DB:-diggypaper}
       REDIS_URL: redis://redis:6379/0
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET manquant dans .env}
       ANON_SALT: ${ANON_SALT:?ANON_SALT manquant dans .env}

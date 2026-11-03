@@ -40,9 +40,14 @@ export default async function RootLayout({
       >
         <NextIntlClientProvider messages={messages}>
           <AuthProvider>
+            <a href="#main" className="skip-link">
+              {messages.common.skipToContent}
+            </a>
             <TopBar />
             <StorageAlert />
-            <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6">{children}</main>
+            <main id="main" className="mx-auto w-full max-w-6xl flex-1 px-4 py-6">
+              {children}
+            </main>
             <Footer />
             <BottomNav />
           </AuthProvider>

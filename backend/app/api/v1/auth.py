@@ -83,8 +83,8 @@ class InviteRequest(BaseModel):
 
 class RegisterRequest(BaseModel):
     token: str
-    # F6: password policy - minimum 8 characters (422 otherwise).
-    password: str = Field(min_length=8)
+    # F6: password policy - minimum 12 characters (422 otherwise).
+    password: str = Field(min_length=12)
     full_name: str | None = None
 
 
@@ -280,7 +280,7 @@ async def update_me(
 
 class PasswordChange(BaseModel):
     current_password: str
-    new_password: str = Field(min_length=8)  # same policy as registration
+    new_password: str = Field(min_length=12)  # same policy as registration
 
 
 @router.post(

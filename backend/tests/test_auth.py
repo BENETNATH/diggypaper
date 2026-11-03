@@ -110,18 +110,20 @@ async def test_register_wrong_purpose_rejected(client):
 
 
 async def test_register_short_password_422(client, admin_user, mock_mailer, do_login):
-    """F6: password under 8 characters → 422 (password policy)."""
+    """F6: password under 12 characters → 422 (password policy)."""
     await _invite(client, do_login, "newbie@lab.fr")
     token = _token_from_email(mock_mailer)
-    resp = await client.post("/api/v1/auth/register", json={"token": token, "password": "a"})
+    resp = await client.post("/api/v1/auth/register", json={"token": token, "password": "12345678"})
     assert resp.status_code == 422
 
 
 async def test_register_min_length_password_ok(client, admin_user, mock_mailer, do_login):
-    """F6: 8-character password → 201."""
+    """F6: 12-character password → 201."""
     await _invite(client, do_login, "newbie@lab.fr")
     token = _token_from_email(mock_mailer)
-    resp = await client.post("/api/v1/auth/register", json={"token": token, "password": "12345678"})
+    resp = await client.post(
+        "/api/v1/auth/register", json={"token": token, "password": "123456789012"}
+    )
     assert resp.status_code == 201
 
 

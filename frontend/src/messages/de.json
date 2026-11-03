@@ -14,6 +14,7 @@
     "retry": "Erneut versuchen",
     "close": "Schließen",
     "adminOnly": "Zugriff nur für Administratoren.",
+    "skipToContent": "Zum Hauptinhalt springen",
     "versionNotRecordedHelp": "Die Modellversion wurde für diesen Job nicht erfasst."
   },
   "jobs": {
@@ -68,7 +69,7 @@
     "registerButton": "Konto erstellen",
     "email": "E-Mail-Adresse",
     "password": "Passwort",
-    "passwordMin": "Mindestens 8 Zeichen",
+    "passwordMin": "Mindestens 12 Zeichen",
     "fullName": "Vollständiger Name",
     "token": "Einladungstoken",
     "invalidToken": "Einladungstoken ist ungültig oder abgelaufen.",
@@ -901,7 +902,7 @@
     "passwordTitle": "Passwort",
     "currentPassword": "Aktuelles Passwort",
     "newPassword": "Neues Passwort",
-    "newPasswordHint": "Mindestens 8 Zeichen.",
+    "newPasswordHint": "Mindestens 12 Zeichen.",
     "changePassword": "Passwort ändern",
     "passwordChanged": "Passwort geändert",
     "dataTitle": "Meine Daten (DSGVO)",

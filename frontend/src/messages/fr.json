@@ -14,7 +14,8 @@
     "previous": "Précédent",
     "retry": "Réessayer",
     "close": "Fermer",
-    "adminOnly": "Accès réservé aux administrateurs."
+    "adminOnly": "Accès réservé aux administrateurs.",
+    "skipToContent": "Aller au contenu principal"
   },
   "jobs": {
     "status_PENDING": "En attente",
@@ -68,7 +69,7 @@
     "registerButton": "Créer le compte",
     "email": "Adresse e-mail",
     "password": "Mot de passe",
-    "passwordMin": "8 caractères minimum",
+    "passwordMin": "12 caractères minimum",
     "fullName": "Nom complet",
     "token": "Jeton d'invitation",
     "registerWithCode": "J'ai un code d'invitation",
@@ -901,7 +902,7 @@
     "passwordTitle": "Mot de passe",
     "currentPassword": "Mot de passe actuel",
     "newPassword": "Nouveau mot de passe",
-    "newPasswordHint": "8 caractères minimum.",
+    "newPasswordHint": "12 caractères minimum.",
     "changePassword": "Changer le mot de passe",
     "passwordChanged": "Mot de passe modifié",
     "dataTitle": "Mes données (RGPD)",

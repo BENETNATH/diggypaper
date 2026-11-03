@@ -2,6 +2,23 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Skip-link (a11y, WCAG 2.4.1) : hors écran, visible au focus clavier. */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 100;
+  padding: 0.5rem 1rem;
+  background: var(--surface);
+  color: var(--foreground);
+  border: 2px solid var(--focus);
+  border-radius: 0 0 0.5rem 0;
+  font-weight: 600;
+}
+.skip-link:focus {
+  left: 0;
+}
+
 /*
  * Design tokens — 3 niveaux (design-system skill) :
  *   primitives (valeurs OKLCH) -> sémantiques (variables) -> composants (classes Tailwind).

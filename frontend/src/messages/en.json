@@ -14,6 +14,7 @@
     "retry": "Retry",
     "close": "Close",
     "adminOnly": "Access restricted to administrators.",
+    "skipToContent": "Skip to main content",
     "versionNotRecordedHelp": "The model version was not recorded for this job."
   },
   "jobs": {
@@ -68,7 +69,7 @@
     "registerButton": "Create account",
     "email": "Email address",
     "password": "Password",
-    "passwordMin": "Minimum 8 characters",
+    "passwordMin": "Minimum 12 characters",
     "fullName": "Full name",
     "token": "Invitation token",
     "registerWithCode": "I have an invitation code",
@@ -901,7 +902,7 @@
     "passwordTitle": "Password",
     "currentPassword": "Current password",
     "newPassword": "New password",
-    "newPasswordHint": "At least 8 characters.",
+    "newPasswordHint": "At least 12 characters.",
     "changePassword": "Change password",
     "passwordChanged": "Password changed",
     "dataTitle": "My data (GDPR)",
