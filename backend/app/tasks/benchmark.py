@@ -48,7 +48,7 @@ from app.inference import (
     make_inference_service,
     unload_ollama,
 )
-from app.schema import project_fields
+from app.schema import build_system_prompt, project_fields
 from app.searches import ScopedProject, get_search, gold_condition, lot_condition
 
 logger = logging.getLogger(__name__)
@@ -303,8 +303,16 @@ async def _retry_benchmark_errors(
             _gold_all, _example_ids, shots = await _references(
                 session, project, base_project, search, lot_ids, opts
             )
+            fields = project_fields(project)
             variants = await _prompts(session, run)
-            vmap = {name: (system, user) for name, system, user in variants}
+
+            def _structured(system: str) -> str:
+                question = (system or "").strip() or (project.question or "").strip()
+                structured = build_system_prompt(question, fields) if question else system
+                return f"{structured}\n\n{shots}".strip() if shots else structured
+
+            # variant name → (structured system prompt, user schema)
+            vmap = {name: (_structured(system), user) for name, system, user in variants}
             names = {p.model_name for p in failed}
             models = {
                 m.name: m
@@ -335,13 +343,13 @@ async def _retry_benchmark_errors(
                 if model is None or article is None or p.variant not in vmap:
                     still_failing += 1
                     continue
-                system, user_schema = vmap[p.variant]
+                system_prompt, user_schema = vmap[p.variant]
                 start = time.monotonic()
                 try:
                     prediction = await infer_with(
                         model,
                         inference,
-                        (system + "\n\n" + shots).strip() if shots else system,
+                        system_prompt,
                         fill_prompt(user_schema, article, project.text_sections),
                     )
                     if not isinstance(prediction, dict):
@@ -465,6 +473,12 @@ async def _do_benchmark(
             preds: dict = {}
             total_time = 0.0
             errors = 0
+            # Structured responses (like the complete analysis): the variant's question is
+            # wrapped in the project's field schema, so every variant returns the same
+            # JSON format (constant, comparable, scorable) instead of free-form text.
+            question = (system or "").strip() or (project.question or "").strip()
+            structured = build_system_prompt(question, fields) if question else system
+            system_prompt = f"{structured}\n\n{shots}".strip() if shots else structured
             for article in lot:
                 if await _cancelled(session, run):
                     return {"cancelled": True, "models": len(results_payload)}
@@ -474,7 +488,7 @@ async def _do_benchmark(
                     prediction = await infer_with(
                         model,
                         inference,
-                        (system + "\n\n" + shots).strip() if shots else system,
+                        system_prompt,
                         fill_prompt(user_schema, article, project.text_sections),
                     )
                     if not isinstance(prediction, dict):

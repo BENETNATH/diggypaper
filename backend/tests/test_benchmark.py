@@ -415,7 +415,10 @@ async def test_benchmark_variants_store_predictions_and_agreement(engine, sessio
     fake = RecordingInference(_gt())
     res = await _run_benchmark(str(run.id), session_factory=factory, inference=fake)
     assert res["variants"] == 2 and fake.calls == 6  # 3 articles × 2 variantes
-    assert sorted(set(fake.systems)) == ["Be free.", "Be strict."]
+    systems = fake.systems
+    assert any("Be strict." in s for s in systems) and any("Be free." in s for s in systems)
+    # each variant's question is wrapped in the project's field schema (structured)
+    assert all("use_ai_behavior" in s and "confidence_score" in s for s in systems)
     rows = (await session.execute(select(BenchmarkPrediction))).scalars().all()
     assert len(rows) == 6 and {r.variant for r in rows} == {"strict", "libre"}
     out = {(r["variant"]): r for r in res["results"]}
@@ -469,3 +472,33 @@ def test_benchmark_imports_without_resource(monkeypatch):
     finally:
         monkeypatch.undo()
         importlib.reload(benchmark)  # restaure le comportement natif de la plateforme
+
+
+async def test_benchmark_uses_structured_schema(engine, session):
+    """2026-11-03: the benchmark wraps each variant's question in the project's
+    field schema (structured JSON, like the complete analysis) instead of a bare
+    free-form prompt — so the responses have a constant, comparable format."""
+    project, prompt, arts = await _project_with_articles(session, 1)
+    prompt.system_prompt = "Describe the forced swim test protocol"
+    await session.commit()
+    run = BenchmarkRun(
+        project_id=project.id,
+        prompt_template_id=prompt.id,
+        models_tested=["Kev-4B"],
+        options={},  # no gold
+        status=BenchmarkStatus.PENDING,
+    )
+    session.add(run)
+    await session.commit()
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    fake = RecordingInference(_gt())
+    await _run_benchmark(str(run.id), session_factory=factory, inference=fake)
+    (system,) = fake.systems
+    # the variant's question is embedded
+    assert "Describe the forced swim test protocol" in system
+    # the project's field schema is enforced (structured JSON, not free text)
+    assert "use_ai_behavior" in system
+    assert "animal_sex" in system
+    assert "confidence_score" in system
+    assert "evidence_quotes" in system
+    assert "Return ONLY a valid JSON object" in system

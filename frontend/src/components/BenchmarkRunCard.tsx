@@ -88,6 +88,9 @@ export function BenchmarkRunCard({
   const crit = primaryParts(ranked.find((r) => r.details?.primary)?.details?.primary, fields);
   const withAgreement = ranked.some((r) => r.details?.agreement != null);
   const withErrors = ranked.some((r) => (r.details?.errors ?? 0) > 0);
+  // Score columns (recall/precision/F1/accuracy) only make sense against a gold
+  // reference — without one they are empty, so the table hides them.
+  const hasGold = ranked.some((r) => r.details?.scored);
   const hasErrors = (run.errors_total ?? 0) > 0;
   const metricLabel = crit ? t(`metric_${crit.metric}`) : withAgreement ? t("agreement") : t("time");
 
@@ -235,11 +238,11 @@ export function BenchmarkRunCard({
                       <th className="px-2 py-1 text-left font-normal">#</th>
                       <th className="px-2 py-1 text-left font-normal">{t("model")}</th>
                       <th className="px-2 py-1 text-left font-normal">{t("variant")}</th>
-                      <th className={th}>{t("primary")}</th>
-                      <th className={th}>{t("recall")}</th>
-                      <th className={th}>{t("precision")}</th>
-                      <th className={th}>{t("f1")}</th>
-                      <th className={th}>{t("accuracy")}</th>
+                      {hasGold && <th className={th}>{t("primary")}</th>}
+                      {hasGold && <th className={th}>{t("recall")}</th>}
+                      {hasGold && <th className={th}>{t("precision")}</th>}
+                      {hasGold && <th className={th}>{t("f1")}</th>}
+                      {hasGold && <th className={th}>{t("accuracy")}</th>}
                       {withAgreement && <th className={th}>{t("agreement")}</th>}
                       <th className={th}>{t("time")}</th>
                       <th className={th}>{t("nScored")}</th>
@@ -259,11 +262,13 @@ export function BenchmarkRunCard({
                               {r.model_name}
                             </td>
                             <td className="px-2 py-1.5 text-left">{r.variant ?? t("singlePrompt")}</td>
-                            <td className={`${td} font-semibold text-foreground`}>{pct(r.details?.primary?.value)}</td>
-                            <td className={td}>{pct(r.recall_score)}</td>
-                            <td className={td}>{pct(r.precision_score)}</td>
-                            <td className={td}>{pct(r.f1_score)}</td>
-                            <td className={td}>{pct(r.accuracy)}</td>
+                            {hasGold && (
+                              <td className={`${td} font-semibold text-foreground`}>{pct(r.details?.primary?.value)}</td>
+                            )}
+                            {hasGold && <td className={td}>{pct(r.recall_score)}</td>}
+                            {hasGold && <td className={td}>{pct(r.precision_score)}</td>}
+                            {hasGold && <td className={td}>{pct(r.f1_score)}</td>}
+                            {hasGold && <td className={td}>{pct(r.accuracy)}</td>}
                             {withAgreement && <td className={td}>{pct(r.details?.agreement)}</td>}
                             <td className={td}>{r.execution_time_seconds != null ? `${r.execution_time_seconds.toFixed(1)} s` : "—"}</td>
                             <td className={td}>{r.n_scored ?? "—"}</td>
@@ -291,7 +296,7 @@ export function BenchmarkRunCard({
                           </tr>
                           {detail === key && scored && (
                             <tr>
-                              <td colSpan={11 + (withAgreement ? 1 : 0) + (withErrors ? 1 : 0)} className="bg-surface-muted/40 p-3">
+                              <td colSpan={6 + (hasGold ? 5 : 0) + (withAgreement ? 1 : 0) + (withErrors ? 1 : 0)} className="bg-surface-muted/40 p-3">
                                 <ValidationView scored={scored} primary={r.details?.primary} fields={fields} />
                               </td>
                             </tr>

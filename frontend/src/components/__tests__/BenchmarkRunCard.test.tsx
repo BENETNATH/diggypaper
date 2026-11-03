@@ -161,3 +161,77 @@ describe("BenchmarkRunCard — delete / rerun", () => {
     expect(onDelete).toHaveBeenCalledWith("b1");
   });
 });
+
+// 2026-11-03: without a gold reference the recall/precision/F1/accuracy columns
+// are empty — hide them and keep only the columns that carry information
+// (agreement, time, n scored, errors).
+describe("BenchmarkRunCard — ranking table (contextual columns)", () => {
+  const base: api.BenchmarkResult = {
+    model_name: "coder",
+    variant: "complet",
+    n_scored: 10,
+    execution_time_seconds: 12,
+    recall_score: null,
+    precision_score: null,
+    f1_score: null,
+    accuracy: null,
+    details: { agreement: 1.0 },
+  };
+  const noGold = (): api.BenchmarkResult[] => [
+    base,
+    { ...base, variant: "direct", execution_time_seconds: 30 },
+  ];
+  const prf = { tp: 5, fp: 0, fn: 5, tn: 0, precision: 1.0, recall: 0.5, f1: 0.66, accuracy: 0.5, specificity: 1.0 };
+  const withGold = (): api.BenchmarkResult[] => [
+    {
+      ...base,
+      recall_score: 0.5,
+      precision_score: 1.0,
+      f1_score: 0.66,
+      accuracy: 0.5,
+      details: {
+        agreement: 1.0,
+        scored: { n: 10, relevance: prf, items: { Pertinence: { type: "boolean", n: 10, ...prf } }, accuracy: 0.5 },
+        primary: { item: "Pertinence", metric: "recall", value: 0.5 },
+      },
+    },
+    {
+      ...base,
+      variant: "direct",
+      execution_time_seconds: 30,
+      recall_score: 0.3,
+      precision_score: 0.5,
+      f1_score: 0.37,
+      accuracy: 0.4,
+      details: {
+        agreement: 0.5,
+        scored: { n: 10, relevance: prf, items: { Pertinence: { type: "boolean", n: 10, ...prf } }, accuracy: 0.4 },
+        primary: { item: "Pertinence", metric: "recall", value: 0.3 },
+      },
+    },
+  ];
+  const expand = async (results: api.BenchmarkResult[]) => {
+    (api.getBenchmark as jest.Mock).mockResolvedValue({ results });
+    render(<BenchmarkRunCard projectId="p1" run={completedRun} onStop={() => {}} onDelete={() => {}} onRerun={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: /results/ }));
+    await waitFor(() => expect(api.getBenchmark).toHaveBeenCalledWith("p1", "b1"));
+  };
+
+  it("no gold: score columns hidden, agreement + time stay", async () => {
+    await expand(noGold());
+    expect(screen.queryByText("recall")).not.toBeInTheDocument();
+    expect(screen.queryByText("precision")).not.toBeInTheDocument();
+    expect(screen.queryByText("f1")).not.toBeInTheDocument();
+    expect(screen.queryByText("accuracy")).not.toBeInTheDocument();
+    expect(screen.getByText("agreement")).toBeInTheDocument();
+    expect(screen.getByText("time")).toBeInTheDocument();
+  });
+
+  it("with gold: score columns shown", async () => {
+    await expand(withGold());
+    expect(screen.getByText("recall")).toBeInTheDocument();
+    expect(screen.getByText("precision")).toBeInTheDocument();
+    expect(screen.getByText("f1")).toBeInTheDocument();
+    expect(screen.getByText("accuracy")).toBeInTheDocument();
+  });
+});
