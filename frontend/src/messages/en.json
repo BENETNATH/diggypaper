@@ -22,6 +22,20 @@
     "status_COMPLETED": "Completed",
     "status_FAILED": "Failed"
   },
+  "activity": {
+    "title": "Recent activity",
+    "activeJobs": "Jobs in progress",
+    "import": "Import",
+    "analysis": "Analysis",
+    "benchmark": "Benchmarks",
+    "open": "View →",
+    "globalJobsOnInstance": "jobs in progress on the instance",
+    "empty": "No recent action.",
+    "loading": "Loading…",
+    "error": "Could not load the activity.",
+    "retry": "Retry",
+    "unknownUser": "deleted user"
+  },
   "errors": {
     "leadRequired": "Only a project lead can do this.",
     "questionLocked": "This analysis already has results: create a new analysis.",

@@ -79,6 +79,7 @@ async def _import_crate(
                 job_id=job_id,
                 status=ImportJobStatus.RUNNING,
                 result_json={"phase": "importing", "done": 0, "total": 0},
+                created_by=uuid.UUID(user_id) if user_id else None,
             )
             session.add(job)
             await session.commit()

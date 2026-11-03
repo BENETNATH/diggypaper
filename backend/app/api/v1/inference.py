@@ -156,6 +156,7 @@ async def trigger_inference(
         model_used=payload.model,
         prefilter_model=payload.prefilter_model,
         status=InferenceJobStatus.PENDING,
+        created_by=user.id,
     )
     db.add(job)
     await db.commit()

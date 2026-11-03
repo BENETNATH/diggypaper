@@ -22,6 +22,20 @@
     "status_COMPLETED": "Terminado",
     "status_FAILED": "Fallido"
   },
+  "activity": {
+    "title": "Actividad reciente",
+    "activeJobs": "Trabajos en curso",
+    "import": "Importación",
+    "analysis": "Análisis",
+    "benchmark": "Benchmarks",
+    "open": "Ver →",
+    "globalJobsOnInstance": "trabajos en curso en la instancia",
+    "empty": "Ninguna acción reciente.",
+    "loading": "Cargando…",
+    "error": "No se pudo cargar la actividad.",
+    "retry": "Reintentar",
+    "unknownUser": "usuario eliminado"
+  },
   "errors": {
     "leadRequired": "Solo un responsable de proyecto puede hacer esto.",
     "questionLocked": "Este análisis ya tiene resultados: cree un nuevo análisis.",

@@ -489,6 +489,10 @@ class BenchmarkRun(Base):
     status: Mapped[BenchmarkStatus | None] = mapped_column(
         _enum(BenchmarkStatus), server_default="PENDING"
     )
+    # Launcher (activity log, spec 2026-11-03); NULL: jobs predating the feature.
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="SET NULL")
+    )
     created_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -791,6 +795,10 @@ class ImportJob(Base):
     )
     result_json: Mapped[dict | None] = mapped_column(JSONB)
     error: Mapped[str | None] = mapped_column(Text)
+    # Launcher (activity log, spec 2026-11-03); NULL: jobs predating the feature.
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="SET NULL")
+    )
     created_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -841,6 +849,10 @@ class InferenceJob(Base):
     )
     result_json: Mapped[dict | None] = mapped_column(JSONB)
     error: Mapped[str | None] = mapped_column(Text)
+    # Launcher (activity log, spec 2026-11-03); NULL: jobs predating the feature.
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="SET NULL")
+    )
     created_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

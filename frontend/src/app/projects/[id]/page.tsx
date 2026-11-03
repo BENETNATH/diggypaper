@@ -4,6 +4,8 @@ import { ReactNode, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
+import { ActiveJobsBanner } from "@/components/ActiveJobsBanner";
+import { ActivityPanel } from "@/components/ActivityPanel";
 import {
   getProject,
   getOverview,
@@ -170,6 +172,7 @@ function SearchRow({ s, projectId, isLead, hasCorpus }: { s: SearchInfo; project
 
 function ProjectDashboard() {
   const t = useTranslations("project");
+  const tAct = useTranslations("activity");
   const projectId = useParams<{ id: string }>().id;
   const { user } = useAuth();
   const locale = useLocale();
@@ -212,6 +215,7 @@ function ProjectDashboard() {
 
   return (
     <div className="flex flex-col gap-5">
+      <ActiveJobsBanner projectId={projectId} />
       {project.retention_delete_on && (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-danger/40 bg-danger/10 p-3 text-sm">
           <span className="text-danger">
@@ -315,6 +319,13 @@ function ProjectDashboard() {
           {lastJob.created_at && <> · {new Date(lastJob.created_at).toLocaleString()}</>}
         </p>
       )}
+
+      <details className="rounded-lg border border-border bg-surface p-3 text-sm">
+        <summary className="cursor-pointer font-medium text-foreground">{tAct("title")}</summary>
+        <div className="mt-2">
+          <ActivityPanel projectId={projectId} />
+        </div>
+      </details>
 
       <details className="rounded-lg border border-border bg-surface p-3 text-sm">
         <summary className="cursor-pointer font-medium text-foreground">{t("howTitle")}</summary>

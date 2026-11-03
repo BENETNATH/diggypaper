@@ -22,6 +22,20 @@
     "status_COMPLETED": "Terminé",
     "status_FAILED": "Échec"
   },
+  "activity": {
+    "title": "Activité récente",
+    "activeJobs": "Travaux en cours",
+    "import": "Import",
+    "analysis": "Analyse",
+    "benchmark": "Benchmarks",
+    "open": "Voir →",
+    "globalJobsOnInstance": "jobs en cours sur l'instance",
+    "empty": "Aucune action récente.",
+    "loading": "Chargement…",
+    "error": "Impossible de charger l'activité.",
+    "retry": "Réessayer",
+    "unknownUser": "utilisateur supprimé"
+  },
   "errors": {
     "leadRequired": "Seul un responsable de projet peut faire cette action.",
     "questionLocked": "Cette analyse a déjà des résultats : créez une nouvelle analyse.",

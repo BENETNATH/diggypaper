@@ -284,7 +284,12 @@ async def test_import_triggers_task(client, session, researcher_user, do_login, 
     assert data["job_id"] == "job-123"
     assert data["status"] == "PENDING"
     mock_delay.assert_called_once_with(
-        project_id, "cancer AND mice", date_from=None, date_to=None, source="pubmed"
+        project_id,
+        "cancer AND mice",
+        date_from=None,
+        date_to=None,
+        source="pubmed",
+        user_id=str(researcher_user.id),
     )
 
 

@@ -664,6 +664,64 @@ export async function listJobs(projectId: string): Promise<ImportJob[]> {
   return data.jobs;
 }
 
+// --- Activity & traceability (spec 2026-11-03-activite-tracabilite) ---------
+
+/** One in-progress job of the project (import / analysis / benchmark). */
+export interface ActiveProjectJob {
+  kind: "import" | "analysis" | "benchmark";
+  id: string;
+  status: "PENDING" | "RUNNING";
+  /** import: the query — analysis / benchmark: the search name (or null). */
+  detail: string | null;
+  /** benchmark progress (or null). */
+  progress: { done: number; total: number; model?: string; variant?: string } | null;
+  /** benchmark: the models tested; analysis: [model_used]. */
+  models: string[] | null;
+  /** analysis / benchmark: the linked search (for the link), or null. */
+  search_id: string | null;
+  started_at: string | null;
+}
+
+/** Instance counters — no project information at all (§2). */
+export interface GlobalActiveJobs {
+  count: number;
+  by_kind: { import: number; analysis: number; benchmark: number };
+}
+
+/** One recent action (import / analysis / benchmark) with its launcher (§3). */
+export interface ActivityAction {
+  type: "import" | "analysis" | "benchmark";
+  id: string;
+  /** Launcher's full_name, else email; null if created_by is unknown. */
+  user: string | null;
+  detail: string | null;
+  status: "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
+  started_at: string | null;
+  finished_at: string | null;
+  /** admin (global) mode only: the project's title. */
+  project_title?: string | null;
+}
+
+/** The project's in-progress jobs (§1) — members only. */
+export async function getActiveProjectJobs(projectId: string): Promise<{ jobs: ActiveProjectJob[] }> {
+  return request(`/projects/${projectId}/jobs/active`);
+}
+
+/** The instance's in-progress job counters (§2) — any authenticated user. */
+export async function getGlobalActiveJobs(): Promise<GlobalActiveJobs> {
+  return request("/jobs/active");
+}
+
+/** The project's recent actions, with the launcher (§3) — members only. */
+export async function getProjectActivity(projectId: string, limit = 20): Promise<{ actions: ActivityAction[] }> {
+  return request(`/projects/${projectId}/activity?limit=${limit}`);
+}
+
+/** The instance's recent actions, all projects (§3) — admin only. */
+export async function getAdminActivity(limit = 20): Promise<{ actions: ActivityAction[] }> {
+  return request(`/admin/activity?limit=${limit}`);
+}
+
 export async function updateProject(
   projectId: string,
   patch: {

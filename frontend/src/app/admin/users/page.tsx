@@ -20,6 +20,7 @@ import {
 import { useAuth } from "@/lib/auth";
 import { RequireAuth } from "@/components/RequireAuth";
 import { RequireAdmin } from "@/components/RequireAdmin";
+import { ActivityPanel } from "@/components/ActivityPanel";
 import { Button } from "@/components/ui/Button";
 import { Field, Input, Select } from "@/components/ui/Field";
 import { Badge, Card } from "@/components/ui/Card";
@@ -176,6 +177,7 @@ function UserRow({
 
 function AdminContent() {
   const t = useTranslations("adminUsers");
+  const tAct = useTranslations("activity");
   const { user } = useAuth();
   const locale = useLocale();
   const [inviteEmail, setInviteEmail] = useState("");
@@ -351,6 +353,10 @@ function AdminContent() {
             </li>
           ))}
         </ul>
+      </Card>
+
+      <Card title={tAct("title")}>
+        <ActivityPanel global />
       </Card>
     </div>
   );

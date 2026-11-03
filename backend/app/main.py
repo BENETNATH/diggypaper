@@ -17,6 +17,7 @@ from app.api.v1 import (
     export,
     gold,
     inference,
+    jobs,
     models,
     projects,
     prompts,
@@ -81,6 +82,7 @@ def create_app() -> FastAPI:
     app.include_router(gold.router, prefix="/api/v1")
     app.include_router(benchmarks.router, prefix="/api/v1")
     app.include_router(inference.router, prefix="/api/v1")
+    app.include_router(jobs.router, prefix="/api/v1")
 
     @app.get("/api/v1/health", include_in_schema=False)
     async def health() -> dict:

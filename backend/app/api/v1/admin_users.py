@@ -14,6 +14,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_admin, get_db
+from app.api.v1.projects import _recent_actions
 from app.cleanup import delete_projects, purge_orphans
 from app.cleanup import delete_user as _delete_user
 from app.db.models import (
@@ -276,3 +277,14 @@ async def list_all_projects(db: DbDep, admin: AdminDep) -> dict:
             for p, email in rows
         ]
     }
+
+
+@router.get("/activity")
+async def admin_activity(
+    db: DbDep, admin: AdminDep, limit: int = Query(default=20, le=100)
+) -> dict:
+    """The instance's recent actions, with the launcher and the project (§3, admin).
+
+    This is the answer to « who is using the app »: every import / analysis /
+    benchmark, who ran it, on which project."""
+    return {"actions": await _recent_actions(db, None, limit)}

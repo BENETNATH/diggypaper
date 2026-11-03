@@ -169,6 +169,7 @@ async def trigger_benchmark(
         options={"use_gold": payload.use_gold, "gold_examples": payload.gold_examples},
         models_tested=payload.models,
         status=BenchmarkStatus.PENDING,
+        created_by=user.id,
     )
     db.add(run)
     await db.commit()

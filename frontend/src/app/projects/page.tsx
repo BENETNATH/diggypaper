@@ -7,6 +7,7 @@ import { useTranslations } from "next-intl";
 import { useAuth } from "@/lib/auth";
 import { listProjects, createProject, importCrate, Project } from "@/lib/api";
 import { RequireAuth } from "@/components/RequireAuth";
+import { GlobalJobsIndicator } from "@/components/GlobalJobsIndicator";
 import { Button } from "@/components/ui/Button";
 import { Field, Input, Select } from "@/components/ui/Field";
 import { Card, Badge, statusColor } from "@/components/ui/Card";
@@ -102,6 +103,7 @@ function ProjectsContent() {
           </div>
         )}
       </div>
+      <GlobalJobsIndicator />
       {error && projects && <ErrorBanner message={error} />}
 
       {canCreate && showForm && (

@@ -106,6 +106,7 @@ async def expand_by_citations(
                 "search_id": str(origin) if origin else None,
             },
         },
+        user_id=str(user.id),
     )
     status = job.state if celery_app.conf.task_always_eager else "PENDING"
     return {"job_id": job.id, "status": status}

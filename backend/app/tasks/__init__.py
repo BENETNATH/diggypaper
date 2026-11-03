@@ -185,6 +185,7 @@ def import_pubmed_task(
     date_from: date | None = None,
     date_to: date | None = None,
     source: str = "pubmed",
+    user_id: str | None = None,
 ) -> dict:
     """Sync Celery wrapper: runs the async core in a dedicated thread (C1/C2).
 
@@ -213,6 +214,7 @@ def import_pubmed_task(
                     date_from=date_from,
                     date_to=date_to,
                     source=source,
+                    user_id=user_id,
                 )
             )
         except BaseException as exc:  # propagated to the main thread
@@ -225,7 +227,7 @@ def import_pubmed_task(
         raise error
     # Missing full text (outside PMC): chained automatically, as a separate task.
     if result.get("imported") and not celery_app.conf.task_always_eager:
-        complete_fulltext_task.delay(project_id)
+        complete_fulltext_task.delay(project_id, user_id=user_id)
     return result
 
 
@@ -241,6 +243,7 @@ async def _import_pubmed(
     date_to: date | None = None,
     adapter: SourceAdapter | None = None,
     source: str = "pubmed",
+    user_id: str | None = None,
 ) -> dict:
     """Async core of the PubMed import (or, with ``refs``, of a references list).
 
@@ -292,6 +295,7 @@ async def _import_pubmed(
                 job_id=job_id,
                 kind=(options or {}).get("kind")
                 or ("references" if refs is not None else "import"),
+                created_by=uuid.UUID(user_id) if user_id else None,
             )
             session.add(job)
             project.status = ProjectStatus.PROCESSING  # m10
@@ -910,7 +914,7 @@ async def backfill_metadata(session: AsyncSession, project_id: uuid.UUID, client
 
 
 @celery_app.task(name="diggypaper.complete_fulltext", queue=INGEST_QUEUE)
-def complete_fulltext_task(project_id: str) -> dict:
+def complete_fulltext_task(project_id: str, user_id: str | None = None) -> dict:
     """Sync Celery wrapper (same schema as the import): dedicated thread + asyncio.run."""
     job_id = current_task.request.id
     out: dict = {}
@@ -919,7 +923,7 @@ def complete_fulltext_task(project_id: str) -> dict:
     def _run() -> None:
         nonlocal out, error
         try:
-            out = asyncio.run(_complete_fulltext(project_id, job_id=job_id))
+            out = asyncio.run(_complete_fulltext(project_id, job_id=job_id, user_id=user_id))
         except BaseException as exc:
             error = exc
 
@@ -932,7 +936,11 @@ def complete_fulltext_task(project_id: str) -> dict:
 
 
 async def _complete_fulltext(
-    project_id: str, session_factory=None, http: httpx.AsyncClient | None = None, job_id=None
+    project_id: str,
+    session_factory=None,
+    http: httpx.AsyncClient | None = None,
+    job_id=None,
+    user_id: str | None = None,
 ) -> dict:
     """Seeks (open sources) the full text of the articles that do not have one."""
     session_factory = session_factory or _session_factory_override
@@ -958,6 +966,7 @@ async def _complete_fulltext(
                 job_id=job_id,
                 status=ImportJobStatus.RUNNING,
                 result_json={"phase": "fulltext", "done": 0, "total": 0, "found": 0},
+                created_by=uuid.UUID(user_id) if user_id else None,
             )
             session.add(job)
             await session.commit()

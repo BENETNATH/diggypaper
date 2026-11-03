@@ -30,9 +30,11 @@ from app.core.config import get_settings
 from app.db.models import (
     Article,
     ArticlePrediction,
+    BenchmarkRun,
     HumanAnnotation,
     ImportJob,
     ImportJobStatus,
+    InferenceJob,
     LanguageCode,
     Project,
     ProjectMember,
@@ -518,6 +520,7 @@ async def trigger_import(
         date_from=payload.date_from,
         date_to=payload.date_to,
         source=payload.source,
+        user_id=str(user.id),
     )
     if celery_app.conf.task_always_eager:
         status = job.state  # SUCCESS / FAILURE (the job is already finished)
@@ -566,7 +569,9 @@ async def import_references(
     if project.status == ProjectStatus.PROCESSING:
         raise HTTPException(status_code=409, detail="import already in progress")
     await _require_no_active_job(db, project.id)
-    job = import_pubmed_task.delay(str(project.id), f"references ({fmt}, {len(entries)})", entries)
+    job = import_pubmed_task.delay(
+        str(project.id), f"references ({fmt}, {len(entries)})", entries, user_id=str(user.id)
+    )
     return {
         "job_id": job.id,
         "status": job.state if celery_app.conf.task_always_eager else "PENDING",
@@ -594,7 +599,7 @@ async def complete_fulltext(project_id: uuid.UUID, db: DbDep, user: UserDep) -> 
     if project.status not in (ProjectStatus.FROZEN, ProjectStatus.COMPLETED):
         raise HTTPException(status_code=409, detail="import not finished")
     await _require_no_active_job(db, project.id)
-    job = complete_fulltext_task.delay(str(project.id))
+    job = complete_fulltext_task.delay(str(project.id), user_id=str(user.id))
     return {"job_id": job.id, "status": "PENDING"}
 
 
@@ -934,3 +939,220 @@ async def list_jobs(project_id: uuid.UUID, db: DbDep, user: UserDep) -> dict:
             for j in jobs
         ]
     }
+
+
+# ---------------------------------------------------------------------------
+# Activity (spec 2026-11-03-activite-tracabilite): what is running now (§1)
+# and who did what (§3). The launcher is read from created_by (NULL = job
+# predating the feature, never invented).
+# ---------------------------------------------------------------------------
+
+_ACTIVE_STATUSES = ("PENDING", "RUNNING")
+
+
+@router.get("/{project_id}/jobs/active")
+async def active_project_jobs(project_id: uuid.UUID, db: DbDep, user: UserDep) -> dict:
+    """The project's in-progress jobs — imports, analyses, benchmarks (§1).
+
+    The project page shows them at the top, like the analyses' « running »
+    badge; the benchmark's progress + models ride along."""
+    project = await _require_project_member(db, project_id, user)
+    search_names: dict[uuid.UUID, str] = {
+        s.id: s.name
+        for s in (
+            (await db.execute(select(Search).where(Search.project_id == project.id)))
+            .scalars()
+            .all()
+        )
+    }
+    jobs: list[dict] = []
+    imports = (
+        (
+            await db.execute(
+                select(ImportJob).where(
+                    ImportJob.project_id == project.id,
+                    ImportJob.status.in_(_ACTIVE_STATUSES),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for j in imports:
+        jobs.append(
+            {
+                "kind": "import",
+                "id": str(j.id),
+                "status": j.status,
+                "detail": j.query,
+                "search_id": None,
+                "progress": None,
+                "models": None,
+                "started_at": j.created_at.isoformat() if j.created_at else None,
+            }
+        )
+    analyses = (
+        (
+            await db.execute(
+                select(InferenceJob).where(
+                    InferenceJob.project_id == project.id,
+                    InferenceJob.status.in_(_ACTIVE_STATUSES),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for j in analyses:
+        jobs.append(
+            {
+                "kind": "analysis",
+                "id": str(j.id),
+                "status": j.status,
+                "detail": search_names.get(j.search_id) if j.search_id else None,
+                "search_id": str(j.search_id) if j.search_id else None,
+                "progress": None,
+                "models": [j.model_used] if j.model_used else None,
+                "started_at": j.created_at.isoformat() if j.created_at else None,
+            }
+        )
+    benchmarks = (
+        (
+            await db.execute(
+                select(BenchmarkRun).where(
+                    BenchmarkRun.project_id == project.id,
+                    BenchmarkRun.status.in_(_ACTIVE_STATUSES),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for j in benchmarks:
+        jobs.append(
+            {
+                "kind": "benchmark",
+                "id": str(j.id),
+                "status": j.status,
+                "detail": search_names.get(j.search_id) if j.search_id else None,
+                "search_id": str(j.search_id) if j.search_id else None,
+                "progress": j.progress,
+                "models": j.models_tested,
+                "started_at": j.created_at.isoformat() if j.created_at else None,
+            }
+        )
+    jobs.sort(key=lambda j: j["started_at"] or "", reverse=True)
+    return {"jobs": jobs}
+
+
+async def _recent_actions(db: AsyncSession, project_id: uuid.UUID | None, limit: int) -> list[dict]:
+    """The most recent actions (import / analysis / benchmark), newest first (§3).
+
+    ``project_id is None`` → the whole instance (admin log). ``user`` is the
+    launcher's full_name, else their email, else null (created_by unknown)."""
+    import_jobs = (
+        (
+            await db.execute(
+                select(ImportJob).where(ImportJob.project_id == project_id)
+                if project_id is not None
+                else select(ImportJob)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    analyses = (
+        (
+            await db.execute(
+                select(InferenceJob).where(InferenceJob.project_id == project_id)
+                if project_id is not None
+                else select(InferenceJob)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    benchmarks = (
+        (
+            await db.execute(
+                select(BenchmarkRun).where(BenchmarkRun.project_id == project_id)
+                if project_id is not None
+                else select(BenchmarkRun)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    user_ids = {
+        j.created_by for j in (*import_jobs, *analyses, *benchmarks) if j.created_by is not None
+    }
+    users: dict[uuid.UUID, User] = {}
+    if user_ids:
+        rows = (await db.execute(select(User).where(User.id.in_(list(user_ids))))).scalars().all()
+        users = {u.id: u for u in rows}
+
+    search_ids = {j.search_id for j in (*analyses, *benchmarks) if j.search_id is not None}
+    search_names: dict[uuid.UUID, str] = {}
+    if search_ids:
+        rows = (
+            (await db.execute(select(Search).where(Search.id.in_(list(search_ids)))))
+            .scalars()
+            .all()
+        )
+        search_names = {s.id: s.name for s in rows}
+
+    project_ids = {
+        j.project_id for j in (*import_jobs, *analyses, *benchmarks) if j.project_id is not None
+    }
+    titles: dict[uuid.UUID, str] = {}
+    if project_ids and project_id is None:
+        rows = (
+            (await db.execute(select(Project).where(Project.id.in_(list(project_ids)))))
+            .scalars()
+            .all()
+        )
+        titles = {p.id: p.title for p in rows}
+
+    def _entry(kind: str, j, finished: str | None) -> dict:
+        u = users.get(j.created_by) if j.created_by else None
+        detail = (
+            search_names.get(j.search_id)
+            if kind != "import" and j.search_id
+            else (j.query if kind == "import" else None)
+        )
+        entry = {
+            "type": kind,
+            "id": str(j.id),
+            "user": (u.full_name or u.email) if u else None,
+            "detail": detail,
+            "status": j.status,
+            "started_at": j.created_at.isoformat() if j.created_at else None,
+            "finished_at": finished,
+        }
+        if project_id is None:
+            entry["project_title"] = titles.get(j.project_id) if j.project_id else None
+        return entry
+
+    entries = (
+        [
+            _entry("import", j, j.completed_at.isoformat() if j.completed_at else None)
+            for j in import_jobs
+        ]
+        + [
+            _entry("analysis", j, j.completed_at.isoformat() if j.completed_at else None)
+            for j in analyses
+        ]
+        + [_entry("benchmark", j, None) for j in benchmarks]
+    )
+    entries.sort(key=lambda e: e["started_at"] or "", reverse=True)
+    return entries[:limit]
+
+
+@router.get("/{project_id}/activity")
+async def project_activity(
+    project_id: uuid.UUID, db: DbDep, user: UserDep, limit: int = Query(default=20, le=100)
+) -> dict:
+    """The project's recent actions, with the launcher's name (§3, members)."""
+    await _require_project_member(db, project_id, user)
+    return {"actions": await _recent_actions(db, project_id, limit)}

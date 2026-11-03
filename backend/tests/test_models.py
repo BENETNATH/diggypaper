@@ -308,11 +308,15 @@ def test_import_job_columns():
         "error",
         "created_at",
         "completed_at",
+        "created_by",
     }
     assert c["id"].primary_key
     assert isinstance(c["id"].type, Uuid)
     assert fk(c["project_id"]).column is Project.__table__.c.id
     assert fk(c["project_id"]).ondelete == "CASCADE"
+    assert isinstance(c["created_by"].type, Uuid) and c["created_by"].nullable
+    assert fk(c["created_by"]).column is User.__table__.c.id
+    assert fk(c["created_by"]).ondelete == "SET NULL"
     assert isinstance(c["query"].type, Text) and not c["query"].nullable
     assert isinstance(c["job_id"].type, String) and c["job_id"].nullable
     assert c["status"].type.enums == ["PENDING", "RUNNING", "COMPLETED", "FAILED"]
@@ -395,10 +399,14 @@ def test_benchmark_runs_columns():
         "models_tested",
         "status",
         "created_at",
+        "created_by",
     }
     assert c["id"].primary_key
     assert fk(c["project_id"]).column is Project.__table__.c.id
     assert fk(c["project_id"]).ondelete == "CASCADE"
+    assert isinstance(c["created_by"].type, Uuid) and c["created_by"].nullable
+    assert fk(c["created_by"]).column is User.__table__.c.id
+    assert fk(c["created_by"]).ondelete == "SET NULL"
     assert not c["prompt_template_id"].foreign_keys  # spec : UUID simple, pas de FK
     assert isinstance(c["models_tested"].type, JSON)
     assert c["status"].type.enums == ["PENDING", "RUNNING", "COMPLETED", "FAILED"]
