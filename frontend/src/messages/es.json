@@ -588,7 +588,6 @@
     "scopeNewHint": "Elija los artículos por criterios (respuestas de un análisis previo, revisados, texto completo, sorteo…). Se crea un nuevo análisis con los ítems de abajo y se analiza: sigue disponible en «Todos los análisis».",
     "scopeNewName": "Nombre del nuevo análisis",
     "scopeDefaultName": "Automático (AAMMDD-n)",
-    "scopeCount": "{n, plural, one {se analizará # artículo} other {se analizarán # artículos}}",
     "instructionsTitle": "Instrucción adicional (opcional)",
     "instructionsHint": "Una frase añadida al prompt generado a partir de su pregunta: vocabulario, casos límite, criterios a aplicar estrictamente…",
     "instructionsPlaceholder": "P. ej.: contar como «ensayo clínico» solo los estudios aleatorizados en humanos.",

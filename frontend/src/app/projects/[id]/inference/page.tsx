@@ -537,9 +537,6 @@ function AnalyseContent() {
                   <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={t("scopeDefaultName")} />
                 </Field>
                 <ArticleSelector projectId={projectId} searches={searches ?? []} value={selection} onChange={setSelection} onCount={setCount} />
-                <p className="text-sm font-medium text-foreground">
-                  {count === null ? tLead("counting") : t("scopeCount", { n: count })}
-                </p>
               </div>
               <QuestionEditor question={q?.question ?? ""} fields={q?.fields ?? []} sections={q?.sections ?? ["methods"]} onChange={setQ} />
               {promptId && (

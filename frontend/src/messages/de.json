@@ -588,7 +588,6 @@
     "scopeNewHint": "Wählen Sie die Artikel nach Kriterien (Antworten einer früheren Analyse, geprüft, Volltext, Zufallsauswahl…). Mit den Items unten wird eine neue Analyse angelegt und analysiert; sie bleibt unter „Alle Analysen“ verfügbar.",
     "scopeNewName": "Name der neuen Analyse",
     "scopeDefaultName": "Automatisch (JJMMTT-n)",
-    "scopeCount": "{n, plural, one {# Artikel wird analysiert} other {# Artikel werden analysiert}}",
     "instructionsTitle": "Zusätzliche Anweisung (optional)",
     "instructionsHint": "Ein Satz, der dem aus Ihrer Frage erzeugten Prompt hinzugefügt wird: Begriffe, Grenzfälle, streng anzuwendende Kriterien…",
     "instructionsPlaceholder": "Z. B. nur randomisierte Humanstudien als „klinische Studie“ zählen.",

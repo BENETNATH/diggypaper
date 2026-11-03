@@ -588,7 +588,6 @@
     "scopeNewHint": "Choisissez les articles par critères (réponses d'une analyse précédente, relus, texte intégral, tirage au hasard…). Une nouvelle analyse est créée avec les items ci-dessous, puis analysée : elle reste consultable dans « Toutes les analyses ».",
     "scopeNewName": "Nom de la nouvelle analyse",
     "scopeDefaultName": "Automatique (AAMMJJ-n)",
-    "scopeCount": "{n, plural, one {# article sera analysé} other {# articles seront analysés}}",
     "instructionsTitle": "Consigne supplémentaire (facultatif)",
     "instructionsHint": "Une phrase ajoutée au prompt généré depuis votre question : précision de vocabulaire, cas limites, critères à appliquer strictement…",
     "instructionsPlaceholder": "Ex. : ne compter comme « essai clinique » que les études randomisées chez l'humain.",

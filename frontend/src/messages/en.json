@@ -588,7 +588,6 @@
     "scopeNewHint": "Pick the articles by criteria (answers of a previous analysis, reviewed, full text, random draw…). A new analysis is created with the items below, then analysed: it stays available under “All analyses”.",
     "scopeNewName": "Name of the new analysis",
     "scopeDefaultName": "Automatic (YYMMDD-n)",
-    "scopeCount": "{n, plural, one {# article will be analysed} other {# articles will be analysed}}",
     "instructionsTitle": "Extra instructions (optional)",
     "instructionsHint": "A sentence added to the prompt generated from your question: vocabulary, edge cases, criteria to apply strictly…",
     "instructionsPlaceholder": "E.g. only count randomised human studies as “clinical trial”.",

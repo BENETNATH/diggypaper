@@ -52,6 +52,9 @@ export function ArticleSelector({
   // The analysis criteria (AI decision, answers, review, confidence) only exist on a
   // batch that was itself analysed; the full-text filter works on any batch.
   const analysed = (origin?.predicted ?? 0) > 0;
+  // Nothing worth inheriting yet: the « start from » dropdown only makes sense once
+  // an analysis has been launched on the project (a launched or running batch).
+  const hasLaunched = searches.some((s) => (s.predicted ?? 0) > 0 || s.last_job != null);
   const answers = useMemo(
     () => Object.fromEntries(Object.entries(value.answers ?? {}).map(([k, v]) => [k, String(v)])),
     [value.answers]
@@ -85,6 +88,7 @@ export function ArticleSelector({
 
   return (
     <div className="flex flex-col gap-3">
+      {hasLaunched && (
       <label className="flex flex-col gap-1 text-sm text-foreground">
         {t("selFrom")}
         <select
@@ -117,6 +121,7 @@ export function ArticleSelector({
         </select>
         {analysed && <span className="text-xs text-muted">{t("selFromHint")}</span>}
       </label>
+      )}
 
       <div className="flex flex-wrap items-end gap-3 rounded-lg border border-border bg-surface p-3">
         {analysed && (

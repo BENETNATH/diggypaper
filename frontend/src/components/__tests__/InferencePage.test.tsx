@@ -387,3 +387,27 @@ describe("inference page — « Enregistrer » (save without launching)", () => 
     expect(launches).toHaveLength(2); // the default one + the saved one
   });
 });
+
+describe("inference page — creation panel polish (UI feedback 2026-11-03)", () => {
+  it("« partir des articles de » is hidden while no analysis has been launched", async () => {
+    mount({ user: { role: "RESEARCHER" }, roleInProject: "LEAD" }); // default search, untouched
+    await panelOpen();
+    expect(screen.queryByText("selFrom")).not.toBeInTheDocument();
+  });
+
+  it("« partir des articles de » is offered once an analysis has been launched", async () => {
+    mount({ user: { role: "RESEARCHER" }, roleInProject: "LEAD", searches: [{ ...search, predicted: 2 }] });
+    await panelOpen();
+    // the panel stays collapsed on a project with launched analyses: open it
+    fireEvent.click(screen.getByText(/\+ panelCreate/));
+    expect(await screen.findByText("selFrom")).toBeInTheDocument();
+  });
+
+  it("a single article count is shown (the duplicate « seront analysés » line is gone)", async () => {
+    mount({ user: { role: "RESEARCHER" }, roleInProject: "LEAD" });
+    await panelOpen();
+    // the live preview is debounced (400 ms): wait for the selector's count to settle
+    await waitFor(() => expect(screen.getByText("selected")).toBeInTheDocument(), { timeout: 2000 });
+    expect(screen.queryByText("scopeCount")).not.toBeInTheDocument();
+  });
+});
