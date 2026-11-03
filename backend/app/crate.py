@@ -15,6 +15,7 @@ import io
 import json
 import re
 from datetime import UTC, datetime
+from pathlib import Path
 
 from app.core.config import get_settings
 from app.inference import public_model_ref
@@ -22,6 +23,17 @@ from app.sources import source_name
 
 CRATE_CONTEXT = "https://w3id.org/ro/crate/1.1/context"
 CONFORMS = "https://w3id.org/ro/crate/1.1"
+
+
+def app_version() -> str:
+    """The Diggypaper version (semver), from the ``VERSION`` file next to ``app/``.
+
+    ``0.0.0`` when the file is missing or empty — the crate and the ``/version``
+    endpoint must never raise on an unset version."""
+    try:
+        return (Path(__file__).parent.parent / "VERSION").read_text().strip() or "0.0.0"
+    except OSError:
+        return "0.0.0"
 
 
 _FORMULA_START = ("=", "+", "-", "@", "\t", "\r")
@@ -280,6 +292,8 @@ def build_graph(project, articles, keys: dict, files: dict, info: dict, now: str
         "description": project.question or project.description or project.title,
         "datePublished": now,
         "license": {"@id": get_settings().crate_license_url},
+        # Provenance: the Diggypaper version that generated this crate (reproducibility).
+        "softwareVersion": app_version(),
         "hasPart": [{"@id": p} for p in top],
         "mentions": [],
     }

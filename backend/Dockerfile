@@ -14,6 +14,7 @@ WORKDIR /app
 # Dépendances + package (app/ requis pour le build du wheel)
 COPY pyproject.toml constraints.txt ./
 COPY app ./app
+COPY VERSION ./
 RUN pip install --upgrade pip && pip install -c constraints.txt .
 
 # Migrations + bootstrap

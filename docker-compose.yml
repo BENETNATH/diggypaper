@@ -201,6 +201,8 @@ services:
     mem_limit: ${FRONTEND_MEM_LIMIT:-1g}
     environment:
       DEFAULT_LANGUAGE: ${DEFAULT_LANGUAGE:-fr}
+      # Origin the server components use to reach the backend (footer version fetch).
+      API_ORIGIN: http://backend:8000
 
   nginx:
     image: nginx:1.27-alpine

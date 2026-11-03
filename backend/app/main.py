@@ -28,6 +28,7 @@ from app.api.v1 import (
 )
 from app.core.bootstrap import bootstrap_admin
 from app.core.config import get_settings, validate_settings
+from app.crate import app_version
 from app.i18n import I18nMiddleware
 
 logger = logging.getLogger(__name__)
@@ -87,5 +88,10 @@ def create_app() -> FastAPI:
     @app.get("/api/v1/health", include_in_schema=False)
     async def health() -> dict:
         return {"status": "ok"}
+
+    @app.get("/api/v1/version", include_in_schema=False)
+    async def version() -> dict:
+        """The Diggypaper version (semver) — public, shown in the footer and the crate."""
+        return {"version": app_version()}
 
     return app

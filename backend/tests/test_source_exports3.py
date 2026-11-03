@@ -124,3 +124,8 @@ def test_prisma_identified_label_lists_sources():
     assert "Europe PMC" in svg and "listes importées" not in svg
     # guard: historical caller (sources/lists None) -> the old static label
     assert "(PubMed, listes importées)" in prisma.render_svg(counts, "fr")
+
+
+def test_app_version_reads_version_file():
+    """The Diggypaper version is read from the VERSION file (semver, single source)."""
+    assert crate.app_version() == "1.0.0"
