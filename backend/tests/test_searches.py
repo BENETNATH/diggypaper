@@ -511,9 +511,7 @@ async def test_deleting_the_initial_search(client, session, corpus):
     recreated = await default_search(session, project)  # on-demand creation (analysis need)
     assert recreated.is_default and recreated.question == project.question
     cond = await gold_condition(session, project, recreated)
-    assert (
-        (await session.execute(select(GoldArticle).where(cond))).scalars().all() == row
-    )
+    assert (await session.execute(select(GoldArticle).where(cond))).scalars().all() == row
 
 
 async def test_deleting_a_search_keeps_the_gold_shared_with_the_initial_one(

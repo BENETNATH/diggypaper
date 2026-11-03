@@ -22,6 +22,8 @@ const RELEVANT_AT = 0.5;
 const MIN_GOLD = 30;
 /** Default size of the blind sample (unbiased gold standard). */
 const DEFAULT_BLIND_N = 40;
+/** Random seed for a blind draw (module scope: impure, kept out of the component). */
+const newSeed = (): number => Math.floor(Math.random() * 1e9);
 
 function Stat({ label, value, tone }: { label: string; value: number; tone?: string }) {
   return (
@@ -115,7 +117,7 @@ function GoldContent() {
       const from = current && !current.is_default ? current.id : undefined;
       const s = await createSearch(projectId, {
         kind: "blind",
-        selection: { from_search_id: from, sample_n: blindN, seed: Math.floor(Math.random() * 1e9) },
+        selection: { from_search_id: from, sample_n: blindN, seed: newSeed() },
       });
       storeSearchId(projectId, s.id);
       notifySearchesChanged();

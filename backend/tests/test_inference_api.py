@@ -366,7 +366,8 @@ async def test_extra_instructions_extend_the_generated_prompt(
     # was created at project creation, so it carries it
     from app.searches import default_search
 
-    (await default_search(session, await session.get(Project, uuid.UUID(project_id)))).question = "Q?"
+    initial = await default_search(session, await session.get(Project, uuid.UUID(project_id)))
+    initial.question = "Q?"
     await session.commit()
     _mock_inference_task(monkeypatch)
     url = f"/api/v1/projects/{project_id}/inference"
