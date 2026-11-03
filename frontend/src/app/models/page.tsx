@@ -147,7 +147,10 @@ function ModelsContent() {
         {models === null ? (
           <Skeleton rows={2} height="h-10" />
         ) : models.length === 0 && detected.length === 0 ? (
-          <EmptyState title={t("empty")} hint={t("emptyHint")} />
+          <EmptyState
+            title={t("empty")}
+            hint={caps?.ollama.mode === "off" ? t("emptyHintOff") : t("emptyHint")}
+          />
         ) : (
           <ul className="divide-y divide-border">
             {models.map((m) => (
@@ -232,8 +235,9 @@ function ModelsContent() {
       </Card>
 
       <Card title={t("addTitle")}>
-        {/* The internal part (Ollama) only makes sense for the admin: the other users only see the external add. */}
-        {isAdmin && caps && (
+        {/* The internal part (Ollama) only makes sense for the admin: the other users only see the external add.
+            With OLLAMA_MODE=off it is hidden altogether: the hardware/recommendations are dead weight. */}
+        {isAdmin && caps && caps.ollama.mode !== "off" && (
           <section>
             <h3 className="mb-2 text-sm font-semibold text-foreground">{t("addInternal")}</h3>
             <ul className="flex flex-col gap-2 text-sm">
@@ -244,7 +248,7 @@ function ModelsContent() {
                 <span className="font-medium text-foreground">{t("svcOllama")}</span>
                 {!caps.ollama.reachable && (
                   <span className="text-xs text-muted">
-                    {caps.ollama.mode === "off" ? t("svcHowOff") : t("svcHow", { profile: "ollama" })}
+                    {t("svcHow", { profile: "ollama" })}
                   </span>
                 )}
               </li>

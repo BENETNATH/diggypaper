@@ -752,6 +752,7 @@
     "name": "Name",
     "empty": "No model installed",
     "emptyHint": "Add an external model, or install one with Ollama (see the recommendations below).",
+    "emptyHintOff": "Add an external model (OpenAI-compatible API).",
     "disable": "Disable",
     "delete": "Delete",
     "deleteConfirm": "Delete model “{name}”?",
