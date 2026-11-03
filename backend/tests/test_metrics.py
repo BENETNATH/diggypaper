@@ -84,6 +84,18 @@ def test_disagrees_free_form_text():
     assert metrics.disagrees([{"content": "a"}, None], []) is False
     # an empty decision counts as no answer, like None
     assert metrics.disagrees([{"content": "a"}, {}], []) is False
+    # a variant that errored while another answered: the outcomes diverge
+    assert (
+        metrics.disagrees([{}, {"content": "a"}], [], errors=["provider_error_404", None]) is True
+    )
+    assert (
+        metrics.disagrees([{"content": "a"}, {}], [], errors=[None, "provider_error_404"]) is True
+    )
+    # both variants failed: nothing to compare
+    assert metrics.disagrees([{}, {}], [], errors=["e1", "e2"]) is False
+    # a single answer without any error is still not a divergence
+    assert metrics.disagrees([{}, {"content": "a"}], [], errors=[None, None]) is False
+    assert metrics.disagrees([{"content": "a"}, None], [], errors=[None, "invalid_json"]) is True
     # structured answers (model-invented keys) diverge too
     assert (
         metrics.disagrees(
@@ -98,32 +110,21 @@ def test_disagrees_free_form_with_default_fields():
     fields = [{"key": "use_ai_behavior", "label": "AI", "type": "boolean"}]
     assert metrics.disagrees([{"content": "a"}, {"content": "b"}], fields) is True
     assert metrics.disagrees([{"content": "a"}, {"content": "a"}], fields) is False
-    assert (
-        metrics.disagrees([{"type_test": "unique"}, {"text": "autre forme"}], fields) is True
-    )
+    assert metrics.disagrees([{"type_test": "unique"}, {"text": "autre forme"}], fields) is True
     # a schema key answered: the structured comparison applies
     assert (
-        metrics.disagrees([{"use_ai_behavior": True}, {"use_ai_behavior": True}], fields)
-        is False
+        metrics.disagrees([{"use_ai_behavior": True}, {"use_ai_behavior": True}], fields) is False
     )
     assert (
-        metrics.disagrees([{"use_ai_behavior": True}, {"use_ai_behavior": False}], fields)
-        is True
+        metrics.disagrees([{"use_ai_behavior": True}, {"use_ai_behavior": False}], fields) is True
     )
 
 
 def test_agreement_free_form_with_default_fields():
     fields = [{"key": "use_ai_behavior", "label": "AI", "type": "boolean"}]
-    assert (
-        metrics.agreement(
-            {"A": {1: {"content": "a"}}, "B": {1: {"content": "b"}}}, fields
-        )
-        == {}
-    )
+    assert metrics.agreement({"A": {1: {"content": "a"}}, "B": {1: {"content": "b"}}}, fields) == {}
     # Free-form answers without a relevance signal: agreement is not computable
-    assert (
-        metrics.agreement({"A": {1: {"content": "a"}}, "B": {1: {"content": "b"}}}, []) == {}
-    )
+    assert metrics.agreement({"A": {1: {"content": "a"}}, "B": {1: {"content": "b"}}}, []) == {}
     # …but still computable when a confidence signal exists
     assert metrics.agreement(
         {"A": {1: {"content": "a", "confidence_score": 0.9}}, "B": {1: {"content": "b"}}}, []

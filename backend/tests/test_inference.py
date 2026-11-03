@@ -79,6 +79,25 @@ async def test_infer_http_error_sanitized():
     assert "SECRET-KEY" not in msg  # pas de secret
 
 
+async def test_infer_provider_error_in_content_raises():
+    # proxy returns 200 but the content is the upstream error JSON
+    err = json.dumps(
+        {"error": {"code": 400, "status": "FAILED_PRECONDITION", "message": "temporarily blocked"}}
+    )
+    svc = OpenAICompatibleService("http://llm.test/v1", http=_client(_llm_handler(err)))
+    with pytest.raises(InferenceError) as exc:
+        await svc.infer("Kev-4B", "sys", "user")
+    assert "provider_error_FAILED_PRECONDITION" in str(exc.value)
+
+
+async def test_infer_error_field_string_not_misdetected():
+    # a legitimate answer whose extracted field is named "error" (string value)
+    ok = json.dumps({"error": "texte extrait", "confidence_score": 0.5})
+    svc = OpenAICompatibleService("http://llm.test/v1", http=_client(_llm_handler(ok)))
+    result = await svc.infer("Kev-4B", "sys", "user")
+    assert result["error"] == "texte extrait"
+
+
 async def test_infer_sends_bearer_and_body():
     captured = {}
 
@@ -508,6 +527,58 @@ async def test_infer_with_decides_endpoint_per_model_on_shared_default(session):
     assert v1_body["model"] == "llama-big"
     assert v1_body["options"] == {"num_ctx": 8192}  # local backend: extra body applied
     assert v1_body["response_format"] == {"type": "json_object"}
+
+
+async def test_infer_with_min_interval_between_calls(monkeypatch):
+    """LLM_MIN_INTERVAL_SECONDS: minimum interval between two calls of the same model —
+    provider rate limits (abuse detection) without changing the answers."""
+    import time
+    from types import SimpleNamespace
+
+    import app.inference as inf
+
+    monkeypatch.setattr(inf, "_MIN_INTERVAL", 0.3)
+    inf._last_call.clear()
+    svc = OpenAICompatibleService("http://llm.test/v1", http=_client(_llm_handler(VALID_JSON)))
+    model = SimpleNamespace(backend_type="OLLAMA", model_identifier="kef:4b", owner_id=None)
+    t0 = time.monotonic()
+    await inf.infer_with(model, svc, "SYS", "USR")
+    await inf.infer_with(model, svc, "SYS", "USR")
+    assert time.monotonic() - t0 >= 0.25  # ~0.3 s of spacing on the second call
+
+
+async def test_infer_with_min_interval_per_model(monkeypatch):
+    """The spacing is per model: two different models do not throttle each other."""
+    import time
+    from types import SimpleNamespace
+
+    import app.inference as inf
+
+    monkeypatch.setattr(inf, "_MIN_INTERVAL", 0.3)
+    inf._last_call.clear()
+    svc = OpenAICompatibleService("http://llm.test/v1", http=_client(_llm_handler(VALID_JSON)))
+    m1 = SimpleNamespace(backend_type="OLLAMA", model_identifier="kef:4b", owner_id=None)
+    m2 = SimpleNamespace(backend_type="OLLAMA", model_identifier="qwen:4b", owner_id=None)
+    t0 = time.monotonic()
+    await inf.infer_with(m1, svc, "SYS", "USR")
+    await inf.infer_with(m2, svc, "SYS", "USR")
+    assert time.monotonic() - t0 < 0.25  # no spacing between the two models
+
+
+async def test_infer_with_interval_disabled_by_default(monkeypatch):
+    import time
+    from types import SimpleNamespace
+
+    import app.inference as inf
+
+    monkeypatch.setattr(inf, "_MIN_INTERVAL", 0.0)
+    inf._last_call.clear()
+    svc = OpenAICompatibleService("http://llm.test/v1", http=_client(_llm_handler(VALID_JSON)))
+    model = SimpleNamespace(backend_type="OLLAMA", model_identifier="kef:4b", owner_id=None)
+    t0 = time.monotonic()
+    await inf.infer_with(model, svc, "SYS", "USR")
+    await inf.infer_with(model, svc, "SYS", "USR")
+    assert time.monotonic() - t0 < 0.2
 
 
 # --- Timeout: finite value and > 0, otherwise default 120 s (spec 2026-10-29 §3) ---

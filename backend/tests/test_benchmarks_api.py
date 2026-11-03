@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.security import hash_password
 from app.db.models import (
     Article,
+    BenchmarkPrediction,
     BenchmarkRun,
     BenchmarkStatus,
     GoldArticle,
@@ -557,3 +558,58 @@ async def test_delete_non_lead_403(client, session, researcher_user, do_login):
     await session.commit()
     resp = await client.delete(f"/api/v1/projects/{project_id}/benchmarks/{run.id}")
     assert resp.status_code == 403
+
+
+# --- POST /projects/{id}/benchmarks/{run_id}/retry-errors ---
+
+
+async def test_retry_errors_enqueues_task(client, session, researcher_user, do_login, monkeypatch):
+    """A completed run with a failed prediction: the retry task is enqueued on that run
+    (the predictions are recomputed in place by the task)."""
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project_id = await _create_project(client)
+    prompt_id, model_name = await _seed_benchmark_prereqs(session, project_id)
+    mock_delay = MagicMock(return_value=MagicMock(id="retry-1", state="PENDING"))
+    import app.tasks.benchmark as bench_tasks
+
+    monkeypatch.setattr(bench_tasks.retry_benchmark_errors_task, "delay", mock_delay)
+    run = await _make_run(
+        session, project_id, BenchmarkStatus.COMPLETED, prompt_template_id=uuid.UUID(prompt_id)
+    )
+    article = (
+        await session.execute(select(Article).where(Article.project_id == uuid.UUID(project_id)))
+    ).scalar_one()
+    session.add(
+        BenchmarkPrediction(
+            benchmark_run_id=run.id,
+            article_id=article.id,
+            model_name=model_name,
+            decision_json={},
+            error="provider_error_404",
+        )
+    )
+    await session.commit()
+    resp = await client.post(f"/api/v1/projects/{project_id}/benchmarks/{run.id}/retry-errors")
+    assert resp.status_code == 202
+    data = resp.json()
+    assert data["run_id"] == str(run.id)
+    assert data["errors"] == 1
+    mock_delay.assert_called_with(str(run.id))
+
+
+async def test_retry_errors_no_errors_409(client, session, researcher_user, do_login, monkeypatch):
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project_id = await _create_project(client)
+    await _seed_benchmark_prereqs(session, project_id)
+    run = await _make_run(session, project_id, BenchmarkStatus.COMPLETED)
+    resp = await client.post(f"/api/v1/projects/{project_id}/benchmarks/{run.id}/retry-errors")
+    assert resp.status_code == 409
+
+
+async def test_retry_errors_active_run_409(client, session, researcher_user, do_login, monkeypatch):
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project_id = await _create_project(client)
+    await _seed_benchmark_prereqs(session, project_id)
+    run = await _make_run(session, project_id, BenchmarkStatus.RUNNING)
+    resp = await client.post(f"/api/v1/projects/{project_id}/benchmarks/{run.id}/retry-errors")
+    assert resp.status_code == 409

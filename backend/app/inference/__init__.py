@@ -15,7 +15,9 @@ import copy
 import json
 import logging
 import math
+import os
 import re
+import time
 from urllib.parse import urlsplit
 
 import httpx
@@ -24,6 +26,28 @@ from app.core.crypto import decrypt_secret
 from app.settings.service import get_setting
 
 logger = logging.getLogger(__name__)
+
+# Minimum spacing between two calls of the same model (provider rate limits /
+# abuse detection, which echo an error JSON in the content). Read at import:
+# LLM_MIN_INTERVAL_SECONDS. ``_throttle`` enforces it per model.
+_MIN_INTERVAL = float(os.environ.get("LLM_MIN_INTERVAL_SECONDS", "0") or 0)
+_last_call: dict[str, float] = {}
+_throttle_lock = asyncio.Lock()
+
+
+async def _throttle(model_key: str) -> None:
+    """Sleep so that two calls of the same model are spaced by at least
+    ``_MIN_INTERVAL`` seconds. No-op when the interval is disabled (0)."""
+    if _MIN_INTERVAL <= 0:
+        return
+    now = time.monotonic()
+    async with _throttle_lock:
+        last = _last_call.get(model_key, 0.0)
+        wait = max(0.0, _MIN_INTERVAL - (now - last))
+        _last_call[model_key] = now + wait
+    if wait > 0:
+        await asyncio.sleep(wait)
+
 
 _CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
 _DIGEST = re.compile(r"^(sha256:)?[0-9a-f]{64}$")
@@ -128,12 +152,31 @@ class OpenAICompatibleService:
                 raise InferenceError("invalid_response") from exc
             self.served_model = clean_meta(data.get("model"))
             try:
-                return json.loads(content)
+                parsed = json.loads(content)
             except (json.JSONDecodeError, TypeError) as exc:
                 raise InferenceError("invalid_json") from exc
+            code = provider_error_code(parsed)
+            if code:
+                raise InferenceError(code)
+            return parsed
         finally:
             if owned:
                 await client.aclose()
+
+
+def provider_error_code(obj) -> str | None:
+    """Provider error echoed in the response content.
+
+    Some proxies return HTTP 200 and embed the upstream error in the message
+    content (rate limits, abuse detection, model routing). Returns a short
+    error code, or ``None`` when this is a normal answer.
+    """
+    if not isinstance(obj, dict):
+        return None
+    err = obj.get("error")
+    if isinstance(err, dict) and "message" in err and ("code" in err or "status" in err):
+        return f"provider_error_{err.get('status') or err.get('code')}"
+    return None
 
 
 def clean_meta(v, limit: int = 200) -> str | None:
@@ -343,6 +386,7 @@ async def infer_with(
     ``served_model`` is written on the default service (Ollama / no model): safe,
     because that service is built per job / request / test-bench run and used in sequence.
     """
+    await _throttle(getattr(model, "model_identifier", None) or "default")
     if model is not None and model.backend_type == "OPENAI_API":
         url, _, name = model.model_identifier.partition("#")
         key = decrypt_secret(model.api_key_enc) if model.api_key_enc else None

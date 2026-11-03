@@ -539,7 +539,10 @@
     "copied": "Copié",
     "copyFailed": "Copie impossible",
     "metricsLegend": "Rappel : part des articles pertinents retrouvés. Précision : part des articles marqués pertinents qui le sont. F1 : combinaison du rappel et de la précision. Exactitude : part des décisions justes (avec or).",
-    "topOne": "En tête : {model} ({metric})"
+    "topOne": "En tête : {model} ({metric})",
+    "modelError": "Erreur du modèle",
+    "retryErrors": "Relancer les erreurs",
+    "errors": "Erreurs"
   },
   "inference": {
     "prefilterShort": "Pré-filtre",

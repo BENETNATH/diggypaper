@@ -7,8 +7,8 @@ A "decision" = dict ``{item: value, confidence_score: relevance, …}`` (format 
 
 from __future__ import annotations
 
-import math
 import json
+import math
 import re
 from collections import Counter
 
@@ -186,15 +186,21 @@ def agreement(by_variant: dict[str, dict], fields: list[dict]) -> dict:
     return {n: (hits[n] / total if total else 0.0) for n in names}
 
 
-def disagrees(outputs: list[dict | None], fields: list[dict]) -> bool:
+def disagrees(
+    outputs: list[dict | None],
+    fields: list[dict],
+    errors: list[str | None] | None = None,
+) -> bool:
     """Do the variants differ on this article (relevance or a non-text item)?
 
-    Free-form answers (no non-text field to compare): the variants diverge
-    when the full answer — text under any key, or the structured JSON shape —
-    differs."""
+    A variant that errored (no decision) while another answered counts as a
+    divergence. Free-form answers (no non-text field to compare): the variants
+    diverge when the full answer — text under any key, or the structured JSON
+    shape — differs."""
+    errs = errors or [None] * len(outputs)
     seen = [o for o in outputs if o]
     if len(seen) < 2:
-        return False
+        return len(seen) == 1 and any(e for e in errs)
     first = seen[0]
     keys = _effective_keys(fields, seen)
     if not keys:

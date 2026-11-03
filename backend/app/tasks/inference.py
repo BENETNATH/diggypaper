@@ -558,7 +558,8 @@ async def _do_inference(
                     p1 = await predict(pre, article, light=True, meta=meta)
                     note_served("prefilter", meta)
                 except InferenceError as exc:
-                    if str(exc) != "invalid_json":
+                    code = str(exc)
+                    if code != "invalid_json" and not code.startswith("provider_error_"):
                         raise
                     p1 = None  # stage 1 unreadable: the article goes to stage 2
                 if p1 is not None and _triage(p1.get("confidence_score")) == REJECTED:
@@ -571,7 +572,10 @@ async def _do_inference(
         except InferenceError as exc:
             # Small models: a non-JSON output must not kill the whole job;
             # timeout / connection / HTTP remain fatal.
-            if str(exc) != "invalid_json":
+            code = str(exc)
+            # provider_error_* (upstream error echoed in the content, HTTP 200)
+            # is per-article, like invalid_json.
+            if code != "invalid_json" and not code.startswith("provider_error_"):
                 raise
             invalid += 1
             await _progress(session, job, processed, len(articles), invalid, counts())

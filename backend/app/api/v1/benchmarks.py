@@ -34,7 +34,7 @@ from app.db.models import (
 from app.model_access import usable_models
 from app.schema import project_fields
 from app.searches import get_search, gold_condition, lot_condition
-from app.tasks.benchmark import benchmark_task
+from app.tasks.benchmark import benchmark_task, retry_benchmark_errors_task
 
 router = APIRouter(prefix="/projects", tags=["benchmarks"])
 
@@ -71,7 +71,9 @@ async def _require_lead(db: AsyncSession, project_id: uuid.UUID, user: User) -> 
         raise HTTPException(status_code=403, detail="lead required")
 
 
-def _run_payload(run: BenchmarkRun, results: list[dict] | None = None) -> dict:
+def _run_payload(
+    run: BenchmarkRun, results: list[dict] | None = None, errors_total: int | None = None
+) -> dict:
     payload = {
         "id": str(run.id),
         "project_id": str(run.project_id) if run.project_id else None,
@@ -84,6 +86,8 @@ def _run_payload(run: BenchmarkRun, results: list[dict] | None = None) -> dict:
         "progress": run.progress,
         "created_at": run.created_at.isoformat() if run.created_at else None,
     }
+    if errors_total is not None:
+        payload["errors_total"] = errors_total
     if results is not None:
         payload["results"] = results
     return payload
@@ -241,6 +245,37 @@ async def rerun_benchmark(
     return {"run_id": str(new_run.id), "status": status}
 
 
+@router.post("/{project_id}/benchmarks/{run_id}/retry-errors", status_code=202)
+async def retry_benchmark_errors(
+    project_id: uuid.UUID, run_id: uuid.UUID, db: DbDep, user: UserDep
+) -> dict:
+    """Re-runs, in place, only the failed predictions of a completed run (provider
+    errors, invalid JSON) — e.g. after a provider rate limit lifted. The run keeps
+    its id and history; the variant results are recomputed by the task."""
+    await _require_project_member(db, project_id, user)
+    await _require_lead(db, project_id, user)
+    run = await db.get(BenchmarkRun, run_id)
+    if run is None or run.project_id != project_id:
+        raise HTTPException(status_code=404, detail="benchmark run not found")
+    if run.status != BenchmarkStatus.COMPLETED:
+        raise HTTPException(status_code=409, detail="only a completed benchmark can be retried")
+    errors = (
+        await db.execute(
+            select(func.count())
+            .select_from(BenchmarkPrediction)
+            .where(
+                BenchmarkPrediction.benchmark_run_id == run.id,
+                BenchmarkPrediction.error.isnot(None),
+            )
+        )
+    ).scalar_one()
+    if errors == 0:
+        raise HTTPException(status_code=409, detail="no failed prediction to retry")
+    job = retry_benchmark_errors_task.delay(str(run.id))
+    status = job.state if celery_app.conf.task_always_eager else "PENDING"
+    return {"run_id": str(run.id), "status": status, "errors": errors}
+
+
 @router.delete("/{project_id}/benchmarks/{run_id}", status_code=204)
 async def delete_benchmark(
     project_id: uuid.UUID, run_id: uuid.UUID, db: DbDep, user: UserDep
@@ -271,7 +306,19 @@ async def list_benchmarks(project_id: uuid.UUID, db: DbDep, user: UserDep) -> di
         .scalars()
         .all()
     )
-    return {"items": [_run_payload(r) for r in runs]}
+    counts = dict(
+        (
+            await db.execute(
+                select(BenchmarkPrediction.benchmark_run_id, func.count())
+                .where(
+                    BenchmarkPrediction.benchmark_run_id.in_([r.id for r in runs]),
+                    BenchmarkPrediction.error.isnot(None),
+                )
+                .group_by(BenchmarkPrediction.benchmark_run_id)
+            )
+        ).all()
+    )
+    return {"items": [_run_payload(r, errors_total=counts.get(r.id, 0)) for r in runs]}
 
 
 @router.get("/{project_id}/benchmarks/{run_id}")
@@ -305,7 +352,17 @@ async def get_benchmark(project_id: uuid.UUID, run_id: uuid.UUID, db: DbDep, use
         }
         for r in rows
     ]
-    return _run_payload(run, results=results_payload)
+    errors_total = (
+        await db.execute(
+            select(func.count())
+            .select_from(BenchmarkPrediction)
+            .where(
+                BenchmarkPrediction.benchmark_run_id == run.id,
+                BenchmarkPrediction.error.isnot(None),
+            )
+        )
+    ).scalar_one()
+    return _run_payload(run, results=results_payload, errors_total=errors_total)
 
 
 @router.get("/{project_id}/benchmarks/{run_id}/articles")
@@ -359,7 +416,9 @@ async def benchmark_articles(
             }
             for p in sorted(ps, key=lambda p: (p.model_name, p.variant or ""))
         ]
-        diff = metrics.disagrees([o["decision"] for o in outputs], fields)
+        diff = metrics.disagrees(
+            [o["decision"] for o in outputs], fields, errors=[o["error"] for o in outputs]
+        )
         if disagree and not diff:
             continue
         items.append(

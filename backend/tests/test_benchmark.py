@@ -197,6 +197,189 @@ class RecordingInference(FakeInference):
         return await super().infer(model, system_prompt, user_prompt)
 
 
+async def test_benchmark_provider_error_recorded_not_fatal(engine, session):
+    """Provider error echoed in the content (HTTP 200): the run completes and the
+    prediction stores the error, not the error JSON as a decision."""
+    from app.inference import InferenceError
+
+    project = Project(title="P", created_by=None)
+    session.add(project)
+    await session.commit()
+    prompt = PromptTemplate(
+        project_id=project.id,
+        version_number="v1.0",
+        system_prompt="SYS",
+        user_prompt_schema="Text: {methods_text}",
+    )
+    session.add(prompt)
+    await session.commit()
+    model = ModelRegistry(name="Kev-4B", model_identifier="kef/kev-4b")
+    session.add(model)
+    await session.commit()
+    good = Article(project_id=project.id, pmid="1", title="G", methods_text="GOOD")
+    bad = Article(project_id=project.id, pmid="2", title="B", methods_text="BADMARKER")
+    session.add_all([good, bad])
+    await session.commit()
+    run = BenchmarkRun(
+        project_id=project.id,
+        prompt_template_id=prompt.id,
+        models_tested=["Kev-4B"],
+        options={},
+        status=BenchmarkStatus.PENDING,
+    )
+    session.add(run)
+    await session.commit()
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+    class Flaky:
+        async def infer(self, m, system, user):
+            if "BADMARKER" in user:
+                raise InferenceError("provider_error_404")
+            return _gt()
+
+    await _run_benchmark(str(run.id), session_factory=factory, inference=Flaky())
+    await session.refresh(run)
+    assert run.status == BenchmarkStatus.COMPLETED
+    row = (
+        await session.execute(
+            select(BenchmarkPrediction).where(
+                BenchmarkPrediction.benchmark_run_id == run.id,
+                BenchmarkPrediction.article_id == bad.id,
+            )
+        )
+    ).scalar_one()
+    assert row.error == "provider_error_404"
+    assert not row.decision_json
+    # the error count is exposed in the variant's results
+    from app.db.models import BenchmarkResult
+
+    (res,) = (await session.execute(select(BenchmarkResult))).scalars().all()
+    assert res.details["errors"] == 1
+
+
+async def test_benchmark_retry_errors(engine, session):
+    """Retry of the failed predictions only: the error is recomputed in place, the
+    run stays COMPLETED and the results (error count) are recomputed."""
+    from app.inference import InferenceError
+    from app.tasks.benchmark import _retry_benchmark_errors
+
+    project = Project(title="P", created_by=None)
+    session.add(project)
+    await session.commit()
+    prompt = PromptTemplate(
+        project_id=project.id,
+        version_number="v1.0",
+        system_prompt="SYS",
+        user_prompt_schema="Text: {methods_text}",
+    )
+    session.add(prompt)
+    await session.commit()
+    model = ModelRegistry(name="Kev-4B", model_identifier="kef/kev-4b")
+    session.add(model)
+    await session.commit()
+    good = Article(project_id=project.id, pmid="1", title="G", methods_text="GOOD")
+    bad = Article(project_id=project.id, pmid="2", title="B", methods_text="BADMARKER")
+    session.add_all([good, bad])
+    await session.commit()
+    run = BenchmarkRun(
+        project_id=project.id,
+        prompt_template_id=prompt.id,
+        models_tested=["Kev-4B"],
+        options={},
+        status=BenchmarkStatus.PENDING,
+    )
+    session.add(run)
+    await session.commit()
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+    class Flaky:
+        async def infer(self, m, system, user):
+            if "BADMARKER" in user:
+                raise InferenceError("provider_error_404")
+            return _gt()
+
+    await _run_benchmark(str(run.id), session_factory=factory, inference=Flaky())
+
+    fixed = FakeInference(_gt())
+    out = await _retry_benchmark_errors(str(run.id), session_factory=factory, inference=fixed)
+    assert out == {"retried": 1, "still_failing": 0}
+    assert fixed.calls == 1  # only the failed prediction was re-run
+    await session.refresh(run)
+    assert run.status == BenchmarkStatus.COMPLETED
+    row = (
+        await session.execute(
+            select(BenchmarkPrediction).where(
+                BenchmarkPrediction.benchmark_run_id == run.id,
+                BenchmarkPrediction.article_id == bad.id,
+            )
+        )
+    ).scalar_one()
+    assert row.error is None
+    assert row.decision_json
+    from app.db.models import BenchmarkResult
+
+    (res,) = (await session.execute(select(BenchmarkResult))).scalars().all()
+    assert res.details["errors"] == 0
+
+
+async def test_benchmark_retry_errors_persistent_failure(engine, session):
+    """The provider keeps failing: the prediction keeps the new error code, the run
+    stays COMPLETED, the error count stays >= 1."""
+    from app.inference import InferenceError
+    from app.tasks.benchmark import _retry_benchmark_errors
+
+    project = Project(title="P", created_by=None)
+    session.add(project)
+    await session.commit()
+    prompt = PromptTemplate(
+        project_id=project.id,
+        version_number="v1.0",
+        system_prompt="SYS",
+        user_prompt_schema="Text: {methods_text}",
+    )
+    session.add(prompt)
+    await session.commit()
+    model = ModelRegistry(name="Kev-4B", model_identifier="kef/kev-4b")
+    session.add(model)
+    await session.commit()
+    bad = Article(project_id=project.id, pmid="1", title="B", methods_text="BADMARKER")
+    session.add(bad)
+    await session.commit()
+    run = BenchmarkRun(
+        project_id=project.id,
+        prompt_template_id=prompt.id,
+        models_tested=["Kev-4B"],
+        options={},
+        status=BenchmarkStatus.PENDING,
+    )
+    session.add(run)
+    await session.commit()
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+    class AlwaysBroken:
+        async def infer(self, m, system, user):
+            raise InferenceError("provider_error_FAILED_PRECONDITION")
+
+    await _run_benchmark(str(run.id), session_factory=factory, inference=AlwaysBroken())
+    out = await _retry_benchmark_errors(
+        str(run.id), session_factory=factory, inference=AlwaysBroken()
+    )
+    assert out == {"retried": 1, "still_failing": 1}
+    await session.refresh(run)
+    assert run.status == BenchmarkStatus.COMPLETED
+    row = (
+        await session.execute(
+            select(BenchmarkPrediction).where(BenchmarkPrediction.benchmark_run_id == run.id)
+        )
+    ).scalar_one()
+    assert row.error == "provider_error_FAILED_PRECONDITION"
+    assert not row.decision_json
+    from app.db.models import BenchmarkResult
+
+    (res,) = (await session.execute(select(BenchmarkResult))).scalars().all()
+    assert res.details["errors"] == 1
+
+
 async def _project_with_articles(session, n=4):
     project = Project(title="P", created_by=None)
     session.add(project)

@@ -24,6 +24,7 @@ export function BenchmarkRunCard({
   onStop,
   onDelete,
   onRerun,
+  onRetryErrors,
   defaultOpen = false,
 }: {
   projectId: string;
@@ -35,6 +36,8 @@ export function BenchmarkRunCard({
   /** Finished runs (spec 2026-11-03 pointers): delete / relaunch. */
   onDelete?: (runId: string) => void;
   onRerun?: (runId: string) => void;
+  /** Re-run only the failed predictions of a completed run (provider errors, rate limit). */
+  onRetryErrors?: (runId: string) => void;
   /** Opened by default (deep-link from the analyses list). */
   defaultOpen?: boolean;
 }) {
@@ -84,6 +87,8 @@ export function BenchmarkRunCard({
   const ranked = results ? rankResults(results) : [];
   const crit = primaryParts(ranked.find((r) => r.details?.primary)?.details?.primary, fields);
   const withAgreement = ranked.some((r) => r.details?.agreement != null);
+  const withErrors = ranked.some((r) => (r.details?.errors ?? 0) > 0);
+  const hasErrors = (run.errors_total ?? 0) > 0;
   const metricLabel = crit ? t(`metric_${crit.metric}`) : withAgreement ? t("agreement") : t("time");
 
   /** ID of the prompt to use for analyzing: the saved prompt, or the free variant saved on the fly. */
@@ -157,6 +162,11 @@ export function BenchmarkRunCard({
             </Button>
           ) : (
             <>
+              {onRetryErrors && hasErrors && (
+                <Button size="sm" variant="secondary" onClick={() => onRetryErrors(run.id)}>
+                  {t("retryErrors")}
+                </Button>
+              )}
               {onRerun && (
                 <Button size="sm" onClick={() => onRerun(run.id)}>
                   {t("rerun")}
@@ -233,6 +243,7 @@ export function BenchmarkRunCard({
                       {withAgreement && <th className={th}>{t("agreement")}</th>}
                       <th className={th}>{t("time")}</th>
                       <th className={th}>{t("nScored")}</th>
+                      {withErrors && <th className={th}>{t("errors")}</th>}
                       <th className="px-2 py-1" />
                     </tr>
                   </thead>
@@ -256,6 +267,11 @@ export function BenchmarkRunCard({
                             {withAgreement && <td className={td}>{pct(r.details?.agreement)}</td>}
                             <td className={td}>{r.execution_time_seconds != null ? `${r.execution_time_seconds.toFixed(1)} s` : "—"}</td>
                             <td className={td}>{r.n_scored ?? "—"}</td>
+                            {withErrors && (
+                              <td className={`${td} ${(r.details?.errors ?? 0) > 0 ? "font-semibold text-danger" : ""}`}>
+                                {r.details?.errors ?? 0}
+                              </td>
+                            )}
                             <td className="whitespace-nowrap px-2 py-1.5 text-right">
                               {scored && (
                                 <Button
@@ -275,7 +291,7 @@ export function BenchmarkRunCard({
                           </tr>
                           {detail === key && scored && (
                             <tr>
-                              <td colSpan={withAgreement ? 12 : 11} className="bg-surface-muted/40 p-3">
+                              <td colSpan={11 + (withAgreement ? 1 : 0) + (withErrors ? 1 : 0)} className="bg-surface-muted/40 p-3">
                                 <ValidationView scored={scored} primary={r.details?.primary} fields={fields} />
                               </td>
                             </tr>

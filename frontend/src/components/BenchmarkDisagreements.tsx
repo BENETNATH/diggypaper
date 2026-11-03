@@ -16,6 +16,18 @@ const PER_PAGE = 25;
 const same = (a: unknown, b: unknown): boolean =>
   String(a ?? "").trim().toLowerCase() === String(b ?? "").trim().toLowerCase();
 
+/** Provider error echoed in the answer content (HTTP 200 wrapping an upstream
+ * error): returns the message to display, else null. */
+function providerErrorOf(decision: Record<string, unknown> | null | undefined): string | null {
+  const err = decision?.error;
+  if (typeof err !== "object" || err === null) return null;
+  const e = err as Record<string, unknown>;
+  if (typeof e.message === "string" && (e.code !== undefined || e.status !== undefined)) {
+    return e.message;
+  }
+  return null;
+}
+
 /** Answers of a decision: one item per row, in red when they deviate from the reference. */
 function Answers({
   decision,
@@ -27,6 +39,10 @@ function Answers({
   fields: SchemaField[];
 }) {
   const t = useTranslations("benchmarks");
+  const provErr = providerErrorOf(decision);
+  if (provErr) {
+    return <p className="text-xs text-danger">{t("modelError")}: {provErr}</p>;
+  }
   const answered = fields.some((f) => {
     const v = decision?.[f.key];
     return v !== null && v !== undefined && v !== "";

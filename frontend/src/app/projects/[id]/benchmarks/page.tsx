@@ -9,6 +9,7 @@ import {
   cancelBenchmark,
   deleteBenchmark,
   rerunBenchmark,
+  retryBenchmarkErrors,
   BenchmarkRun,
   ModelInfo,
 } from "@/lib/api";
@@ -91,6 +92,16 @@ function BenchmarksContent() {
     }
   }
 
+  async function handleRetryErrors(runId: string) {
+    setError(null);
+    try {
+      await retryBenchmarkErrors(projectId, runId);
+      await load();
+    } catch (err) {
+      setError(toError(err));
+    }
+  }
+
   if (error && !runs) return <ErrorBanner message={error} onRetry={() => void load()} />;
   if (!runs || !searches) return <Skeleton rows={3} />;
 
@@ -140,6 +151,7 @@ function BenchmarksContent() {
               onStop={(id) => void handleStop(id)}
               onDelete={(id) => void handleDelete(id)}
               onRerun={(id) => void handleRerun(id)}
+              onRetryErrors={(id) => void handleRetryErrors(id)}
               defaultOpen={run.id === runParam}
             />
           ))}

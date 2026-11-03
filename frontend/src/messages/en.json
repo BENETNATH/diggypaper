@@ -539,7 +539,10 @@
     "copied": "Copied",
     "copyFailed": "Copy failed",
     "metricsLegend": "Recall: share of relevant articles found. Precision: share of flagged articles that are relevant. F1: recall and precision combined. Accuracy: share of correct decisions (with gold).",
-    "topOne": "Leading: {model} ({metric})"
+    "topOne": "Leading: {model} ({metric})",
+    "modelError": "Model error",
+    "retryErrors": "Retry errors",
+    "errors": "Errors"
   },
   "inference": {
     "prefilterShort": "Pre-filter",

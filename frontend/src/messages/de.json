@@ -539,7 +539,10 @@
     "copied": "Kopiert",
     "copyFailed": "Kopieren fehlgeschlagen",
     "metricsLegend": "Rückruf: Anteil der gefundenen relevanten Artikel. Präzision: Anteil der markierten Artikel, die relevant sind. F1: Rückruf und Präzision kombiniert. Genauigkeit: Anteil der richtigen Entscheidungen (mit Gold).",
-    "topOne": "Führend: {model} ({metric})"
+    "topOne": "Führend: {model} ({metric})",
+    "modelError": "Modellfehler",
+    "retryErrors": "Fehler neu ausführen",
+    "errors": "Fehler"
   },
   "inference": {
     "prefilterShort": "Vorfilter",

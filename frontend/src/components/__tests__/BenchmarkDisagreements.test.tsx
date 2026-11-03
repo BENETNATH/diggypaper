@@ -83,4 +83,23 @@ describe("BenchmarkDisagreements — free-form answers", () => {
     // the role wrapper key is not shown
     expect(screen.queryByText(/"role"/)).not.toBeInTheDocument();
   });
+
+  it("a provider error echoed in the content is shown as a model error", async () => {
+    (api.listBenchmarkArticles as jest.Mock).mockResolvedValue(
+      grid({ error: { code: 400, status: "FAILED_PRECONDITION", message: "temporairement bloqué" } })
+    );
+    render(<BenchmarkDisagreements projectId="p1" runId="b1" fields={[]} />);
+    const el = await screen.findByText(/temporairement bloqué/);
+    expect(el.className).toContain("text-danger");
+    // not the raw JSON
+    expect(screen.queryByText(/"status"/)).not.toBeInTheDocument();
+  });
+
+  it("an extracted 'error' field (string) is not a provider error", async () => {
+    (api.listBenchmarkArticles as jest.Mock).mockResolvedValue(
+      grid({ error: "texte extrait de l'article", confidence_score: 0.4 })
+    );
+    render(<BenchmarkDisagreements projectId="p1" runId="b1" fields={[]} />);
+    expect(await screen.findByText(/texte extrait de l'article/)).toBeInTheDocument();
+  });
 });

@@ -293,6 +293,8 @@ export interface BenchmarkResult {
   f1_score: number | null;
   details?: {
     articles?: number;
+    /** Failed predictions of the variant (provider errors, invalid JSON). */
+    errors?: number;
     /** Agreement (0..1) with the majority of variants. */
     agreement?: number | null;
     scored?: Scored;
@@ -310,6 +312,8 @@ export interface BenchmarkRun {
   options?: { use_gold?: boolean; gold_examples?: number } | null;
   progress?: { done: number; total: number; model?: string; variant?: string } | null;
   status: "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
+  /** Failed predictions of the whole run (provider errors, invalid JSON). */
+  errors_total?: number;
   created_at: string | null;
   results?: BenchmarkResult[];
 }
@@ -1157,6 +1161,13 @@ export const rerunBenchmark = (
   runId: string
 ): Promise<{ run_id: string; status: string }> =>
   request(`/projects/${projectId}/benchmarks/${runId}/rerun`, { method: "POST" });
+
+/** Re-run only the failed predictions of a completed run (provider errors, invalid JSON). */
+export const retryBenchmarkErrors = (
+  projectId: string,
+  runId: string
+): Promise<{ run_id: string; status: string; errors: number }> =>
+  request(`/projects/${projectId}/benchmarks/${runId}/retry-errors`, { method: "POST" });
 
 /** Delete a finished benchmark run and its results (LEAD). */
 export const deleteBenchmark = (projectId: string, runId: string): Promise<unknown> =>

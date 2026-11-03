@@ -539,7 +539,10 @@
     "copied": "Copiado",
     "copyFailed": "Copia fallida",
     "metricsLegend": "Recuerdo: parte de los artículos relevantes encontrados. Precisión: parte de los artículos marcados que son relevantes. F1: recuerdo y precisión combinados. Exactitud: parte de las decisiones correctas (con oro).",
-    "topOne": "Al frente: {model} ({metric})"
+    "topOne": "Al frente: {model} ({metric})",
+    "modelError": "Error del modelo",
+    "retryErrors": "Reintentar errores",
+    "errors": "Errores"
   },
   "inference": {
     "prefilterShort": "Prefiltro",
