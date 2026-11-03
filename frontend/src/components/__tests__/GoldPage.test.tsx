@@ -1,5 +1,5 @@
 import { Suspense } from "react";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import GoldPage from "@/app/projects/[id]/gold/page";
 import * as api from "@/lib/api";
 import { SearchInfo } from "@/lib/api";
@@ -102,5 +102,42 @@ describe("gold page — blind sample: hierarchy + bounds", () => {
   it("the blindNHint bound is shown", async () => {
     mountGold();
     expect(await screen.findByText("1 à 10 articles (analyse courante)")).toBeInTheDocument();
+  });
+});
+
+describe("gold page — deleted current search (dead stored id)", () => {
+  it("no « search not found »: the 404 falls back to the default search and stays usable", async () => {
+    sessionStorage.setItem("diggy:search:p1", "dead-id");
+    mockUseAuth.mockReturnValue({ user: { role: "RESEARCHER" }, loading: false });
+    // the deleted search 404s; the default (no id) succeeds
+    listGold.mockImplementation((_p, sid) =>
+      sid === "dead-id" ? Promise.reject(new api.ApiError(404, "search not found")) : Promise.resolve([])
+    );
+    getProject.mockImplementation((_p, sid) =>
+      sid === "dead-id"
+        ? Promise.reject(new api.ApiError(404, "search not found"))
+        : Promise.resolve({
+            role_in_project: "LEAD",
+            question_set: true,
+            question: "q?",
+            fields: [],
+            text_sections: ["methods"],
+          })
+    );
+    listSearches.mockResolvedValue([search]); // dead-id is not in the list
+    render(
+      <Suspense fallback={null}>
+        <GoldPage />
+      </Suspense>
+    );
+    // the 404 on the dead search falls back to the default search (no id)
+    await waitFor(() => expect(listGold).toHaveBeenCalledWith("p1", undefined));
+    // the raw « search not found » error is not shown
+    expect(screen.queryByText(/search not found/i)).not.toBeInTheDocument();
+    // the gold flow is still offered (a way to build the gold / create a lot)
+    expect(
+      await screen.findByRole("button", { name: "Créer et commencer la relecture" })
+    ).toBeInTheDocument();
+    sessionStorage.removeItem("diggy:search:p1");
   });
 });

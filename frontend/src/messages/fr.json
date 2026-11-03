@@ -525,6 +525,7 @@
     "prompt": "Prompt",
     "model": "Modèle",
     "run": "Enregistrer et lancer l'analyse",
+    "save": "Enregistrer l'analyse",
     "cancel": "Annuler",
     "empty": "Aucune analyse",
     "emptyHint": "Lancez une analyse sur les articles de la question.",

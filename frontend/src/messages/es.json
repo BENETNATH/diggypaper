@@ -525,6 +525,7 @@
     "prompt": "Prompt",
     "model": "Modelo",
     "run": "Guardar y lanzar el análisis",
+    "save": "Guardar el análisis",
     "cancel": "Cancelar",
     "empty": "Ningún análisis",
     "emptyHint": "Lance un análisis sobre los artículos de la pregunta.",

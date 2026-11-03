@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import * as navModule from "next/navigation";
 import InferencePage from "@/app/projects/[id]/inference/page";
 import * as api from "@/lib/api";
 import { SearchInfo } from "@/lib/api";
@@ -11,12 +12,22 @@ jest.mock("next-intl", () => {
   const t = (key: string) => key;
   return { useLocale: () => "fr", useTranslations: () => t };
 });
-jest.mock("next/navigation", () => ({
-  useParams: () => ({ id: "p1" }),
-  useSearchParams: () => ({ get: () => null, toString: () => "" }),
-  usePathname: () => "/projects/p1/inference",
-  useRouter: () => ({ replace: jest.fn() }),
-}));
+jest.mock("next/navigation", () => {
+  const replace = jest.fn();
+  // The current `?search=` value of the mocked location (set by the tests).
+  const state = { searchParam: null as string | null };
+  return {
+    replace,
+    state,
+    useParams: () => ({ id: "p1" }),
+    useSearchParams: () => ({
+      get: (k: string) => (k === "search" ? state.searchParam : null),
+      toString: () => (state.searchParam ? `search=${state.searchParam}` : ""),
+    }),
+    usePathname: () => "/projects/p1/inference",
+    useRouter: () => ({ replace }),
+  };
+});
 jest.mock("@/lib/auth", () => ({ useAuth: jest.fn() }));
 jest.mock("@/lib/api", () => ({
   ...jest.requireActual("@/lib/api"),
@@ -28,9 +39,22 @@ jest.mock("@/lib/api", () => ({
   getPrompt: jest.fn(),
   deleteSearch: jest.fn(),
   previewSelection: jest.fn(),
+  createSearch: jest.fn(),
+  triggerInference: jest.fn(),
 }));
 
 const mockUseAuth = useAuth as unknown as jest.Mock;
+const nav = navModule as unknown as {
+  replace: jest.Mock;
+  state: { searchParam: string | null };
+};
+/** getInference that 404s for a (deleted) search id, and resolves null for the default. */
+const inference404Stale = (_p: string, s?: string, all?: boolean): Promise<unknown> =>
+  all
+    ? Promise.resolve(null)
+    : s
+      ? Promise.reject(new api.ApiError(404, "search not found"))
+      : Promise.resolve(null);
 const listSearches = api.listSearches as jest.Mock;
 const getInference = api.getInference as jest.Mock;
 const getProject = api.getProject as jest.Mock;
@@ -82,21 +106,29 @@ function mount(overrides: {
   busy?: api.InferenceJob | null;
   job?: api.InferenceJob | null;
   searches?: SearchInfo[];
+  question?: string | null;
+  fields?: api.SchemaField[];
+  /** count of the selection preview (default 4) */
+  preview?: number;
+  /** Overrides getInference (e.g. to 404 for a stale selection); default resolves. */
+  inference?: (_p: string, s?: string, all?: boolean) => Promise<unknown>;
 }) {
   mockUseAuth.mockReturnValue({ user: overrides.user, loading: false });
   listSearches.mockResolvedValue(overrides.searches ?? [search]);
   getProject.mockResolvedValue({
     role_in_project: overrides.roleInProject,
     question_set: true,
-    question: "q?",
-    fields: search.fields,
+    question: overrides.question ?? "q?",
+    fields: overrides.fields ?? search.fields,
     text_sections: ["methods"],
   });
   listModels.mockResolvedValue([model]);
   listGold.mockResolvedValue([]);
-  (api.previewSelection as jest.Mock).mockResolvedValue({ count: 4 });
-  getInference.mockImplementation((_p: string, _s?: string, all?: boolean) =>
-    Promise.resolve(all ? (overrides.busy ?? null) : (overrides.job ?? null))
+  (api.previewSelection as jest.Mock).mockResolvedValue(overrides.preview ?? 4);
+  getInference.mockImplementation(
+    overrides.inference ??
+      ((_p: string, _s?: string, all?: boolean) =>
+        Promise.resolve(all ? (overrides.busy ?? null) : (overrides.job ?? null))),
   );
   return render(
     <Suspense fallback={null}>
@@ -110,6 +142,11 @@ async function panelOpen() {
   await screen.findByText("panelTitle");
   await waitFor(() => expect(listModels).toHaveBeenCalled());
 }
+
+beforeEach(() => {
+  nav.replace.mockClear();
+  nav.state.searchParam = null;
+});
 
 describe("inference page — chaining (spec 2026-11-02-legacy-questions §4)", () => {
   it("the chain box is NOT offered while no analysis runs (predicted < lot_size is not enough)", async () => {
@@ -170,25 +207,65 @@ describe("inference page — delete a search (spec §5 + §6)", () => {
   });
 
   it("stored search deleted: the polling 404 falls back cleanly (spec §6)", async () => {
-    getInference.mockImplementation((_p: string, s?: string, all?: boolean) =>
-      all
-        ? Promise.resolve(null)
-        : s
-          ? Promise.reject(new api.ApiError(404, "search not found"))
-          : Promise.resolve(null)
-    );
     sessionStorage.setItem("diggy:search:p1", "deleted-id");
     // a visible (touched) row stays in the list, pointing at a stored search that no longer exists
     mount({
       user: { role: "RESEARCHER" },
       roleInProject: "LEAD",
       searches: [{ ...search, predicted: 1 }],
+      inference: inference404Stale,
     });
     await panelOpen();
     // no crash, no job shown for the dead search
     expect(screen.queryByText("progressTitle")).not.toBeInTheDocument();
     expect(screen.getByText("S1")).toBeInTheDocument();
+    // and no error banner: the stale selection quietly falls back to the default search
+    await waitFor(() => expect(screen.queryByText("errors.notFound")).not.toBeInTheDocument(), {
+      timeout: 2000,
+    });
     sessionStorage.removeItem("diggy:search:p1");
+  });
+});
+
+// A selection pointing at a deleted analysis (tab memory or `?search=` in the URL):
+// the pages must fall back to the default search quietly, without a "not found" banner.
+describe("inference page — stale selection after a search was deleted", () => {
+  const stale = "deleted-id";
+
+  beforeEach(() => {
+    nav.replace.mockClear();
+    nav.state.searchParam = null;
+    sessionStorage.removeItem("diggy:search:p1");
+  });
+
+  it("stored stale search: no banner, the stored id is dropped, default job shown", async () => {
+    sessionStorage.setItem("diggy:search:p1", stale);
+    mount({ user: { role: "RESEARCHER" }, roleInProject: "LEAD", searches: [], inference: inference404Stale });
+    await panelOpen();
+    // the dead selection converges to the default search: no "not found" banner…
+    await waitFor(() => expect(screen.queryByText("errors.notFound")).not.toBeInTheDocument(), {
+      timeout: 2000,
+    });
+    // …and the stale reference is purged so the next fetches use the default search.
+    await waitFor(() => expect(sessionStorage.getItem("diggy:search:p1")).toBeNull(), {
+      timeout: 2000,
+    });
+    expect(getInference).toHaveBeenCalledWith("p1", undefined); // the default search
+  });
+
+  it("URL stale search: the `?search=` param is rewritten away", async () => {
+    nav.state.searchParam = stale;
+    mount({ user: { role: "RESEARCHER" }, roleInProject: "LEAD", searches: [], inference: inference404Stale });
+    await panelOpen();
+    await waitFor(() => expect(screen.queryByText("errors.notFound")).not.toBeInTheDocument(), {
+      timeout: 2000,
+    });
+    // the URL is rewritten without the dead `?search=` (other params are preserved)
+    await waitFor(() => {
+      const urls = nav.replace.mock.calls.map((c) => c[0]);
+      expect(urls).toContain("/projects/p1/inference");
+    }, { timeout: 2000 });
+    expect(screen.queryByText("errors.notFound")).not.toBeInTheDocument();
   });
 });
 
@@ -244,5 +321,69 @@ describe("inference page — « à lancer » section, aria-live, polish", () => 
     await panelOpen();
     const card = await screen.findByText("progressTitle");
     expect(card.closest("[aria-live]")).toHaveAttribute("aria-live", "polite");
+  });
+});
+
+// The « Enregistrer » button: create the analysis without launching it, so the question
+// and the fields can be completed later (the analysis then shows in « à lancer »).
+describe("inference page — « Enregistrer » (save without launching)", () => {
+  const saved = { ...search, id: "s2", is_default: false, name: "261103-1" };
+  const createSearch = api.createSearch as jest.Mock;
+  const triggerInference = api.triggerInference as jest.Mock;
+
+  beforeEach(() => {
+    createSearch.mockClear();
+    triggerInference.mockClear();
+  });
+
+  it("creates the analysis without launching it; the panel stays open", async () => {
+    createSearch.mockResolvedValue(saved);
+    mount({ user: { role: "RESEARCHER" }, roleInProject: "LEAD" });
+    await panelOpen();
+    fireEvent.click(screen.getByRole("button", { name: "save" }));
+    await waitFor(() =>
+      expect(createSearch).toHaveBeenCalledWith(
+        "p1",
+        expect.objectContaining({ kind: "standard", question: "q?", selection: {} })
+      )
+    );
+    expect(triggerInference).not.toHaveBeenCalled();
+    // the new analysis becomes the current one (?search= in the URL)
+    await waitFor(() =>
+      expect(nav.replace.mock.calls.map((c) => c[0]).some((u) => u?.includes("search=s2")))
+    );
+    // the panel stays open so the question can be completed before the launch
+    expect(screen.getByText("panelTitle")).toBeInTheDocument();
+  });
+
+  it("save with an empty question+fields: no 422 (fields left unset)", async () => {
+    createSearch.mockResolvedValue(saved);
+    mount({ user: { role: "RESEARCHER" }, roleInProject: "LEAD", question: "", fields: [] });
+    await panelOpen();
+    fireEvent.click(screen.getByRole("button", { name: "save" }));
+    await waitFor(() => expect(createSearch).toHaveBeenCalled());
+    const payload = createSearch.mock.calls[createSearch.mock.calls.length - 1][1];
+    expect(payload.question).toBe("");
+    expect(payload.fields).toBeUndefined();
+    expect(triggerInference).not.toHaveBeenCalled();
+  });
+
+  it("save is disabled when no article is selected", async () => {
+    createSearch.mockResolvedValue(saved);
+    mount({ user: { role: "RESEARCHER" }, roleInProject: "LEAD", preview: 0 });
+    await panelOpen();
+    // the live preview is debounced (400 ms): wait for it to report a count of 0
+    await waitFor(
+      () => expect(screen.getByRole("button", { name: "save" })).toBeDisabled(),
+      { timeout: 2000 }
+    );
+    expect(createSearch).not.toHaveBeenCalled();
+  });
+
+  it("an analysis created but not launched shows in « à lancer » with its « Lancer » button", async () => {
+    mount({ user: { role: "RESEARCHER" }, roleInProject: "LEAD", searches: [search, saved] });
+    expect(await screen.findByText("toLaunch")).toBeInTheDocument();
+    const launches = screen.getAllByRole("button", { name: "launch" });
+    expect(launches).toHaveLength(2); // the default one + the saved one
   });
 });

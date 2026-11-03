@@ -8,6 +8,7 @@ import { useAuth } from "@/lib/auth";
 import { isProjectLead } from "@/lib/role";
 import { ModelRef } from "@/components/ModelRef";
 import {
+  ApiError,
   createSearch,
   cancelInference,
   deleteSearch,
@@ -48,6 +49,8 @@ import {
 const num = (v: unknown): number => (typeof v === "number" ? v : 0);
 const cleanFields = (fields: SchemaField[]): SchemaField[] =>
   fields.map((f) => ({ ...f, options: f.type === "choice" ? (f.options ?? []).filter(Boolean) : undefined }));
+/** An analysis that has never been launched (no results, no job): it goes in « à lancer ». */
+const unlaunched = (s: SearchInfo): boolean => s.predicted === 0 && s.reviewed === 0 && !s.last_job;
 
 function Stat({ label, value, tone }: { label: string; value: number; tone?: string }) {
   return (
@@ -206,8 +209,12 @@ function AnalyseContent() {
         setError(null);
       })
       .catch((e) => {
-        if (e instanceof Error && /404/.test(e.message)) setJob(null);
-        else setError(errText(e));
+        // 404: the selected analysis was deleted (no job anymore) — the selection falls
+        // back to the project's default search (see useSearches); it is not an error.
+        if (e instanceof ApiError && e.status === 404) {
+          setJob(null);
+          setBusy(null);
+        } else setError(errText(e));
       });
   }, [projectId, searchId, errText]);
 
@@ -383,10 +390,17 @@ function AnalyseContent() {
     }
   }
 
-  /** Creates a new search (from the corpus or from a previous search) and runs it — or chains it. */
-  async function handleCreate(e: React.FormEvent) {
+  /** Creates a new search (from the corpus or from a previous search) and runs it — or chains it.
+   * ``launch=false`` (« Enregistrer »): saves the analysis without launching it, so the
+   * question and fields may still be empty (they get completed later, before the launch). */
+  async function handleCreate(e: React.SyntheticEvent, launch: boolean) {
     e.preventDefault();
-    if ((!stage2 && !stage1) || !q || !q.question.trim() || q.fields.length === 0 || q.sections.length === 0) return;
+    if (!q || count === 0) return;
+    if (
+      launch &&
+      ((!stage2 && !stage1) || !q.question.trim() || q.fields.length === 0 || q.sections.length === 0)
+    )
+      return;
     setCreating(true);
     setError(null);
     try {
@@ -397,14 +411,15 @@ function AnalyseContent() {
         ...(instructions.trim() ? { instructions: instructions.trim() } : {}),
         selection: sel,
       };
-      if (chain && current) {
+      if (launch && chain && current) {
         // Chained: the analysis starts once the base search has finished (one at a time per project).
         const s = await createSearch(projectId, {
           name: name.trim() || undefined,
           kind: "standard",
           schedule,
           question: q.question,
-          fields: cleanFields(q.fields),
+          // empty: inherit the origin's fields (the backend rejects an empty list)
+          fields: q.fields.length ? cleanFields(q.fields) : undefined,
           text_sections: q.sections,
           selection: { from_search_id: current.id, ...sel },
         });
@@ -419,16 +434,18 @@ function AnalyseContent() {
         name: name.trim() || undefined,
         kind: "standard",
         question: q.question,
-        fields: cleanFields(q.fields),
+        // empty: inherit the origin's fields (the backend rejects an empty list)
+        fields: q.fields.length ? cleanFields(q.fields) : undefined,
         text_sections: q.sections,
         selection: sel,
       });
       storeSearchId(projectId, created.id);
       notifySearchesChanged();
       selectSearch(created.id);
-      setPanelOpen(false);
+      if (launch) setPanelOpen(false);
       setName("");
       setSelection({});
+      if (!launch) return; // saved only: the panel stays open to complete the question
       await triggerInference(projectId, {
         model: stage2 || stage1,
         ...(stage2 && stage1 && stage2 !== stage1 ? { prefilter_model: stage1 } : {}),
@@ -514,7 +531,7 @@ function AnalyseContent() {
           }
         >
           {panelOpen ? (
-            <form onSubmit={handleCreate} className="flex flex-col gap-4">
+            <form onSubmit={(e) => void handleCreate(e, true)} className="flex flex-col gap-4">
               <div className="flex flex-col gap-2">
                 <Field label={t("scopeNewName")}>
                   <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={t("scopeDefaultName")} />
@@ -601,6 +618,15 @@ function AnalyseContent() {
                         disabled={!stage2 && !stage1 || !q || !q.question.trim() || q.fields.length === 0 || q.sections.length === 0 || (!chain && count === 0)}
                       >
                         {chain ? t("createScheduled") : t("run")}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        loading={creating}
+                        disabled={!q || count === 0}
+                        onClick={(e) => void handleCreate(e, false)}
+                      >
+                        {t("save")}
                       </Button>
                       <Button type="button" variant="secondary" onClick={() => setPanelOpen(false)}>
                         {t("cancel")}
@@ -748,15 +774,15 @@ function AnalyseContent() {
         </div>
       </Card>
 
-      {/* The never-launched initial analyses first, then the analyses performed, each with a link. */}
+      {/* The never-launched analyses first, then the analyses performed, each with a link. */}
       {searches && searches.length > 0 ? (
         <>
-          {searches.some(isUntouched) && (
+          {searches.some(unlaunched) && (
             <div>
-              <h2 className="mb-2 text-sm font-semibold text-foreground">{t("toLaunch")}</h2>
+              <h2 className="mb-2 text-sm font-semibold text-foreground">{tLead("toLaunch")}</h2>
               <ul className="flex flex-col gap-2">
                 {searches
-                  .filter(isUntouched)
+                  .filter(unlaunched)
                   .map((s) => (
                     <AnalysisRow
                       key={s.id}
@@ -771,12 +797,12 @@ function AnalyseContent() {
               </ul>
             </div>
           )}
-          {searches.some((s) => !isUntouched(s)) && (
+          {searches.some((s) => !unlaunched(s)) && (
             <div>
               <h2 className="mb-2 text-sm font-semibold text-foreground">{t("listTitle")}</h2>
               <ul className="flex flex-col gap-2">
                 {searches
-                  .filter((s) => !isUntouched(s))
+                  .filter((s) => !unlaunched(s))
                   .map((s) => (
                     <AnalysisRow
                       key={s.id}

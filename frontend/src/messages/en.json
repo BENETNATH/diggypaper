@@ -525,6 +525,7 @@
     "prompt": "Prompt",
     "model": "Model",
     "run": "Save and run the analysis",
+    "save": "Save the analysis",
     "cancel": "Cancel",
     "empty": "No analysis",
     "emptyHint": "Run an analysis on the question's articles.",

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { listSearches, SearchInfo } from "@/lib/api";
 import { currentSearch, resolveSearchId, searchStoreKey } from "@/lib/search";
@@ -43,13 +43,30 @@ export function useSearchId(projectId: string): string | undefined {
 /** Project searches (null until loaded) + the current one; `refreshKey` changes → re-read. */
 export function useSearches(projectId: string, searchId?: string, refreshKey?: string) {
   const [searches, setSearches] = useState<SearchInfo[] | null>(null);
-  const reload = useCallback(
-    () =>
-      listSearches(projectId)
-        .then(setSearches)
-        .catch(() => setSearches((s) => s ?? [])), // list unavailable: the pages do not stay pending
-    [projectId]
-  );
+  const [listFailed, setListFailed] = useState(false);
+  // Number of list fetches in flight (ref, not state: the stale check below reads it in the
+  // same effect pass, where a state update would not be visible yet).
+  const inFlight = useRef(0);
+  const router = useRouter();
+  const pathname = usePathname();
+  const sp = useSearchParams();
+  const reload = useCallback(() => {
+    inFlight.current += 1;
+    listSearches(projectId)
+      .then(
+        (items) => {
+          setSearches(items);
+          setListFailed(false);
+        },
+        () => {
+          setListFailed(true);
+          setSearches((s) => s ?? []); // list unavailable: the pages do not stay pending
+        },
+      )
+      .finally(() => {
+        inFlight.current -= 1;
+      });
+  }, [projectId]);
   useEffect(() => {
     void reload();
   }, [reload, refreshKey]);
@@ -58,8 +75,36 @@ export function useSearches(projectId: string, searchId?: string, refreshKey?: s
     window.addEventListener(SEARCHES_EVENT, reload);
     return () => window.removeEventListener(SEARCHES_EVENT, reload);
   }, [reload]);
+
+  // The selection points at a search that no longer exists (it was deleted): fall back to
+  // the project's default search by clearing the stale reference (tab memory + `?search=`
+  // in the URL). Without this, the per-search endpoints 404 and the pages show a spurious
+  // "not found" banner. Guards: a just-created search may not be in the list being
+  // fetched yet (inFlight), and a failed fetch must not look like an empty list (listFailed).
+  useEffect(() => {
+    const stale =
+      !!searchId &&
+      !listFailed &&
+      inFlight.current === 0 &&
+      searches !== null &&
+      !searches.some((s) => s.id === searchId);
+    if (!stale) return;
+    try {
+      sessionStorage.removeItem(searchStoreKey(projectId));
+    } catch {
+      /* storage unavailable: the selection survives only through the URL */
+    }
+    const params = new URLSearchParams(sp.toString());
+    if (params.get("search")) {
+      params.delete("search");
+      const qs = params.toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname);
+    }
+  }, [searchId, listFailed, searches, projectId, sp, pathname, router]);
+
   return { searches, current: currentSearch(searches, searchId), reload };
 }
+
 
 /**
  * Changes the current search: remembers the choice and rewrites the current URL with `?search=`

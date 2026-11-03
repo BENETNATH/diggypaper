@@ -64,7 +64,7 @@ function ResultsContent() {
   const [ready, setReady] = useState(false);
   const [isLead, setIsLead] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const timer = useRef<ReturnType<typeof setTimeout>>();
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   // Restores the remembered filters / sort / page of this search (client only: reads
   // sessionStorage, so it must not run during the server render / hydration).

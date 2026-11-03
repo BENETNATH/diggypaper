@@ -389,6 +389,31 @@ export function errorKey(detail: string | undefined): string | null {
   return null;
 }
 
+/**
+ * Human-readable error message of a non-OK response body. FastAPI validation errors
+ * (422) carry ``detail`` as an array of ``{loc, msg, type}``; a bare string or a
+ * single object are also accepted. ``undefined`` when the body has no usable detail.
+ */
+export function errorDetail(body: unknown): string | undefined {
+  const raw =
+    (body as { detail?: unknown } | null)?.detail ?? (body as { error?: unknown } | null)?.error;
+  if (raw == null) return undefined;
+  if (typeof raw === "string") return raw;
+  if (Array.isArray(raw)) {
+    const msgs = raw
+      .map((i) => (typeof i === "string" ? i : (i as { msg?: unknown } | null)?.msg))
+      .filter((m): m is string => typeof m === "string" && m.length > 0);
+    return msgs.length ? msgs.join("; ") : JSON.stringify(raw);
+  }
+  if (typeof raw === "object") {
+    const o = raw as Record<string, unknown>;
+    if (typeof o.msg === "string") return o.msg;
+    if (typeof o.detail === "string") return o.detail;
+    return JSON.stringify(raw);
+  }
+  return String(raw);
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const resp = await fetch(`${API_BASE}${path}`, {
     credentials: "include",
@@ -399,7 +424,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     let detail = resp.statusText;
     try {
       const body = await resp.json();
-      detail = body.detail ?? body.error ?? detail;
+      detail = errorDetail(body) ?? detail;
     } catch {
       /* no JSON body */
     }

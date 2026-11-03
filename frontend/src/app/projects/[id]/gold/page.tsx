@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
-import { createSearch, deleteGold, getProject, goldFromReviews, listGold, GoldArticle, SchemaField } from "@/lib/api";
+import { ApiError, createSearch, deleteGold, getProject, goldFromReviews, listGold, GoldArticle, SchemaField } from "@/lib/api";
 import { useApiError } from "@/lib/errorMsg";
 import { useAuth } from "@/lib/auth";
 import { isProjectLead } from "@/lib/role";
@@ -59,12 +59,18 @@ function GoldContent() {
   const [blindBusy, setBlindBusy] = useState(false);
 
   const load = useCallback(() => {
-    return Promise.all([listGold(projectId, searchId), getProject(projectId, searchId)])
-      .then(([g, p]) => {
+    const read = (sid?: string) =>
+      Promise.all([listGold(projectId, sid), getProject(projectId, sid)]).then(([g, p]) => {
         setFields(p.fields ?? []);
         setLead(isProjectLead(p, { role }));
         setGold(g);
         setError(null);
+      });
+    return read(searchId)
+      .catch((e) => {
+        // The requested search may have been deleted (404): fall back to the default search.
+        if (e instanceof ApiError && e.status === 404) return read(undefined);
+        throw e;
       })
       .catch((e) => setError(e instanceof Error ? e.message : "error"));
   }, [projectId, searchId, role]);
