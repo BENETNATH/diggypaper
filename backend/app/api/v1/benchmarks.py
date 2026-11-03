@@ -532,12 +532,12 @@ async def get_votes(
     )
     # Aggregate per variant
     by_variant: dict[str, int] = {}
-    my_votes: dict[str, str] = {}  # article_id -> model_name
+    my_votes: dict[str, str] = {}  # article_id -> "model_name|variant"
     for v in votes:
         key = f"{v.model_name}|{v.variant or ''}"
         by_variant[key] = by_variant.get(key, 0) + 1
         if v.user_id == user.id:
-            my_votes[str(v.article_id)] = v.model_name
+            my_votes[str(v.article_id)] = key
     return {
         "by_variant": by_variant,
         "my_votes": my_votes,

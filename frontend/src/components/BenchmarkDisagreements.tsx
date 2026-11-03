@@ -177,8 +177,9 @@ export function BenchmarkDisagreements({
 
   const handleVote = async (articleId: string, model: string, variant: string | null) => {
     if (!votes || !data) return;
+    const key = `${model}|${variant ?? ""}`;
     const current = votes.my_votes[articleId];
-    if (current === model) {
+    if (current === key) {
       await removeBenchmarkVote(projectId, runId, articleId);
     } else {
       await castBenchmarkVote(projectId, runId, articleId, model, variant);
@@ -239,11 +240,11 @@ export function BenchmarkDisagreements({
                     onClick={() => handleVote(row.article_id, o.model, o.variant ?? null)}
                     className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full text-sm transition-colors"
                     style={{
-                      backgroundColor: votes?.my_votes[row.article_id] === o.model ? "var(--color-success, #22c55e)" : "var(--color-surface, #e5e7eb)",
-                      color: votes?.my_votes[row.article_id] === o.model ? "#fff" : "var(--color-muted, #9ca3af)",
-                      fontWeight: votes?.my_votes[row.article_id] === o.model ? 700 : 400,
+                      backgroundColor: votes?.my_votes[row.article_id] === `${o.model}|${o.variant ?? ""}` ? "var(--color-success, #22c55e)" : "var(--color-surface, #e5e7eb)",
+                      color: votes?.my_votes[row.article_id] === `${o.model}|${o.variant ?? ""}` ? "#fff" : "var(--color-muted, #9ca3af)",
+                      fontWeight: votes?.my_votes[row.article_id] === `${o.model}|${o.variant ?? ""}` ? 700 : 400,
                     }}
-                    aria-label={votes?.my_votes[row.article_id] === o.model ? "Retirer le vote" : "Préférer cette réponse"}
+                    aria-label={votes?.my_votes[row.article_id] === `${o.model}|${o.variant ?? ""}` ? "Retirer le vote" : "Préférer cette réponse"}
                   >
                     ✓
                   </button>
