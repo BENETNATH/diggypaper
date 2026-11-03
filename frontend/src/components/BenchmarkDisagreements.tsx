@@ -51,17 +51,21 @@ function Answers({
 /**
  * Articles of a benchmark, disagreements first: each (model, variant)'s answer side by side
  * with the gold reference when it exists.
+ * `live` (run in progress): first answers as they arrive — no disagreement filter, the
+ * current page refreshes by itself every 10 s.
  */
 export function BenchmarkDisagreements({
   projectId,
   runId,
   searchId,
   fields,
+  live = false,
 }: {
   projectId: string;
   runId: string;
   searchId?: string | null;
   fields: SchemaField[];
+  live?: boolean;
 }) {
   const t = useTranslations("benchmarks");
   const [onlyDisagree, setOnlyDisagree] = useState(true);
@@ -80,7 +84,7 @@ export function BenchmarkDisagreements({
 
   useEffect(() => {
     let stale = false;
-    listBenchmarkArticles(projectId, runId, { disagree: onlyDisagree, page, perPage: PER_PAGE })
+    listBenchmarkArticles(projectId, runId, { disagree: live ? false : onlyDisagree, page, perPage: PER_PAGE })
       .then((r) => {
         if (!stale) setData(r);
       })
@@ -90,27 +94,42 @@ export function BenchmarkDisagreements({
     return () => {
       stale = true;
     };
-  }, [projectId, runId, onlyDisagree, page]);
+  }, [projectId, runId, live, onlyDisagree, page]);
+
+  // Live mode: the run keeps answering, so the current page refreshes by itself.
+  useEffect(() => {
+    if (!live) return;
+    const id = setInterval(() => {
+      listBenchmarkArticles(projectId, runId, { disagree: false, page, perPage: PER_PAGE })
+        .then((r) => setData(r))
+        .catch(() => {});
+    }, 10_000);
+    return () => clearInterval(id);
+  }, [projectId, runId, live, page]);
 
   const pages = data ? Math.max(1, Math.ceil(data.total / PER_PAGE)) : 1;
 
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h4 className="text-sm font-semibold text-foreground">{t("disagreeTitle")}</h4>
-        <Checkbox
-          label={t("onlyDisagree")}
-          checked={onlyDisagree}
-          onChange={(e) => {
-            setOnlyDisagree(e.target.checked);
-            setPage(1);
-          }}
-        />
+        <h4 className="text-sm font-semibold text-foreground">{live ? t("liveTitle") : t("disagreeTitle")}</h4>
+        {!live && (
+          <Checkbox
+            label={t("onlyDisagree")}
+            checked={onlyDisagree}
+            onChange={(e) => {
+              setOnlyDisagree(e.target.checked);
+              setPage(1);
+            }}
+          />
+        )}
       </div>
-      <p className="text-xs text-muted">{t("disagreeHint")}</p>
+      <p className="text-xs text-muted">{live ? t("liveHint") : t("disagreeHint")}</p>
       {error && <ErrorBanner message={error} />}
       {!data && !error && <Skeleton rows={3} height="h-10" />}
-      {data && data.items.length === 0 && <p className="text-sm text-muted">{onlyDisagree ? t("noDisagree") : t("noArticles")}</p>}
+      {data && data.items.length === 0 && (
+        <p className="text-sm text-muted">{live ? t("liveEmpty") : onlyDisagree ? t("noDisagree") : t("noArticles")}</p>
+      )}
       {data?.items.map((row) => (
         <article key={row.article_id} className="rounded-lg border border-border p-3">
           <div className="mb-2 flex flex-wrap items-start justify-between gap-2">

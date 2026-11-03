@@ -48,12 +48,11 @@ export function BenchmarkRunCard({
   const loaded = useRef(false); // results already fetched (avoids re-fetching on open/close)
 
   // The results are read once at the end of the run (top-1 preview on the collapsed
-  // card), or on expansion; re-read when the status changes.
+  // card), or on expansion; re-read when the status changes. While the run is in
+  // progress, the read only happens on expansion (partial results = finished variants).
   useEffect(() => {
-    if (active) {
-      loaded.current = false;
-      return;
-    }
+    if (active) loaded.current = false; // re-read when the run ends
+    if (!open && active) return; // nothing to show yet while running
     if (!open && loaded.current) return;
     let stale = false;
     setResults(null);
@@ -170,24 +169,23 @@ export function BenchmarkRunCard({
         </div>
       )}
 
-      {!active && (
-        <div className="mt-3">
-          <Button type="button" variant="secondary" size="sm" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
-            {open ? "▾" : "▸"} {t("results")}
-          </Button>
-          {!open && ranked.length > 0 && (
-            <p className="mt-2 text-xs text-muted">
-              {t("topOne", { model: ranked[0].model_name, metric: metricLabel })}
-            </p>
-          )}
-        </div>
-      )}
+      <div className="mt-3">
+        <Button type="button" variant="secondary" size="sm" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+          {open ? "▾" : "▸"} {active ? t("liveResults") : t("results")}
+        </Button>
+        {!open && !active && ranked.length > 0 && (
+          <p className="mt-2 text-xs text-muted">
+            {t("topOne", { model: ranked[0].model_name, metric: metricLabel })}
+          </p>
+        )}
+      </div>
 
-      {open && !active && (
+      {open && (
         <div className="mt-3 flex flex-col gap-5">
+          {active && <p className="text-xs text-muted">{t("partialHint")}</p>}
           {error && <ErrorBanner message={error} />}
           {!results && !error && <Skeleton rows={3} height="h-8" />}
-          {results && results.length === 0 && <p className="text-sm text-muted">{t("noResults")}</p>}
+          {results && results.length === 0 && !active && <p className="text-sm text-muted">{t("noResults")}</p>}
 
           {ranked.length > 0 && (
             <div className="flex flex-col gap-2">
@@ -302,8 +300,14 @@ export function BenchmarkRunCard({
             </details>
           )}
 
-          {results && results.length > 0 && (
-            <BenchmarkDisagreements projectId={projectId} runId={run.id} searchId={run.search_id} fields={fields} />
+          {(active || (results && results.length > 0)) && (
+            <BenchmarkDisagreements
+              projectId={projectId}
+              runId={run.id}
+              searchId={run.search_id}
+              fields={fields}
+              live={active}
+            />
           )}
         </div>
       )}
