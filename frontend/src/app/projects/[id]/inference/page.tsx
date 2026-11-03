@@ -89,7 +89,7 @@ export function AnalysisRow({
           <span className="font-medium text-foreground">{s.name}</span>
           {toLaunch && <Badge color="blue">{t("badgeToLaunch")}</Badge>}
           {s.is_default && <Badge color="blue">{tp("badgeInitial")}</Badge>}
-          {s.kind !== "standard" && <Badge color="gray">{t(`kind_${s.kind}`)}</Badge>}
+          {s.kind !== "standard" && <Badge color="gray" title={t(`kindHint_${s.kind}`)}>{t(`kind_${s.kind}`)}</Badge>}
           {s.schedule_state === "waiting" && <Badge color="gray">{t("scheduledBadge")}</Badge>}
           {s.last_job && (
             <Badge color={statusColor(s.last_job.status)}>
