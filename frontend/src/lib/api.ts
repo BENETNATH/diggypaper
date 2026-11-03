@@ -178,6 +178,8 @@ export interface SearchInfo {
   /** Uncertain, not yet re-reviewed. */
   to_review: number;
   last_job: { status: InferenceJob["status"]; model: string; model_version?: string | null } | null;
+  /** Latest benchmark run on this lot (null: never benchmarked). */
+  last_benchmark: { id: string; status: string; created_at: string | null } | null;
 }
 
 /** Project overview: global counts (distinct articles) + state of each search. */
@@ -1148,6 +1150,17 @@ export const cancelInference = (projectId: string): Promise<unknown> =>
 
 export const cancelBenchmark = (projectId: string, runId: string): Promise<unknown> =>
   request(`/projects/${projectId}/benchmarks/${runId}/cancel`, { method: "POST" });
+
+/** Relaunch a finished run (same configuration); the original stays in the history. */
+export const rerunBenchmark = (
+  projectId: string,
+  runId: string
+): Promise<{ run_id: string; status: string }> =>
+  request(`/projects/${projectId}/benchmarks/${runId}/rerun`, { method: "POST" });
+
+/** Delete a finished benchmark run and its results (LEAD). */
+export const deleteBenchmark = (projectId: string, runId: string): Promise<unknown> =>
+  request(`/projects/${projectId}/benchmarks/${runId}`, { method: "DELETE" });
 
 /** Latest job of the search; with ``active``, the project's current job (all searches). */
 export async function getInference(

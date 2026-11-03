@@ -196,6 +196,67 @@ async def cancel_benchmark(
     return _run_payload(run)
 
 
+@router.post("/{project_id}/benchmarks/{run_id}/rerun", status_code=202)
+async def rerun_benchmark(
+    project_id: uuid.UUID, run_id: uuid.UUID, db: DbDep, user: UserDep
+) -> dict:
+    """Relaunch a finished run (e.g. FAILED after an interrupted restart): a new PENDING run
+    with the same configuration (lot, models, variants, options, prompt). The original run
+    stays in the history (spec 2026-11-03 pointers)."""
+    await _require_project_member(db, project_id, user)
+    await _require_lead(db, project_id, user)
+    run = await db.get(BenchmarkRun, run_id)
+    if run is None or run.project_id != project_id:
+        raise HTTPException(status_code=404, detail="benchmark run not found")
+    if run.status in (BenchmarkStatus.PENDING, BenchmarkStatus.RUNNING):
+        raise HTTPException(status_code=409, detail="cannot rerun a benchmark in progress")
+    active = (
+        await db.execute(
+            select(BenchmarkRun.id)
+            .where(
+                BenchmarkRun.project_id == project_id,
+                BenchmarkRun.status.in_([BenchmarkStatus.PENDING, BenchmarkStatus.RUNNING]),
+                BenchmarkRun.id != run.id,
+            )
+            .limit(1)
+        )
+    ).first()
+    if active is not None:
+        raise HTTPException(status_code=409, detail="benchmark already in progress")
+    new_run = BenchmarkRun(
+        project_id=project_id,
+        search_id=run.search_id,
+        prompt_template_id=run.prompt_template_id,
+        variants=run.variants,
+        options=run.options,
+        models_tested=run.models_tested,
+        status=BenchmarkStatus.PENDING,
+        created_by=user.id,
+    )
+    db.add(new_run)
+    await db.commit()
+    await db.refresh(new_run)
+    job = benchmark_task.delay(str(new_run.id))
+    status = job.state if celery_app.conf.task_always_eager else "PENDING"
+    return {"run_id": str(new_run.id), "status": status}
+
+
+@router.delete("/{project_id}/benchmarks/{run_id}", status_code=204)
+async def delete_benchmark(
+    project_id: uuid.UUID, run_id: uuid.UUID, db: DbDep, user: UserDep
+) -> None:
+    """Delete a finished benchmark run and its results (LEAD; stop an active run first)."""
+    await _require_project_member(db, project_id, user)
+    await _require_lead(db, project_id, user)
+    run = await db.get(BenchmarkRun, run_id)
+    if run is None or run.project_id != project_id:
+        raise HTTPException(status_code=404, detail="benchmark run not found")
+    if run.status in (BenchmarkStatus.PENDING, BenchmarkStatus.RUNNING):
+        raise HTTPException(status_code=409, detail="stop the benchmark before deleting it")
+    await db.delete(run)  # results / predictions: FK ondelete=CASCADE
+    await db.commit()
+
+
 @router.get("/{project_id}/benchmarks")
 async def list_benchmarks(project_id: uuid.UUID, db: DbDep, user: UserDep) -> dict:
     await _require_project_member(db, project_id, user)

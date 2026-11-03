@@ -27,6 +27,7 @@ const search: SearchInfo = {
   breakdown: {},
   to_review: 0,
   last_job: { status: "COMPLETED", model: "qwen3:8b", model_version: "v42" },
+  last_benchmark: null,
 };
 
 describe("AnalysisRow", () => {

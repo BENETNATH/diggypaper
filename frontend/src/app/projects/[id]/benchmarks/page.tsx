@@ -1,9 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { listBenchmarks, listModels, cancelBenchmark, BenchmarkRun, ModelInfo } from "@/lib/api";
+import {
+  listBenchmarks,
+  listModels,
+  cancelBenchmark,
+  deleteBenchmark,
+  rerunBenchmark,
+  BenchmarkRun,
+  ModelInfo,
+} from "@/lib/api";
 import { currentSearch } from "@/lib/search";
 import { useSearchId, useSearches } from "@/lib/useSearch";
 import { useApiError } from "@/lib/errorMsg";
@@ -19,6 +27,7 @@ function BenchmarksContent() {
   const projectId = useParams<{ id: string }>().id;
   const searchId = useSearchId(projectId);
   const { searches } = useSearches(projectId, searchId);
+  const runParam = useSearchParams().get("run"); // deep-link from the analyses list
 
   const [runs, setRuns] = useState<BenchmarkRun[] | null>(null);
   const [models, setModels] = useState<ModelInfo[]>([]);
@@ -55,6 +64,27 @@ function BenchmarksContent() {
     setError(null);
     try {
       await cancelBenchmark(projectId, runId);
+      await load();
+    } catch (err) {
+      setError(toError(err));
+    }
+  }
+
+  async function handleDelete(runId: string) {
+    if (!window.confirm(t("deleteConfirm"))) return;
+    setError(null);
+    try {
+      await deleteBenchmark(projectId, runId);
+      await load();
+    } catch (err) {
+      setError(toError(err));
+    }
+  }
+
+  async function handleRerun(runId: string) {
+    setError(null);
+    try {
+      await rerunBenchmark(projectId, runId);
       await load();
     } catch (err) {
       setError(toError(err));
@@ -108,6 +138,9 @@ function BenchmarksContent() {
               search={currentSearch(searches, run.search_id ?? undefined)}
               analysisSearchId={searchId}
               onStop={(id) => void handleStop(id)}
+              onDelete={(id) => void handleDelete(id)}
+              onRerun={(id) => void handleRerun(id)}
+              defaultOpen={run.id === runParam}
             />
           ))}
         </div>

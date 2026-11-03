@@ -55,14 +55,14 @@ beforeEach(() => {
 // to show the progress and the first answers as they arrive.
 describe("BenchmarkRunCard — open while running", () => {
   it("RUNNING: the expand action is offered (progress + first answers)", () => {
-    render(<BenchmarkRunCard projectId="p1" run={runningRun} onStop={() => {}} />);
+    render(<BenchmarkRunCard projectId="p1" run={runningRun} onStop={() => {}} onDelete={() => {}} onRerun={() => {}} />);
     expect(screen.getByRole("button", { name: /liveResults/ })).toBeInTheDocument();
     // the progress bar is still shown
     expect(screen.getByRole("progressbar")).toBeInTheDocument();
   });
 
   it("RUNNING: expanding fetches the partial results and the first answers", async () => {
-    render(<BenchmarkRunCard projectId="p1" run={runningRun} onStop={() => {}} />);
+    render(<BenchmarkRunCard projectId="p1" run={runningRun} onStop={() => {}} onDelete={() => {}} onRerun={() => {}} />);
     fireEvent.click(screen.getByRole("button", { name: /liveResults/ }));
     await waitFor(() => expect(api.getBenchmark).toHaveBeenCalledWith("p1", "b1"));
     await waitFor(() => expect(api.listBenchmarkArticles).toHaveBeenCalled());
@@ -70,7 +70,7 @@ describe("BenchmarkRunCard — open while running", () => {
   });
 
   it("RUNNING: the live grid shows the first answers as they arrive", async () => {
-    render(<BenchmarkRunCard projectId="p1" run={runningRun} onStop={() => {}} />);
+    render(<BenchmarkRunCard projectId="p1" run={runningRun} onStop={() => {}} onDelete={() => {}} onRerun={() => {}} />);
     fireEvent.click(screen.getByRole("button", { name: /liveResults/ }));
     expect(await screen.findByText("Article premier")).toBeInTheDocument();
     expect(screen.getByText("liveTitle")).toBeInTheDocument();
@@ -92,7 +92,7 @@ describe("BenchmarkRunCard — open while running", () => {
         },
       ],
     });
-    render(<BenchmarkRunCard projectId="p1" run={completedRun} onStop={() => {}} />);
+    render(<BenchmarkRunCard projectId="p1" run={completedRun} onStop={() => {}} onDelete={() => {}} onRerun={() => {}} />);
     fireEvent.click(screen.getByRole("button", { name: /results/ }));
     await waitFor(() => expect(api.getBenchmark).toHaveBeenCalledWith("p1", "b1"));
     expect(screen.queryByText("liveTitle")).not.toBeInTheDocument();
@@ -127,5 +127,37 @@ describe("BenchmarkDisagreements — live mode (first answers while running)", (
     } finally {
       jest.useRealTimers();
     }
+  });
+});
+
+// spec 2026-11-03 pointers: a finished (e.g. interrupted/failed) run can be
+// relaunched or deleted — while a run is in progress, only the stop action exists.
+describe("BenchmarkRunCard — delete / rerun", () => {
+  it("COMPLETED: « rerun » and « delete » are offered", () => {
+    render(
+      <BenchmarkRunCard projectId="p1" run={completedRun} onStop={() => {}} onDelete={() => {}} onRerun={() => {}} />
+    );
+    expect(screen.getByRole("button", { name: /rerun/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /delete/ })).toBeInTheDocument();
+  });
+
+  it("RUNNING: neither is offered (only the stop action)", () => {
+    render(
+      <BenchmarkRunCard projectId="p1" run={runningRun} onStop={() => {}} onDelete={() => {}} onRerun={() => {}} />
+    );
+    expect(screen.queryByRole("button", { name: /rerun/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /delete/ })).not.toBeInTheDocument();
+  });
+
+  it("delete / rerun report the run id to the page", () => {
+    const onDelete = jest.fn();
+    const onRerun = jest.fn();
+    render(
+      <BenchmarkRunCard projectId="p1" run={completedRun} onStop={() => {}} onDelete={onDelete} onRerun={onRerun} />
+    );
+    fireEvent.click(screen.getByRole("button", { name: /rerun/ }));
+    expect(onRerun).toHaveBeenCalledWith("b1");
+    fireEvent.click(screen.getByRole("button", { name: /delete/ }));
+    expect(onDelete).toHaveBeenCalledWith("b1");
   });
 });

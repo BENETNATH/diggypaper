@@ -23,6 +23,7 @@ from app.api.v1.projects import (
 from app.db.models import (
     Article,
     ArticlePrediction,
+    BenchmarkRun,
     GoldArticle,
     HumanAnnotation,
     InferenceJob,
@@ -207,12 +208,35 @@ async def _stats(db: AsyncSession, s: Search) -> dict:
         .scalars()
         .first()
     )
+    bench = (
+        (
+            await db.execute(
+                select(BenchmarkRun)
+                .where(BenchmarkRun.search_id == s.id)
+                .order_by(BenchmarkRun.created_at.desc(), BenchmarkRun.id.desc())
+                .limit(1)
+            )
+        )
+        .scalars()
+        .first()
+    )
     return {
         "lot_size": lot,
         "predicted": predicted,
         "reviewed": reviewed,
         "breakdown": breakdown,  # {AUTO_ACCEPTED, AUTO_REJECTED, NEEDS_HUMAN_REVIEW, NONE}
         "to_review": to_review,  # uncertain, not yet reviewed
+        # Latest benchmark run on this lot: lets the analyses list point to it
+        # (spec 2026-11-03 pointers) when the lot has no question of its own.
+        "last_benchmark": (
+            {
+                "id": str(bench.id),
+                "status": bench.status,
+                "created_at": bench.created_at,
+            }
+            if bench
+            else None
+        ),
         "last_job": (
             {
                 "status": job.status,

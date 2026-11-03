@@ -22,6 +22,9 @@ export function BenchmarkRunCard({
   search,
   analysisSearchId,
   onStop,
+  onDelete,
+  onRerun,
+  defaultOpen = false,
 }: {
   projectId: string;
   run: BenchmarkRun;
@@ -29,6 +32,11 @@ export function BenchmarkRunCard({
   /** Search to analyze next (the current search, not necessarily the benchmark's sub-batch). */
   analysisSearchId?: string;
   onStop: (runId: string) => void;
+  /** Finished runs (spec 2026-11-03 pointers): delete / relaunch. */
+  onDelete?: (runId: string) => void;
+  onRerun?: (runId: string) => void;
+  /** Opened by default (deep-link from the analyses list). */
+  defaultOpen?: boolean;
 }) {
   const t = useTranslations("benchmarks");
   const tj = useTranslations("jobs");
@@ -37,7 +45,7 @@ export function BenchmarkRunCard({
   const active = run.status === "PENDING" || run.status === "RUNNING";
   const fields = search?.fields ?? [];
 
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
   const [results, setResults] = useState<BenchmarkResult[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [detail, setDetail] = useState<string | null>(null); // key of the expanded row
@@ -143,10 +151,23 @@ export function BenchmarkRunCard({
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {active && (
+          {active ? (
             <Button size="sm" variant="danger" onClick={() => onStop(run.id)}>
               ■ {t("stop")}
             </Button>
+          ) : (
+            <>
+              {onRerun && (
+                <Button size="sm" onClick={() => onRerun(run.id)}>
+                  {t("rerun")}
+                </Button>
+              )}
+              {onDelete && (
+                <Button size="sm" variant="danger" onClick={() => onDelete(run.id)}>
+                  {t("delete")}
+                </Button>
+              )}
+            </>
           )}
           <Badge color={statusColor(run.status)}>{tj(`status_${run.status}`)}</Badge>
         </div>

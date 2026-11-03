@@ -61,6 +61,7 @@ const search: SearchInfo = {
   breakdown: {},
   to_review: 0,
   last_job: null,
+  last_benchmark: null,
 };
 
 function mountGold() {

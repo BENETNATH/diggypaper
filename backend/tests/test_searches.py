@@ -791,3 +791,40 @@ async def test_blind_search_export_hides_model_identifier_and_version(
     assert csv_rows
     for r in csv_rows:
         assert not (r["model"] or r["model_identifier"] or r["model_version"])
+
+
+async def test_search_summary_last_benchmark(client, session, corpus):
+    """Latest benchmark of a lot: exposed on the analyses list (spec 2026-11-03 pointers)."""
+    from datetime import UTC, datetime, timedelta
+
+    from app.db.models import BenchmarkRun, BenchmarkStatus, Search
+
+    project, _ = corpus
+    search = (
+        (await session.execute(select(Search).where(Search.project_id == project.id)))
+        .scalars()
+        .first()
+    )
+    now = datetime.now(UTC)
+    old = BenchmarkRun(
+        project_id=project.id,
+        search_id=search.id,
+        status=BenchmarkStatus.COMPLETED,
+        created_at=now - timedelta(hours=1),
+    )
+    fresh = BenchmarkRun(
+        project_id=project.id,
+        search_id=search.id,
+        status=BenchmarkStatus.FAILED,
+        created_at=now,
+    )
+    orphan = Search(project_id=project.id, name="S2", lot_all=True)
+    session.add_all([old, fresh, orphan])
+    await session.commit()
+    items = (await client.get(f"/api/v1/projects/{project.id}/searches")).json()["items"]
+    entry = next(i for i in items if i["id"] == str(search.id))
+    assert entry["last_benchmark"]["id"] == str(fresh.id)
+    assert entry["last_benchmark"]["status"] == "FAILED"
+    assert entry["last_benchmark"]["created_at"] is not None
+    other = next(i for i in items if i["id"] == str(orphan.id))
+    assert other["last_benchmark"] is None

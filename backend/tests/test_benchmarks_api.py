@@ -412,3 +412,148 @@ async def test_cancel_benchmark(client, session, researcher_user, do_login, monk
     assert r.status_code == 200 and r.json()["status"] == "FAILED"
     assert (await client.post(f"{base}/{run_id}/cancel")).status_code == 409  # already stopped
     assert (await client.post(f"{base}/{uuid.uuid4()}/cancel")).status_code == 404
+
+
+# --- POST /projects/{id}/benchmarks/{run_id}/rerun (spec 2026-11-03 pointers) ---
+
+
+async def _make_run(session, project_id: str, status: BenchmarkStatus, **extra) -> BenchmarkRun:
+    run = BenchmarkRun(
+        project_id=uuid.UUID(project_id),
+        status=status,
+        models_tested=extra.pop("models_tested", ["Kev-4B"]),
+        **extra,
+    )
+    session.add(run)
+    await session.commit()
+    return run
+
+
+async def test_rerun_failed_benchmark(client, session, researcher_user, do_login, monkeypatch):
+    """A failed run is relaunched: a new PENDING run with the same configuration."""
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project_id = await _create_project(client)
+    prompt_id, model_name = await _seed_benchmark_prereqs(session, project_id)
+    mock_delay = _mock_benchmark_task(monkeypatch)
+    base = f"/api/v1/projects/{project_id}/benchmarks"
+    run_id = (
+        await client.post(
+            base,
+            json={
+                "prompt_template_id": prompt_id,
+                "models": [model_name],
+                "variants": [{"name": "direct", "system_prompt": "S1"}],
+                "use_gold": True,
+            },
+        )
+    ).json()["run_id"]
+    run = await session.get(BenchmarkRun, uuid.UUID(run_id))
+    run.status = BenchmarkStatus.FAILED
+    await session.commit()
+    resp = await client.post(f"{base}/{run_id}/rerun")
+    assert resp.status_code == 202
+    data = resp.json()
+    assert data["status"] == "PENDING" and data["run_id"] != run_id
+    new = await session.get(BenchmarkRun, uuid.UUID(data["run_id"]))
+    assert new.status == BenchmarkStatus.PENDING
+    assert new.search_id == run.search_id
+    assert new.prompt_template_id == run.prompt_template_id
+    assert new.models_tested == [model_name]
+    assert new.variants == [{"name": "direct", "system_prompt": "S1"}]
+    # SQLite JSON round-trip: booleans come back as 0/1
+    assert new.options.get("use_gold") in (True, 1)
+    assert new.created_by == researcher_user.id
+    mock_delay.assert_called_with(data["run_id"])
+    # the failed run stays in history
+    assert len((await client.get(base)).json()["items"]) == 2
+
+
+async def test_rerun_active_source_409(client, session, researcher_user, do_login, monkeypatch):
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project_id = await _create_project(client)
+    _mock_benchmark_task(monkeypatch)
+    run = await _make_run(session, project_id, BenchmarkStatus.PENDING)
+    resp = await client.post(f"/api/v1/projects/{project_id}/benchmarks/{run.id}/rerun")
+    assert resp.status_code == 409
+
+
+async def test_rerun_second_active_blocked_409(
+    client, session, researcher_user, do_login, monkeypatch
+):
+    """One active benchmark per project: rerun is refused while another runs."""
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project_id = await _create_project(client)
+    _mock_benchmark_task(monkeypatch)
+    await _make_run(session, project_id, BenchmarkStatus.RUNNING)
+    done = await _make_run(session, project_id, BenchmarkStatus.COMPLETED)
+    resp = await client.post(f"/api/v1/projects/{project_id}/benchmarks/{done.id}/rerun")
+    assert resp.status_code == 409
+
+
+async def test_rerun_unknown_404(client, session, researcher_user, do_login, monkeypatch):
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project_id = await _create_project(client)
+    _mock_benchmark_task(monkeypatch)
+    resp = await client.post(f"/api/v1/projects/{project_id}/benchmarks/{uuid.uuid4()}/rerun")
+    assert resp.status_code == 404
+
+
+async def test_rerun_non_lead_403(client, session, researcher_user, do_login, monkeypatch):
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project_id = await _create_project(client)
+    _mock_benchmark_task(monkeypatch)
+    run = await _make_run(session, project_id, BenchmarkStatus.FAILED)
+    member = await session.get(ProjectMember, (uuid.UUID(project_id), researcher_user.id))
+    member.role_in_project = ProjectMemberRole.ANNOTATOR
+    await session.commit()
+    resp = await client.post(f"/api/v1/projects/{project_id}/benchmarks/{run.id}/rerun")
+    assert resp.status_code == 403
+
+
+# --- DELETE /projects/{id}/benchmarks/{run_id} ---
+
+
+async def test_delete_benchmark_run(client, session, researcher_user, do_login):
+    """LEAD deletes a finished run: 204, the run and its results leave the history."""
+    from app.db.models import BenchmarkResult
+
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project_id = await _create_project(client)
+    run = await _make_run(session, project_id, BenchmarkStatus.COMPLETED)
+    result = BenchmarkResult(benchmark_run_id=run.id, model_name="Kev-4B")
+    session.add(result)
+    await session.commit()
+    rid = str(result.id)
+    resp = await client.delete(f"/api/v1/projects/{project_id}/benchmarks/{run.id}")
+    assert resp.status_code == 204
+    assert (await client.get(f"/api/v1/projects/{project_id}/benchmarks")).json() == {"items": []}
+    row = await session.execute(
+        select(BenchmarkResult.id).where(BenchmarkResult.id == uuid.UUID(rid))
+    )
+    assert row.first() is None
+
+
+async def test_delete_active_run_409(client, session, researcher_user, do_login):
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project_id = await _create_project(client)
+    run = await _make_run(session, project_id, BenchmarkStatus.RUNNING)
+    resp = await client.delete(f"/api/v1/projects/{project_id}/benchmarks/{run.id}")
+    assert resp.status_code == 409
+
+
+async def test_delete_unknown_404(client, session, researcher_user, do_login):
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project_id = await _create_project(client)
+    resp = await client.delete(f"/api/v1/projects/{project_id}/benchmarks/{uuid.uuid4()}")
+    assert resp.status_code == 404
+
+
+async def test_delete_non_lead_403(client, session, researcher_user, do_login):
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project_id = await _create_project(client)
+    run = await _make_run(session, project_id, BenchmarkStatus.FAILED)
+    member = await session.get(ProjectMember, (uuid.UUID(project_id), researcher_user.id))
+    member.role_in_project = ProjectMemberRole.ANNOTATOR
+    await session.commit()
+    resp = await client.delete(f"/api/v1/projects/{project_id}/benchmarks/{run.id}")
+    assert resp.status_code == 403

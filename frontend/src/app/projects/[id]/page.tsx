@@ -77,6 +77,7 @@ function LotBar({ s }: { s: SearchInfo }) {
 function SearchRow({ s, projectId, isLead, hasCorpus }: { s: SearchInfo; projectId: string; isLead: boolean; hasCorpus: boolean }) {
   const t = useTranslations("project");
   const ts = useTranslations("searches");
+  const tj = useTranslations("jobs");
   const open = (page: string) => withSearch(`/projects/${projectId}/${page}`, s.id);
   const blind = s.kind === "blind";
   const untouched = isUntouched(s);
@@ -99,6 +100,16 @@ function SearchRow({ s, projectId, isLead, hasCorpus }: { s: SearchInfo; project
           {s.question ? (
             <p className="mt-0.5 line-clamp-2 text-sm text-muted" title={s.question}>
               {s.question}
+            </p>
+          ) : s.last_benchmark ? (
+            <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-sm text-muted">
+              {ts("noQuestion")}
+              <Link
+                href={`/projects/${projectId}/benchmarks?run=${s.last_benchmark.id}`}
+                className="font-medium text-primary underline-offset-2 hover:underline"
+              >
+                ⇢ {t("benchmarkOnLot", { status: tj(`status_${s.last_benchmark.status}`) })}
+              </Link>
             </p>
           ) : (
             <p className="mt-0.5 line-clamp-2 text-sm text-muted">{ts("noQuestion")}</p>
