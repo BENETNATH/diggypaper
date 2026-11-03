@@ -27,25 +27,69 @@ function Answers({
   fields: SchemaField[];
 }) {
   const t = useTranslations("benchmarks");
+  const answered = fields.some((f) => {
+    const v = decision?.[f.key];
+    return v !== null && v !== undefined && v !== "";
+  });
+  // Free-form answer (no field answered): the model replied in plain text.
+  const free = !answered ? freeAnswer(decision) : "";
   return (
-    <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-0.5 text-xs">
-      {fields.map((f) => {
-        const wrong = gold && !same(decision?.[f.key], gold[f.key]);
-        return (
-          <div key={f.key} className="contents">
-            <dt className="truncate text-muted" title={f.label}>
-              {f.label}
-            </dt>
-            <dd className={`text-right font-medium ${wrong ? "text-danger" : "text-foreground"}`}>
-              {showValue(decision?.[f.key])}
-            </dd>
-          </div>
-        );
-      })}
-      <dt className="text-muted">{t("relevanceLabel")}</dt>
-      <dd className="text-right font-medium text-foreground">{relevanceOf(decision)}</dd>
-    </dl>
+    <>
+      <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-0.5 text-xs">
+        {fields.map((f) => {
+          const wrong = gold && !same(decision?.[f.key], gold[f.key]);
+          return (
+            <div key={f.key} className="contents">
+              <dt className="truncate text-muted" title={f.label}>
+                {f.label}
+              </dt>
+              <dd className={`text-right font-medium ${wrong ? "text-danger" : "text-foreground"}`}>
+                {showValue(decision?.[f.key])}
+              </dd>
+            </div>
+          );
+        })}
+        {fields.length > 0 && (
+          <>
+            <dt className="text-muted">{t("relevanceLabel")}</dt>
+            <dd className="text-right font-medium text-foreground">{relevanceOf(decision)}</dd>
+          </>
+        )}
+      </dl>
+      {free && (
+        <p className="mt-1.5 max-h-44 overflow-auto whitespace-pre-wrap rounded bg-surface-muted p-2 text-xs text-foreground">
+          {free}
+        </p>
+      )}
+    </>
   );
+}
+
+/** Free-form answer of a decision without schema fields:
+ * 1. plain text under one of the known keys,
+ * 2. else the pretty-printed decision (minus the "role" wrapper key). */
+function freeAnswer(decision: Record<string, unknown> | null | undefined): string {
+  if (!decision || typeof decision !== "object") return "";
+  const textKeys = [
+    "content",
+    "text",
+    "answer",
+    "response",
+    "analysis",
+    "thought",
+    "thoughts",
+    "reasoning",
+  ];
+  for (const k of textKeys) {
+    const v = decision[k];
+    if (typeof v === "string" && v.trim()) return v;
+    if (Array.isArray(v)) {
+      const s = v.map((x) => (typeof x === "string" ? x : JSON.stringify(x))).join("\n");
+      if (s.trim()) return s;
+    }
+  }
+  const body = Object.fromEntries(Object.entries(decision).filter(([k]) => k !== "role"));
+  return Object.keys(body).length ? JSON.stringify(body, null, 1) : "";
 }
 
 /**

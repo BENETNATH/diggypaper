@@ -361,6 +361,9 @@ export default function AnnotatePage() {
             {ta(`status_${shownPrediction.status}`)}
           </p>
         )}
+        {!shownPrediction && !review?.decision_json && (
+          <p className="text-sm text-muted">{t("noModelAnswer")}</p>
+        )}
       </header>
 
       {/* Top bar (mobile): back to articles */}

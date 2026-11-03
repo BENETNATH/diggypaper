@@ -738,7 +738,8 @@
     "nextShort": "Next",
     "metadataOnlyNote": "Metadata only (OpenAlex): this source provides no full text. If you have access to the article, upload its PDF.",
     "sourceFile": "Source file",
-    "sourceNotRecorded": "Source not recorded"
+    "sourceNotRecorded": "Source not recorded",
+    "noModelAnswer": "No model answer for this search."
   },
   "sex": {
     "MALE_ONLY": "Males only",

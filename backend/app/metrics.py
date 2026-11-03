@@ -8,6 +8,7 @@ A "decision" = dict ``{item: value, confidence_score: relevance, …}`` (format 
 from __future__ import annotations
 
 import math
+import json
 import re
 from collections import Counter
 
@@ -142,6 +143,15 @@ def primary_value(scored: dict, fields: list[dict]) -> tuple[str, str, float | N
     return "relevance", "recall", scored["relevance"]["recall"]
 
 
+def _effective_keys(fields: list[dict], decisions: list[dict]) -> list[str]:
+    """Non-text schema keys to compare — except when none of the decisions
+    answers any of them (free-form answers): then nothing is comparable."""
+    keys = [f["key"] for f in fields if f["type"] != "text"]
+    if keys and not any(k in d for d in decisions for k in keys):
+        return []
+    return keys
+
+
 def agreement(by_variant: dict[str, dict], fields: list[dict]) -> dict:
     """Agreement between variants without reference: for each variant, the fraction of
     (article, item) where it gives the majority answer of the variants.
@@ -150,7 +160,13 @@ def agreement(by_variant: dict[str, dict], fields: list[dict]) -> dict:
     if len(names) < 2:
         return {}
     articles = set.intersection(*(set(v) for v in by_variant.values()))
-    keys = ["relevance", *[f["key"] for f in fields if f["type"] != "text"]]
+    # Relevance is only comparable when at least one decision carries a
+    # confidence signal; otherwise an all-empty comparison gives a fake 100%.
+    decisions = [d for v in by_variant.values() for d in v.values() if d]
+    has_conf = any((d or {}).get("confidence_score") is not None for d in decisions)
+    keys = (["relevance"] if has_conf else []) + _effective_keys(fields, decisions)
+    if not keys:
+        return {}
     hits = Counter()
     total = 0
     for a in articles:
@@ -171,13 +187,25 @@ def agreement(by_variant: dict[str, dict], fields: list[dict]) -> dict:
 
 
 def disagrees(outputs: list[dict | None], fields: list[dict]) -> bool:
-    """Do the variants differ on this article (relevance or a non-text item)?"""
+    """Do the variants differ on this article (relevance or a non-text item)?
+
+    Free-form answers (no non-text field to compare): the variants diverge
+    when the full answer — text under any key, or the structured JSON shape —
+    differs."""
     seen = [o for o in outputs if o]
     if len(seen) < 2:
         return False
-    keys = [f["key"] for f in fields if f["type"] != "text"]
     first = seen[0]
+    keys = _effective_keys(fields, seen)
+    if not keys:
+        return any(_norm(_free_text(o)) != _norm(_free_text(first)) for o in seen[1:])
     return any(
         relevant(o) != relevant(first) or any(_norm(o.get(k)) != _norm(first.get(k)) for k in keys)
         for o in seen[1:]
     )
+
+
+def _free_text(decision: dict) -> str:
+    """Comparable text of a free-form decision (no schema field to compare):
+    its canonical JSON — any difference in the answer (text or shape) counts."""
+    return json.dumps(decision, sort_keys=True, ensure_ascii=False, default=str)

@@ -738,7 +738,8 @@
     "nextShort": "Siguiente",
     "metadataOnlyNote": "Solo metadatos (OpenAlex): esta fuente no proporciona texto completo. Si tienes acceso al artículo, sube su PDF.",
     "sourceFile": "Archivo de origen",
-    "sourceNotRecorded": "Origen no registrado"
+    "sourceNotRecorded": "Origen no registrado",
+    "noModelAnswer": "Sin respuesta del modelo para esta búsqueda."
   },
   "sex": {
     "MALE_ONLY": "Solo machos",

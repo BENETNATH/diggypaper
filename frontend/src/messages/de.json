@@ -738,7 +738,8 @@
     "nextShort": "Weiter",
     "metadataOnlyNote": "Nur Metadaten (OpenAlex): Diese Quelle liefert keinen Volltext. Wenn Sie Zugriff auf den Artikel haben, laden Sie das PDF hoch.",
     "sourceFile": "Quellendatei",
-    "sourceNotRecorded": "Quelle nicht erfasst"
+    "sourceNotRecorded": "Quelle nicht erfasst",
+    "noModelAnswer": "Keine Modellantwort für diese Suche."
   },
   "sex": {
     "MALE_ONLY": "Nur Männchen",

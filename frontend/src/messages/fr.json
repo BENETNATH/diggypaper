@@ -738,7 +738,8 @@
     "nextShort": "Suivant",
     "metadataOnlyNote": "Métadonnées seulement (OpenAlex) : cette source ne fournit pas de texte intégral. Si vous avez accès à l'article, déposez son PDF.",
     "sourceFile": "Fichier source",
-    "sourceNotRecorded": "Source non enregistrée"
+    "sourceNotRecorded": "Source non enregistrée",
+    "noModelAnswer": "Aucune réponse du modèle pour cette recherche."
   },
   "sex": {
     "MALE_ONLY": "Mâles uniquement",

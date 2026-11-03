@@ -76,6 +76,60 @@ def test_agreement_between_variants_and_disagreements():
     assert metrics.disagrees([d(), None], FIELDS) is False
 
 
+def test_disagrees_free_form_text():
+    # No schema fields: free-form answers diverge when the text differs
+    assert metrics.disagrees([{"content": "a"}, {"content": "b"}], []) is True
+    assert metrics.disagrees([{"content": "a"}, {"content": "a"}], []) is False
+    assert metrics.disagrees([{"thought": "a"}, {"thought": "b"}], []) is True
+    assert metrics.disagrees([{"content": "a"}, None], []) is False
+    # an empty decision counts as no answer, like None
+    assert metrics.disagrees([{"content": "a"}, {}], []) is False
+    # structured answers (model-invented keys) diverge too
+    assert (
+        metrics.disagrees(
+            [{"type_test": "unique", "hauteur_eau_cm": 20}, {"content": "autre forme"}], []
+        )
+        is True
+    )
+
+
+def test_disagrees_free_form_with_default_fields():
+    # Schema fields never answered (free-form prompts): compare the raw answers
+    fields = [{"key": "use_ai_behavior", "label": "AI", "type": "boolean"}]
+    assert metrics.disagrees([{"content": "a"}, {"content": "b"}], fields) is True
+    assert metrics.disagrees([{"content": "a"}, {"content": "a"}], fields) is False
+    assert (
+        metrics.disagrees([{"type_test": "unique"}, {"text": "autre forme"}], fields) is True
+    )
+    # a schema key answered: the structured comparison applies
+    assert (
+        metrics.disagrees([{"use_ai_behavior": True}, {"use_ai_behavior": True}], fields)
+        is False
+    )
+    assert (
+        metrics.disagrees([{"use_ai_behavior": True}, {"use_ai_behavior": False}], fields)
+        is True
+    )
+
+
+def test_agreement_free_form_with_default_fields():
+    fields = [{"key": "use_ai_behavior", "label": "AI", "type": "boolean"}]
+    assert (
+        metrics.agreement(
+            {"A": {1: {"content": "a"}}, "B": {1: {"content": "b"}}}, fields
+        )
+        == {}
+    )
+    # Free-form answers without a relevance signal: agreement is not computable
+    assert (
+        metrics.agreement({"A": {1: {"content": "a"}}, "B": {1: {"content": "b"}}}, []) == {}
+    )
+    # …but still computable when a confidence signal exists
+    assert metrics.agreement(
+        {"A": {1: {"content": "a", "confidence_score": 0.9}}, "B": {1: {"content": "b"}}}, []
+    )
+
+
 def test_pick_examples_balanced_and_reproducible():
     gold = {i: d(ai=True) for i in range(1, 7)} | {i: d(ai=False, conf=0.1) for i in range(7, 13)}
     a = gold_examples.pick_examples(gold, 4, seed=3)
