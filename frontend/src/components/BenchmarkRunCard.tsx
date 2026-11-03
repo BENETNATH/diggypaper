@@ -127,7 +127,7 @@ export function BenchmarkRunCard({
     setError(null);
     try {
       const prompt = await promptFor(r);
-      const q = new URLSearchParams({ model: r.model_name });
+      const q = new URLSearchParams({ model: r.model_name, new: "1" });
       if (prompt) q.set("prompt", prompt);
       router.push(withSearch(`/projects/${projectId}/inference?${q.toString()}`, analysisSearchId));
     } catch (e) {
