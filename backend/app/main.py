@@ -14,6 +14,7 @@ from app.api.v1 import (
     benchmarks,
     citations,
     crate_import,
+    documents,
     export,
     gold,
     inference,
@@ -77,6 +78,7 @@ def create_app() -> FastAPI:
     app.include_router(searches.router, prefix="/api/v1")
     app.include_router(citations.router, prefix="/api/v1")
     app.include_router(crate_import.router, prefix="/api/v1")
+    app.include_router(documents.router, prefix="/api/v1")
     app.include_router(query_assistant.router, prefix="/api/v1")
     app.include_router(export.router, prefix="/api/v1")
     app.include_router(models.router, prefix="/api/v1")

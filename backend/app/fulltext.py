@@ -65,15 +65,14 @@ _HEADING = re.compile(
 _STOP = ("references", "bibliography", "acknowledg")
 
 
-def pdf_to_sections(data: bytes) -> list[dict]:
-    """PDF text → [{title, kind, text}] split at the usual headings (IMRaD)."""
-    from pypdf import PdfReader
+def text_to_sections(lines: list[str]) -> list[dict]:
+    """Split a list of text lines into IMRaD sections.
 
-    reader = PdfReader(io.BytesIO(data))
-    lines: list[str] = []
-    for page in reader.pages[:MAX_PDF_PAGES]:
-        # NUL is forbidden in Postgres JSONB ("unsupported Unicode escape sequence")
-        lines += (page.extract_text() or "").replace("\x00", "").splitlines()
+    Recognises common headings (Abstract, Introduction, Methods, Results,
+    Discussion, …) and splits at each one. Stops at References /
+    Bibliography / Acknowledgments. Lines without a recognised heading are
+    grouped under a single "Full text" section.
+    """
     sections: list[dict] = []
     title, buf = "", []
 
@@ -97,6 +96,18 @@ def pdf_to_sections(data: bytes) -> list[dict]:
         title = line
     flush()
     return sections
+
+
+def pdf_to_sections(data: bytes) -> list[dict]:
+    """PDF text → [{title, kind, text}] split at the usual headings (IMRaD)."""
+    from pypdf import PdfReader
+
+    reader = PdfReader(io.BytesIO(data))
+    lines: list[str] = []
+    for page in reader.pages[:MAX_PDF_PAGES]:
+        # NUL is forbidden in Postgres JSONB ("unsupported Unicode escape sequence")
+        lines += (page.extract_text() or "").replace("\x00", "").splitlines()
+    return text_to_sections(lines)
 
 
 async def _get_json(http: httpx.AsyncClient, url: str, params: dict | None = None) -> dict | None:
@@ -420,7 +431,7 @@ async def complete_article(
 
     A manually uploaded text (``pdf:upload``) is never overwritten by an automatic search.
     """
-    if art.fulltext_source == "pdf:upload" and long_enough(art.sections or []):
+    if art.fulltext_source in ("pdf:upload", "upload", "ocr") and long_enough(art.sections or []):
         return None
     # Link identifiers on the row (Europe PMC's resolution): a PMID-only article
     # gains its PMCID/DOI, a DOI-only one its PMID — cross-source re-imports then

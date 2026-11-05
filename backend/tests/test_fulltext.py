@@ -747,3 +747,91 @@ def test_doi_must_match_exactly_not_as_a_prefix():
         "doi 10.1016/j.cell.2020.12.\n003", "10.1016/j.cell.2020.12.003"
     )  # cut across lines
     assert not doi_in(head, None)
+
+
+# ============================================================================
+# text_to_sections (refactored from pdf_to_sections)
+# ============================================================================
+
+
+def test_text_to_sections_splits_imrad():
+    from app.fulltext import text_to_sections
+
+    lines = [
+        "Abstract",
+        "A short abstract text.",
+        "Introduction",
+        "We did this to understand.",
+        "Materials and Methods",
+        "Mice were housed in groups.",
+        "Results",
+        "They ran faster.",
+        "References",
+        "[1] Author, 2020.",
+    ]
+    secs = text_to_sections(lines)
+    assert [s["kind"] for s in secs] == ["other", "introduction", "methods", "results"]
+    assert "Mice were housed" in secs[2]["text"]
+    assert all("[1] Author" not in s["text"] for s in secs)
+
+
+def test_text_to_sections_no_headings_single_section():
+    from app.fulltext import text_to_sections
+
+    lines = ["Just some plain text.", "No headings here.", "Another line."]
+    secs = text_to_sections(lines)
+    assert len(secs) == 1
+    assert secs[0]["kind"] == "other"
+    assert secs[0]["title"] == "Full text"
+    assert "plain text" in secs[0]["text"]
+
+
+def test_text_to_sections_stops_at_bibliography():
+    from app.fulltext import text_to_sections
+
+    lines = [
+        "Introduction",
+        "Intro text.",
+        "Discussion",
+        "We discuss results.",
+        "Bibliography",
+        "Citations here.",
+    ]
+    secs = text_to_sections(lines)
+    assert [s["kind"] for s in secs] == ["introduction", "discussion"]
+    assert all("Citations here" not in s["text"] for s in secs)
+
+
+def test_text_to_sections_handles_hyphenated_lines():
+    from app.fulltext import text_to_sections
+
+    lines = [
+        "Introduction",
+        "This is a very long",
+        "sentence that is",
+        "split across lines.",
+    ]
+    secs = text_to_sections(lines)
+    assert len(secs) == 1
+    assert "split across lines" in secs[0]["text"]
+
+
+def test_text_to_sections_empty_input():
+    from app.fulltext import text_to_sections
+
+    assert text_to_sections([]) == []
+
+
+def test_text_to_sections_acknowledgments_stops():
+    from app.fulltext import text_to_sections
+
+    lines = [
+        "Results",
+        "Result text.",
+        "Acknowledgements",
+        "Thanks to everyone.",
+    ]
+    secs = text_to_sections(lines)
+    assert len(secs) == 1
+    assert secs[0]["kind"] == "results"
+    assert "Thanks" not in secs[0]["text"]
