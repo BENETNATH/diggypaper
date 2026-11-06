@@ -285,6 +285,18 @@ class Article(Base):
             postgresql_where=text("native_id IS NOT NULL"),
             sqlite_where=text("native_id IS NOT NULL"),
         ),
+        # Upload dedup (migration 0035): same file (sha256) in one project → one article.
+        # PARTIAL on origin='upload': for import origins origin_ref is the import job id,
+        # shared by every article of the job (a global unique constraint broke staging).
+        Index(
+            "uq_article_project_origin_ref",
+            "project_id",
+            "origin",
+            "origin_ref",
+            unique=True,
+            postgresql_where=text("origin = 'upload' AND origin_ref IS NOT NULL"),
+            sqlite_where=text("origin = 'upload' AND origin_ref IS NOT NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, **_uuid_pk())

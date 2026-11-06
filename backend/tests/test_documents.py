@@ -454,3 +454,66 @@ def test_ocr_raster_scale_bounds_pixel_memory():
     # an elongated page still respects the per-dimension cap and the budget
     s = _raster_scale(20000, 5)
     assert 20000 * s <= MAX_OCR_PIXELS**0.5 * 1.01
+
+
+@pytest.mark.asyncio
+async def test_import_articles_share_their_job_ref(client, session, researcher_user, do_login):
+    """Regression (staging crash, migration 0035): for import origins the
+    ``origin_ref`` is the import job id, SHARED by every article of the job —
+    the unique constraint must only bind uploads, never imports."""
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project = Project(title="P", created_by=researcher_user.id)
+    await _make_project(session, project, researcher_user)
+
+    job_id = "11111111-1111-4111-8111-111111111111"
+    session.add_all(
+        [
+            Article(
+                project_id=project.id,
+                origin="pubmed",
+                origin_ref=job_id,
+                title="A1",
+                pmid="111",
+            ),
+            Article(
+                project_id=project.id,
+                origin="pubmed",
+                origin_ref=job_id,
+                title="A2",
+                pmid="222",
+            ),
+        ]
+    )
+    # no IntegrityError: two articles of the same import job are legitimate
+    await session.commit()
+
+
+@pytest.mark.asyncio
+async def test_upload_dedup_unique_per_project(client, session, researcher_user, do_login):
+    """Same file uploaded twice (same sha) in one project → one article: the
+    (project_id, origin, origin_ref) uniqueness must hold for uploads."""
+    from sqlalchemy.exc import IntegrityError
+
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project = Project(title="P", created_by=researcher_user.id)
+    await _make_project(session, project, researcher_user)
+
+    session.add(
+        Article(
+            project_id=project.id,
+            origin="upload",
+            origin_ref="sha-1",
+            title="U1",
+        )
+    )
+    await session.commit()
+    session.add(
+        Article(
+            project_id=project.id,
+            origin="upload",
+            origin_ref="sha-1",
+            title="U2",
+        )
+    )
+    with pytest.raises(IntegrityError):
+        await session.commit()
