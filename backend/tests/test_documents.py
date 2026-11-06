@@ -435,3 +435,22 @@ async def test_ocr_empty_result_422(client, session, researcher_user, do_login):
         resp = await client.post(f"/api/v1/projects/{project.id}/articles/{art_id}/ocr")
     assert resp.status_code == 422
     assert "ocr_empty" in resp.json()["detail"]
+
+
+def test_ocr_raster_scale_bounds_pixel_memory():
+    """Audit run-2 (needs_validation lead): the OCR rasterization scale must bound
+    the TOTAL pixel memory, not only one dimension — a near-square page >= 4800 pt
+    used to saturate the 20000 px per-dimension cap (20000x20000 px = 1.2 GB pixmap
+    in the shared API process)."""
+    from app.api.v1.documents import MAX_OCR_PIXELS, _raster_scale
+
+    # a normal A4 page at 300 dpi is untouched
+    assert _raster_scale(595, 842) == pytest.approx(300 / 72)
+    # a huge near-square page is downsampled to the pixel budget, not 20000x20000
+    s = _raster_scale(10000, 10000)
+    raster = 10000 * s
+    assert raster * raster <= MAX_OCR_PIXELS
+    assert raster * raster < 20000 * 20000  # strictly below the old worst case
+    # an elongated page still respects the per-dimension cap and the budget
+    s = _raster_scale(20000, 5)
+    assert 20000 * s <= MAX_OCR_PIXELS ** 0.5 * 1.01

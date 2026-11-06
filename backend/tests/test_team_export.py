@@ -291,6 +291,88 @@ async def test_export_ro_crate_async(
     assert z.read("extraction.csv").decode("utf-8-sig").splitlines()[0].startswith("key,pmid")
 
 
+async def test_crate_export_of_blind_search_hides_other_reviewers(
+    client, engine, session, lead_project, mock_mailer, monkeypatch, tmp_path, do_login
+):
+    """Audit run-2 HIGH: the RO-Crate path must apply the same per-caller blind mask
+    as the xlsx route (write_crate used to call _load without the principal)."""
+    import json
+    import zipfile
+
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+    from app.db.models import ProjectMember, ProjectMemberRole, UserRole
+    from app.tasks import export as texport
+    from app.tasks import inference as tinf
+    from tests.conftest import _make_user
+
+    lead_project.fields = [{"key": "ai", "label": "AI", "type": "boolean"}]
+    session.add(lead_project)
+    await session.commit()
+    a1 = Article(project_id=lead_project.id, pmid="b1", title="one", abstract="abs one")
+    a2 = Article(project_id=lead_project.id, pmid="b2", title="two", abstract="abs two")
+    session.add_all([a1, a2])
+    await session.commit()
+    base = f"/api/v1/projects/{lead_project.id}"
+    s = (
+        await client.post(
+            f"{base}/searches",
+            json={"name": "blind", "kind": "blind", "selection": {"sample_n": 2, "seed": 1}},
+        )
+    ).json()
+    # the LEAD re-reads a1; an annotator re-reads a2
+    r = await client.post(
+        f"{base}/articles/{a1.id}/annotation", params={"search": s["id"]}, json={"ai": False}
+    )
+    assert r.status_code == 201, r.text
+    ann = await _make_user(
+        session, "ann-blind@lab.fr", UserRole.RESEARCHER, "member-pass-123", True
+    )
+    session.add(
+        ProjectMember(
+            project_id=lead_project.id, user_id=ann.id, role_in_project=ProjectMemberRole.ANNOTATOR
+        )
+    )
+    await session.commit()
+    await do_login("ann-blind@lab.fr", "member-pass-123", consent=True)
+    r = await client.post(
+        f"{base}/articles/{a2.id}/annotation", params={"search": s["id"]}, json={"ai": True}
+    )
+    assert r.status_code == 201, r.text
+
+    # the LEAD starts the crate export of the blind search
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    queued = []
+    monkeypatch.setattr(texport.export_task, "delay", lambda jid: queued.append(jid))
+    monkeypatch.setenv("EXPORT_DIR", str(tmp_path))
+
+    async def fake_mailer(_session):
+        return mock_mailer
+
+    monkeypatch.setattr(tinf, "_make_mailer", fake_mailer)
+    r = await client.post(f"{base}/export/crate", params={"search": s["id"]})
+    assert r.status_code == 202 and len(queued) == 1
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    stats = await texport._run_export(queued[0], session_factory=factory)
+    assert stats["articles"] == 2 and stats["size"] > 0
+
+    # the annotator downloads the crate: no other reviewer's blind content or identity
+    await do_login("ann-blind@lab.fr", "member-pass-123", consent=True)
+    resp = await client.get(f"{base}/export/crate/{r.json()['id']}/download")
+    assert resp.status_code == 200
+    z = zipfile.ZipFile(io.BytesIO(resp.content))
+    rec2 = json.loads(z.read("articles/pmid-b2/metadata.json"))
+    assert not rec2.get("human"), "another reviewer's blind review leaked in the crate"
+    rec1 = json.loads(z.read("articles/pmid-b1/metadata.json"))
+    assert rec1.get("human"), "the job creator's own blind review must stay in their crate"
+    blob = b"".join(z.read(n) for n in z.namelist() if n.endswith((".json", ".csv", ".md")))
+    assert b"ann-blind@lab.fr" not in blob, "another reviewer's identity leaked in the crate"
+
+    # PRISMA blind counts are per-caller, not the whole lot
+    c = (await client.get(f"{base}/prisma", params={"search": s["id"]})).json()
+    assert c["screened"] == 1, "blind PRISMA counts must be per-caller"
+
+
 async def test_crate_download_expired_410(client, session, lead_project, monkeypatch, tmp_path):
     from app.db.models import ExportJob
 

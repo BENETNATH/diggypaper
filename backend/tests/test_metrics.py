@@ -140,3 +140,29 @@ def test_pick_examples_balanced_and_reproducible():
         gold_examples.pick_examples(gold, 0) == []
         and len(gold_examples.pick_examples(gold, 99)) == 12
     )
+
+
+class _Art:
+    """Minimal article for compose_text: sections + abstract only."""
+
+    def __init__(self, abstract=None, sections=None, methods_text=None):
+        self.abstract, self.sections, self.methods_text = abstract, sections, methods_text
+
+
+def test_examples_block_frames_data_as_untrusted():
+    """Audit run-2 MEDIUM: the few-shot block is appended to the SYSTEM prompt;
+    the example article text and the verbatim evidence quotes must be framed as
+    data, never instructions (same invariant as fill_prompt's <article> rule)."""
+    art = _Art(abstract="The mice were housed in pairs.")
+    gold = {
+        "A": {"ai": True, "confidence_score": 0.9, "evidence_quotes": ["PAIR-QUOTE"]}
+    }
+    block = gold_examples.examples_block({"A": art}, gold, ["A"], FIELDS)
+    assert "PAIR-QUOTE" in block  # the quote is still present (no regression)
+    assert "<article>" in block and "</article>" in block, "example text must be framed"
+    assert "<quote>" in block and "</quote>" in block, "verbatim quotes must be framed"
+    framed_text = block.index("<article>") < block.index("The mice") < block.index("</article>")
+    framed_quote = block.index("<quote>") < block.index("PAIR-QUOTE") < block.index("</quote>")
+    assert framed_text and framed_quote
+    header = block[: block.index("Article text")]
+    assert "instruction" in header.lower(), "the block header must state the data rule"

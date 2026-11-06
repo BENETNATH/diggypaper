@@ -127,7 +127,7 @@ async def _run_export(
                 tmp = out_dir / f"{filename}.part"
                 with tmp.open("wb") as fh:
                     stats = await write_crate(
-                        session, project, user.email if user else "", fh, progress, scope
+                        session, project, user.email if user else "", fh, progress, scope, user=user
                     )
                 tmp.replace(out_dir / filename)
                 job.status, job.filename = "COMPLETED", filename

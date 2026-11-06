@@ -225,10 +225,9 @@ def ocr_pdf(data: bytes) -> list[dict]:
 
     doc = fitz.open(stream=data, filetype="pdf")
     lines: list[str] = []
-    MAX_PX = 20000  # cap rasterized dimension to prevent OOM
     for page in doc[:MAX_PDF_PAGES]:
         r = page.rect
-        scale = min(300 / 72, MAX_PX / max(r.width, r.height, 1))
+        scale = _raster_scale(r.width, r.height)
         mat = fitz.Matrix(scale, scale)
         pix = page.get_pixmap(matrix=mat)
         if pix.width > MAX_PX or pix.height > MAX_PX:
@@ -244,6 +243,21 @@ def ocr_pdf(data: bytes) -> list[dict]:
     if total_chars < MIN_CHARS:
         raise HTTPException(status_code=422, detail="ocr_empty")
     return sections
+
+
+MAX_PX = 20000  # per-dimension cap (kept as a post-allocation guard)
+# Total pixel budget per rasterized page: bounds the pixmap memory in the shared
+# API process (RGB = 3 B/px), not only one dimension. A near-square page of
+# >= 4800 pt used to saturate MAX_PX alone (20000x20000 px = 1.2 GB per copy);
+# at this budget the worst case is 4000x4000 px (~48 MB per copy).
+MAX_OCR_PIXELS = 16_000_000
+
+
+def _raster_scale(width: float, height: float) -> float:
+    """OCR raster scale: 300 dpi, capped by MAX_PX per dimension and by the
+    MAX_OCR_PIXELS total budget (the page MediaBox is untrusted upload input)."""
+    side = max(width, height, 1)
+    return min(300 / 72, MAX_PX / side, MAX_OCR_PIXELS**0.5 / side)
 
 
 @router.post(

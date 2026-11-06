@@ -48,7 +48,8 @@ async def _lead_project(session, title="Vieux projet", age_days=40):
             project_id=project.id, user_id=lead.id, role_in_project=ProjectMemberRole.LEAD
         )
     )
-    session.add(Article(project_id=project.id, pmid="1", title="a"))
+    # the article is as old as the project: an inactive project has no fresh corpus write
+    session.add(Article(project_id=project.id, pmid="1", title="a", created_at=old))
     await session.commit()
     return lead, project
 
@@ -111,6 +112,35 @@ async def test_inactive_project_warned_then_deleted_unless_active(session, expor
     out = await maintenance.retention_sweep(session, mailer, now + timedelta(days=20))
     assert out == {"warned": 0, "deleted": 0}
     assert (await session.get(Project, project.id)).retention_warned_at is None
+
+
+async def test_upload_activity_is_not_inactivity(session, exports, monkeypatch):
+    """Audit run-2 LOW: corpus writes from document uploads (Article/ArticleFile rows)
+    must count as activity — only imports/jobs/re-reads used to."""
+    s = get_settings()
+    monkeypatch.setattr(s, "project_retention_days", 30)
+    monkeypatch.setattr(s, "project_retention_grace_days", 14)
+    lead, project = await _lead_project(session)  # created 40 days ago, corpus as old
+    now = datetime.now(UTC)
+    fresh = Article(
+        project_id=project.id, pmid="99", title="upload", origin="upload",
+        created_at=now - timedelta(days=2),
+    )
+    session.add(fresh)
+    await session.flush()
+    session.add(ArticleFile(article_id=fresh.id, data=b"%PDF-1.4 fresh"))
+    await session.commit()
+
+    mailer = FakeMailer()
+    assert await maintenance.retention_sweep(session, mailer, now) == {"warned": 0, "deleted": 0}
+    assert mailer.sent == []
+    assert (await session.get(Project, project.id)).retention_warned_at is None
+    # no tracked job in between: the upload alone keeps the project alive past the grace
+    assert await maintenance.retention_sweep(session, mailer, now + timedelta(days=15)) == {
+        "warned": 0,
+        "deleted": 0,
+    }
+    assert await session.get(Project, project.id) is not None
 
 
 async def test_warned_project_deleted_after_grace(session, exports, monkeypatch):

@@ -71,7 +71,7 @@ async def db_bytes(db: AsyncSession) -> int | None:
 
 async def last_activity(db: AsyncSession) -> dict:
     """{project id: last activity} (import, analysis, re-read, search, benchmark,
-    export, "Keep", else creation)."""
+    export, document upload/OCR, "Keep", else creation)."""
     last: dict = {}
 
     def bump(rows) -> None:
@@ -88,6 +88,17 @@ async def last_activity(db: AsyncSession) -> dict:
                 )
             ).all()
         )
+    # Corpus writes from document uploads (and OCR, which updates the same Article
+    # row): a project whose only recent activity is uploading must not be swept.
+    bump(
+        (
+            await db.execute(
+                select(Article.project_id, func.max(Article.created_at)).group_by(
+                    Article.project_id
+                )
+            )
+        ).all()
+    )
     bump(
         (
             await db.execute(

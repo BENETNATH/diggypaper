@@ -372,7 +372,7 @@ async def _references(
     project = await _require_project_member(db, project_id, user)
     scope = await get_search(db, project, search)
     where = article_filter(scope, status, answers, q, fulltext)[0]
-    articles, preds, *_ = await _load(db, project, where, scope)
+    articles, preds, *_ = await _load(db, project, where, scope, user=user)
     project = ScopedProject(project, scope)
     notes = _notes(articles, preds, project_fields(project))
     if fmt == "ris":
@@ -416,7 +416,7 @@ async def get_prisma(
     """Counts of the PRISMA 2020 flow diagram of a search."""
     project = await _require_project_member(db, project_id, user)
     scope = await get_search(db, project, search)
-    articles, preds, annos, import_jobs, _ = await _load(db, project, search=scope)
+    articles, preds, annos, import_jobs, _ = await _load(db, project, search=scope, user=user)
     return prisma.prisma_counts(
         articles, preds, annos, import_jobs, await _prisma_origin(db, project, scope)
     )
@@ -433,7 +433,7 @@ async def get_prisma_svg(
     """PRISMA 2020 diagram in SVG (language: ``lang`` if given, else the project's)."""
     project = await _require_project_member(db, project_id, user)
     scope = await get_search(db, project, search)
-    articles, preds, annos, import_jobs, _ = await _load(db, project, search=scope)
+    articles, preds, annos, import_jobs, _ = await _load(db, project, search=scope, user=user)
     counts = prisma.prisma_counts(
         articles, preds, annos, import_jobs, await _prisma_origin(db, project, scope)
     )
@@ -457,7 +457,7 @@ async def get_prisma_pdf(
     """PRISMA 2020 diagram as a vectorial PDF (same content as the SVG)."""
     project = await _require_project_member(db, project_id, user)
     scope = await get_search(db, project, search)
-    articles, preds, annos, import_jobs, _ = await _load(db, project, search=scope)
+    articles, preds, annos, import_jobs, _ = await _load(db, project, search=scope, user=user)
     counts = prisma.prisma_counts(
         articles, preds, annos, import_jobs, await _prisma_origin(db, project, scope)
     )
@@ -503,14 +503,18 @@ async def export_bibtex(
 
 
 async def write_crate(
-    db: AsyncSession, project, user_email: str, tmp, progress=None, search=None
+    db: AsyncSession, project, user_email: str, tmp, progress=None, search=None, user=None
 ) -> dict:
     """Writes the RO-Crate (zip) into the binary file ``tmp`` -> {articles, pdf, text}.
 
     ``progress(done, total)`` (async, optional) is called every 10 articles.
+    ``user`` (the job's requester): in a blind search, only their own reviews
+    leave the project (same per-caller mask as the xlsx route).
     """
     search = search or await default_search(db, project)
-    articles, preds, annos, import_jobs, inf_job = await _load(db, project, search=search)
+    articles, preds, annos, import_jobs, inf_job = await _load(
+        db, project, search=search, user=user
+    )
     fields = project_fields(project)
     # Living registry: only as a fallback, for an old job without a snapshot.
     names = {n for n in (inf_job.model_used, inf_job.prefilter_model) if n} if inf_job else set()
