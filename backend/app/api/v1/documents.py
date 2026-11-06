@@ -12,6 +12,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db, rate_limit_user
@@ -95,7 +96,27 @@ async def _upload_document(request: Request, db: AsyncSession, user: User, proje
             methods_text=None,
         )
         db.add(art)
-        await db.flush()
+        try:
+            await db.flush()
+        except IntegrityError:
+            await db.rollback()
+            dup = (
+                await db.execute(
+                    select(Article).where(
+                        Article.project_id == project_id,
+                        Article.origin == "upload",
+                        Article.origin_ref == sha,
+                    )
+                )
+            ).scalar_one()
+            return {
+                "id": str(dup.id),
+                "title": dup.title,
+                "has_fulltext": False,
+                "fulltext_source": None,
+                "fulltext_note": "no_text_layer",
+                "duplicate": True,
+            }
         db.add(ArticleFile(article_id=art.id, data=data))
         await db.commit()
         return {
@@ -125,7 +146,27 @@ async def _upload_document(request: Request, db: AsyncSession, user: User, proje
         methods_text=methods_text,
     )
     db.add(art)
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError:
+        await db.rollback()
+        dup = (
+            await db.execute(
+                select(Article).where(
+                    Article.project_id == project_id,
+                    Article.origin == "upload",
+                    Article.origin_ref == sha,
+                )
+            )
+        ).scalar_one()
+        return {
+            "id": str(dup.id),
+            "title": dup.title,
+            "has_fulltext": bool(dup.sections),
+            "fulltext_source": dup.fulltext_source,
+            "fulltext_note": dup.fulltext_note,
+            "duplicate": True,
+        }
     db.add(ArticleFile(article_id=art.id, data=data))
     await db.commit()
 
@@ -195,7 +236,6 @@ async def run_ocr(
     user: UserDep,
 ):
     """Manual OCR on a scanned PDF article (no_text_layer). Synchronous."""
-    from app.fulltext import apply_uploaded_pdf
 
     await _require_project_member(db, project_id, user)
     await _require_lead_or_admin(db, project_id, user)
@@ -221,19 +261,17 @@ async def run_ocr(
         raise HTTPException(status_code=409, detail="no file to OCR")
 
     # Run OCR (CPU-bound, offload to thread)
-    import asyncio
-
     sections = await asyncio.to_thread(ocr_pdf, af.data)
 
     # ocr_pdf raises 422 internally if below MIN_CHARS; guard here too
     if not sections:
         raise HTTPException(status_code=422, detail="ocr_empty")
 
-    # Apply: replace sections + set source
-    await apply_uploaded_pdf(db, art, sections, af.data)
-    art.fulltext_source = "ocr"
+    # Apply: replace sections + set source directly as "ocr"
+    from app.fulltext import _apply_fulltext
+
+    await _apply_fulltext(db, art, sections, "ocr", None, af.data)
     art.methods_text = " ".join(s["text"] for s in sections) or None
-    art.fulltext_note = None
     await db.commit()
 
     return {
