@@ -4,6 +4,7 @@ import uuid
 
 import pytest
 from sqlalchemy import select
+
 from app.db.models import Article, ArticleFile, Project, ProjectMember, ProjectMemberRole
 
 BODY = "lorem ipsum dolor sit amet " * 200  # ~5000 chars
@@ -35,12 +36,12 @@ async def test_upload_txt_imrad(client, session, researcher_user, do_login):
     await _make_project(session, project, researcher_user)
 
     txt = (
-        "Abstract\nshort abstract.\n"
-        "Introduction\nwe did this.\n"
-        "Materials and Methods\nmice were housed.\n"
-        "Results\nthey ran.\n"
-        "References\n[1] x."
-    ).encode()
+        b"Abstract\nshort abstract.\n"
+        b"Introduction\nwe did this.\n"
+        b"Materials and Methods\nmice were housed.\n"
+        b"Results\nthey ran.\n"
+        b"References\n[1] x."
+    )
     resp = await client.post(
         f"/api/v1/projects/{project.id}/documents",
         params={"filename": "my_paper.txt"},
@@ -111,11 +112,15 @@ async def test_upload_duplicate_returns_existing(client, session, researcher_use
 
     txt = (BODY + "\n").encode()
     url = f"/api/v1/projects/{project.id}/documents"
-    r1 = await client.post(url, params={"filename": "a.txt"}, content=txt, headers={"content-type": "text/plain"})
+    r1 = await client.post(
+        url, params={"filename": "a.txt"}, content=txt, headers={"content-type": "text/plain"}
+    )
     assert r1.status_code == 200
     first_id = r1.json()["id"]
 
-    r2 = await client.post(url, params={"filename": "b.txt"}, content=txt, headers={"content-type": "text/plain"})
+    r2 = await client.post(
+        url, params={"filename": "b.txt"}, content=txt, headers={"content-type": "text/plain"}
+    )
     assert r2.status_code == 200
     data = r2.json()
     assert data["duplicate"] is True
@@ -227,7 +232,9 @@ async def test_upload_stores_article_file(client, session, researcher_user, do_l
     assert resp.status_code == 200
     art_id = uuid.UUID(resp.json()["id"])
 
-    af = (await session.execute(select(ArticleFile).where(ArticleFile.article_id == art_id))).scalar_one()
+    af = (
+        await session.execute(select(ArticleFile).where(ArticleFile.article_id == art_id))
+    ).scalar_one()
     assert af.data == txt
 
 
@@ -317,6 +324,7 @@ async def test_upload_requires_lead_or_admin(client, session, researcher_user, d
 async def test_ocr_scanned_article_success(client, session, researcher_user, do_login):
     """OCR on a scanned article (no_text_layer) → sections filled."""
     from unittest.mock import patch
+
     from app.fulltext import text_to_sections
 
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
@@ -338,7 +346,14 @@ async def test_ocr_scanned_article_success(client, session, researcher_user, do_
     assert r1.json()["needs_ocr"] is True
 
     # Now run OCR on it (mock ocr_pdf to return valid sections)
-    fake_lines = ["Abstract", "A short abstract.", "Introduction", "We did this.", "Results", "They ran."]
+    fake_lines = [
+        "Abstract",
+        "A short abstract.",
+        "Introduction",
+        "We did this.",
+        "Results",
+        "They ran.",
+    ]
     fake_sections = text_to_sections(fake_lines)
     with patch("app.api.v1.documents.ocr_pdf", return_value=fake_sections):
         resp = await client.post(f"/api/v1/projects/{project.id}/articles/{art_id}/ocr")
@@ -355,7 +370,7 @@ async def test_ocr_on_article_with_text_409(client, session, researcher_user, do
     project = Project(title="P", created_by=researcher_user.id)
     await _make_project(session, project, researcher_user)
 
-    txt = ("Introduction\nsome text.\nResults\nmore text.\n").encode()
+    txt = b"Introduction\nsome text.\nResults\nmore text.\n"
     r1 = await client.post(
         f"/api/v1/projects/{project.id}/documents",
         params={"filename": "a.txt"},

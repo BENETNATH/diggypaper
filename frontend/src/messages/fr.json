@@ -202,7 +202,18 @@
     "scheduleError_origin_deleted": "L'analyse d'origine a été supprimée.",
     "scheduleError_unknown": "Erreur inconnue.",
     "legendUnanalysed": "non analysés",
-    "ofLot": "({n}/{d} du lot)"
+    "ofLot": "({n}/{d} du lot)",
+    "uploadHint": "Glissez vos fichiers .txt / .pdf ici, ou cliquez pour sélectionner",
+    "uploadWaiting": "En attente",
+    "uploadProgress": "Upload… ({n} %)",
+    "uploadCreated": "Créé",
+    "uploadDuplicate": "Déjà présent (ignoré)",
+    "uploadError": "Erreur",
+    "uploadRetry": "Réessayer",
+    "noTextLayer": "Sans texte (scanné)",
+    "runOcr": "Lancer l'OCR",
+    "ocrRunning": "OCR… (1–3 min)",
+    "ocrEmpty": "Texte illisible — changez de source"
   },
   "import": {
     "title": "Import du corpus",

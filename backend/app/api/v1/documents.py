@@ -8,6 +8,7 @@ import asyncio
 import hashlib
 import logging
 import uuid
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
@@ -15,17 +16,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db, rate_limit_user
 from app.api.v1.projects import _require_lead_or_admin, _require_project_member
-from app.db.models import Article, ArticleFile, Project, User
+from app.db.models import Article, ArticleFile, User
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/projects", tags=["documents"])
 
+DbDep = Annotated[AsyncSession, Depends(get_db)]
+UserDep = Annotated[User, Depends(get_current_user)]
+
 
 async def _upload_document(request: Request, db: AsyncSession, user: User, project_id: uuid.UUID):
-    from app.fulltext import MAX_PDF_BYTES, MIN_CHARS, pdf_to_sections, text_to_sections
+    from app.fulltext import MAX_PDF_BYTES, pdf_to_sections, text_to_sections
 
-    project = await _require_project_member(db, project_id, user)
+    await _require_project_member(db, project_id, user)
     await _require_lead_or_admin(db, project_id, user)
 
     data = await request.body()
@@ -140,7 +144,12 @@ async def _upload_document(request: Request, db: AsyncSession, user: User, proje
     "/{project_id}/documents",
     dependencies=[Depends(rate_limit_user("upload_document", 30))],
 )
-async def upload_document(project_id: uuid.UUID, request: Request, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+async def upload_document(
+    project_id: uuid.UUID,
+    request: Request,
+    db: DbDep,
+    user: UserDep,
+):
     return await _upload_document(request, db, user, project_id)
 
 
@@ -155,11 +164,12 @@ def ocr_pdf(data: bytes) -> list[dict]:
     Rasterises pages with PyMuPDF (~300 dpi), runs Tesseract (eng+fre) per
     page, concatenates text, and splits via text_to_sections.
     """
-    from app.fulltext import MIN_CHARS, MAX_PDF_PAGES, text_to_sections
+
     import fitz  # PyMuPDF
     import pytesseract
     from PIL import Image
-    import io as _io
+
+    from app.fulltext import MAX_PDF_PAGES, MIN_CHARS, text_to_sections
 
     doc = fitz.open(stream=data, filetype="pdf")
     lines: list[str] = []
@@ -178,11 +188,16 @@ def ocr_pdf(data: bytes) -> list[dict]:
 
 
 @router.post("/{project_id}/articles/{article_id}/ocr")
-async def run_ocr(project_id: uuid.UUID, article_id: uuid.UUID, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+async def run_ocr(
+    project_id: uuid.UUID,
+    article_id: uuid.UUID,
+    db: DbDep,
+    user: UserDep,
+):
     """Manual OCR on a scanned PDF article (no_text_layer). Synchronous."""
     from app.fulltext import apply_uploaded_pdf
 
-    project = await _require_project_member(db, project_id, user)
+    await _require_project_member(db, project_id, user)
     await _require_lead_or_admin(db, project_id, user)
 
     art = (
@@ -195,7 +210,9 @@ async def run_ocr(project_id: uuid.UUID, article_id: uuid.UUID, db: AsyncSession
 
     # Preconditions: must have a PDF file and be in no_text_layer state
     if art.fulltext_note != "no_text_layer":
-        raise HTTPException(status_code=409, detail="article already has text or is not marked for OCR")
+        raise HTTPException(
+            status_code=409, detail="article already has text or is not marked for OCR"
+        )
 
     af = (
         await db.execute(select(ArticleFile).where(ArticleFile.article_id == article_id))
@@ -205,6 +222,7 @@ async def run_ocr(project_id: uuid.UUID, article_id: uuid.UUID, db: AsyncSession
 
     # Run OCR (CPU-bound, offload to thread)
     import asyncio
+
     sections = await asyncio.to_thread(ocr_pdf, af.data)
 
     # ocr_pdf raises 422 internally if below MIN_CHARS; guard here too

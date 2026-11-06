@@ -10,7 +10,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1
 
 # gosu : l'entrypoint démarre en root pour réparer les droits des volumes, puis passe en « app ».
+# tesseract : OCR des PDF scannés (upload documents).
 RUN apt-get update && apt-get install -y --no-install-recommends gosu \
+    tesseract-ocr tesseract-ocr-fra \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --uid 10001 --home-dir /app --shell /usr/sbin/nologin app
 

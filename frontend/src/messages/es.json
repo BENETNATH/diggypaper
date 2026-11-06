@@ -202,7 +202,18 @@
     "scheduleError_unknown": "Error desconocido.",
     "legendUnanalysed": "no analizados",
     "ofLot": "({n}/{d} del lote)",
-    "kpiScopeAll": "en todos los análisis del proyecto"
+    "kpiScopeAll": "en todos los análisis del proyecto",
+    "uploadHint": "Arrastre sus archivos .txt / .pdf aquí o haga clic para seleccionar",
+    "uploadWaiting": "En espera",
+    "uploadProgress": "Subiendo… ({n} %)",
+    "uploadCreated": "Creado",
+    "uploadDuplicate": "Ya presente (omitido)",
+    "uploadError": "Error",
+    "uploadRetry": "Reintentar",
+    "noTextLayer": "Sin texto (escaneado)",
+    "runOcr": "Ejecutar OCR",
+    "ocrRunning": "OCR… (1–3 min)",
+    "ocrEmpty": "Texto ilegible — pruebe otra fuente"
   },
   "import": {
     "title": "Importación del corpus",

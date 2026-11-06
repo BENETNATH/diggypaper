@@ -4,6 +4,7 @@ import { ReactNode, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
+import { DocumentUpload } from "@/components/DocumentUpload";
 import { ActiveJobsBanner } from "@/components/ActiveJobsBanner";
 import { ActivityPanel } from "@/components/ActivityPanel";
 import {
@@ -290,14 +291,17 @@ function ProjectDashboard() {
           </h2>
         </div>
         {overview.articles === 0 ? (
-          <p className="rounded-lg border border-dashed border-border p-4 text-sm text-muted">
-            {t("emptyCorpus")}{" "}
-            {isLead && (
-              <Link href={`/projects/${projectId}/import`} className="font-medium text-primary hover:underline">
-                {t("ctaImport")} →
-              </Link>
-            )}
-          </p>
+          <div className="flex flex-col gap-3">
+            <p className="rounded-lg border border-dashed border-border p-4 text-sm text-muted">
+              {t("emptyCorpus")}{" "}
+              {isLead && (
+                <Link href={`/projects/${projectId}/import`} className="font-medium text-primary hover:underline">
+                  {t("ctaImport")} →
+                </Link>
+              )}
+            </p>
+            {isLead && <DocumentUpload projectId={projectId} />}
+          </div>
         ) : shown.length === 0 ? (
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary/40 bg-primary/5 p-4 text-sm text-foreground">
             <span>{t("noSearchYet", { n: overview.articles })}</span>

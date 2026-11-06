@@ -415,14 +415,16 @@ export default function AnnotatePage() {
                 </p>
               )}
               <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1">
-                <button
-                  type="button"
-                  className="font-medium text-primary hover:underline disabled:opacity-50"
-                  disabled={searching || pdfBusy}
-                  onClick={() => void handleSearch()}
-                >
-                  {searching ? t("searching") : t("searchFulltext")}
-                </button>
+                {!article.fulltext_source || !["upload", "ocr", "pdf:upload"].includes(article.fulltext_source) ? (
+                  <button
+                    type="button"
+                    className="font-medium text-primary hover:underline disabled:opacity-50"
+                    disabled={searching || pdfBusy}
+                    onClick={() => void handleSearch()}
+                  >
+                    {searching ? t("searching") : t("searchFulltext")}
+                  </button>
+                ) : null}
                 <label className="cursor-pointer font-medium text-primary hover:underline">
                   {pdfBusy ? t("pdfBusy") : article.has_fulltext ? t("replacePdf") : t("addPdf")}
                   <input
