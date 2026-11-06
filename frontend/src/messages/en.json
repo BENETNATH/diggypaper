@@ -222,7 +222,16 @@
     "scannedBadge": "no text (scanned)",
     "ocrDone": "OCR done",
     "ocrFailed": "OCR failed",
-    "ocrPages": "{n} pages"
+    "ocrPages": "{n} pages",
+    "derivedFromUncertains": "drawn from the {n} uncertain articles of {name}",
+    "outsideChain": "Outside the chain",
+    "optionalTooling": "Optional tooling · outside the chain",
+    "goldCard": "Gold",
+    "goldCardState": "{n} references",
+    "benchCard": "Benchmarks",
+    "benchCardState": "{n} runs",
+    "chainPillsAria": "Select the active analysis",
+    "chainAria": "Analysis chain"
   },
   "import": {
     "title": "Corpus import",
@@ -445,7 +454,8 @@
     "removeConfirm": "Remove this article from the gold?",
     "yes": "Yes",
     "no": "No",
-    "blindNHint": "1 to {n} articles (current analysis)"
+    "blindNHint": "1 to {n} articles (current analysis)",
+    "humanReviews": "Human review (the others)"
   },
   "benchmarks": {
     "title": "Benchmarks",

@@ -222,7 +222,16 @@
     "scannedBadge": "sans texte (scanné)",
     "ocrDone": "OCR terminé",
     "ocrFailed": "OCR en échec",
-    "ocrPages": "{n} pages"
+    "ocrPages": "{n} pages",
+    "derivedFromUncertains": "issue des {n} incertains de « {name} »",
+    "outsideChain": "Hors chaîne",
+    "optionalTooling": "Outillage optionnel · hors chaîne",
+    "goldCard": "Gold",
+    "goldCardState": "{n} références",
+    "benchCard": "Benchmarks",
+    "benchCardState": "{n} tirages",
+    "chainPillsAria": "Sélection de l'analyse active",
+    "chainAria": "Chaîne des analyses"
   },
   "import": {
     "title": "Import du corpus",
@@ -445,7 +454,8 @@
     "remove": "Retirer",
     "removeConfirm": "Retirer cet article du gold ?",
     "yes": "Oui",
-    "no": "Non"
+    "no": "Non",
+    "humanReviews": "Revue humaine (les autres)"
   },
   "benchmarks": {
     "title": "Benchmarks",

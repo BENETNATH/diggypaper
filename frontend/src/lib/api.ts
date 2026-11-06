@@ -147,6 +147,16 @@ export interface GoldArticle {
   added_by?: string | null;
   /** The re-review changed since the copy: "update". */
   stale?: boolean;
+  /** R5 (spec v4): the latest human review of every member (name + answers + confidence). */
+  human_reviews?: {
+    user_id: string;
+    by: string | null;
+    at: string | null;
+    status: "VALIDATED" | "CORRECTED" | "MANUAL" | null;
+    blind: boolean;
+    answers: Record<string, unknown>;
+    confidence: number;
+  }[];
 }
 
 // --- Recherches -------------------------------------------------------------

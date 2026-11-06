@@ -222,7 +222,16 @@
     "scannedBadge": "ohne Text (gescannt)",
     "ocrDone": "OCR fertig",
     "ocrFailed": "OCR fehlgeschlagen",
-    "ocrPages": "{n} Seiten"
+    "ocrPages": "{n} Seiten",
+    "derivedFromUncertains": "aus den {n} unsicheren Artikeln von « {name} »",
+    "outsideChain": "Außerhalb der Kette",
+    "optionalTooling": "Optionales Werkzeug · außerhalb der Kette",
+    "goldCard": "Gold",
+    "goldCardState": "{n} Referenzen",
+    "benchCard": "Benchmarks",
+    "benchCardState": "{n} Läufte",
+    "chainPillsAria": "Aktive Analyse auswählen",
+    "chainAria": "Analyse-Kette"
   },
   "import": {
     "title": "Korpus-Import",
@@ -445,7 +454,8 @@
     "removeConfirm": "Diesen Artikel aus dem Goldstandard entfernen?",
     "yes": "Ja",
     "no": "Nein",
-    "blindNHint": "1 bis {n} Artikel (aktuelle Analyse)"
+    "blindNHint": "1 bis {n} Artikel (aktuelle Analyse)",
+    "humanReviews": "Menschliche Prüfung (die anderen)"
   },
   "benchmarks": {
     "title": "Benchmarks",

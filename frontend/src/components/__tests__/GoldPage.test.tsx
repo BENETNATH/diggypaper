@@ -106,6 +106,68 @@ describe("gold page — blind sample: hierarchy + bounds", () => {
   });
 });
 
+describe("gold page — spec v4 R5 : revues des autres membres", () => {
+  const row = {
+    id: "g1",
+    article_id: "a1",
+    article_title: "Titre A",
+    ground_truth_json: { ai: true, confidence_score: 0.9 },
+    search_id: "s1",
+    source: {
+      annotation_id: "ann1",
+      by: "Alain",
+      at: "2026-11-01T00:00:00",
+      status: "VALIDATED" as const,
+      blind: false,
+    },
+    added_by: "Alain",
+    stale: false,
+    human_reviews: [
+      {
+        user_id: "u-other",
+        by: "Alice",
+        at: "2026-11-02T00:00:00",
+        status: "VALIDATED",
+        blind: false,
+        answers: { ai: false, confidence_score: 0.8 },
+        confidence: 0.8,
+      },
+      {
+        user_id: "u-me",
+        by: "Moi",
+        at: "2026-11-03T00:00:00",
+        status: "VALIDATED",
+        blind: false,
+        answers: { ai: true, confidence_score: 0.5 },
+        confidence: 0.5,
+      },
+    ],
+  };
+
+  it("shows the others' latest human review (name + answer), never the caller's own", async () => {
+    mockUseAuth.mockReturnValue({ user: { id: "u-me", role: "RESEARCHER" }, loading: false });
+    listGold.mockResolvedValue([row]);
+    getProject.mockResolvedValue({
+      role_in_project: "ANOTATOR",
+      question_set: true,
+      question: "q?",
+      fields: [{ key: "ai", label: "IA", type: "boolean" }],
+      text_sections: ["methods"],
+    });
+    listSearches.mockResolvedValue([search]);
+    render(
+      <Suspense fallback={null}>
+        <GoldPage />
+      </Suspense>
+    );
+    expect(await screen.findByText(/Revue humaine \(les autres\)/)).toBeInTheDocument();
+    // Alice answered « Non » on the IA question, 80 % confidence
+    expect(screen.getByText("Alice — IA : non · 80 %")).toBeInTheDocument();
+    // the caller's own review stays out of the « les autres » block
+    expect(screen.queryByText("Moi")).not.toBeInTheDocument();
+  });
+});
+
 describe("gold page — deleted current search (dead stored id)", () => {
   it("no « search not found »: the 404 falls back to the default search and stays usable", async () => {
     sessionStorage.setItem("diggy:search:p1", "dead-id");

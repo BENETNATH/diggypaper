@@ -29,6 +29,34 @@ import { Spinner, ErrorBanner } from "@/components/ui/Feedback";
 
 const pct = (n: number, d: number): number => (d > 0 ? Math.round((n / d) * 100) : 0);
 
+/** R6 (spec v4): the standard analyses in chain order — each node after its parent. */
+function orderChain(searches: SearchInfo[]): SearchInfo[] {
+  const byId = new Map(searches.map((s) => [s.id, s]));
+  const visited = new Set<string>();
+  const out: SearchInfo[] = [];
+  const visit = (s: SearchInfo) => {
+    if (visited.has(s.id)) return;
+    visited.add(s.id);
+    const p = s.parent ? byId.get(s.parent.id) : undefined;
+    if (p) visit(p);
+    out.push(s);
+  };
+  const roots = searches.filter((s) => !s.parent || !byId.has(s.parent.id));
+  const rest = searches.filter((s) => s.parent && byId.has(s.parent.id));
+  roots.forEach(visit);
+  rest.forEach(visit);
+  return out;
+}
+
+/** R6 (spec v4): depth of each standard analysis in its chain (root = 0). */
+function chainDepths(ordered: SearchInfo[]): Map<string, number> {
+  const depth = new Map<string, number>();
+  for (const s of ordered) {
+    depth.set(s.id, s.parent && depth.has(s.parent.id) ? depth.get(s.parent.id)! + 1 : 0);
+  }
+  return depth;
+}
+
 function Kpi({ label, value, sub, title }: { label: string; value: ReactNode; sub?: ReactNode; title?: string }) {
   return (
     <div className="rounded-lg border border-border bg-surface px-3 py-2.5" title={title}>
@@ -226,6 +254,13 @@ function ProjectDashboard() {
   // launched + to-launch: the never-launched initial analyses are shown with their own badge
   const shown = overview.searches;
 
+  // spec v4 R6: standard analyses form the chain; the rest stays outside it.
+  const standard = shown.filter((s) => s.kind === "standard");
+  const outside = shown.filter((s) => s.kind !== "standard");
+  const chain = orderChain(standard);
+  const depths = chainDepths(chain);
+  const benchCount = shown.filter((s) => s.last_benchmark).length;
+
   return (
     <div className="flex flex-col gap-5">
       <ActiveJobsBanner projectId={projectId} />
@@ -312,13 +347,67 @@ function ProjectDashboard() {
             )}
           </div>
         ) : (
-          <ul className="flex flex-col gap-3">
-            {shown.map((s) => (
-              <SearchRow key={s.id} s={s} projectId={projectId} isLead={isLead} hasCorpus={hasCorpus} />
-            ))}
-          </ul>
+          <div className="flex flex-col gap-3">
+            {chain.length > 0 && (
+              // The chain of standard analyses: each node after its parent, with its origin
+              <ol className="flex flex-col gap-3" aria-label={t("chainAria")}>
+                {chain.map((s, i) => {
+                  const depth = depths.get(s.id) ?? 0;
+                  const parent = s.parent && chain[i - 1]?.id === s.parent.id ? s.parent : undefined;
+                  return (
+                    <li key={s.id} className="flex flex-col" style={{ marginLeft: `${depth * 1.25}rem` }}>
+                      {parent && (
+                        <p className="mb-1 pl-1 text-xs text-muted">
+                          <span aria-hidden>↓ </span>
+                          {s.parent_spec?.status === "NEEDS_HUMAN_REVIEW"
+                            ? t("derivedFromUncertains", { n: s.lot_size, name: parent.name })
+                            : t("derivedFrom", { name: parent.name })}
+                        </p>
+                      )}
+                      <SearchRow s={s} projectId={projectId} isLead={isLead} hasCorpus={hasCorpus} />
+                    </li>
+                  );
+                })}
+              </ol>
+            )}
+            {outside.length > 0 && (
+              <div className="flex flex-col gap-2">
+                <h3 className="text-sm font-medium text-muted">{t("outsideChain")}</h3>
+                <ul className="flex flex-col gap-3">
+                  {outside.map((s) => (
+                    <SearchRow key={s.id} s={s} projectId={projectId} isLead={isLead} hasCorpus={hasCorpus} />
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
         )}
       </section>
+
+      {/* spec v4 R6: gold & benchmarks — optional tooling, outside the chain */}
+      {overview.articles > 0 && (
+        <section className="flex flex-col gap-3">
+          <h2 className="text-base font-semibold text-foreground">{t("optionalTooling")}</h2>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Link
+              href={`/projects/${projectId}/gold`}
+              className="flex items-center justify-between rounded-lg border border-border bg-surface p-3 transition-colors hover:border-primary"
+            >
+              <span className="font-medium text-foreground">{t("goldCard")}</span>
+              <span className="text-sm text-muted">{t("goldCardState", { n: overview.gold })}</span>
+              <span aria-hidden>→</span>
+            </Link>
+            <Link
+              href={`/projects/${projectId}/benchmarks`}
+              className="flex items-center justify-between rounded-lg border border-border bg-surface p-3 transition-colors hover:border-primary"
+            >
+              <span className="font-medium text-foreground">{t("benchCard")}</span>
+              <span className="text-sm text-muted">{t("benchCardState", { n: benchCount })}</span>
+              <span aria-hidden>→</span>
+            </Link>
+          </div>
+        </section>
+      )}
 
       {lastJob && (
         <p className="text-xs text-muted">

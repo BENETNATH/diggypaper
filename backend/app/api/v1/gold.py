@@ -96,8 +96,10 @@ def _payload(
     ann: HumanAnnotation | None,
     names: dict,
     latest: HumanAnnotation | None,
+    human_reviews: list[dict] | None = None,
 ) -> dict:
-    """One gold line: answers, link to its source card, re-reader, obsolescence."""
+    """One gold line: answers, link to its source card, re-reader, obsolescence,
+    and the latest human review of every member (R5)."""
     d = (ann.decision_json or {}) if ann else {}
     stale = bool(
         latest is not None
@@ -123,6 +125,7 @@ def _payload(
         else None,
         "added_by": names.get(g.added_by),
         "stale": stale,  # the review changed since the copy: "update"
+        "human_reviews": human_reviews or [],
     }
 
 
@@ -134,8 +137,47 @@ async def _names(db: AsyncSession, user_ids: set) -> dict:
     return {u.id: u.full_name or u.email for u in rows.scalars()}
 
 
+async def _all_member_reviews(db: AsyncSession, article_ids: list, scope) -> dict:
+    """{article_id: [latest human review per member]} within the search.
+
+    R5 (spec v4): in the gold, each participant sees the latest review of every
+    other member (name + answers + confidence). The AI answer stays masked —
+    only the human re-reads are exposed here.
+    """
+    out: dict = {}
+    if not article_ids:
+        return out
+    rows = await db.execute(
+        select(HumanAnnotation, User)
+        .join(User, User.id == HumanAnnotation.user_id, isouter=True)
+        .where(
+            HumanAnnotation.article_id.in_(article_ids),
+            in_search(HumanAnnotation.search_id, scope),
+        )
+        .order_by(HumanAnnotation.created_at, HumanAnnotation.id)
+    )
+    latest: dict = {}  # (article_id, user_id) -> most recent annotation
+    for ann, user in rows.all():
+        latest[(ann.article_id, ann.user_id)] = (ann, user)
+    for (article_id, _uid), (ann, user) in latest.items():
+        d = ann.decision_json or {}
+        out.setdefault(article_id, []).append(
+            {
+                "user_id": str(ann.user_id),
+                "by": (user.full_name or user.email) if user else None,
+                "at": ann.created_at.isoformat() if ann.created_at else None,
+                "status": d.get("review_status"),
+                "blind": bool(ann.blind),
+                "answers": d,
+                "confidence": d.get("confidence_score", 1.0),
+            }
+        )
+    return out
+
+
 async def _items(db: AsyncSession, project, scope, rows) -> list[dict]:
-    """Gold lines + source re-read, re-readers, last re-read (for "obsolete")."""
+    """Gold lines + source re-read, re-readers, last re-read (for "obsolete"),
+    and every member's latest review (R5)."""
     fields = project_fields(scope)
     anns = {}
     ann_ids = [g.source_annotation_id for g, _ in rows if g.source_annotation_id]
@@ -145,6 +187,9 @@ async def _items(db: AsyncSession, project, scope, rows) -> list[dict]:
         ).scalars():
             anns[a.id] = a
     latest = await latest_reviews(db, [g.article_id for g, _ in rows if g.article_id], scope)
+    member_reviews = await _all_member_reviews(
+        db, [g.article_id for g, _ in rows if g.article_id], scope
+    )
     names = await _names(
         db,
         {a.user_id for a in anns.values()} | {g.added_by for g, _ in rows},
@@ -157,6 +202,7 @@ async def _items(db: AsyncSession, project, scope, rows) -> list[dict]:
             anns.get(g.source_annotation_id),
             names,
             (latest.get(g.article_id) or (None, None))[0],
+            member_reviews.get(g.article_id),
         )
         for g, title in rows
     ]
@@ -209,12 +255,12 @@ async def gold_from_reviews(
     """Adds the last human re-read of the articles to the gold standard (any member).
 
     The reference is a frozen copy of the re-reader's answers, with a link to its card. An
-    article already in the gold is not duplicated (``refresh``: its copy is updated)."""
+    article already in the gold is not duplicated (``refresh``: its copy is updated).
+    R5 (spec v4): in blind, any member can take in a colleague's last review — the
+    confidentiality boundary of blind only masks the AI answer, not the human re-reads."""
     project = await _require_project_member(db, project_id, user)
     scope = await get_search(db, project, search)
     fields = project_fields(scope)
-    # Blind search: only the caller's own re-reads (confidentiality boundary)
-    reviewer = user.id if scope.kind == "blind" else None
     if payload.article_ids:
         # Only the articles of THIS project: ``latest_reviews`` does not join Article, and the
         # initial search also keeps the legacy reviews (``search_id`` NULL) of any project.
@@ -230,11 +276,9 @@ async def gold_from_reviews(
         )
         if own != wanted:
             raise HTTPException(status_code=422, detail="article not in this project")
-        reviews = await latest_reviews(db, list(wanted), scope, reviewer_id=reviewer)
+        reviews = await latest_reviews(db, list(wanted), scope)
     else:
-        reviews = await latest_reviews(
-            db, await _reviewed_ids(db, scope), scope, reviewer_id=reviewer
-        )
+        reviews = await latest_reviews(db, await _reviewed_ids(db, scope), scope)
         wanted = set(reviews)
     existing = {
         g.article_id: g

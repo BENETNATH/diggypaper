@@ -133,3 +133,95 @@ async def test_delete_gold_404(client, session, researcher_user, do_login):
         f"/api/v1/projects/{project.id}/gold/00000000-0000-0000-0000-000000000000"
     )
     assert resp.status_code == 404
+
+
+# --- Spec v4 R5 : les revues des autres participants sont visibles ------------------
+
+
+async def test_from_reviews_blind_includes_colleagues(client, session, researcher_user, do_login):
+    """R5: en mode aveugle, n'importe quel membre peut saisir la dernière revue d'un
+    collègue (le filtre « revues de l'appelant » a disparu)."""
+    from app.db.models import UserRole
+    from tests.conftest import _make_user
+
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    colleague = await _make_user(
+        session, "colleague@lab.fr", UserRole.RESEARCHER, "colleague-pass-123", True
+    )
+    project, article = await _make_project_with_article(session, researcher_user)
+    session.add(
+        ProjectMember(
+            project_id=project.id, user_id=colleague.id, role_in_project=ProjectMemberRole.ANNOTATOR
+        )
+    )
+    second = Article(project_id=project.id, pmid="222", title="Second")
+    session.add(second)
+    await session.commit()
+    s = (
+        await client.post(
+            f"/api/v1/projects/{project.id}/searches",
+            json={"kind": "blind", "selection": {"sample_n": 10, "seed": 1}},
+        )
+    ).json()
+    r = await client.post(
+        f"/api/v1/projects/{project.id}/articles/{article.id}/annotation",
+        params={"search": s["id"]},
+        json=VALID_GT,
+    )
+    assert r.status_code == 201, r.text
+    await do_login("colleague@lab.fr", "colleague-pass-123", consent=True)
+    r = await client.post(
+        f"/api/v1/projects/{project.id}/articles/{second.id}/annotation",
+        params={"search": s["id"]},
+        json={**VALID_GT, "use_ai_behavior": False},
+    )
+    assert r.status_code == 201, r.text
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    resp = await client.post(
+        f"/api/v1/projects/{project.id}/gold/from-reviews", json={}, params={"search": s["id"]}
+    )
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["added"] == 2  # la revue du collègue est saisie aussi
+
+
+async def test_gold_list_exposes_member_reviews(client, session, researcher_user, do_login):
+    """R5: le listing gold expose, pour chaque référence, la dernière revue humaine par
+    membre (nom + réponses aux questions + confiance)."""
+    from app.db.models import UserRole
+    from tests.conftest import _make_user
+
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    colleague = await _make_user(
+        session, "colleague2@lab.fr", UserRole.RESEARCHER, "colleague-pass-123", True
+    )
+    project, article = await _make_project_with_article(session, researcher_user)
+    session.add(
+        ProjectMember(
+            project_id=project.id, user_id=colleague.id, role_in_project=ProjectMemberRole.ANNOTATOR
+        )
+    )
+    await session.commit()
+    r = await client.post(
+        f"/api/v1/projects/{project.id}/gold",
+        json={"article_id": str(article.id), "ground_truth_json": VALID_GT},
+    )
+    assert r.status_code == 201, r.text
+    # les deux membres relisent le même article
+    r = await client.post(
+        f"/api/v1/projects/{project.id}/articles/{article.id}/annotation", json=VALID_GT
+    )
+    assert r.status_code == 201, r.text
+    await do_login("colleague2@lab.fr", "colleague-pass-123", consent=True)
+    r = await client.post(
+        f"/api/v1/projects/{project.id}/articles/{article.id}/annotation",
+        json={**VALID_GT, "use_ai_behavior": False},
+    )
+    assert r.status_code == 201, r.text
+    items = (await client.get(f"/api/v1/projects/{project.id}/gold")).json()["items"]
+    assert len(items) == 1
+    revs = items[0]["human_reviews"]
+    assert {r["user_id"] for r in revs} == {str(researcher_user.id), str(colleague.id)}
+    by_uid = {r["user_id"]: r for r in revs}
+    assert by_uid[str(researcher_user.id)]["answers"]["use_ai_behavior"] is True
+    assert by_uid[str(colleague.id)]["answers"]["use_ai_behavior"] is False
+    assert all(r["by"] and "confidence" in r and "at" in r for r in revs)

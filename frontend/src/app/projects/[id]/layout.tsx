@@ -8,10 +8,11 @@ import { cancelInference, deleteProject, getProject, getInference, listJobs, Imp
 import { Menu, MenuItem } from "@/components/ui/Menu";
 import { ProgressBar } from "@/components/ui/Feedback";
 import { JobProgress } from "@/components/JobProgress";
+import { SearchPills } from "@/components/SearchPills";
 import { isProjectLead } from "@/lib/role";
 import { withSearch } from "@/lib/search";
 import { useAuth } from "@/lib/auth";
-import { useSearchId, useSearches, useSelectSearch } from "@/lib/useSearch";
+import { storeSearchId, useSearchId, useSearches, useSelectSearch } from "@/lib/useSearch";
 import { useHasMounted } from "@/lib/useHasMounted";
 
 const STEPS = [
@@ -322,6 +323,19 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
           );
         })}
       </nav>
+
+      {/* spec v4 R6: one pill per standard analysis — the blue one is the active analysis */}
+      {searches && (
+        <SearchPills
+          searches={searches.filter((s) => s.kind === "standard")}
+          activeId={searchId}
+          ariaLabel={t("chainPillsAria")}
+          onPick={(sid) => {
+            storeSearchId(id, sid);
+            router.push(withSearch(`${base}/articles`, sid));
+          }}
+        />
+      )}
 
       {children}
     </div>
