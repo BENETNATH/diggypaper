@@ -34,6 +34,7 @@ from app.db.models import (
     ModelShare,
     Project,
     ProjectMember,
+    ProjectMemberRole,
     Search,
     User,
     UserRole,
@@ -420,6 +421,10 @@ async def register_external(payload: ExternalModel, db: DbDep, user: UserDep) ->
         raise HTTPException(status_code=422, detail="model must not contain '#'")
     _check_url(payload.base_url, user)
     name = payload.name.strip()
+    if "\n" in name or "\r" in name or "\x00" in name:
+        raise HTTPException(
+            status_code=422, detail="model name must not contain control characters"
+        )
     if (await db.execute(select(ModelRegistry).where(ModelRegistry.name == name))).first():
         raise HTTPException(status_code=409, detail="model name already exists")
     m = ModelRegistry(
@@ -619,8 +624,11 @@ async def add_share(model_id: uuid.UUID, payload: ShareCreate, db: DbDep, user: 
     else:
         project = await db.get(Project, payload.project_id)
         member = await db.get(ProjectMember, (payload.project_id, user.id)) if project else None
-        if project is None or (user.role != UserRole.ADMIN and member is None):
-            raise HTTPException(status_code=404, detail="project not found")
+        if project is None or (
+            user.role != UserRole.ADMIN
+            and (member is None or member.role_in_project != ProjectMemberRole.LEAD)
+        ):
+            raise HTTPException(status_code=403, detail="LEAD or ADMIN only")
         share.project_id = project.id
     dup = await db.execute(
         select(ModelShare.id).where(

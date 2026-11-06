@@ -367,7 +367,6 @@ async def create_annotation(
     db: DbDep,
     user: UserDep,
     search: uuid.UUID | None = None,
-    blind: bool = False,
 ) -> dict:
     """Submits a human annotation for the search ``search`` (``blind``: done without seeing
     the model's prediction, cf. blind sample).
@@ -413,7 +412,7 @@ async def create_annotation(
         article_id=article.id,
         user_id=user.id,
         search_id=scope.id,
-        blind=blind or scope.kind == "blind",
+        blind=scope.kind == "blind",
         decision_json=decision,
         notes=decision["reasoning_summary"],
     )

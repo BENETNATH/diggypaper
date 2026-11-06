@@ -33,4 +33,4 @@ def test_compose_text_selection_and_fallback():
     assert compose_text(_art(methods_text="M"), ["results"]) == "M"
     assert compose_text(_art(), None) == "abs"
     tpl = "{article_text}|{methods_text}"
-    assert fill_prompt(tpl, _art(methods_text="M"), None) == "Methods\nM|M"
+    assert fill_prompt(tpl, _art(methods_text="M"), None) == "<article>\nMethods\nM\n</article>|M"

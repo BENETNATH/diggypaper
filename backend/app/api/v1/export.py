@@ -226,7 +226,7 @@ def build_workbook(project, articles, preds, annos, import_jobs, inf_job, user_e
     return buf.getvalue()
 
 
-async def _load(db: AsyncSession, project, where=None, search=None):
+async def _load(db: AsyncSession, project, where=None, search=None, user=None):
     """Articles + last prediction / annotations per article + jobs, those of ``search`` (default:
     the whole initial search)."""
     search = search or await default_search(db, project)
@@ -264,6 +264,9 @@ async def _load(db: AsyncSession, project, where=None, search=None):
                 .where(
                     HumanAnnotation.article_id.in_(ids),
                     in_search(HumanAnnotation.search_id, search),
+                    *(HumanAnnotation.user_id == user.id,)
+                    if (search.kind == "blind" and user)
+                    else (),
                 )
                 .order_by(HumanAnnotation.created_at.nulls_first(), HumanAnnotation.id)
             )
@@ -332,7 +335,7 @@ async def export_xlsx(
 ) -> Response:
     project = await _require_project_member(db, project_id, user)
     scope = await get_search(db, project, search)
-    articles, preds, annos, import_jobs, inf_job = await _load(db, project, search=scope)
+    articles, preds, annos, import_jobs, inf_job = await _load(db, project, search=scope, user=user)
     project = ScopedProject(project, scope)
     data = await asyncio.to_thread(
         build_workbook, project, articles, preds, annos, import_jobs, inf_job, user.email

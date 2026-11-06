@@ -46,10 +46,15 @@ def compose_text(article, kinds: list[str] | None = None) -> str:
 
 
 def fill_prompt(template: str | None, article, kinds: list[str] | None = None) -> str:
-    """Substitutes ``{article_text}`` (project parts) and ``{methods_text}`` (compat)."""
+    """Substitutes ``{article_text}`` (project parts) and ``{methods_text}`` (compat).
+
+    The article text is wrapped in <article> delimiters so the model can
+    distinguish data from instructions (prompt-injection defense).
+    """
+    text = compose_text(article, kinds)
     return (
         (template or "")
-        .replace("{article_text}", compose_text(article, kinds))
+        .replace("{article_text}", f"<article>\n{text}\n</article>")
         .replace("{methods_text}", article.methods_text or "")
     )
 

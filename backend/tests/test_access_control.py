@@ -117,10 +117,10 @@ async def test_model_shared_with_project_follows_membership(
     mid = (await client.post(f"{API}/models/external", json=EXT)).json()["id"]
     r = await client.post(f"{API}/models/{mid}/shares", json={"project_id": str(project.id)})
     assert r.status_code == 201
-    # a project the user is not a member of: not found
+    # a project the user is not a member of: forbidden
     stranger = await _project(session, bob, "Bobs")
     r = await client.post(f"{API}/models/{mid}/shares", json={"project_id": str(stranger.id)})
-    assert r.status_code == 404
+    assert r.status_code == 403
 
     session.add(
         ProjectMember(project_id=project.id, user_id=bob.id, role_in_project=ProjectMemberRole.LEAD)

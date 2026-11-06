@@ -37,8 +37,9 @@ services:
     image: redis:7-alpine
     restart: unless-stopped
     logging: *logging
+    command: redis-server --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD manquant dans .env}
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "--no-auth-warning", "ping"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -92,7 +93,7 @@ services:
       DEFAULT_LANGUAGE: ${DEFAULT_LANGUAGE:-fr}
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:8080}  # base of the email links (invitations, exports)
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-diggypaper}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD manquant dans .env}@postgres:5432/${POSTGRES_DB:-diggypaper}
-      REDIS_URL: redis://redis:6379/0
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET manquant dans .env}
       ANON_SALT: ${ANON_SALT:?ANON_SALT manquant dans .env}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY manquant dans .env}
@@ -132,7 +133,7 @@ services:
       LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-120}  # timeout per LLM call (raise on CPU: cold start + prefill)
       LLM_EXTRA_BODY: '${LLM_EXTRA_BODY:-{"think": false, "options": {"num_ctx": 16384}}}'  # additional LLM body (local backends): num_ctx anti-truncation, no thinking mode
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-diggypaper}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD manquant dans .env}@postgres:5432/${POSTGRES_DB:-diggypaper}
-      REDIS_URL: redis://redis:6379/0
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET manquant dans .env}
       ANON_SALT: ${ANON_SALT:?ANON_SALT manquant dans .env}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY manquant dans .env}
@@ -174,7 +175,7 @@ services:
       LLM_API_BASE_URL: ${LLM_API_BASE_URL:-http://ollama:11434/v1}
       OLLAMA_MODE: ${OLLAMA_MODE:-docker}  # docker | host | off — deployment flag (see header)
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-diggypaper}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD manquant dans .env}@postgres:5432/${POSTGRES_DB:-diggypaper}
-      REDIS_URL: redis://redis:6379/0
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET manquant dans .env}
       ANON_SALT: ${ANON_SALT:?ANON_SALT manquant dans .env}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY manquant dans .env}

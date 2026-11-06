@@ -27,8 +27,8 @@ from app.schema import check_fields
 
 MAX_JSON = 5 * 1024 * 1024
 MAX_TEXT = 10 * 1024 * 1024
-MAX_ARTICLES = 200_000
-MAX_TOTAL = 8 * 1024**3  # announced uncompressed size, all files combined
+MAX_ARTICLES = 5_000  # aligned with IMPORT_MAX_ARTICLES
+MAX_TOTAL = 1 * 1024**3  # 1 GiB uncompressed (was 8 GiB: amplification guard)
 _KEY = re.compile(r"^[A-Za-z0-9._-]{1,120}$")
 
 

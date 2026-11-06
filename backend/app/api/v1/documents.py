@@ -214,8 +214,15 @@ def ocr_pdf(data: bytes) -> list[dict]:
 
     doc = fitz.open(stream=data, filetype="pdf")
     lines: list[str] = []
+    MAX_PX = 20000  # cap rasterized dimension to prevent OOM
     for page in doc[:MAX_PDF_PAGES]:
-        pix = page.get_pixmap(dpi=300)
+        r = page.rect
+        scale = min(300 / 72, MAX_PX / max(r.width, r.height, 1))
+        mat = fitz.Matrix(scale, scale)
+        pix = page.get_pixmap(matrix=mat)
+        if pix.width > MAX_PX or pix.height > MAX_PX:
+            doc.close()
+            raise HTTPException(status_code=422, detail="page too large for OCR")
         img = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
         text = pytesseract.image_to_string(img, lang="eng+fre")
         lines.extend(text.replace("\x00", "").splitlines())
@@ -228,7 +235,10 @@ def ocr_pdf(data: bytes) -> list[dict]:
     return sections
 
 
-@router.post("/{project_id}/articles/{article_id}/ocr")
+@router.post(
+    "/{project_id}/articles/{article_id}/ocr",
+    dependencies=[Depends(rate_limit_user("ocr", 3))],
+)
 async def run_ocr(
     project_id: uuid.UUID,
     article_id: uuid.UUID,
@@ -261,7 +271,13 @@ async def run_ocr(
         raise HTTPException(status_code=409, detail="no file to OCR")
 
     # Run OCR (CPU-bound, offload to thread)
-    sections = await asyncio.to_thread(ocr_pdf, af.data)
+    try:
+        sections = await asyncio.to_thread(ocr_pdf, af.data)
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("ocr failed for article %s", article_id)
+        raise HTTPException(status_code=422, detail="ocr_failed") from None
 
     # ocr_pdf raises 422 internally if below MIN_CHARS; guard here too
     if not sections:

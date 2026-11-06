@@ -213,6 +213,8 @@ async def gold_from_reviews(
     project = await _require_project_member(db, project_id, user)
     scope = await get_search(db, project, search)
     fields = project_fields(scope)
+    # Blind search: only the caller's own re-reads (confidentiality boundary)
+    reviewer = user.id if scope.kind == "blind" else None
     if payload.article_ids:
         # Only the articles of THIS project: ``latest_reviews`` does not join Article, and the
         # initial search also keeps the legacy reviews (``search_id`` NULL) of any project.
@@ -228,9 +230,11 @@ async def gold_from_reviews(
         )
         if own != wanted:
             raise HTTPException(status_code=422, detail="article not in this project")
-        reviews = await latest_reviews(db, list(wanted), scope)
+        reviews = await latest_reviews(db, list(wanted), scope, reviewer_id=reviewer)
     else:
-        reviews = await latest_reviews(db, await _reviewed_ids(db, scope), scope)
+        reviews = await latest_reviews(
+            db, await _reviewed_ids(db, scope), scope, reviewer_id=reviewer
+        )
         wanted = set(reviews)
     existing = {
         g.article_id: g
