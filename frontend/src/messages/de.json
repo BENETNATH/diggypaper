@@ -264,7 +264,7 @@
     "imported": "importiert",
     "failed": "fehlgeschlagen",
     "total": "Gesamt",
-    "intro": "Drei Wege, den Korpus aufzubauen oder zu erweitern: eine Abfrage (PubMed, Europe PMC oder OpenAlex), eine Literaturliste (DOI, PMID, Zotero-Export…) oder die mit den vorhandenen Artikeln verknüpften Zitate. Metadaten und offene Volltexte werden abgerufen; Sie können jederzeit ergänzen.",
+    "intro": "Vier Möglichkeiten, den Korpus zu erstellen oder zu ergänzen: eine Abfrage (PubMed, Europe PMC oder OpenAlex), eine Referenzliste (DOI, PMID, Zotero-Export …), Zitate zu bereits vorhandenen Artikeln oder eigene .txt-/ .pdf-Dateien per Drag & Drop (Text wird automatisch extrahiert, OCR für gescannte PDFs). Der Korpus ist nicht auf wissenschaftliche Artikel beschränkt: Berichte, Dissertationen, technische Notizen … Metadaten und offene Volltexte der Online-Quellen werden abgerufen; Sie können jederzeit nachbessern.",
     "queryHint": "PubMed-Syntax (AND/OR, [tiab], [MeSH]…).",
     "checkFirst": "Prüfen Sie zuerst das Volumen, um zu importieren.",
     "capNote": "nur die ersten {max} (die neuesten) werden importiert — verfeinern Sie die Abfrage.",

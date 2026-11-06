@@ -264,7 +264,7 @@
     "imported": "imported",
     "failed": "failed",
     "total": "total",
-    "intro": "Three ways to build or enrich the corpus: a query (PubMed, Europe PMC or OpenAlex), a reference list (DOIs, PMIDs, Zotero export…) or the citations linked to the articles already there. Metadata and open full texts are fetched; you can add more at any time.",
+    "intro": "Four ways to build or enrich the corpus: a query (PubMed, Europe PMC, or OpenAlex), a list of references (DOI, PMID, Zotero export, …), citations linked to articles already present, or your own .txt / .pdf files dropped in (drag & drop, text extracted automatically, OCR for scanned PDFs). The corpus is not limited to scientific articles: reports, theses, technical notes… Metadata and open full texts from the online sources are retrieved; you can complete at any time.",
     "queryHint": "PubMed syntax (AND/OR operators, [tiab], [MeSH] fields…).",
     "checkFirst": "Check the volume first to enable import.",
     "capNote": "only the first {max} (the most recent) will be imported — refine the query.",

@@ -1,12 +1,25 @@
 # Diggypaper
 
-A **sovereign, collaborative systematic literature review platform**.
-You import a corpus from PubMed, Europe PMC, OpenAlex or HAL, retrieve open full texts, ask one
-or more questions to the corpus, models (running on CPU, without the cloud) triage
-and extract the answers, then human reviewers validate or correct them. The results
-export to spreadsheet, RO-Crate and PRISMA diagram.
+A **sovereign, collaborative document analysis platform**. You build a corpus from
+PubMed, Europe PMC, OpenAlex, HAL, a reference list, linked citations — **or from
+your own .txt / .pdf files** (drag & drop, OCR for scanned pages) — retrieve open
+full texts, ask one or more questions to the corpus, models (running on CPU, without
+the cloud) triage and extract the answers, then human reviewers validate or correct
+them. The corpus is not limited to scientific articles: **reports, theses, technical
+notes** — any readable document. The results export to spreadsheet, RO-Crate and
+PRISMA diagram.
 
 > Interface in French, English, German and Spanish. GDPR *privacy by design*.
+
+## Screenshots
+
+| Overview — analysis chain | Import — your own documents (.txt/.pdf, drag & drop, OCR) |
+|---|---|
+| ![overview](docs/screenshots/overview-chain.png) | ![import](docs/screenshots/import-docs.png) |
+
+| Results | Analysis progress — the questions, not the prompt |
+|---|---|
+| ![results](docs/screenshots/results.png) | ![inference](docs/screenshots/inference.png) |
 
 ---
 
@@ -17,6 +30,11 @@ export to spreadsheet, RO-Crate and PRISMA diagram.
   (theses, HDR, French repositories), by query, with the expected volume before import, an
   adjustable cap (`IMPORT_MAX_ARTICLES`), deduplication — by DOI, across sources — and the
   metadata (journal, date, authors, DOI).
+- **Your own documents (.txt / .pdf)** : drag & drop in the Import page; the text is
+  extracted automatically and, for scanned PDFs, an OCR is offered **before** launch
+  (page count and time estimate). Uploads are lead-only; the corpus is refreshed as soon
+  as the files are in. Not limited to scientific articles — reports, theses, technical
+  notes, any readable document.
 - **RO-Crate import** : a zip exported by Diggypaper (Projects → « Import a RO-Crate »,
   up to 1 GB) recreates a project: question and items, articles, full texts, PDF, model answers
   (certainties, evidence excerpts) and final human answers. The crate contains only one
@@ -57,6 +75,14 @@ reviews, analyses and references. The batch is the whole corpus, or a subset cho
 criteria — for example «articles where search 1 answered yes», with human review
 or full text, within a relevance range, a random draw or a list. This way
 you ask a second question only to the articles retained by the first, without re-analyzing anything.
+- **The analysis chain** : the project overview reads as a chain of **standard analyses**
+  (lettered A → B → C). The next standard analysis is only proposed on the results of the
+  previous one, so the corpus is walked step by step. A **blind sample** and a **tuning**
+  analysis are shown **outside the chain** : optional work aids that do not feed the chain
+  (the blind builds an unbiased gold; the tuning compares prompt variants). The *progress*
+  panel shows **the questions as they were created** (wording and answer items) — the raw
+  model prompt stays internal. An empty project is guided by a four-step onboarding
+  (corpus, question, models, launch).
 - **Successive searches** : you schedule search 2 while search 1 is running: it starts
   on its own as soon as search 1 is done, on its results (with criteria: accepted by the AI, answer to an
   item…) or on the same batch. Only one analysis runs at a time in a project, the following

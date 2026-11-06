@@ -370,7 +370,7 @@ function ImportContent() {
             </div>
             {mode === "docs" ? (
               isLead ? (
-                <DocumentUpload projectId={projectId} />
+                <DocumentUpload projectId={projectId} onSettled={() => void load()} />
               ) : (
                 <p className="text-sm text-muted">{t("docsLeadOnly")}</p>
               )

@@ -136,6 +136,26 @@ describe("DocumentUpload — OCR confirmed at upload (R2)", () => {
     await waitFor(() => expect(screen.getAllByText("ocrDone")).toHaveLength(2));
   });
 
+  it("calls onSettled once the upload queue finishes, so the page can refresh", async () => {
+    const onSettled = jest.fn();
+    queueUploads([
+      { name: "rapport1.pdf", body: { id: "b1", duplicate: false } },
+      { name: "rapport2.txt", body: { id: "b2", duplicate: false } },
+    ]);
+    render(<DocumentUpload projectId={PROJECT} onSettled={onSettled} />);
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    const list = ["rapport1.pdf", "rapport2.txt"].map((n) => file(n, "application/pdf"));
+    Object.defineProperty(input, "files", { value: list, configurable: true });
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+
+    // not before both uploads are done…
+    await waitFor(() =>
+      expect(state.calls.filter((c) => c.url.includes("/documents"))).toHaveLength(2)
+    );
+    await waitFor(() => expect(onSettled).toHaveBeenCalled());
+    expect(onSettled).toHaveBeenCalledTimes(1);
+  });
+
   it("the per-file button runs OCR for that file only; unreadable text shows ocrEmpty", async () => {
     queueUploads([{ name: "scan.pdf", body: { id: "a9", needs_ocr: true, page_count: 1, duplicate: false } }]);
     await upload([{ name: "scan.pdf", body: {} }]);

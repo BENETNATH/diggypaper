@@ -34,7 +34,14 @@ function tokenFromCookie(): string | undefined {
   return document.cookie.split("; ").find((c) => c.startsWith("token="))?.split("=")[1];
 }
 
-export function DocumentUpload({ projectId }: { projectId: string }) {
+export function DocumentUpload({
+  projectId,
+  onSettled,
+}: {
+  projectId: string;
+  /** Called once the upload queue finishes (articles created) — the page refreshes. */
+  onSettled?: () => void;
+}) {
   const t = useTranslations("project");
   const [files, setFiles] = useState<FileItem[]>([]);
   const [dragOver, setDragOver] = useState(false);
@@ -50,6 +57,7 @@ export function DocumentUpload({ projectId }: { projectId: string }) {
   const processQueue = useCallback(async () => {
     if (busyRef.current) return;
     busyRef.current = true;
+    let settled = 0;
     while (queueRef.current.length > 0) {
       const item = queueRef.current[0];
       if (item.state !== "pending") {
@@ -91,13 +99,15 @@ export function DocumentUpload({ projectId }: { projectId: string }) {
           needsOcr: data.needs_ocr === true,
           pageCount: typeof data.page_count === "number" ? data.page_count : undefined,
         });
+        settled += 1;
       } catch (err) {
         queueRef.current.shift();
         patchFile(item, { state: "error", error: String(err) });
       }
     }
     busyRef.current = false;
-  }, [projectId]);
+    if (settled > 0) onSettled?.();
+  }, [projectId, onSettled]);
 
   const addFiles = (newFiles: FileList | File[]) => {
     const valid: FileItem[] = [];

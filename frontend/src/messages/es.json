@@ -264,7 +264,7 @@
     "imported": "importados",
     "failed": "fallidos",
     "total": "total",
-    "intro": "Tres formas de crear o enriquecer el corpus: una consulta (PubMed, Europe PMC u OpenAlex), una lista de referencias (DOI, PMID, exportación de Zotero…) o las citas vinculadas a los artículos ya presentes. Se obtienen metadatos y textos completos abiertos; puede completar en cualquier momento.",
+    "intro": "Cuatro formas de construir o enriquecer el corpus: una consulta (PubMed, Europe PMC o OpenAlex), una lista de referencias (DOI, PMID, exportación de Zotero…), las citas ligadas a los artículos ya presentes o sus propios archivos .txt / .pdf por arrastrar y soltar (texto extraído automáticamente, OCR para PDF escaneados). El corpus no se limita a artículos científicos: informes, tesis, notas técnicas… Las metadatas y los textos completos abiertos de las fuentes en línea se recuperan; puede completar en cualquier momento.",
     "queryHint": "Sintaxis PubMed (operadores AND/OR, campos [tiab], [MeSH]…).",
     "checkFirst": "Compruebe primero el volumen para poder importar.",
     "capNote": "solo se importarán los primeros {max} (los más recientes) — afine la consulta.",
