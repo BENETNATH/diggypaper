@@ -398,7 +398,7 @@ function AnalyseContent() {
     if (!q || count === 0) return;
     if (
       launch &&
-      ((!stage2 && !stage1) || !q.question.trim() || q.fields.length === 0 || q.sections.length === 0)
+      ((!stage2 && !stage1) || q.fields.length === 0 || q.sections.length === 0)
     )
       return;
     setCreating(true);
@@ -484,7 +484,7 @@ function AnalyseContent() {
   const total = num(r.total);
   const needs = [
     !stage2 && !stage1 ? t("needModel") : null,
-    !q || !q.question.trim() ? t("needQuestion") : null,
+    // R1: the orientation is optional — only the answer items are required
     q && q.fields.length === 0 ? t("needField") : null,
     q && q.sections.length === 0 ? t("needSection") : null,
     !chain && count === 0 ? t("needSelection") : null,
@@ -612,7 +612,7 @@ function AnalyseContent() {
                       <Button
                         type="submit"
                         loading={creating}
-                        disabled={!stage2 && !stage1 || !q || !q.question.trim() || q.fields.length === 0 || q.sections.length === 0 || (!chain && count === 0)}
+                        disabled={!stage2 && !stage1 || !q || q.fields.length === 0 || q.sections.length === 0 || (!chain && count === 0)}
                       >
                         {chain ? t("createScheduled") : t("run")}
                       </Button>

@@ -876,7 +876,7 @@
     "title": "Pregunta y campos de respuesta",
     "intro": "Describa lo que busca en los artículos. Los modelos responden a esta pregunta para cada artículo, con citas de apoyo.",
     "questionTitle": "La pregunta",
-    "questionLabel": "Pregunta a cada artículo",
+    "questionLabel": "Orientación del modelo (opcional)",
     "fieldsTitle": "Campos de respuesta",
     "fieldsHint": "Cada campo es un dato a extraer (sí/no, opción, texto). Rigen el gold, las métricas y la anotación.",
     "fieldLabel": "Etiqueta",
@@ -900,7 +900,11 @@
     "metric_recall": "Exhaustividad",
     "metric_precision": "Precisión",
     "metric_f1": "F1",
-    "metric_accuracy": "Exactitud"
+    "metric_accuracy": "Exactitud",
+    "questionHint": "Se coloca al inicio del prompt de cada artículo: orienta lo que el modelo busca. Dejar vacío: el modelo responde solo a los campos de abajo.",
+    "moveUp": "Subir",
+    "moveDown": "Bajar",
+    "duplicate": "Duplicar"
   },
   "profile": {
     "title": "Mi perfil",

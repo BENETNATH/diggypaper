@@ -92,13 +92,33 @@ export function QuestionEditor({
     });
   }
 
+  /** R4: move an item up / down (the order is the one asked of the model). */
+  function move(i: number, dir: -1 | 1) {
+    const j = i + dir;
+    if (j < 0 || j >= fields.length) return;
+    const next = [...fields];
+    [next[i], next[j]] = [next[j], next[i]];
+    set({ fields: next });
+  }
+
+  /** R4: duplicate an item right after itself (same type/options, a fresh key). */
+  function duplicate(i: number) {
+    const f = fields[i];
+    const keys = new Set(fields.map((x) => x.key));
+    let key = f.key;
+    for (let n = 2; keys.has(key); n += 1) key = `${f.key}_${n}`.slice(0, 40);
+    const next = [...fields];
+    next.splice(i + 1, 0, { ...f, key });
+    set({ fields: next });
+  }
+
   function toggleSection(k: string) {
     set({ sections: sections.includes(k) ? sections.filter((x) => x !== k) : [...sections, k] });
   }
 
   return (
     <div className="flex flex-col gap-5">
-      <Field label={t("questionLabel")}>
+      <Field label={t("questionLabel")} hint={t("questionHint")}>
         <Textarea rows={2} value={question} onChange={(e) => set({ question: e.target.value })} />
       </Field>
       {!question.trim() && !fields.length && (
@@ -132,7 +152,30 @@ export function QuestionEditor({
                   <option value="text">{t("typeText")}</option>
                 </Select>
               </Field>
-              <div className="flex items-end">
+              <div className="flex items-end gap-1">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  aria-label={t("moveUp")}
+                  disabled={i === 0}
+                  onClick={() => move(i, -1)}
+                >
+                  ↑
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  aria-label={t("moveDown")}
+                  disabled={i === fields.length - 1}
+                  onClick={() => move(i, 1)}
+                >
+                  ↓
+                </Button>
+                <Button type="button" variant="ghost" size="sm" aria-label={t("duplicate")} onClick={() => duplicate(i)}>
+                  ⧉
+                </Button>
                 <Button
                   type="button"
                   variant="ghost"

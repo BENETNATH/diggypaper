@@ -876,7 +876,7 @@
     "title": "Question et champs de réponse",
     "intro": "Décrivez ce que vous cherchez dans les articles. Les modèles répondront à cette question pour chaque article, avec des citations à l'appui.",
     "questionTitle": "La question",
-    "questionLabel": "Question posée à chaque article",
+    "questionLabel": "Orientation du modèle (facultative)",
     "fieldsTitle": "Les champs de réponse",
     "fieldsHint": "Chaque champ est une information à extraire (oui/non, choix, texte). Ils servent au gold, aux scores et à l'annotation.",
     "fieldLabel": "Intitulé",
@@ -900,7 +900,11 @@
     "metric_recall": "Rappel",
     "metric_precision": "Précision",
     "metric_f1": "F1",
-    "metric_accuracy": "Exactitude"
+    "metric_accuracy": "Exactitude",
+    "questionHint": "Posée au début du prompt de chaque article : elle oriente ce que le modèle cherche. Laissez vide : le modèle répond uniquement à la liste des questions ci-dessous.",
+    "moveUp": "Monter",
+    "moveDown": "Descendre",
+    "duplicate": "Dupliquer"
   },
   "profile": {
     "title": "Mon profil",

@@ -88,9 +88,13 @@ def validate_decision(fields: list[dict], data: dict) -> list[str]:
 
 
 def build_system_prompt(question: str | None, fields: list[dict]) -> str:
-    """Generated system prompt: question + exact JSON schema asked of the model."""
-    if not (question or "").strip():
-        raise ValueError("question is required")
+    """Generated system prompt: optional orientation + exact JSON schema asked of the model.
+
+    spec 2026-11-06-ux-refonte-v4 R1: the orientation is optional — with no
+    question, the model is told to answer the items alone."""
+    q = (question or "").strip()
+    if not q and not fields:
+        raise ValueError("question or fields required")
     lines = []
     for f in fields:
         if f["type"] == "boolean":
@@ -113,11 +117,19 @@ def build_system_prompt(question: str | None, fields: list[dict]) -> str:
             "}",
         ]
     )
+    if q:
+        intro = (
+            "You are a scientific literature screening assistant. Read the article text "
+            "(in EN, FR, DE or ES) and answer this question:\n"
+            f"{q}\n\n"
+        )
+    else:
+        intro = (
+            "You are a scientific literature screening assistant. Read the article text "
+            "(in EN, FR, DE or ES) and answer the items below.\n\n"
+        )
     return (
-        "You are a scientific literature screening assistant. Read the article text "
-        "(in EN, FR, DE or ES) and answer this question:\n"
-        f"{question.strip()}\n\n"
-        f"Return ONLY a valid JSON object matching this schema:\n{schema}\n"
+        intro + f"Return ONLY a valid JSON object matching this schema:\n{schema}\n"
         "No markdown wrappers, no text outside the JSON. If the text does not allow "
         "an answer, lower confidence_score."
     )

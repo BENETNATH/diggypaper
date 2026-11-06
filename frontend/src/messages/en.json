@@ -876,7 +876,7 @@
     "title": "Question and answer fields",
     "intro": "Describe what you are looking for in the articles. Models answer this question for each article, with supporting quotes.",
     "questionTitle": "The question",
-    "questionLabel": "Question asked to each article",
+    "questionLabel": "Model orientation (optional)",
     "fieldsTitle": "Answer fields",
     "fieldsHint": "Each field is a piece of information to extract (yes/no, choice, text). They drive the gold, the scores and the annotation.",
     "fieldLabel": "Label",
@@ -900,7 +900,11 @@
     "metric_recall": "Recall",
     "metric_precision": "Precision",
     "metric_f1": "F1",
-    "metric_accuracy": "Accuracy"
+    "metric_accuracy": "Accuracy",
+    "questionHint": "Put at the start of each article's prompt: it guides what the model looks for. Leave empty: the model only answers the items below.",
+    "moveUp": "Move up",
+    "moveDown": "Move down",
+    "duplicate": "Duplicate"
   },
   "profile": {
     "title": "My profile",

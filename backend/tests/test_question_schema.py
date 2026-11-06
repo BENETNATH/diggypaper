@@ -24,12 +24,21 @@ def test_check_fields_rejects_bad_input():
             check_fields(bad)
 
 
-def test_build_system_prompt_requires_the_question():
-    """spec 2026-11-02-legacy-questions §1: no legacy fallback question in the prompt."""
-    with pytest.raises(ValueError, match="question is required"):
+def test_build_system_prompt_requires_question_or_fields():
+    """spec 2026-11-06-ux-refonte-v4 R1: nothing to answer at all → refused."""
+    with pytest.raises(ValueError, match="question or fields required"):
         build_system_prompt(None, [])
-    with pytest.raises(ValueError, match="question is required"):
-        build_system_prompt("   ", FIELDS)
+    with pytest.raises(ValueError, match="question or fields required"):
+        build_system_prompt("   ", [])
+
+
+def test_build_system_prompt_neutral_without_question():
+    """spec 2026-11-06-ux-refonte-v4 R1: an empty orientation is fine — the
+    prompt is built from the answer items alone (no question line)."""
+    prompt = build_system_prompt(None, FIELDS)
+    assert "answer this question" not in prompt
+    assert '"design": "RCT" | "COHORT"' in prompt
+    assert build_system_prompt("   ", FIELDS) == prompt  # blank == absent
 
 
 def test_validate_metrics_prompt():

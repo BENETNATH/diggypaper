@@ -876,7 +876,7 @@
     "title": "Frage und Antwortfelder",
     "intro": "Beschreiben Sie, was Sie in den Artikeln suchen. Die Modelle beantworten die Frage für jeden Artikel mit Belegzitaten.",
     "questionTitle": "Die Frage",
-    "questionLabel": "Frage an jeden Artikel",
+    "questionLabel": "Modell-Orientierung (optional)",
     "fieldsTitle": "Antwortfelder",
     "fieldsHint": "Jedes Feld ist eine zu extrahierende Information (Ja/Nein, Auswahl, Text). Sie steuern Gold, Scores und Annotation.",
     "fieldLabel": "Bezeichnung",
@@ -900,7 +900,11 @@
     "metric_recall": "Recall",
     "metric_precision": "Präzision",
     "metric_f1": "F1",
-    "metric_accuracy": "Genauigkeit"
+    "metric_accuracy": "Genauigkeit",
+    "questionHint": "Wird am Anfang des Prompts jedes Artikels gestellt: Sie lenkt, was das Modell sucht. Leer lassen: Das Modell beantwortet nur die unten stehenden Punkte.",
+    "moveUp": "Nach oben",
+    "moveDown": "Nach unten",
+    "duplicate": "Duplizieren"
   },
   "profile": {
     "title": "Mein Profil",
