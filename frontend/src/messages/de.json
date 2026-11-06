@@ -247,7 +247,8 @@
     "chainCount": "{n} Analysen, verknüpft",
     "openTooling": "Öffnen",
     "activeTag": "aktiv",
-    "pillNew": "Neu"
+    "pillNew": "Neu",
+    "outsideChainHint": "Blindtest-Stichproben und Feinabstimmungen: spezifische Analysen, außerhalb der Standardkette."
   },
   "import": {
     "title": "Korpus-Import",

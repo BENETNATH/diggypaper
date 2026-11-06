@@ -279,8 +279,27 @@ describe("project dashboard — spec v4 R6: chaîne + outillage optionnel", () =
     const blind = mk({ id: "bl", name: "Ebloui", kind: "blind", breakdown: {} });
     mount6([a, blind]);
     await screen.findByRole("heading", { name: /d'analyses 1/ });
-    expect(screen.getByText("Hors chaîne")).toBeInTheDocument();
+    expect(screen.getByText("Analyses hors chaîne")).toBeInTheDocument();
     expect(screen.getByText("Ebloui")).toBeInTheDocument();
+  });
+
+  it("outside-chain section explains what it is, and each card says why (kind hint)", async () => {
+    const a = mk({ id: "a", name: "A", is_default: true });
+    const blind = mk({ id: "bl", name: "Ebloui", kind: "blind", breakdown: {} });
+    const tuning = mk({ id: "tu", name: "Tuning", kind: "tuning", breakdown: {}, predicted: 0 });
+    mount6([a, blind, tuning]);
+    expect(await screen.findByText("Analyses hors chaîne")).toBeInTheDocument();
+    expect(
+      screen.getByText("Échantillons à l'aveugle et mises au point : des analyses spécifiques, hors de la chaîne standard.")
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("À l'aveugle : un échantillon relu sans voir la réponse de l'IA (gold standard non biaisé).")
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Mise au point : compare les variantes (modèles, prompts) sur ce lot avant la réalisation de l'analyse."
+      )
+    ).toBeInTheDocument();
   });
 });
 

@@ -247,7 +247,8 @@
     "chainCount": "{n} análisis, enlazados",
     "openTooling": "Abrir",
     "activeTag": "activo",
-    "pillNew": "Nueva"
+    "pillNew": "Nueva",
+    "outsideChainHint": "Muestras a ciegas y ajustes finos: análisis específicos, fuera de la cadena estándar."
   },
   "import": {
     "title": "Importación del corpus",

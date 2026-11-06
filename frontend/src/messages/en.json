@@ -247,7 +247,8 @@
     "chainCount": "{n} analyses, linked",
     "openTooling": "Open",
     "activeTag": "active",
-    "pillNew": "New"
+    "pillNew": "New",
+    "outsideChainHint": "Blind samples and tuning runs: specific analyses, outside the standard chain."
   },
   "import": {
     "title": "Corpus import",

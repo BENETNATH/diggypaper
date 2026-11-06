@@ -59,4 +59,10 @@ describe("ResultsTable — one column per question (R3)", () => {
     expect(container.querySelectorAll("td")).toHaveLength(4); // article + 2 questions + status
     expect(container.textContent).toContain("—");
   });
+
+  it("wide content scrolls inside its card, not outside the page", () => {
+    const { container } = render(<ResultsTable articles={[ARTICLE]} fields={FIELDS} hrefFor={() => "/x"} />);
+    const wrapper = container.querySelector("table")?.parentElement;
+    expect(wrapper?.className).toContain("overflow-x-auto");
+  });
 });

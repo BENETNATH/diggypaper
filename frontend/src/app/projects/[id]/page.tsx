@@ -140,6 +140,9 @@ function SearchRow({
           ) : (
             <p className="mt-0.5 line-clamp-2 text-sm text-muted">{ts("noQuestion")}</p>
           )}
+          {s.kind !== "standard" && (
+            <p className="mt-1 text-xs text-muted">{ts(`kindHint_${s.kind}`)}</p>
+          )}
           {s.schedule_state === "waiting" && s.parent && (
             <p className="mt-0.5 text-xs text-muted">{t("scheduledAfter", { name: s.parent.name })}</p>
           )}
@@ -398,7 +401,10 @@ function ProjectDashboard() {
               )}
               {outside.length > 0 && (
                 <div className="flex flex-col gap-2">
-                  <h3 className="text-sm font-medium text-muted">{t("outsideChain")}</h3>
+                  <div>
+                    <h3 className="text-sm font-medium text-muted">{t("outsideChain")}</h3>
+                    <p className="text-xs text-muted">{t("outsideChainHint")}</p>
+                  </div>
                   <div className="flex flex-col gap-3">
                     {outside.map((s) => (
                       <SearchRow key={s.id} s={s} projectId={projectId} isLead={isLead} hasCorpus={hasCorpus} />

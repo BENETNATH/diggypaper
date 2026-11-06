@@ -21,8 +21,11 @@ export function ResultsTable({
   hrefFor: (a: Article) => string;
 }) {
   const t = useTranslations("articles");
+  // The table can be wider than its card (one column per question, min widths):
+  // scroll horizontally inside the card, never outside the page background.
   return (
-    <table className="w-full border-collapse text-sm">
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[36rem] border-collapse text-sm">
       <thead>
         <tr className="border-b border-border">
           <th className="px-3 py-2 text-left text-xs font-medium text-muted">{t("tableArticle")}</th>
@@ -68,6 +71,7 @@ export function ResultsTable({
           </tr>
         ))}
       </tbody>
-    </table>
+      </table>
+    </div>
   );
 }

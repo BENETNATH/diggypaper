@@ -224,7 +224,7 @@
     "ocrFailed": "OCR en échec",
     "ocrPages": "{n} pages",
     "derivedFromUncertains": "issue des {n} incertains de « {name} »",
-    "outsideChain": "Hors chaîne",
+    "outsideChain": "Analyses hors chaîne",
     "optionalTooling": "Outillage optionnel · hors chaîne",
     "goldCard": "Gold",
     "goldCardState": "{n} références",
@@ -247,7 +247,8 @@
     "chainCount": "{n} analyses, reliées",
     "openTooling": "Ouvrir",
     "activeTag": "active",
-    "pillNew": "Nouvelle"
+    "pillNew": "Nouvelle",
+    "outsideChainHint": "Échantillons à l'aveugle et mises au point : des analyses spécifiques, hors de la chaîne standard."
   },
   "import": {
     "title": "Import du corpus",
