@@ -153,6 +153,7 @@ export function AnalysisRow({
 
 function AnalyseContent() {
   const t = useTranslations("inference");
+  const tq = useTranslations("question");
   const tLead = useTranslations("searches");
   const tj = useTranslations("jobs");
   const errText = useApiError();
@@ -189,7 +190,6 @@ function AnalyseContent() {
   const [submitting, setSubmitting] = useState(false);
   const [promptId, setPromptId] = useState<string | null>(wantedPrompt);
   const [instructions, setInstructions] = useState("");
-  const [sentPrompt, setSentPrompt] = useState<string | null>(null);
   const [promptTitle, setPromptTitle] = useState<string | null>(null);
   const [goldCount, setGoldCount] = useState<number | null>(null);
   const [examplesOn, setExamplesOn] = useState(false);
@@ -280,20 +280,6 @@ function AnalyseContent() {
       .then((p) => setPromptTitle(p.title ?? p.version_number))
       .catch(() => setPromptId(null));
   }, [projectId, promptId]);
-
-  // Exact prompt of the last analysis (viewable under the progress).
-  const tplId = job?.prompt_template_id;
-  const [prevTplId, setPrevTplId] = useState(tplId);
-  if (prevTplId !== tplId) {
-    setPrevTplId(tplId);
-    setSentPrompt(null);
-  }
-  useEffect(() => {
-    if (!tplId) return;
-    getPrompt(projectId, tplId)
-      .then((p) => setSentPrompt(`${p.system_prompt ?? ""}\n\n${p.user_prompt_schema ?? ""}`.trim()))
-      .catch(() => setSentPrompt(null));
-  }, [projectId, tplId]);
 
   // Gold references of the search: without them, no examples and no validation.
   const [prevGoldKey, setPrevGoldKey] = useState(searchKey);
@@ -686,11 +672,27 @@ function AnalyseContent() {
                 <Badge color={statusColor(job?.status ?? "")}>{tj(`status_${job?.status ?? ""}`)}</Badge>
               </div>
             )}
-            {sentPrompt && (
-              <details className="mb-3 text-sm">
-                <summary className="cursor-pointer text-xs font-medium text-muted">{t("promptSent")}</summary>
-                <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap rounded bg-surface-muted p-3 text-xs text-foreground">{sentPrompt}</pre>
-              </details>
+            {/* The questions as created (orientation + answer fields) — never the raw prompt */}
+            {q && (q.question || q.fields.length > 0) && (
+              <div className="mb-3 rounded-lg border border-border p-3 text-sm">
+                <p className="mb-1 text-xs font-medium text-muted">{t("questionsTitle")}</p>
+                {q.question && (
+                  <p className="mb-2 text-foreground">
+                    <span className="mr-1.5 text-xs text-muted">{tq("questionLabel")} :</span>
+                    {q.question}
+                  </p>
+                )}
+                <ul className="flex flex-col gap-1">
+                  {q.fields.map((f) => (
+                    <li key={f.key} className="text-foreground">
+                      {f.label || f.key}
+                      {f.options?.length ? (
+                        <span className="ml-1.5 text-xs text-muted">({f.options.join(" · ")})</span>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )}
             {!active && job?.status === "COMPLETED" && (
               <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">

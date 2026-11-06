@@ -26,6 +26,7 @@ jest.mock("next-intl", () => {
 jest.mock("next/navigation", () => ({
   useParams: () => ({ id: "p1" }),
   useRouter: () => ({ replace: jest.fn() }),
+  useSearchParams: () => new URLSearchParams(""),
 }));
 jest.mock("@/lib/auth", () => ({ useAuth: jest.fn() }));
 jest.mock("@/lib/api", () => ({
@@ -154,12 +155,12 @@ describe("project dashboard — to-launch + KPI scope", () => {
 
   it("counter « Analyses N » counts the to-launch analysis too", async () => {
     mountWithSearches([untouched]);
-    expect(await screen.findByRole("heading", { name: /Analyses 1/ })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /d'analyses 1/ })).toBeInTheDocument();
   });
 
   it("untouched card: badge « À lancer » + single CTA « Lancer → », no Résultats/Relire/Relancer", async () => {
     mountWithSearches([untouched]);
-    await screen.findByRole("heading", { name: /Analyses 1/ });
+    await screen.findByRole("heading", { name: /d'analyses 1/ });
     expect(screen.getByText("À lancer")).toBeInTheDocument();
     const cta = screen.getByRole("button", { name: "Lancer →" });
     expect(cta.closest("a")).toHaveAttribute("href", "/projects/p1/inference?search=s2&new=1");
@@ -170,7 +171,7 @@ describe("project dashboard — to-launch + KPI scope", () => {
 
   it("KPI tooltip kpiScopeAll on the 3 aggregated KPIs", async () => {
     mountWithSearches([untouched]);
-    await screen.findByRole("heading", { name: /Analyses 1/ });
+    await screen.findByRole("heading", { name: /d'analyses 1/ });
     expect(screen.getAllByTitle("sur toutes les analyses du projet")).toHaveLength(3);
   });
 });
@@ -223,25 +224,61 @@ describe("project dashboard — spec v4 R6: chaîne + outillage optionnel", () =
       lot_size: 5,
     });
     mount6([a, b]);
-    expect(await screen.findByText("issue des 5 incertains de « A »")).toBeInTheDocument();
+    expect(await screen.findByText("issue des 5 incertains de « A » ↓")).toBeInTheDocument();
   });
 
   it("« Outillage optionnel · hors chaîne »: gold + benchmarks cards with their state", async () => {
     mount6([mk({ id: "a", name: "A", is_default: true })]);
-    await screen.findByRole("heading", { name: /Analyses/ });
+    await screen.findByRole("heading", { name: /Chaîne d'analyses/ });
     expect(screen.getByText("Outillage optionnel · hors chaîne")).toBeInTheDocument();
-    const goldLink = screen.getByRole("link", { name: /Gold/ });
+    const [goldLink, benchLink] = screen.getAllByRole("link", { name: "Ouvrir" });
     expect(goldLink).toHaveAttribute("href", "/projects/p1/gold");
+    expect(screen.getByText("Gold")).toBeInTheDocument();
     expect(screen.getByText("0 références")).toBeInTheDocument();
-    const benchLink = screen.getByRole("link", { name: /Benchmarks/ });
     expect(benchLink).toHaveAttribute("href", "/projects/p1/benchmarks");
+    expect(screen.getByText("Benchmarks")).toBeInTheDocument();
+  });
+
+  it("empty project: onboarding stepper shown, KPIs and accordions hidden", async () => {
+    mockUseAuth.mockReturnValue({ user: { role: "RESEARCHER" }, loading: false });
+    getProject.mockResolvedValue(project);
+    getOverview.mockResolvedValue({ ...overview, articles: 0, fulltext: 0 });
+    listJobs.mockResolvedValue([]);
+    listModels.mockResolvedValue([{ id: "m1", name: "Kev" } as unknown as api.ModelInfo]);
+    render(
+      <Suspense fallback={null}>
+        <ProjectPage />
+      </Suspense>
+    );
+    expect(await screen.findByText("Importer le corpus")).toBeInTheDocument();
+    expect(screen.getByText("Créer une analyse")).toBeInTheDocument();
+    expect(screen.getByText("Lancer l'analyse avec un modèle")).toBeInTheDocument();
+    expect(screen.getByText("Résultats & relecture")).toBeInTheDocument();
+    expect(screen.getByText("après l'import")).toBeInTheDocument();
+    expect(screen.queryByText("Articles importés")).not.toBeInTheDocument();
+    expect(screen.queryByText("Outillage optionnel · hors chaîne")).not.toBeInTheDocument();
+  });
+
+  it("onboarding step 3 warns when no model is available", async () => {
+    mockUseAuth.mockReturnValue({ user: { role: "RESEARCHER" }, loading: false });
+    getProject.mockResolvedValue(project);
+    getOverview.mockResolvedValue({ ...overview, articles: 0, fulltext: 0 });
+    listJobs.mockResolvedValue([]);
+    listModels.mockResolvedValue([]);
+    render(
+      <Suspense fallback={null}>
+        <ProjectPage />
+      </Suspense>
+    );
+    expect(await screen.findByText("Importer le corpus")).toBeInTheDocument();
+    expect(screen.getByText(/aucun modèle enregistré/i)).toBeInTheDocument();
   });
 
   it("blind searches are listed outside the chain", async () => {
     const a = mk({ id: "a", name: "A", is_default: true });
     const blind = mk({ id: "bl", name: "Ebloui", kind: "blind", breakdown: {} });
     mount6([a, blind]);
-    await screen.findByRole("heading", { name: /Analyses 2/ });
+    await screen.findByRole("heading", { name: /d'analyses 1/ });
     expect(screen.getByText("Hors chaîne")).toBeInTheDocument();
     expect(screen.getByText("Ebloui")).toBeInTheDocument();
   });

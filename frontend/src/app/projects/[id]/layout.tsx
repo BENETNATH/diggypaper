@@ -330,6 +330,8 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
           searches={searches.filter((s) => s.kind === "standard")}
           activeId={searchId}
           ariaLabel={t("chainPillsAria")}
+          label={t("searchesTitle")}
+          newHref={isLead ? `${base}/inference?new=1` : undefined}
           onPick={(sid) => {
             storeSearchId(id, sid);
             router.push(withSearch(`${base}/articles`, sid));

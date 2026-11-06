@@ -15,7 +15,10 @@ import {
 } from "@/lib/api";
 import { withSearch } from "@/lib/search";
 import { useSearchId } from "@/lib/useSearch";
+import { useAuth } from "@/lib/auth";
+import { isProjectLead } from "@/lib/role";
 import { RequireAuth } from "@/components/RequireAuth";
+import { DocumentUpload } from "@/components/DocumentUpload";
 import { ReferencesImport } from "@/components/ReferencesImport";
 import { CitationExpand } from "@/components/CitationExpand";
 import { QueryAssistant } from "@/components/QueryAssistant";
@@ -161,10 +164,11 @@ function ImportContent() {
   const params = useParams<{ id: string }>();
   const projectId = params.id;
   const searchId = useSearchId(projectId);
+  const { user } = useAuth();
 
   const [project, setProject] = useState<Project | null>(null);
   const [jobs, setJobs] = useState<ImportJob[] | null>(null);
-  const [mode, setMode] = useState<"pubmed" | "refs" | "cites">("pubmed");
+  const [mode, setMode] = useState<"pubmed" | "refs" | "cites" | "docs">("pubmed");
   const [source, setSource] = useState<"pubmed" | "europepmc" | "openalex" | "hal">("pubmed");
   const [query, setQuery] = useState("");
   const [volume, setVolume] = useState<number | null>(null);
@@ -228,6 +232,7 @@ function ImportContent() {
   const lastJob = jobs && jobs.length > 0 ? jobs[jobs.length - 1] : null;
   const locked = project?.status === "PROCESSING";
   const hasCorpus = (project?.article_count ?? 0) > 0;
+  const isLead = isProjectLead(project, user);
 
   async function handleCheckVolume(e: React.FormEvent) {
     e.preventDefault();
@@ -340,8 +345,16 @@ function ImportContent() {
           <p className="text-sm text-muted">{t("lockedProcessing")}</p>
         ) : (
           <>
-            <div className="mb-4 inline-flex rounded-lg border border-border p-0.5 text-sm">
-              {(["pubmed", "refs", ...(hasCorpus ? (["cites"] as const) : [])] as const).map((m) => (
+            {/* spec v4: the 4 import modes (the Documents mode hosts the .txt/.pdf drag&drop) */}
+            <div className="mb-4 inline-flex flex-wrap gap-1 rounded-lg border border-border p-1 text-sm">
+              {(
+                [
+                  ["pubmed", "modeQuery"],
+                  ["refs", "modeRefs"],
+                  ["cites", "modeCites"],
+                  ["docs", "modeDocs"],
+                ] as const
+              ).map(([m, labelKey]) => (
                 <button
                   key={m}
                   type="button"
@@ -351,11 +364,17 @@ function ImportContent() {
                     mode === m ? "bg-primary text-white" : "text-muted hover:text-foreground"
                   }`}
                 >
-                  {t(m === "pubmed" ? "modeQuery" : m === "refs" ? "modeRefs" : "modeCites")}
+                  {t(labelKey)}
                 </button>
               ))}
             </div>
-            {mode === "cites" ? (
+            {mode === "docs" ? (
+              isLead ? (
+                <DocumentUpload projectId={projectId} />
+              ) : (
+                <p className="text-sm text-muted">{t("docsLeadOnly")}</p>
+              )
+            ) : mode === "cites" ? (
               <CitationExpand
                 projectId={projectId}
                 onStarted={() => {

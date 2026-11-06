@@ -162,7 +162,7 @@ describe("gold page — spec v4 R5 : revues des autres membres", () => {
     );
     expect(await screen.findByText(/Revue humaine \(les autres\)/)).toBeInTheDocument();
     // Alice answered « Non » on the IA question, 80 % confidence
-    expect(screen.getByText("Alice — IA : non · 80 %")).toBeInTheDocument();
+    expect(screen.getByText("Alice : non · 80 %")).toBeInTheDocument();
     // the caller's own review stays out of the « les autres » block
     expect(screen.queryByText("Moi")).not.toBeInTheDocument();
   });

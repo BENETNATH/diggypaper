@@ -235,17 +235,18 @@ function GoldContent() {
                     {g.stale && <Badge color="yellow">{t("staleBadge")}</Badge>}
                   </p>
                   {g.human_reviews && g.human_reviews.filter((r) => r.user_id !== user?.id).length > 0 && (
-                    <p className="mt-1 text-xs text-muted">
-                      <span className="font-medium text-foreground">{t("humanReviews")} :</span>{" "}
+                    <p className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                      <span className="text-xs font-medium text-foreground">{t("humanReviews")} :</span>
                       {g.human_reviews
                         .filter((r) => r.user_id !== user?.id)
                         .map((r) => (
-                          <span key={r.user_id} className="mr-3">
-                            {r.by ?? "?"} —{" "}
-                            {fields
-                              .map((f) => `${f.label} : ${answer((r.answers ?? {})[f.key])}`)
-                              .join(" · ")}{" "}
-                            · {Math.round((r.confidence ?? 1) * 100)} %
+                          <span
+                            key={r.user_id}
+                            className="rounded-full border border-border bg-surface px-2 py-0.5 text-xs text-muted"
+                          >
+                            {r.by ?? "?"} :{" "}
+                            {fields.map((f) => answer((r.answers ?? {})[f.key])).filter(Boolean).join(" · ") || "—"}
+                            {r.confidence != null && <> · {Math.round(r.confidence * 100)} %</>}
                           </span>
                         ))}
                     </p>

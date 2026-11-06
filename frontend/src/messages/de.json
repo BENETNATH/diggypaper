@@ -231,7 +231,23 @@
     "benchCard": "Benchmarks",
     "benchCardState": "{n} Läufte",
     "chainPillsAria": "Aktive Analyse auswählen",
-    "chainAria": "Analyse-Kette"
+    "chainAria": "Analyse-Kette",
+    "onbStep1": "Korpus importieren",
+    "onbStep1Desc": "PubMed-Anfrage, Referenzliste, Zitate oder .txt/.pdf-Dateien.",
+    "onbStep2": "Eine Analyse erstellen",
+    "onbStep2Desc": "Eine Frage, die einem Artikelstapel gestellt wird.",
+    "onbAfterImport": "nach dem Import",
+    "onbStep3": "Analyse mit einem Modell starten",
+    "onbStep3Desc": "Das Modell liest die Artikel und beantwortet die Fragen.",
+    "onbNoModel": "Kein Modell registriert: Analysen unmöglich (Administrator).",
+    "onbStep4": "Ergebnisse & Nachlese",
+    "onbStep4Desc": "Sichere Fälle werden validiert, unsichere nachgelesen.",
+    "onbCta": "Importieren",
+    "chainTitle": "Analysenkette",
+    "chainCount": "{n} Analysen, verknüpft",
+    "openTooling": "Öffnen",
+    "activeTag": "aktiv",
+    "pillNew": "Neu"
   },
   "import": {
     "title": "Korpus-Import",
@@ -348,7 +364,9 @@
     "citNoSearchesHint": "Erstellen Sie zuerst eine Analyse (Reiter Analyse), um den Korpus per Zitate zu erweitern.",
     "citNoSearchesLink": "Zu den Analysen",
     "citNoCandidate": "Kein Kandidat am gewählten Schwellwert: erhöhen Sie den Schwellwert oder wählen Sie andere Ausgangsartikel.",
-    "refsLabel": "Referenzen (DOI, PMID, BibTeX…)"
+    "refsLabel": "Referenzen (DOI, PMID, BibTeX…)",
+    "modeDocs": "Dokumente .txt/.pdf",
+    "docsLeadOnly": "Nur der Projektleiter kann Dateien importieren."
   },
   "articles": {
     "title": "Ergebnisse und Prüfung",
@@ -652,7 +670,6 @@
     "instructionsTitle": "Zusätzliche Anweisung (optional)",
     "instructionsHint": "Ein Satz, der dem aus Ihrer Frage erzeugten Prompt hinzugefügt wird: Begriffe, Grenzfälle, streng anzuwendende Kriterien…",
     "instructionsPlaceholder": "Z. B. nur randomisierte Humanstudien als „klinische Studie“ zählen.",
-    "promptSent": "An das Modell gesendeter Prompt",
     "questionLocked": "Die Frage wurde geändert, obwohl diese Analyse schon Ergebnisse hat: Auf derselben Artikelmenge wurde eine neue Analyse „{name}“ angelegt und analysiert.",
     "busyElsewhere": "In „{name}“ läuft bereits eine Analyse: nur eine gleichzeitig pro Projekt. Sie können diese im Tab Analyse planen.",
     "exampleLabel": "Anzahl der Beispiele (N)",
@@ -676,7 +693,8 @@
     "benchmarkLink": "Benchmark-Seite",
     "listTitle": "Durchgeführte Analysen",
     "createScheduled": "Planen",
-    "panelCreate": "Anlegen"
+    "panelCreate": "Anlegen",
+    "questionsTitle": "Fragen an jeden Artikel"
   },
   "settings": {
     "title": "Systemeinstellungen",

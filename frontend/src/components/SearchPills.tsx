@@ -1,28 +1,44 @@
 "use client";
 
+import Link from "next/link";
+import { useTranslations } from "next-intl";
 import type { SearchInfo } from "@/lib/api";
 
 /**
- * Barre de pastilles : les analyses standards (la chaîne). La pastille bleue est
- * l'analyse active ; cliquer recentre l'application sur elle (spec v4 R6).
+ * Barre de pastilles : les analyses standards (la chaîne), dans l'ordre A, B, C…
+ * Le point coloré dit si l'analyse a des résultats (vert) ou non (gris) ;
+ * la pastille bleue est l'analyse active ; cliquer recentre l'application sur
+ * elle. « + Nouvelle » (pointillés) crée une analyse (spec v4).
  */
 export function SearchPills({
   searches,
   activeId,
   onPick,
   ariaLabel,
+  label,
+  newHref,
 }: {
   /** Les analyses standards, dans l'ordre de la chaîne. */
   searches: SearchInfo[];
   activeId?: string;
   onPick: (searchId: string) => void;
   ariaLabel: string;
+  /** Libellé de la rangée (« ANALYSES ») ; omis si absent. */
+  label?: string;
+  /** Lien « + Nouvelle » (affiché uniquement pour un lead). */
+  newHref?: string;
 }) {
-  if (searches.length === 0) return null;
+  const t = useTranslations("project");
+  if (searches.length === 0 && !newHref) return null;
   return (
-    <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label={ariaLabel}>
-      {searches.map((s) => {
+    <div className="flex flex-wrap items-center gap-2" role="group" aria-label={ariaLabel}>
+      {label && (
+        <span className="text-xs font-bold uppercase tracking-wider text-muted">{label}</span>
+      )}
+      {searches.map((s, i) => {
         const active = s.id === activeId;
+        const letter = String.fromCharCode(65 + Math.min(i, 25));
+        const done = s.predicted > 0 || s.reviewed > 0;
         return (
           <button
             key={s.id}
@@ -30,16 +46,29 @@ export function SearchPills({
             aria-pressed={active}
             title={s.question ?? s.name}
             onClick={() => onPick(s.id)}
-            className={`rounded-full border px-3 py-1 text-sm transition-colors ${
+            className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm transition-colors ${
               active
                 ? "border-primary bg-primary/10 font-semibold text-primary"
                 : "border-border bg-surface text-muted hover:text-foreground"
             }`}
           >
-            {s.name}
+            <span
+              data-testid="dot"
+              className={`h-2 w-2 rounded-full ${done ? "bg-success" : "bg-muted"}`}
+              aria-hidden
+            />
+            {letter} · {s.name}
           </button>
         );
       })}
+      {newHref && (
+        <Link
+          href={newHref}
+          className="rounded-full border border-dashed border-border px-3 py-1 text-sm text-muted transition-colors hover:text-foreground"
+        >
+          + {t("pillNew")}
+        </Link>
+      )}
     </div>
   );
 }

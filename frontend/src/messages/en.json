@@ -231,7 +231,23 @@
     "benchCard": "Benchmarks",
     "benchCardState": "{n} runs",
     "chainPillsAria": "Select the active analysis",
-    "chainAria": "Analysis chain"
+    "chainAria": "Analysis chain",
+    "onbStep1": "Import the corpus",
+    "onbStep1Desc": "PubMed query, reference list, citations or .txt/.pdf files.",
+    "onbStep2": "Create an analysis",
+    "onbStep2Desc": "A question asked to a batch of articles.",
+    "onbAfterImport": "after the import",
+    "onbStep3": "Run the analysis with a model",
+    "onbStep3Desc": "The model reads the articles and answers the questions.",
+    "onbNoModel": "No model registered: analyses impossible (administrator).",
+    "onbStep4": "Results & review",
+    "onbStep4Desc": "Safe cases are accepted; re-review the uncertain ones.",
+    "onbCta": "Import",
+    "chainTitle": "Analysis chain",
+    "chainCount": "{n} analyses, linked",
+    "openTooling": "Open",
+    "activeTag": "active",
+    "pillNew": "New"
   },
   "import": {
     "title": "Corpus import",
@@ -348,7 +364,9 @@
     "citNoSearchesHint": "Create an analysis first (Analysis tab) before enriching the corpus by citations.",
     "citNoSearchesLink": "Go to the analyses",
     "citNoCandidate": "No candidate at the chosen threshold: raise the threshold or choose other starting articles.",
-    "refsLabel": "References (DOI, PMID, BibTeX…)"
+    "refsLabel": "References (DOI, PMID, BibTeX…)",
+    "modeDocs": "Documents .txt/.pdf",
+    "docsLeadOnly": "Only the project lead can import files."
   },
   "articles": {
     "title": "Results and review",
@@ -652,7 +670,6 @@
     "instructionsTitle": "Extra instructions (optional)",
     "instructionsHint": "A sentence added to the prompt generated from your question: vocabulary, edge cases, criteria to apply strictly…",
     "instructionsPlaceholder": "E.g. only count randomised human studies as “clinical trial”.",
-    "promptSent": "Prompt sent to the model",
     "questionLocked": "The question changed while this analysis already has results: a new analysis “{name}” was created on the same set and analysed.",
     "busyElsewhere": "An analysis is already running in “{name}”: only one at a time per project. You can schedule this one from the Analysis tab.",
     "exampleLabel": "Number of examples (N)",
@@ -676,7 +693,8 @@
     "benchmarkLink": "Benchmark page",
     "listTitle": "Analyses performed",
     "createScheduled": "Schedule",
-    "panelCreate": "Create"
+    "panelCreate": "Create",
+    "questionsTitle": "Questions asked to each article"
   },
   "settings": {
     "title": "System settings",

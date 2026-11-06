@@ -4,7 +4,8 @@ import { ReactNode, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
-import { DocumentUpload } from "@/components/DocumentUpload";
+import { OnboardingSteps } from "@/components/OnboardingSteps";
+import { orderChain, chainDepths } from "@/lib/chain";
 import { ActiveJobsBanner } from "@/components/ActiveJobsBanner";
 import { ActivityPanel } from "@/components/ActivityPanel";
 import {
@@ -21,6 +22,7 @@ import {
 import { useAuth } from "@/lib/auth";
 import { isProjectLead } from "@/lib/role";
 import { isUntouched, withSearch } from "@/lib/search";
+import { useSearchId } from "@/lib/useSearch";
 import { RequireAuth } from "@/components/RequireAuth";
 import { ModelRef } from "@/components/ModelRef";
 import { Badge } from "@/components/ui/Card";
@@ -28,34 +30,6 @@ import { Button } from "@/components/ui/Button";
 import { Spinner, ErrorBanner } from "@/components/ui/Feedback";
 
 const pct = (n: number, d: number): number => (d > 0 ? Math.round((n / d) * 100) : 0);
-
-/** R6 (spec v4): the standard analyses in chain order — each node after its parent. */
-function orderChain(searches: SearchInfo[]): SearchInfo[] {
-  const byId = new Map(searches.map((s) => [s.id, s]));
-  const visited = new Set<string>();
-  const out: SearchInfo[] = [];
-  const visit = (s: SearchInfo) => {
-    if (visited.has(s.id)) return;
-    visited.add(s.id);
-    const p = s.parent ? byId.get(s.parent.id) : undefined;
-    if (p) visit(p);
-    out.push(s);
-  };
-  const roots = searches.filter((s) => !s.parent || !byId.has(s.parent.id));
-  const rest = searches.filter((s) => s.parent && byId.has(s.parent.id));
-  roots.forEach(visit);
-  rest.forEach(visit);
-  return out;
-}
-
-/** R6 (spec v4): depth of each standard analysis in its chain (root = 0). */
-function chainDepths(ordered: SearchInfo[]): Map<string, number> {
-  const depth = new Map<string, number>();
-  for (const s of ordered) {
-    depth.set(s.id, s.parent && depth.has(s.parent.id) ? depth.get(s.parent.id)! + 1 : 0);
-  }
-  return depth;
-}
 
 function Kpi({ label, value, sub, title }: { label: string; value: ReactNode; sub?: ReactNode; title?: string }) {
   return (
@@ -104,7 +78,19 @@ function LotBar({ s }: { s: SearchInfo }) {
   );
 }
 
-function SearchRow({ s, projectId, isLead, hasCorpus }: { s: SearchInfo; projectId: string; isLead: boolean; hasCorpus: boolean }) {
+function SearchRow({
+  s,
+  projectId,
+  isLead,
+  hasCorpus,
+  active = false,
+}: {
+  s: SearchInfo;
+  projectId: string;
+  isLead: boolean;
+  hasCorpus: boolean;
+  active?: boolean;
+}) {
   const t = useTranslations("project");
   const ts = useTranslations("searches");
   const tj = useTranslations("jobs");
@@ -114,14 +100,24 @@ function SearchRow({ s, projectId, isLead, hasCorpus }: { s: SearchInfo; project
   const analysedPct = pct(s.predicted, s.lot_size);
   const reviewedPct = pct(s.reviewed, s.lot_size);
   const running = s.last_job?.status === "RUNNING" || s.last_job?.status === "PENDING";
+  const b = s.breakdown;
   return (
-    <li className="rounded-lg border border-border bg-surface p-4">
+    <div
+      className={`rounded-lg p-4 ${
+        active
+          ? "border-2 border-primary bg-primary/5"
+          : untouched
+            ? "border border-dashed border-border bg-surface"
+            : "border border-border bg-surface"
+      }`}
+    >
       <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="font-semibold text-foreground">{s.name}</h3>
             {untouched && <Badge color="blue">{ts("badgeToLaunch")}</Badge>}
             {s.is_default && <Badge color="blue">{t("badgeInitial")}</Badge>}
+            {active && <Badge color="green">{t("activeTag")}</Badge>}
             {s.kind !== "standard" && <Badge color="gray">{t(`kind_${s.kind}`)}</Badge>}
             {running && <Badge color="yellow">{t("running")}</Badge>}
             {s.schedule_state === "waiting" && <Badge color="gray">{t("scheduled")}</Badge>}
@@ -152,6 +148,14 @@ function SearchRow({ s, projectId, isLead, hasCorpus }: { s: SearchInfo; project
           )}
           <p className="mt-0.5 text-xs text-muted">
             {t("lotSize", { n: s.lot_size })}
+            {s.predicted > 0 && (
+              <>
+                {" "}
+                · <span className="text-success">{b.AUTO_ACCEPTED ?? 0} ✓</span> ·{" "}
+                <span className="text-warning">{b.NEEDS_HUMAN_REVIEW ?? 0} ?</span> ·{" "}
+                <span className="text-danger">{b.AUTO_REJECTED ?? 0} ✗</span>
+              </>
+            )}
             {s.parent && <> · {t("derivedFrom", { name: s.parent.name })}</>}
             {s.last_job && <> · <ModelRef name={s.last_job.model} version={s.last_job.model_version} /></>}
           </p>
@@ -207,7 +211,7 @@ function SearchRow({ s, projectId, isLead, hasCorpus }: { s: SearchInfo; project
           </span>
         </div>
       </div>
-    </li>
+    </div>
   );
 }
 
@@ -243,11 +247,14 @@ function ProjectDashboard() {
       .catch(() => setModelCount(null));
   }, [load, projectId]);
 
+  const searchId = useSearchId(projectId);
+
   if (error) return <ErrorBanner message={error} onRetry={() => void load()} />;
   if (!project || !overview) return <Spinner label={t("loading")} />;
 
   const isLead = isProjectLead(project, user);
   const hasCorpus = overview.articles > 0;
+  const empty = overview.articles === 0;
   const toReviewTotal = overview.searches.reduce((a, s) => a + s.to_review, 0);
   const imports = (jobs ?? []).filter((j) => j.kind !== "fulltext");
   const lastJob = imports.length > 0 ? imports[imports.length - 1] : null;
@@ -281,7 +288,7 @@ function ProjectDashboard() {
         </div>
       )}
 
-      {modelCount === 0 && (
+      {!empty && modelCount === 0 && (
         <div className="rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm">
           {t("noModels")}{" "}
           {user?.role === "ADMIN" ? (
@@ -295,116 +302,147 @@ function ProjectDashboard() {
       )}
 
       {/* Global counts: distinct articles, across all searches */}
-      <section className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-        <Kpi label={t("kpiArticles")} value={overview.articles.toLocaleString()} />
-        <Kpi
-          label={t("kpiFulltext")}
-          value={`${pct(overview.fulltext, overview.articles)} %`}
-          sub={t("outOf", { n: overview.fulltext })}
-        />
-        <Kpi
-          label={t("kpiAnalysed")}
-          value={`${pct(overview.analysed, overview.articles)} %`}
-          sub={t("outOf", { n: overview.analysed })}
-          title={t("kpiScopeAll")}
-        />
-        <Kpi
-          label={t("kpiReviewed")}
-          value={`${pct(overview.reviewed, overview.articles)} %`}
-          sub={t("outOf", { n: overview.reviewed })}
-          title={t("kpiScopeAll")}
-        />
-        <Kpi label={t("kpiToReview")} value={toReviewTotal.toLocaleString()} title={t("kpiScopeAll")} />
-        <Kpi label={t("kpiGold")} value={overview.gold.toLocaleString()} />
-      </section>
+      {!empty && (
+        <section className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+          <Kpi label={t("kpiArticles")} value={overview.articles.toLocaleString()} />
+          <Kpi
+            label={t("kpiFulltext")}
+            value={`${pct(overview.fulltext, overview.articles)} %`}
+            sub={t("outOf", { n: overview.fulltext })}
+          />
+          <Kpi
+            label={t("kpiAnalysed")}
+            value={`${pct(overview.analysed, overview.articles)} %`}
+            sub={t("outOf", { n: overview.analysed })}
+            title={t("kpiScopeAll")}
+          />
+          <Kpi
+            label={t("kpiReviewed")}
+            value={`${pct(overview.reviewed, overview.articles)} %`}
+            sub={t("outOf", { n: overview.reviewed })}
+            title={t("kpiScopeAll")}
+          />
+          <Kpi label={t("kpiToReview")} value={toReviewTotal.toLocaleString()} title={t("kpiScopeAll")} />
+          <Kpi label={t("kpiGold")} value={overview.gold.toLocaleString()} />
+        </section>
+      )}
 
       {/* The searches: open directly the results, the re-review or the analysis of each */}
-      <section className="flex flex-col gap-3">
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="text-base font-semibold text-foreground">
-            {t("searchesTitle")} <span className="text-sm font-normal text-muted">{shown.length}</span>
-          </h2>
-        </div>
-        {overview.articles === 0 ? (
-          <div className="flex flex-col gap-3">
-            <p className="rounded-lg border border-dashed border-border p-4 text-sm text-muted">
-              {t("emptyCorpus")}{" "}
+      {!empty && (
+        <section className="flex flex-col gap-3">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-base font-semibold text-foreground">
+              {chain.length > 0 ? t("chainTitle") : t("searchesTitle")}{" "}
+              <span className="text-sm font-normal text-muted">
+                {chain.length > 0 ? t("chainCount", { n: chain.length }) : shown.length}
+              </span>
+            </h2>
+          </div>
+          {shown.length === 0 ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary/40 bg-primary/5 p-4 text-sm text-foreground">
+              <span>{t("noSearchYet", { n: overview.articles })}</span>
               {isLead && (
-                <Link href={`/projects/${projectId}/import`} className="font-medium text-primary hover:underline">
-                  {t("ctaImport")} →
+                <Link href={`/projects/${projectId}/inference?new=1`}>
+                  <Button>{t("runAnalysis")} →</Button>
                 </Link>
               )}
-            </p>
-            {isLead && <DocumentUpload projectId={projectId} />}
-          </div>
-        ) : shown.length === 0 ? (
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary/40 bg-primary/5 p-4 text-sm text-foreground">
-            <span>{t("noSearchYet", { n: overview.articles })}</span>
-            {isLead && (
-              <Link href={`/projects/${projectId}/inference?new=1`}>
-                <Button>{t("runAnalysis")} →</Button>
-              </Link>
-            )}
-          </div>
-        ) : (
-          <div className="flex flex-col gap-3">
-            {chain.length > 0 && (
-              // The chain of standard analyses: each node after its parent, with its origin
-              <ol className="flex flex-col gap-3" aria-label={t("chainAria")}>
-                {chain.map((s, i) => {
-                  const depth = depths.get(s.id) ?? 0;
-                  const parent = s.parent && chain[i - 1]?.id === s.parent.id ? s.parent : undefined;
-                  return (
-                    <li key={s.id} className="flex flex-col" style={{ marginLeft: `${depth * 1.25}rem` }}>
-                      {parent && (
-                        <p className="mb-1 pl-1 text-xs text-muted">
-                          <span aria-hidden>↓ </span>
-                          {s.parent_spec?.status === "NEEDS_HUMAN_REVIEW"
-                            ? t("derivedFromUncertains", { n: s.lot_size, name: parent.name })
-                            : t("derivedFrom", { name: parent.name })}
-                        </p>
-                      )}
-                      <SearchRow s={s} projectId={projectId} isLead={isLead} hasCorpus={hasCorpus} />
-                    </li>
-                  );
-                })}
-              </ol>
-            )}
-            {outside.length > 0 && (
-              <div className="flex flex-col gap-2">
-                <h3 className="text-sm font-medium text-muted">{t("outsideChain")}</h3>
-                <ul className="flex flex-col gap-3">
-                  {outside.map((s) => (
-                    <SearchRow key={s.id} s={s} projectId={projectId} isLead={isLead} hasCorpus={hasCorpus} />
-                  ))}
-                </ul>
-              </div>
-            )}
-          </div>
-        )}
-      </section>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-3">
+              {chain.length > 0 && (
+                // The chain of standard analyses: each node after its parent, lettered A, B, C…
+                <ol className="flex flex-col gap-4" aria-label={t("chainAria")}>
+                  {chain.map((s, i) => {
+                    const letter = String.fromCharCode(65 + Math.min(i, 25));
+                    const depth = depths.get(s.id) ?? 0;
+                    const parent = s.parent && chain[i - 1]?.id === s.parent.id ? s.parent : undefined;
+                    const active = s.id === searchId;
+                    const untouched = isUntouched(s);
+                    return (
+                      <li key={s.id} className="flex gap-3" style={{ marginLeft: `${depth * 1.5}rem` }}>
+                        <div className="flex flex-col items-center" aria-hidden>
+                          <span
+                            className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white ${
+                              active
+                                ? "bg-primary ring-2 ring-primary/30"
+                                : untouched
+                                  ? "bg-muted"
+                                  : "bg-success"
+                            }`}
+                          >
+                            {letter}
+                          </span>
+                          {i < chain.length - 1 && <span className="w-0.5 flex-1 rounded bg-border" />}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          {parent && (
+                            <p className="mb-1 pl-1 text-xs text-muted">
+                              <span aria-hidden>↳ </span>
+                              {s.parent_spec?.status === "NEEDS_HUMAN_REVIEW"
+                                ? `${t("derivedFromUncertains", { n: s.lot_size, name: parent.name })} ↓`
+                                : `${t("derivedFrom", { name: parent.name })} ↓`}
+                            </p>
+                          )}
+                          <SearchRow
+                            s={s}
+                            projectId={projectId}
+                            isLead={isLead}
+                            hasCorpus={hasCorpus}
+                            active={active}
+                          />
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ol>
+              )}
+              {outside.length > 0 && (
+                <div className="flex flex-col gap-2">
+                  <h3 className="text-sm font-medium text-muted">{t("outsideChain")}</h3>
+                  <div className="flex flex-col gap-3">
+                    {outside.map((s) => (
+                      <SearchRow key={s.id} s={s} projectId={projectId} isLead={isLead} hasCorpus={hasCorpus} />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* spec v4: empty project → the 4-step onboarding (KPIs, analyses and accordions stay hidden) */}
+      {empty && <OnboardingSteps projectId={projectId} modelCount={modelCount} isLead={isLead} />}
 
       {/* spec v4 R6: gold & benchmarks — optional tooling, outside the chain */}
       {overview.articles > 0 && (
         <section className="flex flex-col gap-3">
-          <h2 className="text-base font-semibold text-foreground">{t("optionalTooling")}</h2>
+          <h2 className="text-sm font-bold uppercase tracking-wide text-violet-700">{t("optionalTooling")}</h2>
           <div className="grid gap-3 sm:grid-cols-2">
-            <Link
-              href={`/projects/${projectId}/gold`}
-              className="flex items-center justify-between rounded-lg border border-border bg-surface p-3 transition-colors hover:border-primary"
-            >
-              <span className="font-medium text-foreground">{t("goldCard")}</span>
-              <span className="text-sm text-muted">{t("goldCardState", { n: overview.gold })}</span>
-              <span aria-hidden>→</span>
-            </Link>
-            <Link
-              href={`/projects/${projectId}/benchmarks`}
-              className="flex items-center justify-between rounded-lg border border-border bg-surface p-3 transition-colors hover:border-primary"
-            >
-              <span className="font-medium text-foreground">{t("benchCard")}</span>
-              <span className="text-sm text-muted">{t("benchCardState", { n: benchCount })}</span>
-              <span aria-hidden>→</span>
-            </Link>
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-violet-300 bg-violet-50 p-3">
+              <span>
+                <span className="block font-semibold text-violet-800">{t("goldCard")}</span>
+                <span className="block text-sm text-muted">{t("goldCardState", { n: overview.gold })}</span>
+              </span>
+              <Link
+                href={`/projects/${projectId}/gold`}
+                className="rounded-lg border border-violet-300 bg-white px-3 py-1.5 text-sm font-medium text-violet-700 transition-colors hover:bg-violet-100"
+              >
+                {t("openTooling")}
+              </Link>
+            </div>
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-violet-300 bg-violet-50 p-3">
+              <span>
+                <span className="block font-semibold text-violet-800">{t("benchCard")}</span>
+                <span className="block text-sm text-muted">{t("benchCardState", { n: benchCount })}</span>
+              </span>
+              <Link
+                href={`/projects/${projectId}/benchmarks`}
+                className="rounded-lg border border-violet-300 bg-white px-3 py-1.5 text-sm font-medium text-violet-700 transition-colors hover:bg-violet-100"
+              >
+                {t("openTooling")}
+              </Link>
+            </div>
           </div>
         </section>
       )}
@@ -425,21 +463,25 @@ function ProjectDashboard() {
         </p>
       )}
 
-      <details className="rounded-lg border border-border bg-surface p-3 text-sm">
-        <summary className="cursor-pointer font-medium text-foreground">{tAct("title")}</summary>
-        <div className="mt-2">
-          <ActivityPanel projectId={projectId} />
-        </div>
-      </details>
+      {!empty && (
+        <details className="rounded-lg border border-border bg-surface p-3 text-sm">
+          <summary className="cursor-pointer font-medium text-foreground">{tAct("title")}</summary>
+          <div className="mt-2">
+            <ActivityPanel projectId={projectId} />
+          </div>
+        </details>
+      )}
 
-      <details className="rounded-lg border border-border bg-surface p-3 text-sm">
-        <summary className="cursor-pointer font-medium text-foreground">{t("howTitle")}</summary>
-        <ol className="mt-2 list-decimal space-y-1 pl-5 text-muted">
-          <li>{t("howStep1")}</li>
-          <li>{t("howStep2")}</li>
-          <li>{t("howStep3")}</li>
-        </ol>
-      </details>
+      {!empty && (
+        <details className="rounded-lg border border-border bg-surface p-3 text-sm">
+          <summary className="cursor-pointer font-medium text-foreground">{t("howTitle")}</summary>
+          <ol className="mt-2 list-decimal space-y-1 pl-5 text-muted">
+            <li>{t("howStep1")}</li>
+            <li>{t("howStep2")}</li>
+            <li>{t("howStep3")}</li>
+          </ol>
+        </details>
+      )}
     </div>
   );
 }

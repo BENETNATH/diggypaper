@@ -231,7 +231,23 @@
     "benchCard": "Benchmarks",
     "benchCardState": "{n} ejecuciones",
     "chainPillsAria": "Seleccionar el análisis activo",
-    "chainAria": "Cadena de análisis"
+    "chainAria": "Cadena de análisis",
+    "onbStep1": "Importar el corpus",
+    "onbStep1Desc": "Consulta PubMed, lista de referencias, citas o archivos .txt/.pdf.",
+    "onbStep2": "Crear un análisis",
+    "onbStep2Desc": "Una pregunta planteada a un lote de artículos.",
+    "onbAfterImport": "después de la importación",
+    "onbStep3": "Lanzar el análisis con un modelo",
+    "onbStep3Desc": "El modelo lee los artículos y responde a las preguntas.",
+    "onbNoModel": "Ningún modelo registrado: análisis imposibles (administrador).",
+    "onbStep4": "Resultados y relectura",
+    "onbStep4Desc": "Los casos seguros se validan; relee los inciertos.",
+    "onbCta": "Importar",
+    "chainTitle": "Cadena de análisis",
+    "chainCount": "{n} análisis, enlazados",
+    "openTooling": "Abrir",
+    "activeTag": "activo",
+    "pillNew": "Nueva"
   },
   "import": {
     "title": "Importación del corpus",
@@ -348,7 +364,9 @@
     "citNoSearchesHint": "Cree primero un análisis (pestaña Análisis) antes de enriquecer el corpus por citas.",
     "citNoSearchesLink": "Ir a los análisis",
     "citNoCandidate": "Ningún candidato con el umbral elegido: suba el umbral o elija otros artículos de partida.",
-    "refsLabel": "Referencias (DOI, PMID, BibTeX…)"
+    "refsLabel": "Referencias (DOI, PMID, BibTeX…)",
+    "modeDocs": "Documentos .txt/.pdf",
+    "docsLeadOnly": "Solo el responsable del proyecto puede importar archivos."
   },
   "articles": {
     "title": "Resultados y revisión",
@@ -652,7 +670,6 @@
     "instructionsTitle": "Instrucción adicional (opcional)",
     "instructionsHint": "Una frase añadida al prompt generado a partir de su pregunta: vocabulario, casos límite, criterios a aplicar estrictamente…",
     "instructionsPlaceholder": "P. ej.: contar como «ensayo clínico» solo los estudios aleatorizados en humanos.",
-    "promptSent": "Prompt enviado al modelo",
     "questionLocked": "La pregunta cambió aunque este análisis ya tiene resultados: se creó y analizó un nuevo análisis «{name}» sobre el mismo lote.",
     "busyElsewhere": "Ya hay un análisis en curso en «{name}»: solo uno a la vez por proyecto. Puede programar este desde la pestaña Análisis.",
     "exampleLabel": "Número de ejemplos (N)",
@@ -676,7 +693,8 @@
     "benchmarkLink": "Página Benchmark",
     "listTitle": "Análisis realizadas",
     "createScheduled": "Programar",
-    "panelCreate": "Crear"
+    "panelCreate": "Crear",
+    "questionsTitle": "Preguntas hechas a cada artículo"
   },
   "settings": {
     "title": "Ajustes del sistema",
