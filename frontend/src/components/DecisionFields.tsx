@@ -31,13 +31,18 @@ export function AnswerTextarea({ value, onChange }: { value: string; onChange: (
   );
 }
 
-/** Default values of a field set (boolean=false, choice=1st option, text=""). */
+/** Default values of a field set (boolean=false, choice/empty, text="").
+ *
+ * A choice field with no model answer starts EMPTY (neutral placeholder), not on
+ * its first option: pre-selecting an answer made it look like the model (or the
+ * reviewer) had already answered (relic of the hardcoded MODULE 5 schema).
+ */
 export function defaultValues(fields: SchemaField[], initial?: Values): Values {
   const out: Values = {};
   for (const f of fields) {
     out[f.key] =
       initial?.[f.key] ??
-      (f.type === "boolean" ? false : f.type === "choice" ? f.options?.[0] ?? "" : "");
+      (f.type === "boolean" ? false : "");
   }
   return out;
 }
@@ -55,7 +60,6 @@ export function DecisionFields({
   /** Model certainty for each answer (field key → 0–1). */
   certainty?: Record<string, number | null>;
 }) {
-  const tSex = useTranslations("sex");
   const t = useTranslations("annotate");
   const set = (key: string, v: unknown) => onChange({ ...values, [key]: v });
 
@@ -65,9 +69,12 @@ export function DecisionFields({
     ) : f.type === "choice" ? (
       <Field label={f.label}>
         <Select value={String(values[f.key] ?? "")} onChange={(e) => set(f.key, e.target.value)}>
+          <option value="" disabled>
+            {t("notAnswered")}
+          </option>
           {f.options?.map((o) => (
             <option key={o} value={o}>
-              {tSex.has(o) ? tSex(o) : o}
+              {o}
             </option>
           ))}
         </Select>

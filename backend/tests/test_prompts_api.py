@@ -1,11 +1,13 @@
 """Prompt Studio route tests (app/api/v1/prompts.py) — 100% offline."""
 
+from conftest import LEGACY_FIELDS
+
 from app.db.models import Project, ProjectMember, ProjectMemberRole
 
 
-async def _make_project_with_lead(session, lead_user, other_user=None):
+async def _make_project_with_lead(session, lead_user, other_user=None, fields=None):
     """Project where `lead_user` is LEAD; `other_user` (optional) is ANNOTATOR."""
-    project = Project(title="P", created_by=lead_user.id)
+    project = Project(title="P", created_by=lead_user.id, fields=fields)
     session.add(project)
     await session.commit()
     session.add(
@@ -31,7 +33,10 @@ async def test_generate_prompt_without_question_uses_neutral_prompt(
     """spec 2026-11-06-ux-refonte-v4 R1: the orientation is optional — with no
     question the generated prompt is built from the answer items alone."""
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
-    project = await _make_project_with_lead(session, researcher_user)  # question is None
+    # A project that defines its own answer items but no question.
+    project = await _make_project_with_lead(
+        session, researcher_user, fields=LEGACY_FIELDS
+    )  # question is None
     resp = await client.post(f"/api/v1/projects/{project.id}/prompts/generate")
     assert resp.status_code == 201
     body = resp.json()

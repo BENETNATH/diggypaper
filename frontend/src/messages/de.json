@@ -796,13 +796,8 @@
     "metadataOnlyNote": "Nur Metadaten (OpenAlex): Diese Quelle liefert keinen Volltext. Wenn Sie Zugriff auf den Artikel haben, laden Sie das PDF hoch.",
     "sourceFile": "Quellendatei",
     "sourceNotRecorded": "Quelle nicht erfasst",
-    "noModelAnswer": "Keine Modellantwort für diese Suche."
-  },
-  "sex": {
-    "MALE_ONLY": "Nur Männchen",
-    "FEMALE_ONLY": "Nur Weibchen",
-    "BOTH_SEXES": "Beide Geschlechter",
-    "UNSPECIFIED": "Nicht angegeben"
+    "noModelAnswer": "Keine Modellantwort für diese Suche.",
+    "notAnswered": "Nicht beantwortet"
   },
   "models": {
     "title": "Modelle",
@@ -911,7 +906,7 @@
   },
   "question": {
     "suggestion": "Beispiel",
-    "suggestionText": "Nutzt die Studie eine KI-basierte Verhaltensanalyse, und welches Geschlecht der Tiere wird untersucht?",
+    "suggestionText": "Ist dieser Artikel direkt relevant für die Forschungsfrage?",
     "suggestionUse": "Beispiel übernehmen",
     "title": "Frage und Antwortfelder",
     "intro": "Beschreiben Sie, was Sie in den Artikeln suchen. Die Modelle beantworten die Frage für jeden Artikel mit Belegzitaten.",

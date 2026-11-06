@@ -4,6 +4,7 @@ import asyncio
 import io
 
 import pytest
+from conftest import LEGACY_FIELDS
 from openpyxl import load_workbook
 from sqlalchemy import select
 
@@ -21,7 +22,12 @@ from app.db.models import (
 @pytest.fixture
 async def lead_project(session, researcher_user, client, do_login):
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
-    project = Project(title="Revue test", created_by=researcher_user.id, question="Q ?")
+    project = Project(
+        title="Revue test",
+        created_by=researcher_user.id,
+        question="Q ?",
+        fields=LEGACY_FIELDS,
+    )
     session.add(project)
     await session.commit()
     session.add(

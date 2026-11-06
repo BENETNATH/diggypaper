@@ -16,15 +16,13 @@ const SECTION_KINDS = [
   "other",
 ];
 
-/** Suggested example (never applied without a click); the question text is translated. */
+/** Suggested example (never applied without a click); the question text is translated.
+ *
+ * Neutral, document-agnostic example: the previous one was a hardcoded biology
+ * schema (AI behavior analysis + animal sex) that leaked into every new analysis.
+ */
 const SUGGESTED_FIELDS: SchemaField[] = [
-  { key: "use_ai_behavior", label: "Uses AI behavior analysis", type: "boolean" },
-  {
-    key: "animal_sex",
-    label: "Animal sex",
-    type: "choice",
-    options: ["MALE_ONLY", "FEMALE_ONLY", "BOTH_SEXES", "UNSPECIFIED"],
-  },
+  { key: "relevant", label: "Relevant", type: "boolean" },
 ];
 
 const CHOICE_METRICS: RankMetric[] = ["accuracy"];

@@ -10,13 +10,11 @@ to the project (404 otherwise) - no cross-project leakage.
 """
 
 import asyncio
-import json
 import logging
 import uuid
-from typing import Annotated, Literal
+from typing import Annotated
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
-from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,7 +27,7 @@ from app.api.v1.projects import (
 )
 from app.article_text import compose_text
 from app.db.models import Article, ArticlePrediction, HumanAnnotation, Project, Search, User
-from app.schema import project_fields, validate_decision
+from app.schema import validate_decision
 from app.searches import get_search, in_search
 
 logger = logging.getLogger(__name__)
@@ -39,19 +37,7 @@ router = APIRouter(prefix="/projects", tags=["annotations"])
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 UserDep = Annotated[User, Depends(get_current_user)]
 
-# Annotation schema (spec \u00a75) - same keys as the gold dataset.
-_AnimalSex = Literal["MALE_ONLY", "FEMALE_ONLY", "BOTH_SEXES", "UNSPECIFIED"]
-
-
 _META_KEYS = {"confidence_score", "evidence_quotes", "reasoning_summary", "review_status"}
-
-
-class AnnotationCreate(BaseModel):
-    use_ai_behavior: bool
-    animal_sex: _AnimalSex
-    confidence_score: float = Field(ge=0, le=1)
-    evidence_quotes: list[str] = Field(default_factory=list, max_length=100)
-    reasoning_summary: str = Field(default="", max_length=5000)
 
 
 async def _require_article(
@@ -376,20 +362,24 @@ async def create_annotation(
     """
     article = await _require_article(db, project_id, article_id, user)
     scope = await _scope(db, project_id, search)
-    if scope.fields is not None:
+    fields = scope.fields or []
+    decision: dict = {}
+    if fields:
         # Search-specific schema: defined fields + optional standard keys.
-        errors = validate_decision(project_fields(scope), payload)
+        errors = validate_decision(fields, payload)
         if errors:
             raise HTTPException(status_code=422, detail=errors)
-        decision = {f["key"]: payload[f["key"]] for f in project_fields(scope)}
-        decision["confidence_score"] = payload.get("confidence_score", 1.0)
-        decision["evidence_quotes"] = [str(q) for q in payload.get("evidence_quotes") or []][:100]
-        decision["reasoning_summary"] = str(payload.get("reasoning_summary") or "")[:5000]
+        decision.update({f["key"]: payload[f["key"]] for f in fields})
     else:
-        try:
-            decision = AnnotationCreate(**payload).model_dump()
-        except ValidationError as exc:
-            raise HTTPException(status_code=422, detail=json.loads(exc.json())) from exc
+        # No question fields defined: store the standard keys only — no legacy
+        # hardcoded question (the MODULE 5 biology schema is a relic).
+        c = payload.get("confidence_score", 1.0)
+        if not isinstance(c, (int, float)) or isinstance(c, bool) or not 0 <= c <= 1:
+            raise HTTPException(status_code=422, detail=["confidence_score: number in [0, 1]"])
+        decision["confidence_score"] = c
+    decision.setdefault("confidence_score", payload.get("confidence_score", 1.0))
+    decision["evidence_quotes"] = [str(q) for q in payload.get("evidence_quotes") or []][:100]
+    decision["reasoning_summary"] = str(payload.get("reasoning_summary") or "")[:5000]
     latest = (
         (
             await db.execute(

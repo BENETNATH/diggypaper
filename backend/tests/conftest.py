@@ -27,6 +27,19 @@ from app.api.ratelimit import reset as _reset_ratelimit
 from app.db.base import Base
 from app.db.models import User, UserRole
 
+# The historical MODULE 5 schema. Used ONLY as explicit test fixture data for
+# projects that define this question — never a runtime default (see
+# app.schema.project_fields: fields NULL = no question fields, not a fallback).
+LEGACY_FIELDS = [
+    {"key": "use_ai_behavior", "label": "Uses AI behavior analysis", "type": "boolean"},
+    {
+        "key": "animal_sex",
+        "label": "Animal sex",
+        "type": "choice",
+        "options": ["MALE_ONLY", "FEMALE_ONLY", "BOTH_SEXES", "UNSPECIFIED"],
+    },
+]
+
 
 @pytest.fixture(autouse=True)
 def _clean_ratelimit():

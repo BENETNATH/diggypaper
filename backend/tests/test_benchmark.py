@@ -1,6 +1,7 @@
 """Tests for the benchmark task (app/tasks/benchmark.py) — 100% offline."""
 
 import pytest
+from conftest import LEGACY_FIELDS
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -380,8 +381,8 @@ async def test_benchmark_retry_errors_persistent_failure(engine, session):
     assert res.details["errors"] == 1
 
 
-async def _project_with_articles(session, n=4):
-    project = Project(title="P", created_by=None)
+async def _project_with_articles(session, n=4, fields=None):
+    project = Project(title="P", created_by=None, fields=fields)
     session.add(project)
     await session.commit()
     prompt = PromptTemplate(
@@ -398,7 +399,7 @@ async def _project_with_articles(session, n=4):
 
 
 async def test_benchmark_variants_store_predictions_and_agreement(engine, session):
-    project, prompt, arts = await _project_with_articles(session, 3)
+    project, prompt, arts = await _project_with_articles(session, 3, fields=LEGACY_FIELDS)
     run = BenchmarkRun(
         project_id=project.id,
         models_tested=["Kev-4B"],
@@ -478,7 +479,7 @@ async def test_benchmark_uses_structured_schema(engine, session):
     """2026-11-03: the benchmark wraps each variant's question in the project's
     field schema (structured JSON, like the complete analysis) instead of a bare
     free-form prompt — so the responses have a constant, comparable format."""
-    project, prompt, arts = await _project_with_articles(session, 1)
+    project, prompt, arts = await _project_with_articles(session, 1, fields=LEGACY_FIELDS)
     prompt.system_prompt = "Describe the forced swim test protocol"
     await session.commit()
     run = BenchmarkRun(

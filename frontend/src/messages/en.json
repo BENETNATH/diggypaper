@@ -796,13 +796,8 @@
     "metadataOnlyNote": "Metadata only (OpenAlex): this source provides no full text. If you have access to the article, upload its PDF.",
     "sourceFile": "Source file",
     "sourceNotRecorded": "Source not recorded",
-    "noModelAnswer": "No model answer for this search."
-  },
-  "sex": {
-    "MALE_ONLY": "Males only",
-    "FEMALE_ONLY": "Females only",
-    "BOTH_SEXES": "Both sexes",
-    "UNSPECIFIED": "Unspecified"
+    "noModelAnswer": "No model answer for this search.",
+    "notAnswered": "Not answered"
   },
   "models": {
     "title": "Models",
@@ -911,7 +906,7 @@
   },
   "question": {
     "suggestion": "Example",
-    "suggestionText": "Does the study use AI-based behavior analysis, and which animal sex is studied?",
+    "suggestionText": "Is this article directly relevant to the research question?",
     "suggestionUse": "Use this example",
     "title": "Question and answer fields",
     "intro": "Describe what you are looking for in the articles. Models answer this question for each article, with supporting quotes.",

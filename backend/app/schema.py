@@ -1,10 +1,15 @@
 """Per-project answer schema: the question posed to the models + its fields.
 
-``Project.fields`` NULL = historical schema (``DEFAULT_FIELDS`` + standard keys of
-spec §5). Otherwise: a list of ``{key, label, type, options?}`` fields defined by
-the project lead. Types: ``boolean``, ``choice`` (options), ``text``.
+``Project.fields`` NULL (or empty) = no question fields defined: the analysis asks
+the model for the standard keys only (relevance / confidence, evidence, reasoning).
+Otherwise: a list of ``{key, label, type, options?}`` fields defined by the project
+lead. Types: ``boolean``, ``choice`` (options), ``text``.
 The standard keys ``confidence_score``, ``evidence_quotes``, ``reasoning_summary``
 are always asked of the model (triage + highlighting).
+
+There is NO hardcoded default schema: a project that defines no fields simply has
+none. (The historical MODULE 5 biology schema was a runtime fallback that leaked
+into every analysis; it is retired.)
 """
 
 from __future__ import annotations
@@ -14,21 +19,18 @@ import re
 TYPES = ("boolean", "choice", "text")
 STANDARD_KEYS = ("confidence_score", "field_confidence", "evidence_quotes", "reasoning_summary")
 
-DEFAULT_FIELDS = [
-    {"key": "use_ai_behavior", "label": "Uses AI behavior analysis", "type": "boolean"},
-    {
-        "key": "animal_sex",
-        "label": "Animal sex",
-        "type": "choice",
-        "options": ["MALE_ONLY", "FEMALE_ONLY", "BOTH_SEXES", "UNSPECIFIED"],
-    },
-]
-
 _KEY_RE = re.compile(r"^[a-z][a-z0-9_]{0,39}$")
 
 
 def project_fields(project) -> list[dict]:
-    return project.fields or DEFAULT_FIELDS
+    """The project/search's own answer fields.
+
+    NULL (or empty) = no question fields defined: return ``[]`` — never fall back to a
+    hardcoded default. The previous DEFAULT_FIELDS fallback injected a legacy
+    biology schema (use_ai_behavior / animal_sex) into every analysis that did not
+    define its own fields, which was wrong for a general document-analysis platform.
+    """
+    return project.fields or []
 
 
 def check_fields(fields: list[dict]) -> list[dict]:

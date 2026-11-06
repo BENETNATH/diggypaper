@@ -1,5 +1,7 @@
 """Gold Dataset route tests (app/api/v1/gold.py) — 100% offline."""
 
+from conftest import LEGACY_FIELDS
+
 from app.db.models import Article, HumanAnnotation, Project, ProjectMember, ProjectMemberRole
 
 VALID_GT = {
@@ -11,8 +13,10 @@ VALID_GT = {
 }
 
 
-async def _make_project_with_article(session, lead_user) -> tuple[Project, Article]:
-    project = Project(title="P", created_by=lead_user.id)
+async def _make_project_with_article(
+    session, lead_user, fields: list[dict] | None = None
+) -> tuple[Project, Article]:
+    project = Project(title="P", created_by=lead_user.id, fields=fields)
     session.add(project)
     await session.commit()
     session.add(
@@ -194,7 +198,9 @@ async def test_gold_list_exposes_member_reviews(client, session, researcher_user
     colleague = await _make_user(
         session, "colleague2@lab.fr", UserRole.RESEARCHER, "colleague-pass-123", True
     )
-    project, article = await _make_project_with_article(session, researcher_user)
+    project, article = await _make_project_with_article(
+        session, researcher_user, fields=LEGACY_FIELDS
+    )
     session.add(
         ProjectMember(
             project_id=project.id, user_id=colleague.id, role_in_project=ProjectMemberRole.ANNOTATOR

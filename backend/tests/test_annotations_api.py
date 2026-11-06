@@ -26,9 +26,17 @@ VALID_ANNOTATION = {
     "reasoning_summary": "ok",
 }
 
+# A neutral question schema (replaces the retired hardcoded biology DEFAULT_FIELDS).
+ANNOTATION_FIELDS = [
+    {"key": "design", "type": "choice", "options": ["RCT", "COHORT", "CASE_CONTROL", "OTHER"]},
+    {"key": "blinded", "type": "boolean"},
+]
 
-async def _make_project_with_article(session, user) -> tuple[Project, Article]:
-    project = Project(title="P", created_by=user.id)
+
+async def _make_project_with_article(
+    session, user, fields: list[dict] | None = None, question: str | None = None
+) -> tuple[Project, Article]:
+    project = Project(title="P", created_by=user.id, fields=fields, question=question)
     session.add(project)
     await session.commit()
     session.add(
@@ -253,6 +261,9 @@ async def test_get_prediction_401_no_auth(client, session, researcher_user):
 
 
 async def test_create_annotation(client, session, researcher_user, do_login):
+    """No question fields defined (a fresh document-analysis project): the decision
+    stores the standard keys only. The legacy hardcoded biology schema
+    (use_ai_behavior / animal_sex) must NOT be injected or stored."""
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     project, article = await _make_project_with_article(session, researcher_user)
     resp = await client.post(
@@ -263,14 +274,41 @@ async def test_create_annotation(client, session, researcher_user, do_login):
     body = resp.json()
     assert body["article_id"] == str(article.id)
     assert body["user_id"] == str(researcher_user.id)
-    assert body["decision_json"]["use_ai_behavior"] is True
-    assert body["decision_json"]["animal_sex"] == "BOTH_SEXES"
-    assert body["decision_json"]["confidence_score"] == 0.9
-    assert body["decision_json"]["evidence_quotes"] == ["mice were randomized"]
+    dj = body["decision_json"]
+    assert dj["confidence_score"] == 0.9
+    assert dj["evidence_quotes"] == ["mice were randomized"]
+    assert dj["reasoning_summary"] == "ok"
+    # No leftover hardcoded question fields.
+    assert "use_ai_behavior" not in dj
+    assert "animal_sex" not in dj
     # Persistance en base.
     ann = await session.get(HumanAnnotation, uuid.UUID(body["id"]))
     assert ann is not None
     assert ann.user_id == researcher_user.id
+
+
+async def test_create_annotation_with_fields(client, session, researcher_user, do_login):
+    """A project that defines its own question fields: the decision is validated
+    against them and the chosen values are stored."""
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project, article = await _make_project_with_article(
+        session, researcher_user, fields=ANNOTATION_FIELDS, question="Q?"
+    )
+    payload = {
+        "design": "RCT",
+        "blinded": True,
+        "confidence_score": 0.8,
+        "evidence_quotes": ["mice were randomized"],
+        "reasoning_summary": "ok",
+    }
+    resp = await client.post(
+        f"/api/v1/projects/{project.id}/articles/{article.id}/annotation", json=payload
+    )
+    assert resp.status_code == 201
+    dj = resp.json()["decision_json"]
+    assert dj["design"] == "RCT"
+    assert dj["blinded"] is True
+    assert dj["confidence_score"] == 0.8
 
 
 async def test_create_annotation_stores_reasoning_in_notes(
@@ -312,20 +350,26 @@ async def test_create_annotation_422_confidence_negative(
     assert resp.status_code == 422
 
 
-async def test_create_annotation_422_invalid_animal_sex(client, session, researcher_user, do_login):
+async def test_create_annotation_422_bad_value(client, session, researcher_user, do_login):
+    """A choice value outside the defined options is rejected (422)."""
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
-    project, article = await _make_project_with_article(session, researcher_user)
-    payload = {**VALID_ANNOTATION, "animal_sex": "ANDROGYNE"}
+    project, article = await _make_project_with_article(
+        session, researcher_user, fields=ANNOTATION_FIELDS, question="Q?"
+    )
+    payload = {"design": "NOT_AN_OPTION", "blinded": True, "confidence_score": 0.8}
     resp = await client.post(
         f"/api/v1/projects/{project.id}/articles/{article.id}/annotation", json=payload
     )
     assert resp.status_code == 422
 
 
-async def test_create_annotation_422_missing_key(client, session, researcher_user, do_login):
+async def test_create_annotation_422_missing_field(client, session, researcher_user, do_login):
+    """A defined question field that is absent from the payload is rejected (422)."""
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
-    project, article = await _make_project_with_article(session, researcher_user)
-    payload = {k: v for k, v in VALID_ANNOTATION.items() if k != "use_ai_behavior"}
+    project, article = await _make_project_with_article(
+        session, researcher_user, fields=ANNOTATION_FIELDS, question="Q?"
+    )
+    payload = {"blinded": True, "confidence_score": 0.8}  # missing "design"
     resp = await client.post(
         f"/api/v1/projects/{project.id}/articles/{article.id}/annotation", json=payload
     )

@@ -796,13 +796,8 @@
     "metadataOnlyNote": "Solo metadatos (OpenAlex): esta fuente no proporciona texto completo. Si tienes acceso al artículo, sube su PDF.",
     "sourceFile": "Archivo de origen",
     "sourceNotRecorded": "Origen no registrado",
-    "noModelAnswer": "Sin respuesta del modelo para esta búsqueda."
-  },
-  "sex": {
-    "MALE_ONLY": "Solo machos",
-    "FEMALE_ONLY": "Solo hembras",
-    "BOTH_SEXES": "Ambos sexos",
-    "UNSPECIFIED": "No especificado"
+    "noModelAnswer": "Sin respuesta del modelo para esta búsqueda.",
+    "notAnswered": "Sin respuesta"
   },
   "models": {
     "title": "Modelos",
@@ -911,7 +906,7 @@
   },
   "question": {
     "suggestion": "Ejemplo",
-    "suggestionText": "¿El estudio usa análisis de comportamiento basado en IA y qué sexo de animales se estudia?",
+    "suggestionText": "¿Es este artículo directamente relevante para la pregunta de investigación?",
     "suggestionUse": "Usar este ejemplo",
     "title": "Pregunta y campos de respuesta",
     "intro": "Describa lo que busca en los artículos. Los modelos responden a esta pregunta para cada artículo, con citas de apoyo.",
