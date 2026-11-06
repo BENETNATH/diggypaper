@@ -110,6 +110,13 @@ def pdf_to_sections(data: bytes) -> list[dict]:
     return text_to_sections(lines)
 
 
+def pdf_page_count(data: bytes) -> int:
+    """Number of pages of a PDF (spec 2026-11-06-ux-refonte-v4 R2: OCR estimate)."""
+    from pypdf import PdfReader
+
+    return len(PdfReader(io.BytesIO(data)).pages)
+
+
 async def _get_json(http: httpx.AsyncClient, url: str, params: dict | None = None) -> dict | None:
     try:
         resp = await http.get(url, params=params, headers=_UA)

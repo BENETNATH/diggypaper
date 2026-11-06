@@ -45,6 +45,43 @@ def make_pdf(lines: list[str]) -> bytes:
     return out
 
 
+def make_pdf_npages(n: int, lines: list[str] | None = None) -> bytes:
+    """PDF minimal de n pages, chacune contenant ``lines`` (défaut: une ligne)."""
+    lines = lines or ["hello"]
+    text = " ".join(lines)
+    objs = ["<< /Type /Catalog /Pages 2 0 R >>"]
+    kids = " ".join(f"{3 + i} 0 R" for i in range(n))
+    objs.append(f"<< /Type /Pages /Kids [{kids}] /Count {n} >>")
+    font_idx = 3 + n
+    for i in range(n):
+        objs.append(
+            f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents {4 + n + i} 0 R "
+            f"/Resources << /Font << /F1 {font_idx} 0 R >> >> >>"
+        )
+    objs.append("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    for _i in range(n):
+        content = f"BT /F1 10 Tf 40 760 Td ({text}) Tj ET"
+        objs.append(f"<< /Length {len(content)} >>\nstream\n{content}\nendstream")
+    out, offs = b"%PDF-1.4\n", []
+    for i, o in enumerate(objs, 1):
+        offs.append(len(out))
+        out += f"{i} 0 obj\n{o}\nendobj\n".encode()
+    xref = len(out)
+    out += f"xref\n0 {len(objs) + 1}\n0000000000 65535 f \n".encode()
+    out += b"".join(f"{o:010d} 00000 n \n".encode() for o in offs)
+    out += f"trailer\n<< /Size {len(objs) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF".encode()
+    return out
+
+
+def test_pdf_page_count_counts_pages():
+    """spec 2026-11-06-ux-refonte-v4 R2: the page count drives the OCR time estimate."""
+    from app.fulltext import pdf_page_count
+
+    assert pdf_page_count(make_pdf(["hello"])) == 1
+    assert pdf_page_count(make_pdf_npages(3)) == 3
+    assert pdf_page_count(make_pdf_npages(47)) == 47
+
+
 def test_pdf_to_sections_splits_imrad_and_stops_at_references():
     pdf = make_pdf(
         [

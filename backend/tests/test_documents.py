@@ -97,6 +97,8 @@ async def test_upload_pdf_creates_article(client, session, researcher_user, do_l
     assert data["title"] == "paper"
     assert data["has_fulltext"] is True
     assert data["fulltext_source"] == "upload"
+    # spec 2026-11-06-ux-refonte-v4 R2: page count (OCR estimate) on every PDF
+    assert data["page_count"] == 1
 
 
 # ============================================================================
@@ -266,6 +268,8 @@ async def test_upload_scanned_pdf_creates_no_text_layer(client, session, researc
     assert data["has_fulltext"] is False
     assert data["fulltext_note"] == "no_text_layer"
     assert data.get("needs_ocr") is True
+    # spec 2026-11-06-ux-refonte-v4 R2: page count for the OCR confirmation panel
+    assert data["page_count"] == 1
 
 
 # ============================================================================

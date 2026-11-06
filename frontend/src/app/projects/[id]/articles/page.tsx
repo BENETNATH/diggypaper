@@ -10,6 +10,7 @@ import { AnswerFilters, Answers } from "@/components/AnswerFilters";
 import { BulkPdfUpload } from "@/components/BulkPdfUpload";
 import { ExportMenu } from "@/components/ExportMenu";
 import { ResultRow } from "@/components/ResultRow";
+import { ResultsTable } from "@/components/ResultsTable";
 import { Menu, MenuItem } from "@/components/ui/Menu";
 import { Modal } from "@/components/ui/Modal";
 import { RequireAuth } from "@/components/RequireAuth";
@@ -366,6 +367,15 @@ function ResultsContent() {
             ) : undefined
           }
         />
+      ) : fields.length >= 2 ? (
+        // spec 2026-11-06-ux-refonte-v4 R3: ≥ 2 questions → one column per question
+        <Card className="p-1 sm:p-2">
+          <ResultsTable
+            articles={articles}
+            fields={fields}
+            hrefFor={(a) => withSearch(`/projects/${projectId}/annotate?article=${a.id}&queue=${queue}`, searchId)}
+          />
+        </Card>
       ) : (
         <Card className="p-1 sm:p-2">
           <ul className="divide-y divide-border/60">

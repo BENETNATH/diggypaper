@@ -28,7 +28,12 @@ UserDep = Annotated[User, Depends(get_current_user)]
 
 
 async def _upload_document(request: Request, db: AsyncSession, user: User, project_id: uuid.UUID):
-    from app.fulltext import MAX_PDF_BYTES, pdf_to_sections, text_to_sections
+    from app.fulltext import (
+        MAX_PDF_BYTES,
+        pdf_page_count,
+        pdf_to_sections,
+        text_to_sections,
+    )
 
     await _require_project_member(db, project_id, user)
     await _require_lead_or_admin(db, project_id, user)
@@ -44,11 +49,13 @@ async def _upload_document(request: Request, db: AsyncSession, user: User, proje
 
     # Validation by extension
     methods_text: str | None = None
+    page_count: int | None = None
     if ext == "pdf":
         if not data.startswith(b"%PDF"):
             raise HTTPException(status_code=422, detail="not a valid PDF (missing magic)")
         try:
             sections = await asyncio.to_thread(pdf_to_sections, data)
+            page_count = await asyncio.to_thread(pdf_page_count, data)
         except Exception:
             raise HTTPException(status_code=422, detail="unreadable PDF") from None
     else:  # txt
@@ -80,6 +87,7 @@ async def _upload_document(request: Request, db: AsyncSession, user: User, proje
             "has_fulltext": bool(existing.sections),
             "fulltext_source": existing.fulltext_source,
             "fulltext_note": existing.fulltext_note,
+            "page_count": page_count,
             "duplicate": True,
         }
 
@@ -115,6 +123,7 @@ async def _upload_document(request: Request, db: AsyncSession, user: User, proje
                 "has_fulltext": False,
                 "fulltext_source": None,
                 "fulltext_note": "no_text_layer",
+                "page_count": page_count,
                 "duplicate": True,
             }
         db.add(ArticleFile(article_id=art.id, data=data))
@@ -126,6 +135,7 @@ async def _upload_document(request: Request, db: AsyncSession, user: User, proje
             "fulltext_source": None,
             "fulltext_note": "no_text_layer",
             "needs_ocr": True,
+            "page_count": page_count,
             "duplicate": False,
         }
 
@@ -177,6 +187,7 @@ async def _upload_document(request: Request, db: AsyncSession, user: User, proje
         "fulltext_source": art.fulltext_source,
         "fulltext_note": art.fulltext_note,
         "methods_text": art.methods_text,
+        "page_count": page_count,
         "duplicate": False,
     }
 

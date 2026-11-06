@@ -213,7 +213,16 @@
     "noTextLayer": "Sans texte (scanné)",
     "runOcr": "Lancer l'OCR",
     "ocrRunning": "OCR… (1–3 min)",
-    "ocrEmpty": "Texte illisible — changez de source"
+    "ocrEmpty": "Texte illisible — changez de source",
+    "ocrSummary": "Upload terminé : {n} fiche(s) — {m} avec texte, {k} sans texte (scannées)",
+    "ocrLaunch": "Lancer l'OCR sur ces {k} fichier(s) · {est}",
+    "ocrEstS": "≈ {low}–{high} s",
+    "ocrEstMin": "≈ {low}–{high} min",
+    "ocrProgress": "OCR… {done}/{total}",
+    "scannedBadge": "sans texte (scanné)",
+    "ocrDone": "OCR terminé",
+    "ocrFailed": "OCR en échec",
+    "ocrPages": "{n} pages"
   },
   "import": {
     "title": "Import du corpus",
@@ -334,6 +343,8 @@
   },
   "articles": {
     "title": "Résultats et relecture",
+    "tableArticle": "Article",
+    "tableStatus": "Statut",
     "loading": "Chargement des articles…",
     "empty": "Aucun article",
     "emptyHint": "Importez des articles pour les voir ici.",

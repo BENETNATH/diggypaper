@@ -6,7 +6,7 @@ import { Article } from "@/lib/api";
 import { ArticleLinks, biblioLine } from "@/components/Certainty";
 import { sourceLabel } from "@/lib/source";
 
-const STATUS_DOT: Record<string, string> = {
+export const STATUS_DOT: Record<string, string> = {
   AUTO_ACCEPTED: "bg-success",
   AUTO_REJECTED: "bg-danger",
   NEEDS_HUMAN_REVIEW: "bg-warning",
@@ -35,7 +35,7 @@ type Answer = NonNullable<Article["answers"]>[number];
  * are truncated, the certainty pill stays always visible; on hover (or keyboard), a
  * card shows the item, the full answer and its origin.
  */
-function AnswerCell({ r }: { r: Answer }) {
+export function AnswerCell({ r }: { r: Answer }) {
   const t = useTranslations("articles");
   const yes = r.value === true;
   const no = r.value === false;
