@@ -16,10 +16,10 @@ depends_on = None
 def upgrade() -> None:
     op.create_unique_constraint(
         "uq_article_project_origin_ref",
-        "article",
+        "articles",
         ["project_id", "origin", "origin_ref"],
     )
 
 
 def downgrade() -> None:
-    op.drop_constraint("uq_article_project_origin_ref", "article")
+    op.drop_constraint("uq_article_project_origin_ref", "articles")
