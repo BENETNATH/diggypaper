@@ -453,4 +453,4 @@ def test_ocr_raster_scale_bounds_pixel_memory():
     assert raster * raster < 20000 * 20000  # strictly below the old worst case
     # an elongated page still respects the per-dimension cap and the budget
     s = _raster_scale(20000, 5)
-    assert 20000 * s <= MAX_OCR_PIXELS ** 0.5 * 1.01
+    assert 20000 * s <= MAX_OCR_PIXELS**0.5 * 1.01

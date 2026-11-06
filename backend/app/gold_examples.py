@@ -54,9 +54,7 @@ def examples_block(articles: dict, gold: dict, ids: list, fields: list[dict], ki
             continue
         answer = {f["key"]: g.get(f["key"]) for f in fields}
         answer["confidence_score"] = g.get("confidence_score", 1.0)
-        quotes = [
-            f"<quote>\n{q}\n</quote>" for q in (g.get("evidence_quotes") or [])
-        ]
+        quotes = [f"<quote>\n{q}\n</quote>" for q in (g.get("evidence_quotes") or [])]
         answer["evidence_quotes"] = quotes
         text = compose_text(a, kinds)[:MAX_EXAMPLE_CHARS]
         parts.append(

@@ -123,7 +123,10 @@ async def test_upload_activity_is_not_inactivity(session, exports, monkeypatch):
     lead, project = await _lead_project(session)  # created 40 days ago, corpus as old
     now = datetime.now(UTC)
     fresh = Article(
-        project_id=project.id, pmid="99", title="upload", origin="upload",
+        project_id=project.id,
+        pmid="99",
+        title="upload",
+        origin="upload",
         created_at=now - timedelta(days=2),
     )
     session.add(fresh)
