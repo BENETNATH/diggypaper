@@ -87,6 +87,8 @@ async def _upload_document(request: Request, db: AsyncSession, user: User, proje
             "has_fulltext": bool(existing.sections),
             "fulltext_source": existing.fulltext_source,
             "fulltext_note": existing.fulltext_note,
+            # A re-uploaded scanned PDF still needs its OCR run (the first pass did not run it).
+            "needs_ocr": existing.fulltext_note == "no_text_layer" and not existing.sections,
             "page_count": page_count,
             "duplicate": True,
         }
@@ -123,6 +125,7 @@ async def _upload_document(request: Request, db: AsyncSession, user: User, proje
                 "has_fulltext": False,
                 "fulltext_source": None,
                 "fulltext_note": "no_text_layer",
+                "needs_ocr": True,
                 "page_count": page_count,
                 "duplicate": True,
             }

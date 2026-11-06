@@ -4,7 +4,17 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
-import { getProject, prismaUrl, prismaPdfUrl, listArticles, Article, PredictionFilter, SchemaField } from "@/lib/api";
+import {
+  getProject,
+  prismaUrl,
+  prismaPdfUrl,
+  listArticles,
+  deleteArticle,
+  bulkDeleteArticles,
+  Article,
+  PredictionFilter,
+  SchemaField,
+} from "@/lib/api";
 import { useApiError } from "@/lib/errorMsg";
 import { AnswerFilters, Answers } from "@/components/AnswerFilters";
 import { BulkPdfUpload } from "@/components/BulkPdfUpload";
@@ -65,6 +75,10 @@ function ResultsContent() {
   const [ready, setReady] = useState(false);
   const [isLead, setIsLead] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const [deleteConfirm, setDeleteConfirm] = useState<{ ids: string[] } | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   // Restores the remembered filters / sort / page of this search (client only: reads
@@ -150,6 +164,42 @@ function ResultsContent() {
       })
       .catch((e) => setError(errText(e)));
   }, [projectId, page, filter, sort, answers, searchId, text, fulltext, errText]);
+
+  // --- Selection & deletion (LEAD / ADMIN only) ---
+  function toggleSelect(id: string) {
+    setSelected((s) => {
+      const next = new Set(s);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+  function requestDelete(ids: string[]) {
+    if (ids.length > 0) setDeleteConfirm({ ids });
+  }
+  async function confirmDelete() {
+    if (!deleteConfirm) return;
+    setDeleting(true);
+    try {
+      const ids = deleteConfirm.ids;
+      if (ids.length === 1) await deleteArticle(projectId, ids[0]);
+      else await bulkDeleteArticles(projectId, ids);
+      setSelected(new Set());
+      setDeleteConfirm(null);
+      setToast(ids.length === 1 ? t("deleteSuccess") : t("deleteSeriesSuccess", { n: ids.length }));
+      await load();
+    } catch (e) {
+      setToast(errText(e));
+    } finally {
+      setDeleting(false);
+    }
+  }
+  // Auto-dismiss the confirmation toast.
+  useEffect(() => {
+    if (!toast) return;
+    const id = setTimeout(() => setToast(null), 4000);
+    return () => clearTimeout(id);
+  }, [toast]);
 
   useEffect(() => {
     if (ready) void load();
@@ -355,6 +405,55 @@ function ResultsContent() {
         </Modal>
       )}
 
+      {/* Delete confirmation (single article or a selected series) */}
+      {deleteConfirm && (
+        <Modal
+          title={deleteConfirm.ids.length === 1 ? t("deleteTitle") : t("deleteSeriesTitle")}
+          onClose={() => setDeleteConfirm(null)}
+        >
+          <div className="flex flex-col gap-4">
+            <p className="text-sm text-muted">
+              {deleteConfirm.ids.length === 1
+                ? t("deleteBody")
+                : t("deleteSeriesBody", { n: deleteConfirm.ids.length })}
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" size="sm" onClick={() => setDeleteConfirm(null)} disabled={deleting}>
+                {tc("cancel")}
+              </Button>
+              <Button variant="danger" size="sm" onClick={() => void confirmDelete()} disabled={deleting}>
+                {deleting ? "…" : t("delete")}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Success / error toast */}
+      {toast && (
+        <div
+          role="status"
+          className="fixed bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-lg border border-border bg-surface px-4 py-2 text-sm text-foreground shadow-lg"
+        >
+          {toast}
+        </div>
+      )}
+
+      {/* Bulk-delete bar (a series of articles, e.g. the result of a search) */}
+      {isLead && selected.size > 0 && (
+        <div className="flex items-center gap-3 rounded-lg border border-danger/40 bg-danger/5 px-3 py-2 text-sm">
+          <span className="text-foreground">{t("selectedCount", { n: selected.size })}</span>
+          <div className="ml-auto flex items-center gap-2">
+            <Button variant="secondary" size="sm" onClick={() => setSelected(new Set())}>
+              {t("deselect")}
+            </Button>
+            <Button variant="danger" size="sm" disabled={deleting} onClick={() => requestDelete([...selected])}>
+              {t("deleteSelected")}
+            </Button>
+          </div>
+        </div>
+      )}
+
       {articles.length === 0 ? (
         <EmptyState
           title={t("empty")}
@@ -374,6 +473,10 @@ function ResultsContent() {
             articles={articles}
             fields={fields}
             hrefFor={(a) => withSearch(`/projects/${projectId}/annotate?article=${a.id}&queue=${queue}`, searchId)}
+            canDelete={isLead}
+            selected={selected}
+            onToggleSelect={toggleSelect}
+            onDelete={(id) => requestDelete([id])}
           />
         </Card>
       ) : (
@@ -384,6 +487,10 @@ function ResultsContent() {
                 key={a.id}
                 a={a}
                 href={withSearch(`/projects/${projectId}/annotate?article=${a.id}&queue=${queue}`, searchId)}
+                canDelete={isLead}
+                selected={selected}
+                onToggleSelect={toggleSelect}
+                onDelete={(id) => requestDelete([id])}
               />
             ))}
           </ul>

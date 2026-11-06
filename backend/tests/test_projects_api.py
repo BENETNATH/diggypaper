@@ -432,6 +432,35 @@ async def test_list_articles_paginated(client, session, researcher_user, do_logi
     assert {a["pmid"] for a in data["items"]} & {a["pmid"] for a in data2["items"]} == set()
 
 
+async def test_list_articles_exposes_fulltext_note(client, session, researcher_user, do_login):
+    """The list payload must carry ``fulltext_note`` so the UI can tell a scanned
+    (no-text-layer) article apart from an abstract-only one: 'Sans texte (scanné)'
+    vs 'abstract seul'. Regression: the list endpoint once omitted the field, so a
+    textless scanned PDF was labelled 'abstract seul' (meaningless)."""
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project_id = await _create_project(client)
+    project = await session.get(Project, uuid.UUID(project_id))
+    session.add(
+        Article(
+            project_id=project.id,
+            pmid="900",
+            title="scanned",
+            fulltext_note="no_text_layer",
+            fulltext_source=None,
+            sections=None,
+        )
+    )
+    session.add(Article(project_id=project.id, pmid="901", title="with abstract"))
+    await session.commit()
+    resp = await client.get(f"/api/v1/projects/{project_id}/articles")
+    assert resp.status_code == 200
+    items = {a["pmid"]: a for a in resp.json()["items"]}
+    assert items["900"]["fulltext_note"] == "no_text_layer"
+    assert items["900"]["has_fulltext"] is False
+    assert items["901"]["fulltext_note"] is None
+    assert items["901"]["has_fulltext"] is False
+
+
 async def test_list_articles_default_per_page(client, session, researcher_user, do_login):
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     project_id = await _create_project(client)

@@ -87,55 +87,108 @@ export function AnswerCell({ r }: { r: Answer }) {
 /**
  * A row of the results list: title, one line of grey markers, answers in
  * fixed-size boxes, and on the right the state: re-reviewed or the model's decision.
+ * When `canDelete`, a checkbox (bulk select) and a delete button are added.
  */
-export function ResultRow({ a, href }: { a: Article; href: string }) {
+export function ResultRow({
+  a,
+  href,
+  canDelete = false,
+  selected,
+  onToggleSelect,
+  onDelete,
+}: {
+  a: Article;
+  href: string;
+  canDelete?: boolean;
+  selected?: Set<string>;
+  onToggleSelect?: (id: string) => void;
+  onDelete?: (id: string) => void;
+}) {
   const t = useTranslations("articles");
   const meta = [
     biblioLine(a),
     sourceLabel(a.source, a.native_id, t("sourceFile")) ?? a.doi ?? "",
-    a.has_fulltext ? t("fulltext") : t("abstractOnly"),
+    a.has_fulltext
+      ? t("fulltext")
+      : a.fulltext_note === "no_text_layer"
+        ? t("noTextLayer")
+        : t("abstractOnly"),
     a.origin === "citation" ? t("originCitation", { n: a.origin_seeds ?? 0 }) : "",
   ].filter(Boolean);
   const answers = a.answers ?? [];
   const reviewed = a.annotated;
+  const isSelected = selected?.has(a.id) ?? false;
   return (
     <li className="group">
-      <Link
-        href={href}
-        className="group/row flex flex-col gap-2 rounded-lg px-3 py-3 transition-colors hover:bg-surface-muted/60 sm:flex-row sm:items-start sm:justify-between sm:gap-6"
-      >
+      <div className="flex items-start gap-2.5">
+        {canDelete && (
+          <input
+            type="checkbox"
+            checked={isSelected}
+            onChange={() => onToggleSelect?.(a.id)}
+            onClick={(e) => e.stopPropagation()}
+            aria-label={t("selectArticle")}
+            className={`mt-3.5 h-4 w-4 shrink-0 rounded border-border ${
+              isSelected ? "bg-primary text-surface" : "bg-surface"
+            }`}
+          />
+        )}
         <div className="min-w-0 flex-1">
-          <p className="line-clamp-2 text-[15px] leading-snug text-foreground">{a.title ?? t("untitled")}</p>
-          <p className="mt-1 truncate text-xs text-muted">{meta.join(" · ")}</p>
-          {answers.length > 0 && (
-            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {answers.map((r) => (
-                <AnswerCell key={r.key} r={r} />
-              ))}
+          <Link
+            href={href}
+            className="group/row flex flex-col gap-2 rounded-lg px-3 py-3 transition-colors hover:bg-surface-muted/60 sm:flex-row sm:items-start sm:justify-between sm:gap-6"
+          >
+            <div className="min-w-0 flex-1">
+              <p className="line-clamp-2 text-[15px] leading-snug text-foreground">{a.title ?? t("untitled")}</p>
+              <p className="mt-1 truncate text-xs text-muted">{meta.join(" · ")}</p>
+              {answers.length > 0 && (
+                <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  {answers.map((r) => (
+                    <AnswerCell key={r.key} r={r} />
+                  ))}
+                </div>
+              )}
             </div>
-          )}
-        </div>
-        <div className="flex shrink-0 flex-col gap-1 text-xs sm:items-end">
-          {a.prediction_status && (
-            <span className="inline-flex items-center gap-1.5 text-foreground">
-              <span className={`h-2 w-2 rounded-full ${STATUS_DOT[a.prediction_status] ?? "bg-border"}`} aria-hidden />
-              {t(`status_${a.prediction_status}`)}
-              {a.confidence != null && (
-                <span className="text-muted" title={t("relevanceHelp")}>
-                  · {Math.round(a.confidence * 100)} %
+            <div className="flex shrink-0 flex-col gap-1 text-xs sm:items-end">
+              {a.prediction_status && (
+                <span className="inline-flex items-center gap-1.5 text-foreground">
+                  <span className={`h-2 w-2 rounded-full ${STATUS_DOT[a.prediction_status] ?? "bg-border"}`} aria-hidden />
+                  {t(`status_${a.prediction_status}`)}
+                  {a.confidence != null && (
+                    <span className="text-muted" title={t("relevanceHelp")}>
+                      · {Math.round(a.confidence * 100)} %
+                    </span>
+                  )}
                 </span>
               )}
-            </span>
-          )}
-          {reviewed && (
-            <span className={a.review?.status === "CORRECTED" ? "text-warning" : "text-success"}>
-              ✓ {a.review?.status ? t(`review_${a.review.status}`) : t("reviewed")}
-              {a.review?.by ? <span className="text-muted"> · {a.review.by}</span> : null}
-            </span>
-          )}
+              {reviewed && (
+                <span className={a.review?.status === "CORRECTED" ? "text-warning" : "text-success"}>
+                  ✓ {a.review?.status ? t(`review_${a.review.status}`) : t("reviewed")}
+                  {a.review?.by ? <span className="text-muted"> · {a.review.by}</span> : null}
+                </span>
+              )}
+              {canDelete && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onDelete?.(a.id);
+                  }}
+                  aria-label={t("delete")}
+                  title={t("delete")}
+                  className="mt-0.5 rounded p-1 text-muted opacity-0 transition-opacity hover:text-danger focus-visible:opacity-100 group-hover/row:opacity-100"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4" aria-hidden>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </button>
+              )}
+            </div>
+          </Link>
+          <ArticleLinks article={a} className="px-3 pb-2 -mt-1" />
         </div>
-      </Link>
-      <ArticleLinks article={a} className="px-3 pb-2 -mt-1" />
+      </div>
     </li>
   );
 }

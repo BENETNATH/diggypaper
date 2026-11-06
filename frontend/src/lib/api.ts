@@ -569,6 +569,22 @@ export async function deleteProject(projectId: string): Promise<void> {
   await request<void>(`/projects/${projectId}`, { method: "DELETE" });
 }
 
+/** Deletes one article (its file, predictions, annotations, gold, search links cascade). LEAD/ADMIN. */
+export async function deleteArticle(projectId: string, articleId: string): Promise<void> {
+  await request<void>(`/projects/${projectId}/articles/${articleId}`, { method: "DELETE" });
+}
+
+/** Deletes a series of articles (e.g. the result of a search). LEAD/ADMIN. Returns the count. */
+export async function bulkDeleteArticles(
+  projectId: string,
+  articleIds: string[]
+): Promise<{ deleted: number }> {
+  return request<{ deleted: number }>(`/projects/${projectId}/articles/bulk-delete`, {
+    method: "POST",
+    body: JSON.stringify({ article_ids: articleIds }),
+  });
+}
+
 // --- Import (MODULE 2) ------------------------------------------------------
 
 export async function queryVolume(

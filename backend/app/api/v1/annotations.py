@@ -15,11 +15,13 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db, rate_limit_user
 from app.api.v1.projects import (
+    _require_lead_or_admin,
     _require_project_member,
     biblio_payload,
     latest_reviews,
@@ -110,6 +112,63 @@ async def get_article(
     article = await _require_article(db, project_id, article_id, user)
     scope = await _scope(db, project_id, search)
     return _article_payload(article, scope.text_sections)
+
+
+async def _require_lead_article(
+    db: AsyncSession, project_id: uuid.UUID, article_id: uuid.UUID, user: User
+) -> Article:
+    """DESTRUCTIVE: LEAD or global ADMIN only; the article must belong to the project (404)."""
+    await _require_lead_or_admin(db, project_id, user)
+    article = await db.get(Article, article_id)
+    if article is None or article.project_id != project_id:
+        raise HTTPException(status_code=404, detail="Article not found")
+    return article
+
+
+class BulkDeleteRequest(BaseModel):
+    article_ids: list[uuid.UUID]
+
+
+@router.delete("/{project_id}/articles/{article_id}", status_code=204)
+async def delete_article(
+    project_id: uuid.UUID,
+    article_id: uuid.UUID,
+    db: DbDep,
+    user: UserDep,
+) -> None:
+    """Deletes an article (its text file, predictions, annotations, gold, search links and
+    benchmark rows cascade). LEAD / ADMIN only."""
+    article = await _require_lead_article(db, project_id, article_id, user)
+    await db.delete(article)
+    await db.commit()
+
+
+@router.post("/{project_id}/articles/bulk-delete")
+async def bulk_delete_articles(
+    project_id: uuid.UUID,
+    payload: BulkDeleteRequest,
+    db: DbDep,
+    user: UserDep,
+) -> dict:
+    """Deletes a series of articles (e.g. the result of a search). LEAD / ADMIN only.
+    Only the articles that actually belong to the project are deleted; returns the count."""
+    await _require_lead_or_admin(db, project_id, user)
+    ids = list(dict.fromkeys(payload.article_ids))
+    if not ids:
+        return {"deleted": 0}
+    rows = (
+        (
+            await db.execute(
+                select(Article).where(Article.id.in_(ids), Article.project_id == project_id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for art in rows:
+        await db.delete(art)
+    await db.commit()
+    return {"deleted": len(rows)}
 
 
 @router.post(

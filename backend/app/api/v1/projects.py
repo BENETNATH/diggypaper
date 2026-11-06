@@ -884,6 +884,7 @@ async def list_articles(
                 "origin_seeds": a.origin_seeds,
                 "has_fulltext": bool(a.sections),
                 "fulltext_source": a.fulltext_source,
+                "fulltext_note": a.fulltext_note,
                 **biblio_payload(a),
                 "prediction_status": st if visible(a) else None,
                 # the re-read's relevance (cursor) replaces the model's

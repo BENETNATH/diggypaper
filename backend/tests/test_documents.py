@@ -272,6 +272,39 @@ async def test_upload_scanned_pdf_creates_no_text_layer(client, session, researc
     assert data["page_count"] == 1
 
 
+@pytest.mark.asyncio
+async def test_scanned_pdf_dup_needs_ocr(client, session, researcher_user, do_login):
+    """A re-uploaded scanned PDF (duplicate) must still offer its OCR run: needs_ocr is True.
+
+    Regression: the duplicate response once omitted needs_ocr, so the OCR button/panel never
+    appeared after a re-upload of a textless PDF (the user saw nothing after 100 %).
+    """
+    from unittest.mock import patch
+
+    from tests.test_fulltext import make_pdf
+
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project = Project(title="P", created_by=researcher_user.id)
+    await _make_project(session, project, researcher_user)
+
+    pdf = make_pdf([""])
+    data = None
+    for _ in range(2):
+        with patch("app.fulltext.pdf_to_sections", return_value=[]):
+            resp = await client.post(
+                f"/api/v1/projects/{project.id}/documents",
+                params={"filename": "scan.pdf"},
+                content=pdf,
+                headers={"content-type": "application/pdf"},
+            )
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+    assert data is not None
+    assert data["duplicate"] is True
+    assert data["fulltext_note"] == "no_text_layer"
+    assert data.get("needs_ocr") is True, "a re-uploaded scanned PDF must still offer OCR"
+
+
 # ============================================================================
 # Auth
 # ============================================================================
