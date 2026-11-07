@@ -1233,5 +1233,21 @@
     "noCommon": "Aucun article commun entre les deux analyses.",
     "sameJob": "Choisir deux analyses différentes.",
     "pickJobs": "Choisir deux analyses à comparer."
+  },
+  "agreement": {
+    "title": "Revue / Accord",
+    "aiModel": "Modèle (IA)",
+    "noModel": "Aucun",
+    "pickReviewers": "Choisir deux réviseurs à comparer.",
+    "noOverlap": "Les deux réviseurs n'ont pas évalué d'article commun.",
+    "comparedArticles": "Articles comparés",
+    "agreementRate": "Taux d'accord",
+    "kappa": "Kappa",
+    "field": "Champ",
+    "colN": "n",
+    "colAgreement": "Accord",
+    "aiAgreement": "Accord IA",
+    "disagreements": "{n} désaccord(s) à arbitrer",
+    "summary": "Résumé exportable (PRISMA)"
   }
 }

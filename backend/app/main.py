@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1 import (
     admin,
     admin_users,
+    agreement_review,
     annotations,
     auth,
     benchmarks,
@@ -76,6 +77,7 @@ def create_app() -> FastAPI:
     app.include_router(admin_users.router, prefix="/api/v1")
     app.include_router(projects.router, prefix="/api/v1")
     app.include_router(annotations.router, prefix="/api/v1")
+    app.include_router(agreement_review.router, prefix="/api/v1")
     app.include_router(team.router, prefix="/api/v1")
     app.include_router(searches.router, prefix="/api/v1")
     app.include_router(citations.router, prefix="/api/v1")

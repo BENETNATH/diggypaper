@@ -45,3 +45,27 @@ def values_agree(a, b) -> bool:
     """True iff both answers are present and equal after normalization."""
     na, nb = norm_value(a), norm_value(b)
     return na is not None and nb is not None and na == nb
+
+
+def cohen_kappa(pairs: list[tuple]) -> float | None:
+    """Cohen's kappa on normalized (value_a, value_b) pairs.
+
+    Binary only: if the pairs contain more than two distinct values, the
+    multivariate kappa is out of scope — return None (callers report the raw
+    agreement instead). None also when there are no pairs, or when
+    ``pe == 1`` (every pair identical: kappa undefined 0/0).
+    """
+    if not pairs:
+        return None
+    distinct = sorted({v for a, b in pairs for v in (a, b)}, key=repr)
+    if len(distinct) != 2:
+        return None
+    n = len(pairs)
+    pos = distinct[1]
+    p1a = sum(1 for a, _ in pairs if a == pos)
+    p1b = sum(1 for _, b in pairs if b == pos)
+    po = sum(1 for a, b in pairs if a == b) / n
+    pe = (p1a / n) * (p1b / n) + ((n - p1a) / n) * ((n - p1b) / n)
+    if pe >= 1:
+        return None
+    return (po - pe) / (1 - pe)

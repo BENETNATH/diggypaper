@@ -1304,6 +1304,53 @@ export const getComparison = (
 ): Promise<Comparison> =>
   request(`/projects/${projectId}/searches/${searchId}/comparison${qs({ job_a: jobA, job_b: jobB })}`);
 
+// --- Reviewer agreement (humans & AI, PRISMA metrics) -----------------------
+
+export interface AgreementField {
+  field: string;
+  n: number;
+  n_agree: number;
+  acc: number | null;
+  kappa: number | null;
+}
+export interface AgreementDisagreement {
+  article_id: string;
+  title: string | null;
+  value_a: unknown;
+  value_b: unknown;
+  fields_diff?: Record<string, { a: unknown; b: unknown }>;
+}
+export interface Agreement {
+  humans: {
+    user_a: { id: string; email: string } | null;
+    user_b: { id: string; email: string } | null;
+    n: number;
+    n_agree: number;
+    acc: number | null;
+    kappa: number | null;
+    by_field: AgreementField[];
+    disagreements: AgreementDisagreement[];
+  };
+  ai: {
+    model: string;
+    user: { id: string; email: string } | null;
+    n: number;
+    n_agree: number;
+    acc: number | null;
+    kappa: number | null;
+  } | null;
+  disagreements: AgreementDisagreement[];
+  n_reviewers: number;
+  reviewers: { id: string; email: string; count: number }[];
+  summary: string;
+}
+export const getAgreement = (
+  projectId: string,
+  searchId: string,
+  params: { user_a?: string; user_b?: string; model?: string } = {}
+): Promise<Agreement> =>
+  request(`/projects/${projectId}/searches/${searchId}/agreement${qs(params)}`);
+
 // --- Settings (MODULE 7, admin) --------------------------------------------
 
 export type SettingsScope = "GLOBAL" | "PROJECT" | "USER";

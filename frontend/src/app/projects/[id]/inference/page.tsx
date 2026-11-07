@@ -39,6 +39,7 @@ import { Card, Badge, statusColor } from "@/components/ui/Card";
 import { EmptyState, ErrorBanner, Skeleton } from "@/components/ui/Feedback";
 import { JobProgress } from "@/components/JobProgress";
 import { ComparisonPanel } from "@/components/ComparisonPanel";
+import { AgreementPanel } from "@/components/AgreementPanel";
 import { cleanSelection, isUntouched, searchStoreKey, withSearch } from "@/lib/search";
 import {
   notifySearchesChanged,
@@ -807,6 +808,17 @@ function AnalyseContent() {
           Remounted per search (key): the panel state resets with the selection. */}
       {current && (
         <ComparisonPanel key={current.id} projectId={projectId} searchId={current.id} />
+      )}
+
+      {/* Reviewer agreement (spec 2026-11-07-accord-reviews §5): visible to members.
+          Remounted per search (key): the panel state resets with the selection. */}
+      {current && (
+        <AgreementPanel
+          key={current.id}
+          projectId={projectId}
+          searchId={current.id}
+          models={models}
+        />
       )}
 
       {/* Gold standard & benchmark: how the references feed the analysis, with links. */}

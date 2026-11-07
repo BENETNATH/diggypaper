@@ -1233,5 +1233,21 @@
     "noCommon": "Kein gemeinsamer Artikel zwischen den zwei Analysen.",
     "sameJob": "Zwei verschiedene Analysen wählen.",
     "pickJobs": "Zwei Analysen zum Vergleich wählen."
+  },
+  "agreement": {
+    "title": "Prüfung / Übereinstimmung",
+    "aiModel": "Modell (KI)",
+    "noModel": "Keines",
+    "pickReviewers": "Zwei Prüfer zum Vergleich auswählen.",
+    "noOverlap": "Die beiden Prüfer haben keinen gemeinsamen Artikel bewertet.",
+    "comparedArticles": "Verglichene Artikel",
+    "agreementRate": "Übereinstimmungsrate",
+    "kappa": "Kappa",
+    "field": "Feld",
+    "colN": "n",
+    "colAgreement": "Übereinstimmung",
+    "aiAgreement": "KI-Übereinstimmung",
+    "disagreements": "{n} Meinungsverschiedenheit(en) zur Schlichtung",
+    "summary": "Exportierbare Zusammenfassung (PRISMA)"
   }
 }
