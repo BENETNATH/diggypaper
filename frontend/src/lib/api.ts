@@ -1595,3 +1595,19 @@ export const deleteWatch = (projectId: string, watchId: string): Promise<void> =
 /** Run one pass now (re-push + import + analyze). Returns the watch once the pass is done. */
 export const runWatch = (projectId: string, watchId: string): Promise<Watch> =>
   request(`/projects/${projectId}/watches/${watchId}/run`, { method: "POST" });
+
+/** RAG semantic result (one vectorized section). */
+export interface SemanticResult {
+  article: { id: string; title: string | null; pmid: string | null; doi: string | null };
+  section_title: string | null;
+  excerpt: string;
+  score: number;
+}
+
+/** Hybrid semantic search over the project's vectorized corpus (RAG). */
+export const semanticSearch = (projectId: string, query: string, limit = 20): Promise<{ results: SemanticResult[]; indexed: boolean }> =>
+  request(`/projects/${projectId}/semantic-search`, { method: "POST", body: JSON.stringify({ query, limit }) });
+
+/** Manually (re)index the project corpus (lead). Enqueues the Celery task. */
+export const triggerVectorize = (projectId: string): Promise<{ task_id: string; queued: boolean }> =>
+  request(`/projects/${projectId}/vectorize`, { method: "POST" });

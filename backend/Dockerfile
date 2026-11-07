@@ -18,11 +18,24 @@ RUN apt-get update && apt-get install -y --no-install-recommends gosu \
 
 WORKDIR /app
 
+# torch : la variante est un build-arg (TORCH_VARIANT=cpu|cuda, cf. docker-compose).
+# cpu (défaut) : portable partout, ~200 Mo. cuda : serveurs GPU (NVIDIA driver
+# compatible CUDA 12.8), l'embedding utilise le GPU automatiquement (~2,5 Go).
+# Installé AVANT le package pour contrôler la wheel (l'index PyPI ne sert que
+# la variante CUDA) ; les pins du reste viennent de constraints.txt.
+ARG TORCH_VARIANT=cpu
+RUN pip install --upgrade pip \
+    && if [ "${TORCH_VARIANT}" = "cuda" ]; then \
+         pip install --no-deps "torch==2.9.1+cu128" --index-url https://download.pytorch.org/whl/cu128; \
+       else \
+         pip install --no-deps "torch==2.9.1+cpu" --index-url https://download.pytorch.org/whl/cpu; \
+       fi
+
 # Dépendances + package (app/ requis pour le build du wheel)
 COPY pyproject.toml constraints.txt ./
 COPY app ./app
 COPY VERSION ./
-RUN pip install --upgrade pip && pip install -c constraints.txt .
+RUN pip install -c constraints.txt .
 
 # Migrations + bootstrap
 COPY alembic ./alembic

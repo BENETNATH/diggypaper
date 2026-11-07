@@ -73,6 +73,7 @@ EXPECTED_TABLES = {
     "benchmark_votes",  # human preference votes per variant
     "password_resets",  # password reset tokens (hashed)
     "watches",  # corpus watch (veille) — spec 2026-11-07-veille-automatisee
+    "section_embeddings",  # RAG: one vector per section — spec 2026-11-07-recherche-semantique-rag
 }
 
 

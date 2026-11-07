@@ -344,6 +344,11 @@ async def run_watch_pass(
 
         importer = import_fresh or _import_fresh
         article_ids = await importer(db, project, watch.source, fresh, client, adapter)
+        if article_ids:
+            from app.tasks.vectorize import vectorize_task
+
+            # RAG: embed the freshly imported sections (spec 2026-11-07 §6)
+            vectorize_task.delay(str(project.id), [str(i) for i in article_ids])
         if not article_ids:
             watch.last_matched = {
                 "run_at": watch.last_run_at.isoformat(),

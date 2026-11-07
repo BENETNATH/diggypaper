@@ -21,6 +21,7 @@ import { BulkPdfUpload } from "@/components/BulkPdfUpload";
 import { ExportMenu } from "@/components/ExportMenu";
 import { ResultRow } from "@/components/ResultRow";
 import { ResultsTable } from "@/components/ResultsTable";
+import { SemanticSearchBox } from "@/components/SemanticSearchBox";
 import { Menu, MenuItem } from "@/components/ui/Menu";
 import { Modal } from "@/components/ui/Modal";
 import { RequireAuth } from "@/components/RequireAuth";
@@ -269,6 +270,8 @@ function ResultsContent() {
           </Link>
         </p>
       )}
+
+      <SemanticSearchBox projectId={projectId} isLead={isLead} />
 
       <div className="relative">
         <span aria-hidden className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted">

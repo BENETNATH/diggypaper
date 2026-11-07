@@ -24,6 +24,11 @@ dependencies = [
     "pymupdf>=1.24",
     "pillow>=10.0",
     "openpyxl>=3.1",
+    "pgvector>=0.3",
+    # RAG (spec 2026-11-07-recherche-semantique-rag) : torch est pré-installé
+    # dans le Dockerfile avec la bonne variante (cpu/cuda, ARG TORCH_VARIANT) —
+    # il est satisfait ici, pas téléchargé depuis PyPI.
+    "sentence-transformers>=3.0",
 ]
 
 [build-system]

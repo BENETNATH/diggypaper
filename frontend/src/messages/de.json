@@ -1207,5 +1207,16 @@
     "days": "{n} T",
     "alert": "Serverplatte zu {percent} % belegt ({free} GB frei).",
     "manage": "Speicher verwalten"
+  },
+  "semantic": {
+    "placeholder": "Semantische Suche im Korpus…",
+    "search": "Suchen",
+    "loading": "Suche läuft…",
+    "results": "Semantische Ergebnisse",
+    "empty": "Keine Ergebnisse",
+    "untitled": "Artikel ohne Titel",
+    "notIndexed": "Der Korpus wurde noch nicht indiziert.",
+    "indexButton": "Korpus indizieren",
+    "indexStarted": "Indizierung gestartet — bitte in wenigen Minuten erneut versuchen."
   }
 }

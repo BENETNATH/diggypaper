@@ -1207,5 +1207,16 @@
     "days": "{n} d",
     "alert": "Server disk is {percent}% full ({free} GB free).",
     "manage": "Manage storage"
+  },
+  "semantic": {
+    "placeholder": "Semantic search in the corpus…",
+    "search": "Search",
+    "loading": "Searching…",
+    "results": "Semantic results",
+    "empty": "No results",
+    "untitled": "Untitled article",
+    "notIndexed": "The corpus is not indexed yet.",
+    "indexButton": "Index the corpus",
+    "indexStarted": "Indexing started — try again in a few minutes."
   }
 }

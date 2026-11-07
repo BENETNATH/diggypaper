@@ -203,6 +203,11 @@ async def search_fulltext(
             logger.warning("metadata refresh failed for article %s", article.id, exc_info=True)
         source = await ft.complete_article(db, article, email, http)
     await db.commit()
+    if source is not None:
+        from app.tasks.vectorize import vectorize_task
+
+        # RAG: the completed full-text is new — embed the sections (spec 2026-11-07 §6)
+        vectorize_task.delay(str(project_id), [str(article.id)])
     scope = await _scope(db, project_id, search)
     return {
         "found": source is not None,

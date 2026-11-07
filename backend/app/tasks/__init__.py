@@ -851,6 +851,11 @@ async def _finish_success(
     job.result_json = result
     job.completed_at = datetime.now(UTC)
     await session.commit()
+    # RAG: the import brought fresh sections — vectorize the project (spec 2026-11-07 §6).
+    # The pipeline is incremental, so already-embedded sections are skipped.
+    from app.tasks.vectorize import vectorize_task
+
+    vectorize_task.delay(str(project.id))
     return result
 
 
@@ -981,6 +986,7 @@ async def _complete_fulltext(
                 if not long_enough(a.sections or [])
             ]
             found, sources = 0, {}
+            completed_ids: list[str] = []
 
             def state(phase: str) -> dict:
                 return {
@@ -1006,6 +1012,7 @@ async def _complete_fulltext(
                         found += 1
                         key = source.split(":")[0]
                         sources[key] = sources.get(key, 0) + 1
+                        completed_ids.append(str(art.id))
                     done += 1
                     job.result_json = state("fulltext")
                     await session.commit()
@@ -1020,6 +1027,11 @@ async def _complete_fulltext(
             job.result_json = state("done")
             job.completed_at = datetime.now(UTC)
             await session.commit()
+            # RAG: the completed full-texts are new sections (spec 2026-11-07 §6).
+            if completed_ids:
+                from app.tasks.vectorize import vectorize_task
+
+                vectorize_task.delay(project_id, completed_ids)
             return job.result_json
     finally:
         if http is None:

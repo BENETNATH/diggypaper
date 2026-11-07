@@ -37,6 +37,7 @@ celery_app.conf.update(
         "app.tasks.inference",
         "app.tasks.maintenance",
         "app.tasks.notify",
+        "app.tasks.vectorize",
         "app.tasks.watch",
     ],
     # Beat built into the worker (single worker): disk alert + inactive projects.

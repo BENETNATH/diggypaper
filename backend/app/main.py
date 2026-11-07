@@ -24,6 +24,7 @@ from app.api.v1 import (
     prompts,
     query_assistant,
     searches,
+    semantic_search,
     team,
     users,
     watches,
@@ -89,6 +90,7 @@ def create_app() -> FastAPI:
     app.include_router(inference.router, prefix="/api/v1")
     app.include_router(jobs.router, prefix="/api/v1")
     app.include_router(watches.router, prefix="/api/v1")
+    app.include_router(semantic_search.router, prefix="/api/v1")
 
     @app.get("/api/v1/health", include_in_schema=False)
     async def health() -> dict:

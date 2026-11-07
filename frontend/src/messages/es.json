@@ -1207,5 +1207,16 @@
     "days": "{n} d",
     "alert": "Disco del servidor al {percent} % ({free} GB libres).",
     "manage": "Gestionar almacenamiento"
+  },
+  "semantic": {
+    "placeholder": "Búsqueda semántica en el corpus…",
+    "search": "Buscar",
+    "loading": "Buscando…",
+    "results": "Resultados semánticos",
+    "empty": "Sin resultados",
+    "untitled": "Artículo sin título",
+    "notIndexed": "El corpus todavía no está indexado.",
+    "indexButton": "Indexar el corpus",
+    "indexStarted": "Indexación iniciada — reintenta la búsqueda en unos minutos."
   }
 }

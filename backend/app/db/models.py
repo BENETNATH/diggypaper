@@ -4,6 +4,7 @@ import enum
 import uuid
 from datetime import date, datetime
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     JSON,
     Boolean,
@@ -960,3 +961,36 @@ class Watch(Base):
 
     project: Mapped["Project"] = relationship(back_populates="watches")
     search: Mapped["Search"] = relationship(back_populates="watches")
+
+
+#: RAG: embedding dimension of the default local model (all-MiniLM-L6-v2, 384-dim).
+#: Changing the embedding model to a different dimension requires a new migration.
+EMBEDDING_DIM = 384
+
+
+class SectionEmbedding(Base):
+    """RAG (spec 2026-11-07): one vector per corpus section.
+
+    ``content_hash`` (sha256 of the section text) + ``embedding_model`` are the
+    idempotency keys of the vectorization pipeline: a section is (re)vectorized
+    only when its text or the model changed. The HNSW index lives in the
+    migration (PostgreSQL-only), not in the model metadata.
+    """
+
+    __tablename__ = "section_embeddings"
+    __table_args__ = (Index("ix_section_embeddings_article_id", "article_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, **_uuid_pk())
+    article_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("articles.id", ondelete="CASCADE"), nullable=False
+    )
+    section_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    section_title: Mapped[str | None] = mapped_column(String)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    embedding: Mapped[list[float] | None] = mapped_column(
+        Vector(EMBEDDING_DIM).with_variant(JSON(), "sqlite")
+    )
+    embedding_model: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )

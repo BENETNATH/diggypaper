@@ -182,6 +182,11 @@ async def _upload_document(request: Request, db: AsyncSession, user: User, proje
         }
     db.add(ArticleFile(article_id=art.id, data=data))
     await db.commit()
+    if sections:
+        from app.tasks.vectorize import vectorize_task
+
+        # RAG: embed the freshly uploaded sections (spec 2026-11-07 §6)
+        vectorize_task.delay(str(project_id), [str(art.id)])
 
     return {
         "id": str(art.id),
@@ -317,6 +322,11 @@ async def run_ocr(
     await _apply_fulltext(db, art, sections, "ocr", None, af.data)
     art.methods_text = " ".join(s["text"] for s in sections) or None
     await db.commit()
+    if sections:
+        from app.tasks.vectorize import vectorize_task
+
+        # RAG: the OCR text is new — embed the sections (spec 2026-11-07 §6)
+        vectorize_task.delay(str(project_id), [str(art.id)])
 
     return {
         "id": str(art.id),

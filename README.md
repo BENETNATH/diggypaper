@@ -440,6 +440,27 @@ Windows** with `OLLAMA_IGPU_ENABLE=1`, `OLLAMA_VULKAN=1`, `OLLAMA_NUM_GPU=999`,
 then `LLM_API_BASE_URL=http://host.docker.internal:11434/v1` in the `.env`
 (the compose already supports the override).
 
+### Local embeddings (RAG)
+
+Semantic search indexes the corpus with a local embedding model
+(`all-MiniLM-L6-v2`, 384-dim, ~22 M params) — no external API, no data leaves
+the server. The model is loaded lazily (first vectorization, not startup) and
+the device is auto-selected: **CUDA → MPS → CPU**.
+
+Build-time variant of torch (the only heavy dependency):
+
+```bash
+TORCH_VARIANT=cpu   # default: portable everywhere, ~200 Mo in the image
+TORCH_VARIANT=cuda  # GPU servers: wheel cu128, ~2.5 Go, needs an NVIDIA
+                    # driver compatible with CUDA 12.8; embeddings then run
+                    # on the GPU automatically
+```
+
+Then `docker compose up -d --build` (backend + workers share one image).
+Note: inside Linux containers the GPU of the host is only visible to CUDA —
+on Apple Silicon, Docker Desktop does not passthrough the GPU, so embeddings
+stay on CPU there (MPS applies to a native, non-Docker deployment).
+
 ### Makefile targets
 
 | Target | Action |

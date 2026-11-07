@@ -4,7 +4,7 @@ set -e
 # Started as root: fix the volume permissions (created by root before this change), then
 # re-run this same script without privileges (user "app").
 if [ "$(id -u)" = "0" ]; then
-    chown -R app:app /app/models /app/exports 2>/dev/null || true
+    chown -R app:app /app/models /app/exports /app/.cache 2>/dev/null || true
     exec gosu app "$0" "$@"
 fi
 
