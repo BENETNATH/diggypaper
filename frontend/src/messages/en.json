@@ -749,7 +749,8 @@
     "panelCreate": "Create",
     "questionsTitle": "Questions asked to each article",
     "rerunWithModel": "Re-run with a different model",
-    "rerunLaunch": "Launch re-run"
+    "rerunLaunch": "Launch re-run",
+    "chatTitle": "Ask the corpus"
   },
   "settings": {
     "title": "System settings",
@@ -1249,5 +1250,23 @@
     "aiAgreement": "AI agreement",
     "disagreements": "{n} disagreement(s) to arbitrate",
     "summary": "Exportable summary (PRISMA)"
+  },
+  "chatRag": {
+    "model": "Model",
+    "noModel": "No model available",
+    "placeholder": "Ask a question about the corpus…",
+    "send": "Send",
+    "thinking": "Answer in progress…",
+    "clear": "Clear the conversation",
+    "notIndexed": "Corpus not indexed yet.",
+    "indexButton": "Index the corpus",
+    "indexStarted": "Indexing started — come back in a few minutes.",
+    "emptyCorpus": "No section of the corpus matches this question.",
+    "modelBusy": "This model is busy with a running analysis. Try again later.",
+    "timeout": "The model took too long. Try again.",
+    "error": "An error occurred while answering.",
+    "citations": "Cited sources",
+    "emptyHistory": "Ask a question to query the corpus.",
+    "untitled": "Untitled article"
   }
 }

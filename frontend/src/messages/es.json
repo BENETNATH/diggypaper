@@ -749,7 +749,8 @@
     "panelCreate": "Crear",
     "questionsTitle": "Preguntas hechas a cada artículo",
     "rerunWithModel": "Repetir con un modelo distinto",
-    "rerunLaunch": "Lanzar la repetición"
+    "rerunLaunch": "Lanzar la repetición",
+    "chatTitle": "Consultar el corpus"
   },
   "settings": {
     "title": "Ajustes del sistema",
@@ -1249,5 +1250,23 @@
     "aiAgreement": "Acuerdo IA",
     "disagreements": "{n} discrepancia(s) para arbitraje",
     "summary": "Resumen exportable (PRISMA)"
+  },
+  "chatRag": {
+    "model": "Modelo",
+    "noModel": "Ningún modelo disponible",
+    "placeholder": "Haga una pregunta sobre el corpus…",
+    "send": "Enviar",
+    "thinking": "Respuesta en curso…",
+    "clear": "Borrar la conversación",
+    "notIndexed": "Corpus aún no indexado.",
+    "indexButton": "Indexar el corpus",
+    "indexStarted": "Indexación iniciada — vuelva en unos minutos.",
+    "emptyCorpus": "Ninguna sección del corpus corresponde a esta pregunta.",
+    "modelBusy": "Este modelo está ocupado con un análisis en curso. Inténtelo de nuevo más tarde.",
+    "timeout": "El modelo tardó demasiado. Inténtelo de nuevo.",
+    "error": "Se produjo un error durante la respuesta.",
+    "citations": "Fuentes citadas",
+    "emptyHistory": "Haga una pregunta para consultar el corpus.",
+    "untitled": "Artículo sin título"
   }
 }

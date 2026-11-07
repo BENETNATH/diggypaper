@@ -40,6 +40,7 @@ import { EmptyState, ErrorBanner, Skeleton } from "@/components/ui/Feedback";
 import { JobProgress } from "@/components/JobProgress";
 import { ComparisonPanel } from "@/components/ComparisonPanel";
 import { AgreementPanel } from "@/components/AgreementPanel";
+import { ChatRagPanel } from "@/components/ChatRagPanel";
 import { cleanSelection, isUntouched, searchStoreKey, withSearch } from "@/lib/search";
 import {
   notifySearchesChanged,
@@ -820,6 +821,12 @@ function AnalyseContent() {
           models={models}
         />
       )}
+
+      {/* Corpus chat (spec 2026-11-07-chat-rag §5): visible to members —
+          it questions the whole project corpus, not a single analysis. */}
+      <Card title={t("chatTitle")}>
+        <ChatRagPanel projectId={projectId} models={models} isLead={isLead} />
+      </Card>
 
       {/* Gold standard & benchmark: how the references feed the analysis, with links. */}
       <Card title={t("goldSectionTitle")}>

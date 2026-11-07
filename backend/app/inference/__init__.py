@@ -18,6 +18,7 @@ import math
 import os
 import re
 import time
+from collections.abc import AsyncIterator
 from urllib.parse import urlsplit
 
 import httpx
@@ -159,6 +160,77 @@ class OpenAICompatibleService:
             if code:
                 raise InferenceError(code)
             return parsed
+        finally:
+            if owned:
+                await client.aclose()
+
+    async def chat_stream(self, model: str, messages: list[dict]) -> AsyncIterator[str]:
+        """Streams a free-text answer (chat, spec 2026-11-07-chat-rag §2).
+
+        No JSON contract: the caller sends full messages and receives text
+        chunks. Ollama native: NDJSON lines (``message.content``,
+        ``done: true`` at the end); OpenAI-compatible: SSE lines
+        (``choices[0].delta.content``, ``data: [DONE]`` at the end).
+        Raises ``InferenceError`` on timeout / HTTP >= 400 / an unreadable
+        line (the endpoint translates it into an SSE ``error`` event).
+        """
+        headers = {"Content-Type": "application/json"}
+        if self._api_key:
+            headers["Authorization"] = f"Bearer {self._api_key}"
+        if self._native_ollama:
+            url = f"{self._base_url.removesuffix('/v1')}/api/chat"
+            body = {"model": model, "messages": messages, "stream": True}
+        else:
+            url = f"{self._base_url}/chat/completions"
+            body = {"model": model, "messages": messages, "stream": True, "temperature": 0.0}
+        body = {**self._extra_body, **body}
+        if self._public_only:
+            from app.model_access import check_public_url
+
+            try:
+                await asyncio.to_thread(check_public_url, self._base_url)
+            except ValueError as exc:
+                raise InferenceError("url_not_allowed") from exc
+        owned = self._http is None
+        client = self._http or httpx.AsyncClient(timeout=self._timeout)
+        try:
+            try:
+                async with client.stream("POST", url, json=body, headers=headers) as resp:
+                    if resp.status_code >= 400:
+                        await resp.aread()
+                        raise InferenceError(f"HTTP {resp.status_code}")
+                    async for line in resp.aiter_lines():
+                        if not line:
+                            continue
+                        if self._native_ollama:
+                            try:
+                                data = json.loads(line)
+                            except json.JSONDecodeError as exc:
+                                raise InferenceError("invalid_response") from exc
+                            chunk = (data.get("message") or {}).get("content")
+                            if chunk:
+                                yield chunk
+                            if data.get("model"):
+                                self.served_model = clean_meta(data.get("model"))
+                            if data.get("done"):
+                                break
+                        else:
+                            if not line.startswith("data:"):
+                                continue
+                            payload = line[len("data:") :].strip()
+                            if payload == "[DONE]":
+                                break
+                            try:
+                                data = json.loads(payload)
+                                chunk = data["choices"][0]["delta"].get("content")
+                            except (json.JSONDecodeError, KeyError, IndexError, TypeError) as exc:
+                                raise InferenceError("invalid_response") from exc
+                            if chunk:
+                                yield chunk
+            except httpx.TimeoutException as exc:
+                raise InferenceError("timeout") from exc
+            except httpx.HTTPError as exc:
+                raise InferenceError("connection_error") from exc
         finally:
             if owned:
                 await client.aclose()
@@ -410,3 +482,31 @@ async def infer_with(
 def _report_served(svc, meta: dict | None) -> None:
     if meta is not None:
         meta["served_model"] = clean_meta(getattr(svc, "served_model", None))
+
+
+async def stream_with(
+    model, default: OpenAICompatibleService, messages: list[dict]
+) -> AsyncIterator[str]:
+    """Streaming twin of ``infer_with`` (chat, spec 2026-11-07-chat-rag §2).
+
+    Same model resolution (OPENAI_API: the model's own URL + key; OLLAMA: the
+    default service); yields text chunks from ``chat_stream``.
+    """
+    await _throttle(getattr(model, "model_identifier", None) or "default")
+    if model is not None and model.backend_type == "OPENAI_API":
+        url, _, name = model.model_identifier.partition("#")
+        key = decrypt_secret(model.api_key_enc) if model.api_key_enc else None
+        svc = OpenAICompatibleService(
+            url, key, timeout=default._timeout, public_only=model.owner_id is not None
+        )
+        async for chunk in svc.chat_stream(name, messages):
+            yield chunk
+        return
+    if model is None or model.backend_type == "OLLAMA":
+        svc = default
+    else:  # LLAMA_CPP, TRANSFORMERS, …: no /api/chat
+        svc = copy.copy(default)
+        svc._native_ollama = False
+    ident = model.model_identifier if model is not None else ""
+    async for chunk in svc.chat_stream(ident, messages):
+        yield chunk

@@ -749,7 +749,8 @@
     "createScheduled": "Programmer",
     "questionsTitle": "Questions posées à chaque article",
     "rerunWithModel": "Re-run avec un modèle différent",
-    "rerunLaunch": "Lancer le re-run"
+    "rerunLaunch": "Lancer le re-run",
+    "chatTitle": "Interroger le corpus"
   },
   "settings": {
     "title": "Paramètres système",
@@ -1249,5 +1250,23 @@
     "aiAgreement": "Accord IA",
     "disagreements": "{n} désaccord(s) à arbitrer",
     "summary": "Résumé exportable (PRISMA)"
+  },
+  "chatRag": {
+    "model": "Modèle",
+    "noModel": "Aucun modèle disponible",
+    "placeholder": "Posez une question sur le corpus…",
+    "send": "Envoyer",
+    "thinking": "Réponse en cours…",
+    "clear": "Effacer la conversation",
+    "notIndexed": "Corpus pas encore indexé.",
+    "indexButton": "Indexer le corpus",
+    "indexStarted": "Indexation lancée — revenez dans quelques minutes.",
+    "emptyCorpus": "Aucune section du corpus ne correspond à cette question.",
+    "modelBusy": "Ce modèle est occupé par une analyse en cours. Réessayez plus tard.",
+    "timeout": "Le modèle a mis trop de temps. Réessayez.",
+    "error": "Une erreur est survenue pendant la réponse.",
+    "citations": "Sources citées",
+    "emptyHistory": "Posez une question pour interroger le corpus.",
+    "untitled": "Article sans titre"
   }
 }

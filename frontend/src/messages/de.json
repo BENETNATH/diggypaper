@@ -749,7 +749,8 @@
     "panelCreate": "Anlegen",
     "questionsTitle": "Fragen an jeden Artikel",
     "rerunWithModel": "Erneut mit anderem Modell ausführen",
-    "rerunLaunch": "Erneut ausführen"
+    "rerunLaunch": "Erneut ausführen",
+    "chatTitle": "Korpus abfragen"
   },
   "settings": {
     "title": "Systemeinstellungen",
@@ -1249,5 +1250,23 @@
     "aiAgreement": "KI-Übereinstimmung",
     "disagreements": "{n} Meinungsverschiedenheit(en) zur Schlichtung",
     "summary": "Exportierbare Zusammenfassung (PRISMA)"
+  },
+  "chatRag": {
+    "model": "Modell",
+    "noModel": "Kein Modell verfügbar",
+    "placeholder": "Stellen Sie eine Frage zum Korpus…",
+    "send": "Senden",
+    "thinking": "Antwort läuft…",
+    "clear": "Gespräch löschen",
+    "notIndexed": "Korpus wurde noch nicht indexiert.",
+    "indexButton": "Korpus indizieren",
+    "indexStarted": "Indexierung gestartet — kommen Sie in wenigen Minuten wieder.",
+    "emptyCorpus": "Kein Abschnitt des Korpus passt zu dieser Frage.",
+    "modelBusy": "Dieses Modell ist mit einer laufenden Analyse beschäftigt. Versuchen Sie es später erneut.",
+    "timeout": "Das Modell hat zu lange gebraucht. Versuchen Sie es erneut.",
+    "error": "Bei der Antwort ist ein Fehler aufgetreten.",
+    "citations": "Zitierte Quellen",
+    "emptyHistory": "Stellen Sie eine Frage, um das Korpus abzufragen.",
+    "untitled": "Artikel ohne Titel"
   }
 }

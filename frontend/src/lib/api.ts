@@ -1713,3 +1713,94 @@ export const semanticSearch = (projectId: string, query: string, limit = 20): Pr
 /** Manually (re)index the project corpus (lead). Enqueues the Celery task. */
 export const triggerVectorize = (projectId: string): Promise<{ task_id: string; queued: boolean }> =>
   request(`/projects/${projectId}/vectorize`, { method: "POST" });
+
+// --- Chat RAG (spec 2026-11-07-chat-rag §5) ----------------------------------
+
+/** A cited section of the corpus (the `[n]` markers of the streamed answer). */
+export interface ChatCitation {
+  n: number;
+  article_id: string;
+  title: string;
+  excerpt: string;
+}
+
+/** Terminal payload of a streamed answer. */
+export interface ChatDone {
+  full_text: string;
+  model: string;
+  n_citations: number;
+}
+
+/**
+ * Streams a Chat RAG answer (POST → SSE, so a fetch ReadableStream — no
+ * EventSource, which is GET-only). Pre-stream failures (403/400/409) reject
+ * with an ApiError; mid-stream failures surface as an ``error`` SSE event
+ * (onError) and the promise still resolves. Resolves with the ``done``
+ * payload (or undefined if the stream ended without it).
+ */
+export async function streamChat(
+  projectId: string,
+  body: {
+    question: string;
+    model: string;
+    history?: { role: "user" | "assistant"; content: string }[];
+  },
+  onToken?: (chunk: string) => void,
+  onCitations?: (citations: ChatCitation[]) => void,
+  onDone?: (done: ChatDone) => void,
+  onError?: (detail: string) => void,
+  signal?: AbortSignal
+): Promise<ChatDone | undefined> {
+  const resp = await fetch(`${API_BASE}/projects/${projectId}/chat`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    signal,
+  });
+  if (!resp.ok || !resp.body) {
+    let detail = resp.statusText;
+    try {
+      const j = await resp.json();
+      detail = errorDetail(j) ?? detail;
+    } catch {
+      /* no JSON body */
+    }
+    throw new ApiError(resp.status, detail);
+  }
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let done: ChatDone | undefined;
+  for (;;) {
+    const { value, done: eof } = await reader.read();
+    if (eof) break;
+    buffer += decoder.decode(value, { stream: true });
+    let sep = buffer.indexOf("\n\n");
+    while (sep !== -1) {
+      const frame = buffer.slice(0, sep);
+      buffer = buffer.slice(sep + 2);
+      let event = "message";
+      const dataLines: string[] = [];
+      for (const line of frame.split("\n")) {
+        if (line.startsWith("event: ")) event = line.slice(7).trim();
+        else if (line.startsWith("data: ")) dataLines.push(line.slice(6));
+      }
+      if (dataLines.length) {
+        try {
+          const data: unknown = JSON.parse(dataLines.join("\n"));
+          if (event === "token") onToken?.((data as { t: string }).t);
+          else if (event === "citations") onCitations?.(data as ChatCitation[]);
+          else if (event === "done") {
+            done = data as ChatDone;
+            onDone?.(done);
+          } else if (event === "error") onError?.((data as { detail: string }).detail);
+        } catch {
+          /* malformed frame: skip */
+        }
+      }
+      sep = buffer.indexOf("\n\n");
+    }
+  }
+  return done;
+}

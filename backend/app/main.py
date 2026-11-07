@@ -24,6 +24,7 @@ from app.api.v1 import (
     projects,
     prompts,
     query_assistant,
+    rag_chat,
     searches,
     semantic_search,
     team,
@@ -91,6 +92,7 @@ def create_app() -> FastAPI:
     app.include_router(benchmarks.router, prefix="/api/v1")
     app.include_router(inference.router, prefix="/api/v1")
     app.include_router(jobs.router, prefix="/api/v1")
+    app.include_router(rag_chat.router, prefix="/api/v1")
     app.include_router(watches.router, prefix="/api/v1")
     app.include_router(semantic_search.router, prefix="/api/v1")
 
