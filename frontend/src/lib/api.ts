@@ -1249,6 +1249,61 @@ export async function getInference(
   return r.job;
 }
 
+// --- Re-run & comparison (spec 2026-11-07) ----------------------------------
+
+/** Re-runs the same search with another model: a NEW job, previous predictions kept. */
+export const rerunSearch = (
+  projectId: string,
+  searchId: string,
+  model: string
+): Promise<{ job_id: string; status: string }> =>
+  request(`/projects/${projectId}/searches/${searchId}/rerun`, {
+    method: "POST",
+    body: JSON.stringify({ model }),
+  });
+
+/** The search's inference jobs, newest first (the comparison selector). */
+export const getSearchJobs = (
+  projectId: string,
+  searchId: string
+): Promise<{ jobs: InferenceJob[] }> =>
+  request(`/projects/${projectId}/searches/${searchId}/jobs`);
+
+export interface ComparisonRow {
+  article_id: string;
+  title: string | null;
+  decision_a: unknown;
+  decision_b: unknown;
+  confidence_a: number | null;
+  confidence_b: number | null;
+  agree: boolean;
+}
+
+export interface Comparison {
+  n: number;
+  n_agree: number;
+  agreement: number | null;
+  model_a: { name: string; version: string | null };
+  model_b: { name: string; version: string | null };
+  n_excluded: number;
+  rows: ComparisonRow[];
+  disagreements: Array<{
+    article_id: string;
+    title: string | null;
+    decision_a: unknown;
+    decision_b: unknown;
+  }>;
+}
+
+/** Two jobs of the same search compared article by article (intersection). */
+export const getComparison = (
+  projectId: string,
+  searchId: string,
+  jobA: string,
+  jobB: string
+): Promise<Comparison> =>
+  request(`/projects/${projectId}/searches/${searchId}/comparison${qs({ job_a: jobA, job_b: jobB })}`);
+
 // --- Settings (MODULE 7, admin) --------------------------------------------
 
 export type SettingsScope = "GLOBAL" | "PROJECT" | "USER";

@@ -747,7 +747,9 @@
     "benchmarkLink": "Page Benchmark",
     "listTitle": "Analyses réalisées",
     "createScheduled": "Programmer",
-    "questionsTitle": "Questions posées à chaque article"
+    "questionsTitle": "Questions posées à chaque article",
+    "rerunWithModel": "Re-run avec un modèle différent",
+    "rerunLaunch": "Lancer le re-run"
   },
   "settings": {
     "title": "Paramètres système",
@@ -1218,5 +1220,18 @@
     "notIndexed": "Corpus pas encore indexé.",
     "indexButton": "Indexer le corpus",
     "indexStarted": "Indexation lancée — relancez la recherche dans quelques minutes."
+  },
+  "comparison": {
+    "title": "Comparer deux analyses",
+    "comparedArticles": "Articles comparés",
+    "agreement": "Accord",
+    "colArticle": "Article",
+    "colConfidence": "Confiance",
+    "colAgreement": "Accord",
+    "disagreements": "Désaccords ({n})",
+    "excluded": "{n} article(s) exclu(s) (présent(s) dans une seule des deux analyses)",
+    "noCommon": "Aucun article commun entre les deux analyses.",
+    "sameJob": "Choisir deux analyses différentes.",
+    "pickJobs": "Choisir deux analyses à comparer."
   }
 }

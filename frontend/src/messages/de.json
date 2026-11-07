@@ -747,7 +747,9 @@
     "listTitle": "Durchgeführte Analysen",
     "createScheduled": "Planen",
     "panelCreate": "Anlegen",
-    "questionsTitle": "Fragen an jeden Artikel"
+    "questionsTitle": "Fragen an jeden Artikel",
+    "rerunWithModel": "Erneut mit anderem Modell ausführen",
+    "rerunLaunch": "Erneut ausführen"
   },
   "settings": {
     "title": "Systemeinstellungen",
@@ -1218,5 +1220,18 @@
     "notIndexed": "Der Korpus wurde noch nicht indiziert.",
     "indexButton": "Korpus indizieren",
     "indexStarted": "Indizierung gestartet — bitte in wenigen Minuten erneut versuchen."
+  },
+  "comparison": {
+    "title": "Zwei Analysen vergleichen",
+    "comparedArticles": "Verglichene Artikel",
+    "agreement": "Übereinstimmung",
+    "colArticle": "Artikel",
+    "colConfidence": "Konfidenz",
+    "colAgreement": "Übereinstimmung",
+    "disagreements": "Abweichungen ({n})",
+    "excluded": "{n} Artikel ausgeschlossen (nur in einer der zwei Analysen)",
+    "noCommon": "Kein gemeinsamer Artikel zwischen den zwei Analysen.",
+    "sameJob": "Zwei verschiedene Analysen wählen.",
+    "pickJobs": "Zwei Analysen zum Vergleich wählen."
   }
 }

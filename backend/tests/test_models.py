@@ -32,6 +32,7 @@ from app.db.models import (
     HumanAnnotation,
     ImportJob,
     ImportJobStatus,
+    InferenceJob,
     LanguageCode,
     ModelRegistry,
     PredictionStatus,
@@ -519,6 +520,8 @@ def test_article_predictions_columns():
         # traceability (spec 2026-10-29-tracabilite-modele-version): frozen at prediction
         "model_identifier",
         "model_version",
+        # re-run & comparison (spec 2026-11-07): the job that produced it
+        "inference_job_id",
     }
     assert c["id"].primary_key
     for col in ("model_identifier", "model_version"):
@@ -538,6 +541,9 @@ def test_article_predictions_columns():
         "ERROR",
     ]
     assert c["status"].server_default.arg == "NEEDS_HUMAN_REVIEW"
+    assert c["inference_job_id"].nullable  # NULL = legacy / outside a job
+    assert fk(c["inference_job_id"]).column is InferenceJob.__table__.c.id
+    assert fk(c["inference_job_id"]).ondelete == "SET NULL"
 
 
 # --- human_annotations ---

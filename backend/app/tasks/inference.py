@@ -601,6 +601,7 @@ async def _do_inference(
                 ArticlePrediction(
                     article_id=article.id,
                     search_id=search.id,
+                    inference_job_id=job.id,
                     prompt_template_id=prompt.id,
                     model_used=model_name,
                     status=PredictionStatus.ERROR,
@@ -627,6 +628,7 @@ async def _do_inference(
             ArticlePrediction(
                 article_id=article.id,
                 search_id=search.id,
+                inference_job_id=job.id,
                 prompt_template_id=prompt.id,
                 model_used=model_name,
                 model_identifier=snap.get("identifier"),

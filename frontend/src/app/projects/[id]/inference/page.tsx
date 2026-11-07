@@ -18,6 +18,7 @@ import {
   listGold,
   listModels,
   triggerInference,
+  rerunSearch,
   InferenceJob,
   ModelInfo,
   SchemaField,
@@ -37,6 +38,7 @@ import { ValidationView } from "@/components/ValidationView";
 import { Card, Badge, statusColor } from "@/components/ui/Card";
 import { EmptyState, ErrorBanner, Skeleton } from "@/components/ui/Feedback";
 import { JobProgress } from "@/components/JobProgress";
+import { ComparisonPanel } from "@/components/ComparisonPanel";
 import { cleanSelection, isUntouched, searchStoreKey, withSearch } from "@/lib/search";
 import {
   notifySearchesChanged,
@@ -188,6 +190,8 @@ function AnalyseContent() {
   const [stage1, setStage1] = useState("");
   const [stage2, setStage2] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  // Re-run with another model (spec 2026-11-07 §4): the chosen model + the panel's open state.
+  const [rerunModel, setRerunModel] = useState("");
   const [promptId, setPromptId] = useState<string | null>(wantedPrompt);
   const [instructions, setInstructions] = useState("");
   const [promptTitle, setPromptTitle] = useState<string | null>(null);
@@ -368,6 +372,22 @@ function AnalyseContent() {
         ...goldOptions(),
         search_id: current.id,
       });
+      await load();
+    } catch (err) {
+      setError(errText(err));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  /** Re-runs the current search with ANOTHER model (a new job; the old predictions stay). */
+  async function handleRerunModel() {
+    if (!current || !rerunModel) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      await rerunSearch(projectId, current.id, rerunModel);
+      setRerunModel("");
       await load();
     } catch (err) {
       setError(errText(err));
@@ -745,14 +765,48 @@ function AnalyseContent() {
               </div>
             )}
             {isLead && current && (current.predicted ?? 0) + (current.reviewed ?? 0) > 0 && !active && !workersBusy && (
-              <div className="mt-3 flex flex-wrap gap-2">
+              <div className="mt-3 flex flex-wrap items-center gap-2">
                 <Button variant="ghost" loading={submitting} onClick={() => void handleRerun()}>
                   ↻ {t("relaunch")}
                 </Button>
+                {models.length > 1 && (
+                  <span className="flex items-center gap-1.5">
+                    <Select
+                      value={rerunModel}
+                      onChange={(e) => setRerunModel(e.target.value)}
+                      aria-label={t("rerunWithModel")}
+                      className="text-xs"
+                    >
+                      <option value="">{t("rerunWithModel")}</option>
+                      {models
+                        .filter((m) => m.name !== job?.model_used)
+                        .map((m) => (
+                          <option key={m.id} value={m.name}>
+                            {label(m)}
+                          </option>
+                        ))}
+                    </Select>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      disabled={!rerunModel}
+                      loading={submitting}
+                      onClick={() => void handleRerunModel()}
+                    >
+                      {t("rerunLaunch")}
+                    </Button>
+                  </span>
+                )}
               </div>
             )}
           </Card>
         </div>
+      )}
+
+      {/* Compare two analyses of this search (spec 2026-11-07 §4): visible to members.
+          Remounted per search (key): the panel state resets with the selection. */}
+      {current && (
+        <ComparisonPanel key={current.id} projectId={projectId} searchId={current.id} />
       )}
 
       {/* Gold standard & benchmark: how the references feed the analysis, with links. */}

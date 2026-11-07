@@ -729,6 +729,11 @@ class ArticlePrediction(Base):
     search_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("searches.id", ondelete="CASCADE"), index=True
     )
+    # Job that produced it (re-run comparison, spec 2026-11-07); NULL = legacy /
+    # predictions created outside a job.
+    inference_job_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("inference_jobs.id", ondelete="SET NULL"), index=True
+    )
     status: Mapped[PredictionStatus | None] = mapped_column(
         _enum(PredictionStatus), server_default="NEEDS_HUMAN_REVIEW"
     )

@@ -747,7 +747,9 @@
     "listTitle": "Analyses performed",
     "createScheduled": "Schedule",
     "panelCreate": "Create",
-    "questionsTitle": "Questions asked to each article"
+    "questionsTitle": "Questions asked to each article",
+    "rerunWithModel": "Re-run with a different model",
+    "rerunLaunch": "Launch re-run"
   },
   "settings": {
     "title": "System settings",
@@ -1218,5 +1220,18 @@
     "notIndexed": "The corpus is not indexed yet.",
     "indexButton": "Index the corpus",
     "indexStarted": "Indexing started — try again in a few minutes."
+  },
+  "comparison": {
+    "title": "Compare two analyses",
+    "comparedArticles": "Articles compared",
+    "agreement": "Agreement",
+    "colArticle": "Article",
+    "colConfidence": "Confidence",
+    "colAgreement": "Agreement",
+    "disagreements": "Disagreements ({n})",
+    "excluded": "{n} article(s) excluded (present in only one of the two analyses)",
+    "noCommon": "No article in common between the two analyses.",
+    "sameJob": "Pick two different analyses.",
+    "pickJobs": "Pick two analyses to compare."
   }
 }

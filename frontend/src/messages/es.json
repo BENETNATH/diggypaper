@@ -747,7 +747,9 @@
     "listTitle": "Análisis realizadas",
     "createScheduled": "Programar",
     "panelCreate": "Crear",
-    "questionsTitle": "Preguntas hechas a cada artículo"
+    "questionsTitle": "Preguntas hechas a cada artículo",
+    "rerunWithModel": "Repetir con un modelo distinto",
+    "rerunLaunch": "Lanzar la repetición"
   },
   "settings": {
     "title": "Ajustes del sistema",
@@ -1218,5 +1220,18 @@
     "notIndexed": "El corpus todavía no está indexado.",
     "indexButton": "Indexar el corpus",
     "indexStarted": "Indexación iniciada — reintenta la búsqueda en unos minutos."
+  },
+  "comparison": {
+    "title": "Comparar dos análisis",
+    "comparedArticles": "Artículos comparados",
+    "agreement": "Acuerdo",
+    "colArticle": "Artículo",
+    "colConfidence": "Confianza",
+    "colAgreement": "Acuerdo",
+    "disagreements": "Desacuerdos ({n})",
+    "excluded": "{n} artículo(s) excluido(s) (presente(s) en uno solo de los dos análisis)",
+    "noCommon": "Ningún artículo común entre los dos análisis.",
+    "sameJob": "Elegir dos análisis diferentes.",
+    "pickJobs": "Elegir dos análisis para comparar."
   }
 }
