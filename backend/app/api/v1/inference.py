@@ -284,10 +284,14 @@ async def compare_jobs(
 
     async def preds(job_id: uuid.UUID) -> dict[uuid.UUID, ArticlePrediction]:
         rows = (
-            await db.execute(
-                select(ArticlePrediction).where(ArticlePrediction.inference_job_id == job_id)
+            (
+                await db.execute(
+                    select(ArticlePrediction).where(ArticlePrediction.inference_job_id == job_id)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         return {p.article_id: p for p in rows if p.article_id is not None}
 
     pred_a, pred_b = await preds(job_a), await preds(job_b)
@@ -344,12 +348,18 @@ async def list_search_jobs(
     project = await _require_project_member(db, project_id, user)
     scope = await get_search(db, project, search_id)
     rows = (
-        await db.execute(
-            select(InferenceJob)
-            .where(InferenceJob.project_id == project_id, in_search(InferenceJob.search_id, scope))
-            .order_by(InferenceJob.created_at.desc(), InferenceJob.id.desc())
+        (
+            await db.execute(
+                select(InferenceJob)
+                .where(
+                    InferenceJob.project_id == project_id, in_search(InferenceJob.search_id, scope)
+                )
+                .order_by(InferenceJob.created_at.desc(), InferenceJob.id.desc())
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return {"jobs": [_job_payload(j) for j in rows]}
 
 

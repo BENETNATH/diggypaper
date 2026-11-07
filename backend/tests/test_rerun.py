@@ -7,7 +7,7 @@
 """
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import MagicMock
 
 from sqlalchemy import select
@@ -125,7 +125,9 @@ async def test_prediction_created_by_job_carries_job_id(engine, session, fake_re
     session.add(job)
     await session.commit()
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-    await _run_inference(str(job.id), session_factory=factory, inference=FakeInference(0.9), redis=fake_redis)
+    await _run_inference(
+        str(job.id), session_factory=factory, inference=FakeInference(0.9), redis=fake_redis
+    )
     preds = (await session.execute(select(ArticlePrediction))).scalars().all()
     assert len(preds) == 2
     assert all(p.inference_job_id == job.id for p in preds)
@@ -154,7 +156,11 @@ async def _baseline_analysis(session, project, search, prompt, model_name="Kev-4
     )
     session.add(job)
     await session.commit()
-    arts = (await session.execute(select(Article).where(Article.project_id == project.id))).scalars().all()
+    arts = (
+        (await session.execute(select(Article).where(Article.project_id == project.id)))
+        .scalars()
+        .all()
+    )
     for a in arts:
         session.add(_prediction(a.id, search.id, {"include": True, "why": "a"}, job_id=job.id))
     await session.commit()
@@ -191,8 +197,14 @@ async def test_rerun_keeps_previous_predictions(client, session, do_login, monke
     )
     assert resp.status_code == 202
     preds = (
-        await session.execute(select(ArticlePrediction).where(ArticlePrediction.search_id == search.id))
-    ).scalars().all()
+        (
+            await session.execute(
+                select(ArticlePrediction).where(ArticlePrediction.search_id == search.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
     assert len(preds) == len(arts)  # untouched
     assert all(p.inference_job_id == job1.id for p in preds)
 
@@ -301,9 +313,7 @@ async def _two_jobs(session, project, search, arts, agree_first=True):
                 value = True if i == 0 else False  # disagreement
             else:
                 value = "exclude" if i else "exclude"  # normalization: strings equal
-            session.add(
-                _prediction(a.id, search.id, {"include": value, "why": "x"}, job_id=job.id)
-            )
+            session.add(_prediction(a.id, search.id, {"include": value, "why": "x"}, job_id=job.id))
         await session.commit()
     return jobs
 
@@ -370,7 +380,7 @@ async def test_comparison_disjoint_lots_n0(client, session, do_login):
     )
     # job A predicts only articles 0-1, job B only articles 2-3
     jobs = []
-    for i, (model_name, sl) in enumerate((("Kev-4B", slice(0, 2)), ("Nova-7B", slice(2, 4)))):
+    for model_name, sl in (("Kev-4B", slice(0, 2)), ("Nova-7B", slice(2, 4))):
         job = InferenceJob(
             project_id=project.id,
             search_id=search.id,
@@ -402,7 +412,10 @@ async def test_comparison_other_search_404(client, session, do_login):
     session.add(s2)
     await session.commit()
     foreign_job = InferenceJob(
-        project_id=project.id, search_id=s2.id, model_used="Kev-4B", status=InferenceJobStatus.COMPLETED
+        project_id=project.id,
+        search_id=s2.id,
+        model_used="Kev-4B",
+        status=InferenceJobStatus.COMPLETED,
     )
     session.add(foreign_job)
     await session.commit()
@@ -456,8 +469,8 @@ async def test_search_jobs_list(client, session, do_login):
     )
     job_a, job_b = await _two_jobs(session, project, search, arts, agree_first=True)
     # the endpoint orders by created_at: make the order explicit (test-DB timestamps tie)
-    job_a.created_at = datetime(2026, 11, 1, 10, 0, 0, tzinfo=timezone.utc)
-    job_b.created_at = datetime(2026, 11, 1, 11, 0, 0, tzinfo=timezone.utc)
+    job_a.created_at = datetime(2026, 11, 1, 10, 0, 0, tzinfo=UTC)
+    job_b.created_at = datetime(2026, 11, 1, 11, 0, 0, tzinfo=UTC)
     await session.commit()
     resp = await client.get(f"/api/v1/projects/{project.id}/searches/{search.id}/jobs")
     assert resp.status_code == 200
