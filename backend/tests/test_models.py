@@ -72,6 +72,7 @@ EXPECTED_TABLES = {
     "benchmark_predictions",  # answers of each benchmark variant
     "benchmark_votes",  # human preference votes per variant
     "password_resets",  # password reset tokens (hashed)
+    "watches",  # corpus watch (veille) — spec 2026-11-07-veille-automatisee
 }
 
 

@@ -402,6 +402,7 @@ export function errorKey(detail: string | undefined): string | null {
   if (d.includes("not found")) return "errors.notFound";
   if (d === "conflict") return "errors.conflict";
   if (d === "rate_limited") return "errors.rateLimited";
+  if (d === "search_without_criteria") return "errors.searchWithoutCriteria";
   return null;
 }
 
@@ -1534,3 +1535,63 @@ export const renameSearch = (projectId: string, searchId: string, name: string):
 
 export const deleteSearch = (projectId: string, searchId: string): Promise<void> =>
   request(`/projects/${projectId}/searches/${searchId}`, { method: "DELETE" });
+
+// --- Watches (corpus watch / veille) -----------------------------------------
+
+/** Snapshot of the last pass: `{run_at, found, imported, new, matched, matched_ids}`. */
+export interface Watch {
+  id: string;
+  source: string;
+  source_name: string;
+  query: string;
+  date_from: string | null;
+  search: { id: string; name: string } | null;
+  match_threshold: number | null;
+  notify_all: boolean;
+  last_run_at: string | null;
+  last_matched: {
+    run_at?: string | null;
+    found?: number;
+    imported?: number;
+    matched?: number;
+    matched_ids?: string[];
+    matched_details?: { id: string; title: string | null; pmid: string | null; confidence: number | null }[];
+    new?: string[];
+    job_id?: string | null;
+    note?: string;
+  } | null;
+  status: "ACTIVE" | "PAUSED";
+  created_by: string | null;
+  created_at: string | null;
+}
+
+export interface WatchCreate {
+  source: string;
+  query: string;
+  search_id: string;
+  date_from?: string | null;
+  match_threshold?: number | null;
+  notify_all?: boolean;
+}
+
+export interface WatchUpdate {
+  status?: "ACTIVE" | "PAUSED";
+  match_threshold?: number | null;
+  notify_all?: boolean;
+}
+
+export const listWatches = async (projectId: string): Promise<Watch[]> =>
+  (await request<{ items: Watch[] }>(`/projects/${projectId}/watches`)).items;
+
+export const createWatch = (projectId: string, payload: WatchCreate): Promise<Watch> =>
+  request(`/projects/${projectId}/watches`, { method: "POST", body: JSON.stringify(payload) });
+
+export const updateWatch = (projectId: string, watchId: string, patch: WatchUpdate): Promise<Watch> =>
+  request(`/projects/${projectId}/watches/${watchId}`, { method: "PATCH", body: JSON.stringify(patch) });
+
+export const deleteWatch = (projectId: string, watchId: string): Promise<void> =>
+  request(`/projects/${projectId}/watches/${watchId}`, { method: "DELETE" });
+
+/** Run one pass now (re-push + import + analyze). Returns the watch once the pass is done. */
+export const runWatch = (projectId: string, watchId: string): Promise<Watch> =>
+  request(`/projects/${projectId}/watches/${watchId}/run`, { method: "POST" });

@@ -26,6 +26,7 @@ from app.api.v1 import (
     searches,
     team,
     users,
+    watches,
 )
 from app.ci import ci_state, commit_sha
 from app.core.bootstrap import bootstrap_admin
@@ -87,6 +88,7 @@ def create_app() -> FastAPI:
     app.include_router(benchmarks.router, prefix="/api/v1")
     app.include_router(inference.router, prefix="/api/v1")
     app.include_router(jobs.router, prefix="/api/v1")
+    app.include_router(watches.router, prefix="/api/v1")
 
     @app.get("/api/v1/health", include_in_schema=False)
     async def health() -> dict:

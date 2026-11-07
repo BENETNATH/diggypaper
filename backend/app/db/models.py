@@ -2,11 +2,12 @@
 
 import enum
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import (
     JSON,
     Boolean,
+    Date,
     DateTime,
     Enum,
     Float,
@@ -241,6 +242,7 @@ class Project(Base):
     inference_jobs: Mapped[list["InferenceJob"]] = relationship(
         back_populates="project", passive_deletes=True
     )
+    watches: Mapped[list["Watch"]] = relationship(back_populates="project", passive_deletes=True)
 
 
 class ProjectMember(Base):
@@ -652,6 +654,7 @@ class Search(Base):
     created_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+    watches: Mapped[list["Watch"]] = relationship(back_populates="search", passive_deletes=True)
 
 
 class SearchArticle(Base):
@@ -904,3 +907,56 @@ class InferenceJob(Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     project: Mapped["Project | None"] = relationship(back_populates="inference_jobs")
+
+
+class WatchStatus(enum.StrEnum):
+    """Corpus watch (spec 2026-11-07-veille-automatisee): active / paused."""
+
+    ACTIVE = "ACTIVE"
+    PAUSED = "PAUSED"
+
+
+class Watch(Base):
+    """Corpus watch: re-run a source query, import + analyze the new articles
+    against a search's criteria, and alert the lead when some match.
+
+    The human review is unchanged: imported articles (``origin="watch"``) enter
+    the project and follow the existing review flow. The watch is an alert, not
+    a silent acceptance. ``inference_job_id`` links the watch to the inference
+    job it launched so the post-inference hook can evaluate matches + e-mail.
+    """
+
+    __tablename__ = "watches"
+    __table_args__ = (Index("ix_watches_project_id", "project_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, **_uuid_pk())
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    )
+    search_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("searches.id", ondelete="CASCADE"), nullable=False
+    )
+    source: Mapped[str] = mapped_column(
+        String, nullable=False
+    )  # pubmed | europepmc | openalex | hal
+    query: Mapped[str] = mapped_column(Text, nullable=False)  # the unbounded query
+    date_from: Mapped[date | None] = mapped_column(Date)
+    match_threshold: Mapped[float | None] = mapped_column(Float)  # None = project default
+    notify_all: Mapped[bool] = mapped_column(Boolean, server_default=text("false"), default=False)
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_matched: Mapped[dict | None] = mapped_column(JSONB)
+    inference_job_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("inference_jobs.id", ondelete="SET NULL"), index=True
+    )
+    status: Mapped[WatchStatus] = mapped_column(
+        _enum(WatchStatus), server_default="ACTIVE", default=WatchStatus.ACTIVE
+    )
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    project: Mapped["Project"] = relationship(back_populates="watches")
+    search: Mapped["Search"] = relationship(back_populates="watches")

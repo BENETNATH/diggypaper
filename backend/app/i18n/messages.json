@@ -25,7 +25,11 @@
     "retention_deleted_subject": "Diggypaper: project “{project}” deleted",
     "retention_deleted_body": "Hello,\n\nThe project “{project}” was deleted after {days} days without activity.\n\n— The Diggypaper team",
     "disk_alert_subject": "Diggypaper: low disk space ({percent} % used)",
-    "disk_alert_body": "Hello,\n\nThe server disk is {percent} % full ({free} GB free of {total} GB). Database: {db} GB, stored PDFs: {pdf} GB.\n\nFree space by deleting inactive projects or old exports: {link}\n\n— The Diggypaper team"
+    "disk_alert_body": "Hello,\n\nThe server disk is {percent} % full ({free} GB free of {total} GB). Database: {db} GB, stored PDFs: {pdf} GB.\n\nFree space by deleting inactive projects or old exports: {link}\n\n— The Diggypaper team",
+    "watch_alert_subject": "Diggypaper watch: {m} new article(s) for “{search_name}”",
+    "watch_alert_body": "Hello,\n\nThe corpus watch of project “{project_title}” imported {n} new article(s) for the search “{search_name}”.\n\n{m} match the criteria:\n{matches}\n\nReview them in the project results:\n{link}\n\n— The Diggypaper team",
+    "watch_import_subject": "Diggypaper watch: {n} new article(s) imported",
+    "watch_import_body": "Hello,\n\nThe corpus watch of project “{project_title}” imported {n} new article(s) for the search “{search_name}”. None matched the criteria.\n\nReview them:\n{link}\n\n— The Diggypaper team"
   },
   "fr": {
     "consent_required": "Vous devez accepter le traitement de vos données avant de vous connecter.",
@@ -53,7 +57,11 @@
     "retention_deleted_subject": "Diggypaper : projet « {project} » supprimé",
     "retention_deleted_body": "Bonjour,\n\nLe projet « {project} » a été supprimé après {days} jours sans activité.\n\n— L'équipe Diggypaper",
     "disk_alert_subject": "Diggypaper : espace disque faible ({percent} % utilisé)",
-    "disk_alert_body": "Bonjour,\n\nLe disque du serveur est plein à {percent} % ({free} Go libres sur {total} Go). Base de données : {db} Go, PDF stockés : {pdf} Go.\n\nLibérez de l'espace en supprimant des projets inactifs ou d'anciens exports : {link}\n\n— L'équipe Diggypaper"
+    "disk_alert_body": "Bonjour,\n\nLe disque du serveur est plein à {percent} % ({free} Go libres sur {total} Go). Base de données : {db} Go, PDF stockés : {pdf} Go.\n\nLibérez de l'espace en supprimant des projets inactifs ou d'anciens exports : {link}\n\n— L'équipe Diggypaper",
+    "watch_alert_subject": "Diggypaper — veille : {m} nouvel(s) article(s) pour « {search_name} »",
+    "watch_alert_body": "Bonjour,\n\nLa veille du projet « {project_title} » a importé {n} nouvel(s) article(s) pour la recherche « {search_name} ».\n\n{m} collent aux critères :\n{matches}\n\nRevoyez-les dans les résultats du projet :\n{link}\n\n— L'équipe Diggypaper",
+    "watch_import_subject": "Diggypaper — veille : {n} nouvel(s) article(s) importé(s)",
+    "watch_import_body": "Bonjour,\n\nLa veille du projet « {project_title} » a importé {n} nouvel(s) article(s) pour la recherche « {search_name} ». Aucun ne colle aux critères.\n\nLes revoir :\n{link}\n\n— L'équipe Diggypaper"
   },
   "de": {
     "consent_required": "Sie müssen die Datenverarbeitungsbedingungen akzeptieren, bevor Sie sich anmelden.",
@@ -81,7 +89,11 @@
     "retention_deleted_subject": "Diggypaper: Projekt „{project}“ gelöscht",
     "retention_deleted_body": "Hallo,\n\nDas Projekt „{project}“ wurde nach {days} Tagen ohne Aktivität gelöscht.\n\n— Das Diggypaper-Team",
     "disk_alert_subject": "Diggypaper: wenig Speicherplatz ({percent} % belegt)",
-    "disk_alert_body": "Hallo,\n\nDie Serverplatte ist zu {percent} % belegt ({free} GB frei von {total} GB). Datenbank: {db} GB, gespeicherte PDFs: {pdf} GB.\n\nGeben Sie Platz frei, indem Sie inaktive Projekte oder alte Exporte löschen: {link}\n\n— Das Diggypaper-Team"
+    "disk_alert_body": "Hallo,\n\nDie Serverplatte ist zu {percent} % belegt ({free} GB frei von {total} GB). Datenbank: {db} GB, gespeicherte PDFs: {pdf} GB.\n\nGeben Sie Platz frei, indem Sie inaktive Projekte oder alte Exporte löschen: {link}\n\n— Das Diggypaper-Team",
+    "watch_alert_subject": "Diggypaper Watch: {m} neue Artikel für „{search_name}“",
+    "watch_alert_body": "Hallo,\n\nDie Korpus-Watch des Projekts „{project_title}“ hat {n} neue Artikel für die Suche „{search_name}“ importiert.\n\n{m} entsprechen den Kriterien:\n{matches}\n\nPrüfen Sie sie in den Ergebnissen des Projekts:\n{link}\n\n— Das Diggypaper-Team",
+    "watch_import_subject": "Diggypaper Watch: {n} neue Artikel importiert",
+    "watch_import_body": "Hallo,\n\nDie Korpus-Watch des Projekts „{project_title}“ hat {n} neue Artikel für die Suche „{search_name}“ importiert. Keiner entspricht den Kriterien.\n\nSie prüfen:\n{link}\n\n— Das Diggypaper-Team"
   },
   "es": {
     "consent_required": "Debe aceptar las condiciones de tratamiento de datos antes de iniciar sesión.",
@@ -109,6 +121,10 @@
     "retention_deleted_subject": "Diggypaper: proyecto «{project}» eliminado",
     "retention_deleted_body": "Hola:\n\nEl proyecto «{project}» se eliminó tras {days} días sin actividad.\n\n— El equipo Diggypaper",
     "disk_alert_subject": "Diggypaper: poco espacio en disco ({percent} % usado)",
-    "disk_alert_body": "Hola:\n\nEl disco del servidor está al {percent} % ({free} GB libres de {total} GB). Base de datos: {db} GB, PDF almacenados: {pdf} GB.\n\nLibere espacio eliminando proyectos inactivos o exportaciones antiguas: {link}\n\n— El equipo Diggypaper"
+    "disk_alert_body": "Hola:\n\nEl disco del servidor está al {percent} % ({free} GB libres de {total} GB). Base de datos: {db} GB, PDF almacenados: {pdf} GB.\n\nLibere espacio eliminando proyectos inactivos o exportaciones antiguas: {link}\n\n— El equipo Diggypaper",
+    "watch_alert_subject": "Diggypaper — vigilancia: {m} artículo(s) nuevo(s) para « {search_name} »",
+    "watch_alert_body": "Hola:\n\nLa vigilancia del proyecto « {project_title} » importó {n} artículo(s) nuevo(s) para la búsqueda « {search_name} ».\n\n{m} coinciden con los criterios:\n{matches}\n\nRevíselos en los resultados del proyecto:\n{link}\n\n— El equipo Diggypaper",
+    "watch_import_subject": "Diggypaper — vigilancia: {n} artículo(s) nuevo(s) importado(s)",
+    "watch_import_body": "Hola:\n\nLa vigilancia del proyecto « {project_title} » importó {n} artículo(s) nuevo(s) para la búsqueda « {search_name} ». Ninguno coincide con los criterios.\n\nRevisarlos:\n{link}\n\n— El equipo Diggypaper"
   }
 }

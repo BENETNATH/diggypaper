@@ -23,6 +23,7 @@ const STEPS = [
   { key: "team", href: "/team", needsCorpus: false, leadOnly: false, optional: false },
   { key: "gold", href: "/gold", needsCorpus: true, leadOnly: false, optional: true },
   { key: "benchmarks", href: "/benchmarks", needsCorpus: true, leadOnly: true, optional: true },
+  { key: "watches", href: "/watches", needsCorpus: false, leadOnly: true, optional: true },
 ] as const;
 
 /** Persistent project navigation: breadcrumb + step tabs. */

@@ -15,6 +15,7 @@ HUMAN_INCLUDE_AT = 0.5
 LABELS = {
     "fr": {
         "via_citations": "dont par chaînage de citations",
+        "via_watch": "dont par veille (monitoring)",
         "identified_base": "Références identifiées",
         "identified_lists": "listes importées",
         "from_search": "Références de la recherche « {name} »",
@@ -57,6 +58,7 @@ LABELS = {
     },
     "en": {
         "via_citations": "of which via citation chaining",
+        "via_watch": "of which via watch (monitoring)",
         "identified_base": "Records identified",
         "identified_lists": "imported lists",
         "from_search": "Records of search “{name}”",
@@ -99,6 +101,7 @@ LABELS = {
     },
     "de": {
         "via_citations": "davon über Zitationsketten",
+        "via_watch": "davon über Watch (Monitoring)",
         "identified_base": "Identifizierte Datensätze",
         "identified_lists": "importierte Listen",
         "from_search": "Datensätze der Suche „{name}“",
@@ -141,6 +144,7 @@ LABELS = {
     },
     "es": {
         "via_citations": "de ellos por encadenamiento de citas",
+        "via_watch": "de ellos por vigilancia (monitoring)",
         "identified_base": "Registros identificados",
         "identified_lists": "listas importadas",
         "from_search": "Registros de la búsqueda «{name}»",
@@ -208,6 +212,11 @@ def prisma_counts(
                 )
                 failed += int(r.get("failed", 0))
         identified = max(identified, total + failed)
+    # Corpus watch (spec 2026-11-07): articles imported by a watch have no ImportJob,
+    # but they are already part of ``total`` (project articles), so they are counted in
+    # "identified" exactly like the citations — no extra add. ``via_watch`` is the
+    # "of which by watch" label (analogous to ``via_citations``).
+    watch_articles = sum(1 for a in articles if getattr(a, "origin", None) == "watch")
     dups = identified - failed - total  # references already present (re-imports)
 
     c = {"included": 0, "ai_excluded": 0, "human_excluded": 0, "pending": 0, "untriaged": 0}
@@ -234,6 +243,7 @@ def prisma_counts(
     screened = total - c["untriaged"]
     return {
         "via_citations": sum(1 for a in articles if getattr(a, "origin", None) == "citation"),
+        "via_watch": watch_articles,
         "identified": identified,
         "failed": failed,
         "duplicates": 0 if origin else dups,

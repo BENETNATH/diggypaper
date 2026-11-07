@@ -37,10 +37,13 @@ celery_app.conf.update(
         "app.tasks.inference",
         "app.tasks.maintenance",
         "app.tasks.notify",
+        "app.tasks.watch",
     ],
     # Beat built into the worker (single worker): disk alert + inactive projects.
     beat_schedule={
         "maintenance": {"task": "diggypaper.maintenance", "schedule": 6 * 3600.0},
+        # Corpus watch: one pass per day (spec 2026-11-07-veille-automatisee).
+        "watch": {"task": "diggypaper.watch", "schedule": 24 * 3600.0},
     },
 )
 

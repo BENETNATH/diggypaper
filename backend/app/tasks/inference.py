@@ -285,6 +285,9 @@ async def _run_inference(
                 session_factory=factory,
                 mailer=mailer,
             )
+            # Corpus watch (spec 2026-11-07): if this job was launched by a watch,
+            # evaluate the matches + alert the lead (best-effort, never breaks the job).
+            await _watch_hook(session, job, mailer)
             await _start_scheduled(session, job.project_id)
             return stats
     finally:
@@ -377,6 +380,20 @@ async def _start_scheduled(session: AsyncSession, project_id) -> None:
             await start_ready(session, project)
     except Exception:  # noqa: BLE001 - must not fail the analysis that just finished
         logger.exception("scheduler: starting the scheduled analysis failed")
+
+
+async def _watch_hook(session: AsyncSession, job: InferenceJob, mailer) -> None:
+    """Corpus watch: if this job was launched by a watch, evaluate the matches on the
+    new articles and alert the lead (best-effort — a failure never breaks the job)."""
+    try:
+        from app.core.config import get_settings
+        from app.tasks.watch import evaluate_watch_matches
+
+        await evaluate_watch_matches(
+            session, job, mailer=mailer, app_base_url=get_settings().app_base_url
+        )
+    except Exception:  # noqa: BLE001 - must not fail the analysis that just finished
+        logger.exception("watch: post-inference hook failed (job %s)", job.id)
 
 
 async def _do_inference(
