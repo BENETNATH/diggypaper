@@ -12,22 +12,33 @@ import socket
 import uuid
 from urllib.parse import urlsplit
 
-from sqlalchemy import or_, select, true
+from sqlalchemy import and_, or_, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import ModelRegistry, ModelShare, ProjectMember, User, UserRole
+from app.db.models import ModelRegistry, ModelShare, ProjectMember, ProjectMemberRole, User, UserRole
 
 
 def access_filter(user: User, project_id: uuid.UUID | None = None):
-    """SQL condition "this model is accessible to me". With ``project_id``: within that project."""
+    """SQL condition "this model is accessible to me". With ``project_id``: within that project.
+
+    A project share grants the model to the LEADs of the project only — not to
+    every member (run-3 finding ``model-access.project-share-lead-role-not-checked``:
+    the grant is LEAD in the module docstring, the shares route, the UI text and
+    the spec).
+    """
     if user.role == UserRole.ADMIN:
         return true()
+    my_lead_projects = select(ProjectMember.project_id).where(
+        ProjectMember.user_id == user.id,
+        ProjectMember.role_in_project == ProjectMemberRole.LEAD,
+    )
     if project_id is not None:
-        project_scope = ModelShare.project_id == project_id
-    else:  # overview: shares made to one of my projects
-        project_scope = ModelShare.project_id.in_(
-            select(ProjectMember.project_id).where(ProjectMember.user_id == user.id)
+        project_scope = and_(
+            ModelShare.project_id == project_id,
+            ModelShare.project_id.in_(my_lead_projects),
         )
+    else:  # overview: shares made to one of my projects
+        project_scope = ModelShare.project_id.in_(my_lead_projects)
     shared = select(ModelShare.model_id).where(or_(ModelShare.user_id == user.id, project_scope))
     return or_(ModelRegistry.owner_id == user.id, ModelRegistry.id.in_(shared))
 
@@ -42,11 +53,13 @@ async def usable_models(
     return list(rows.scalars().all())
 
 
-def check_public_url(url: str) -> None:
+def check_public_url(url: str) -> str:
     """Refuses internal URLs (SSRF) for an external model entered by a non-admin.
 
-    ponytail: check at registration; a later DNS rewrite would bypass it
-    (pin the resolved IP if the instance accepts hostile users).
+    Returns the first public IP: the caller connects to that exact IP, so a DNS
+    rebind between the check and the connect can no longer reach the internal
+    network (the check→connect window is closed — run-3 finding
+    ``models.external-model-dns-rebinding-toctou``).
     """
     parts = urlsplit(url.strip())
     if parts.scheme not in ("http", "https") or not parts.hostname:
@@ -56,9 +69,9 @@ def check_public_url(url: str) -> None:
     except socket.gaierror:
         raise ValueError("base_url host cannot be resolved") from None
     for info in infos:
-        ip = ipaddress.ip_address(info[4][0])
-        if not ip.is_global:
+        if not ipaddress.ip_address(info[4][0]).is_global:
             raise ValueError("base_url must be a public address")
+    return str(infos[0][4][0])
 
 
 def check_url_secrets(url: str) -> None:

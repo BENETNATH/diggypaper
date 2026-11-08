@@ -21,7 +21,10 @@ import time
 from collections.abc import AsyncIterator
 from urllib.parse import urlsplit
 
+import httpcore
 import httpx
+
+from cryptography.exceptions import InvalidTag
 
 from app.core.crypto import decrypt_secret
 from app.settings.service import get_setting
@@ -58,6 +61,87 @@ class InferenceError(Exception):
     """Sanitized inference error (short message, no URL or secret)."""
 
 
+class _PinnedTransport(httpx.AsyncBaseTransport):
+    """httpx transport whose TCP connections go to a pre-validated IP.
+
+    The hostname stays in the URL (Host header / TLS SNI) — only the connection
+    target is replaced, so the resolved IP cannot change between the validation
+    and the connect (DNS rebinding, run-3 finding
+    ``models.external-model-dns-rebinding-toctou``).
+    """
+
+    def __init__(self, pinned_ip: str) -> None:
+        self._pool = httpcore.AsyncConnectionPool(
+            ssl_context=httpcore.default_ssl_context(),
+            network_backend=_PinnedBackend(pinned_ip),
+        )
+
+    async def handle_async_request(self, request):
+        from httpx._transports.default import AsyncResponseStream, map_httpcore_exceptions
+
+        req = httpcore.Request(
+            method=request.method,
+            url=httpcore.URL(
+                scheme=request.url.raw_scheme,
+                host=request.url.raw_host,
+                port=request.url.port,
+                target=request.url.raw_path,
+            ),
+            headers=request.headers.raw,
+            content=request.stream,
+            extensions=request.extensions,
+        )
+        with map_httpcore_exceptions():
+            resp = await self._pool.handle_async_request(req)
+        return httpx.Response(
+            status_code=resp.status,
+            headers=resp.headers,
+            stream=AsyncResponseStream(resp.stream),
+            extensions=resp.extensions,
+        )
+
+    async def aclose(self) -> None:
+        await self._pool.aclose()
+
+
+class _PinnedBackend(httpcore.AsyncNetworkBackend):
+    """Delegates every TCP connection to the validated IP (never re-resolves)."""
+
+    def __init__(self, pinned_ip: str, inner: httpcore.AsyncNetworkBackend | None = None) -> None:
+        super().__init__()
+        self._pinned_ip = pinned_ip
+        self._inner = inner if inner is not None else httpcore.AnyIOBackend()
+
+    async def connect_tcp(self, host, port, timeout=None, local_address=None, socket_options=None):
+        return await self._inner.connect_tcp(
+            self._pinned_ip,
+            port,
+            timeout=timeout,
+            local_address=local_address,
+            socket_options=socket_options,
+        )
+
+    async def connect_unix_socket(self, path, timeout=None, socket_options=None):
+        return await self._inner.connect_unix_socket(
+            path, timeout=timeout, socket_options=socket_options
+        )
+
+    async def sleep(self, seconds):
+        await self._inner.sleep(seconds)
+
+
+# Byte budget for the untrusted, user-directed models-list body (2 MiB is far
+# above any real model listing; it bounds the parse cost of POST /external/list).
+_MODELS_BODY_LIMIT = 2 * 1024 * 1024
+
+
+def _client_for(timeout: float, pinned_ip: str | None) -> httpx.AsyncClient:
+    """A default client — or one pinned to the validated IP (user's external model)."""
+    if pinned_ip is not None:
+        return httpx.AsyncClient(timeout=timeout, transport=_PinnedTransport(pinned_ip))
+    return httpx.AsyncClient(timeout=timeout)
+
+
 class OpenAICompatibleService:
     """Minimal ``/v1/chat/completions`` client (JSON messages, JSON response)."""
 
@@ -82,6 +166,19 @@ class OpenAICompatibleService:
         self._native_ollama = native_ollama
         # Model returned by the last response read (traceability of the served version).
         self.served_model: str | None = None
+
+    async def _validated_ip(self) -> str | None:
+        """User's model: the public IP validated right before the connection
+        (the transport connects to it, closing the DNS-rebinding window). None
+        for local/operator services."""
+        if not self._public_only:
+            return None
+        from app.model_access import check_public_url
+
+        try:
+            return await asyncio.to_thread(check_public_url, self._base_url)
+        except ValueError as exc:
+            raise InferenceError("url_not_allowed") from exc
 
     async def infer(self, model: str, system_prompt: str, user_prompt: str) -> dict:
         """Calls the model and returns the parsed JSON object (spec §5).
@@ -122,18 +219,9 @@ class OpenAICompatibleService:
                 "response_format": {"type": "json_object"},
             }
         body = {**self._extra_body, **body}  # fixed body: never overridden by the setting
-        if self._public_only:
-            # Re-verified at EVERY call (not only at registration): a later DNS
-            # rewrite no longer leads to the internal network.
-            # ponytail: resolution→connection window not closed; pin the IP if needed.
-            from app.model_access import check_public_url
-
-            try:
-                await asyncio.to_thread(check_public_url, self._base_url)
-            except ValueError as exc:
-                raise InferenceError("url_not_allowed") from exc
+        pinned_ip = await self._validated_ip()
         owned = self._http is None
-        client = self._http or httpx.AsyncClient(timeout=self._timeout)
+        client = self._http or _client_for(self._timeout, pinned_ip)
         try:
             try:
                 resp = await client.post(url, json=body, headers=headers)
@@ -184,15 +272,9 @@ class OpenAICompatibleService:
             url = f"{self._base_url}/chat/completions"
             body = {"model": model, "messages": messages, "stream": True, "temperature": 0.0}
         body = {**self._extra_body, **body}
-        if self._public_only:
-            from app.model_access import check_public_url
-
-            try:
-                await asyncio.to_thread(check_public_url, self._base_url)
-            except ValueError as exc:
-                raise InferenceError("url_not_allowed") from exc
+        pinned_ip = await self._validated_ip()
         owned = self._http is None
-        client = self._http or httpx.AsyncClient(timeout=self._timeout)
+        client = self._http or _client_for(self._timeout, pinned_ip)
         try:
             try:
                 async with client.stream("POST", url, json=body, headers=headers) as resp:
@@ -223,7 +305,13 @@ class OpenAICompatibleService:
                             try:
                                 data = json.loads(payload)
                                 chunk = data["choices"][0]["delta"].get("content")
-                            except (json.JSONDecodeError, KeyError, IndexError, TypeError) as exc:
+                            except (
+                                json.JSONDecodeError,
+                                KeyError,
+                                IndexError,
+                                TypeError,
+                                AttributeError,
+                            ) as exc:
                                 raise InferenceError("invalid_response") from exc
                             if chunk:
                                 yield chunk
@@ -231,6 +319,83 @@ class OpenAICompatibleService:
                 raise InferenceError("timeout") from exc
             except httpx.HTTPError as exc:
                 raise InferenceError("connection_error") from exc
+        finally:
+            if owned:
+                await client.aclose()
+
+    async def list_models(self) -> list[str]:
+        """OpenAI-compatible ``GET {base_url}/models`` (the endpoint model picker).
+
+        Returns the sorted, deduplicated model ids. Same sanitized errors as
+        ``infer`` (no URL or body in the message). The body is untrusted and
+        user-directed: it is read through a byte budget (``_MODELS_BODY_LIMIT``)
+        before parsing, so an oversized or dripping response cannot fill
+        memory, and a pathological body (RecursionError on deep nesting) maps
+        to the fixed ``invalid_response`` code instead of an unhandled 500.
+        """
+        headers = {}
+        if self._api_key:
+            headers["Authorization"] = f"Bearer {self._api_key}"
+        url = f"{self._base_url}/models"
+        pinned_ip = await self._validated_ip()
+        owned = self._http is None
+        client = self._http or _client_for(self._timeout, pinned_ip)
+        try:
+            try:
+                async with client.stream("GET", url, headers=headers) as resp:
+                    if resp.status_code >= 400:
+                        raise InferenceError(f"HTTP {resp.status_code}")
+                    content_length = resp.headers.get("content-length")
+                    if (
+                        content_length is not None
+                        and content_length.isdigit()
+                        and int(content_length) > _MODELS_BODY_LIMIT
+                    ):
+                        raise InferenceError("invalid_response")
+                    chunks: list[bytes] = []
+                    total = 0
+                    async for chunk in resp.aiter_bytes():
+                        total += len(chunk)
+                        if total > _MODELS_BODY_LIMIT:
+                            raise InferenceError("invalid_response")
+                        chunks.append(chunk)
+                body = b"".join(chunks)
+                data = json.loads(body)
+                if not isinstance(data, dict):
+                    raise InferenceError("invalid_response")
+                # OpenAI-compatible: {"data":[{"id":...}]}; Ollama /v1:
+                # {"models":[{"name":...}]}. Accept both so the picker works on
+                # the local Ollama provider (the main RGPD-friendly option).
+                raw = data.get("data")
+                if not isinstance(raw, list):
+                    raw = data.get("models")
+                if not isinstance(raw, list):
+                    raise InferenceError("invalid_response")
+                ids = set()
+                for item in raw:
+                    if not isinstance(item, dict):
+                        continue
+                    ident = item.get("id")
+                    if not isinstance(ident, str):
+                        ident = item.get("name")
+                    if isinstance(ident, str):
+                        # stripped: a blank id must not create a dead registry row
+                        ident = ident.strip()
+                        if ident:
+                            ids.add(ident)
+            except httpx.TimeoutException as exc:
+                raise InferenceError("timeout") from exc
+            except httpx.HTTPError as exc:
+                raise InferenceError("connection_error") from exc
+            except json.JSONDecodeError as exc:
+                raise InferenceError("invalid_json") from exc
+            except RecursionError as exc:
+                raise InferenceError("invalid_response") from exc
+            except InferenceError:
+                raise
+            except (TypeError, ValueError) as exc:
+                raise InferenceError("invalid_response") from exc
+            return sorted(ids)[:500]
         finally:
             if owned:
                 await client.aclose()
@@ -461,7 +626,10 @@ async def infer_with(
     await _throttle(getattr(model, "model_identifier", None) or "default")
     if model is not None and model.backend_type == "OPENAI_API":
         url, _, name = model.model_identifier.partition("#")
-        key = decrypt_secret(model.api_key_enc) if model.api_key_enc else None
+        try:
+            key = decrypt_secret(model.api_key_enc) if model.api_key_enc else None
+        except (ValueError, InvalidTag) as exc:  # corrupted ciphertext: sanitized error, no crash
+            raise InferenceError("invalid_response") from exc
         svc = OpenAICompatibleService(
             url, key, timeout=default._timeout, public_only=model.owner_id is not None
         )
@@ -495,7 +663,10 @@ async def stream_with(
     await _throttle(getattr(model, "model_identifier", None) or "default")
     if model is not None and model.backend_type == "OPENAI_API":
         url, _, name = model.model_identifier.partition("#")
-        key = decrypt_secret(model.api_key_enc) if model.api_key_enc else None
+        try:
+            key = decrypt_secret(model.api_key_enc) if model.api_key_enc else None
+        except (ValueError, InvalidTag) as exc:  # corrupted ciphertext: sanitized error, no crash
+            raise InferenceError("invalid_response") from exc
         svc = OpenAICompatibleService(
             url, key, timeout=default._timeout, public_only=model.owner_id is not None
         )

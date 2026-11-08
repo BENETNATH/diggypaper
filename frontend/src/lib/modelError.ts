@@ -5,6 +5,7 @@ const KNOWN = new Set([
   "url_not_allowed",
   "invalid_json",
   "invalid_response",
+  "http_error",
   "ollama_disabled_by_deployment",
   "ollama_base_url_is_compose_default",
   "ollama_unreachable",

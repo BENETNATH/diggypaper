@@ -139,6 +139,38 @@ async def test_model_shared_with_project_follows_membership(
     assert await _names(client) == []
 
 
+async def test_project_share_grants_lead_only_not_every_member(
+    client, session, alice, bob, public_urls
+):
+    """A project share grants the model to the LEADs of the project, not to every
+    member (annotator: the model is not usable, and it stays out of the picker)."""
+    project = await _project(session, alice)
+    session.add(
+        ProjectMember(project_id=project.id, user_id=bob.id, role_in_project=ProjectMemberRole.ANNOTATOR)
+    )
+    await session.commit()
+    await _login(client, "alice@lab.fr", "alice-pass-123")
+    mid = (await client.post(f"{API}/models/external", json=EXT)).json()["id"]
+    assert (
+        await client.post(f"{API}/models/{mid}/shares", json={"project_id": str(project.id)})
+    ).status_code == 201
+
+    # alice (LEAD of the project): usable there
+    assert await _names(client, project_id=str(project.id)) == ["My-GPT"]
+    # bob (ANNOTATOR, member): not usable, not even listed
+    await _login(client, "bob@lab.fr", "bob-pass-12345")
+    assert await _names(client, project_id=str(project.id)) == []
+
+    # promoted to LEAD: granted
+    await session.execute(
+        ProjectMember.__table__.update()
+        .where(ProjectMember.user_id == bob.id, ProjectMember.project_id == project.id)
+        .values(role_in_project=ProjectMemberRole.LEAD)
+    )
+    await session.commit()
+    assert await _names(client, project_id=str(project.id)) == ["My-GPT"]
+
+
 async def test_platform_model_needs_a_share_and_inference_checks_it(
     client, session, admin_user, alice
 ):
@@ -456,6 +488,84 @@ async def test_user_model_url_rechecked_at_call_time(monkeypatch):
     monkeypatch.setattr("app.model_access.check_public_url", rebound)
     with pytest.raises(InferenceError, match="url_not_allowed"):
         await OpenAICompatibleService("http://x.example/v1", public_only=True).infer("m", "s", "u")
+
+
+# --- run-3: pinned IP at call time (DNS rebinding TOCTOU) ------------------------------
+
+
+def test_check_public_url_returns_pinned_ip(monkeypatch):
+    import app.model_access as ma
+
+    monkeypatch.setattr(
+        ma.socket,
+        "getaddrinfo",
+        lambda host, port, **kw: [(2, 1, 6, "", ("93.184.216.34", port))],
+    )
+    assert ma.check_public_url("https://x.example/v1") == "93.184.216.34"
+
+
+def test_check_public_url_internal_record_still_refused(monkeypatch):
+    """A second, internal record (the rebind) still fails the whole URL."""
+    import app.model_access as ma
+
+    monkeypatch.setattr(
+        ma.socket,
+        "getaddrinfo",
+        lambda host, port, **kw: [
+            (2, 1, 6, "", ("93.184.216.34", port)),
+            (2, 1, 6, "", ("127.0.0.1", port)),
+        ],
+    )
+    with pytest.raises(ValueError):
+        ma.check_public_url("https://x.example/v1")
+
+
+async def test_dns_rebinding_cannot_reach_internal_target(monkeypatch):
+    """A public domain rebinding to loopback between check and connect no longer
+    reaches the internal target: the transport connects to the IP validated at
+    call time (the domain is never re-resolved)."""
+    import asyncio
+
+    import app.model_access as ma
+    from app.inference import InferenceError, OpenAICompatibleService
+
+    # The internal target the rebind would reach if the code re-resolved the domain.
+    hits: list[bytes] = []
+
+    async def _handler(reader, writer):
+        data = await reader.read(65536)
+        if data:
+            hits.append(data[:200])
+            writer.write(b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\n\r\n{}")
+            await writer.drain()
+        writer.close()
+
+    server = await asyncio.start_server(_handler, "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
+
+    domain_calls: list[str] = []
+
+    def fake_dns(host, p, **kw):
+        if host == "x.example":
+            domain_calls.append(host)
+            ip = "93.184.216.34" if len(domain_calls) == 1 else "127.0.0.1"
+        else:  # an IP literal: itself (no re-resolution of the pinned IP)
+            ip = host
+        return [(2, 1, 6, "", (ip, p))]
+
+    monkeypatch.setattr(ma.socket, "getaddrinfo", fake_dns)
+    try:
+        svc = OpenAICompatibleService(
+            f"http://x.example:{port}/v1", timeout=2.0, public_only=True
+        )
+        with pytest.raises(InferenceError):
+            async for _ in svc.chat_stream("m", [{"role": "user", "content": "q"}]):
+                pass
+    finally:
+        server.close()
+        await server.wait_closed()
+    assert domain_calls == ["x.example"]  # resolved once, at check time
+    assert hits == []  # the internal target never received the request
 
 
 async def test_team_invite_and_external_test_are_rate_limited(

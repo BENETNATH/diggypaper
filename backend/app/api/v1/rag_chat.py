@@ -62,6 +62,18 @@ def _sse(event: str, data) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
+def _sse_error_detail(exc: InferenceError) -> str:
+    """SSE error events carry a fixed code only.
+
+    The provider status (``HTTP 401``) would tell a project member that the
+    owner's key is rejected, or that the provider rate-limits the owner
+    (429) — mapped to the same fixed ``http_error`` code as the JSON
+    endpoints (``_ping_error`` in models.py).
+    """
+    code = str(exc)
+    return "http_error" if code.startswith("HTTP ") else code
+
+
 @router.post("/{project_id}/chat")
 async def chat(
     project_id: uuid.UUID, payload: ChatRequest, request: Request, db: DbDep, user: UserDep
@@ -120,7 +132,13 @@ async def chat(
                 yield _sse("token", {"t": chunk})
         except InferenceError as exc:
             logger.info("rag-chat error project=%s model=%s: %s", project_id, payload.model, exc)
-            yield _sse("error", {"detail": str(exc)})
+            yield _sse("error", {"detail": _sse_error_detail(exc)})
+            return
+        except Exception:  # midstream crash (a decrypt, a malformed provider line):
+            # a sanitized error event — never a silent truncation after the 200
+            # (run-3 finding ``rag-chat.midstream-unhandled-exception-silent-truncation``)
+            logger.exception("rag-chat midstream error project=%s model=%s", project_id, payload.model)
+            yield _sse("error", {"detail": "provider_error"})
             return
         text = "".join(parts)
         cited = extract_citations(text, len(included))

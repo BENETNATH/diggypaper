@@ -835,3 +835,142 @@ async def test_model_snapshot_failure_log_hides_url_and_secrets(caplog):
     assert snap["version"] is None
     assert "model_snapshot" in caplog.text  # the warning is actually emitted
     assert "SECRET" not in caplog.text and "llm.test" not in caplog.text
+
+
+# --- list_models (endpoint model picker, spec 2026-11-08) -----------------------------
+
+
+async def test_list_models_parses_and_dedupes():
+    """OpenAI-compatible ``GET {base_url}/models``: sorted, deduplicated ids."""
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda req: httpx.Response(
+                200, json={"object": "list", "data": [{"id": "b"}, {"id": "a"}, {"id": "a"}]}
+            )
+        )
+    )
+    svc = OpenAICompatibleService("http://llm.test/v1", http=client)
+    assert await svc.list_models() == ["a", "b"]
+
+
+async def test_list_models_parses_ollama_shape():
+    """Ollama's ``GET /v1/models`` returns ``{"models":[{"name":...}]}``, not
+    OpenAI's ``{"data":[{"id":...}]}``. The picker must work on Ollama (the
+    main RGPD-friendly local provider)."""
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda req: httpx.Response(
+                200,
+                json={
+                    "models": [
+                        {"name": "qwen3:1.7b", "model": "qwen3:1.7b", "modified_at": "…"},
+                        {"name": "llama3:latest", "model": "llama3:latest", "modified_at": "…"},
+                    ]
+                },
+            )
+        )
+    )
+    svc = OpenAICompatibleService("http://ollama.test/v1", http=client)
+    assert await svc.list_models() == ["llama3:latest", "qwen3:1.7b"]
+
+
+async def test_list_models_sends_bearer_and_models_path():
+    seen = {}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        seen["path"] = req.url.path
+        seen["auth"] = req.headers.get("authorization")
+        return httpx.Response(200, json={"data": [{"id": "m"}]})
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    svc = OpenAICompatibleService("http://llm.test/v1", api_key="sek", http=client)
+    assert await svc.list_models() == ["m"]
+    assert seen["path"] == "/v1/models"
+    assert seen["auth"] == "Bearer sek"
+
+
+async def test_list_models_non_list_data_raises():
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda req: httpx.Response(200, json={"data": "nope"}))
+    )
+    svc = OpenAICompatibleService("http://llm.test/v1", http=client)
+    with pytest.raises(InferenceError, match="invalid_response"):
+        await svc.list_models()
+
+
+async def test_list_models_invalid_json_raises():
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda req: httpx.Response(200, content=b"oops"))
+    )
+    svc = OpenAICompatibleService("http://llm.test/v1", http=client)
+    with pytest.raises(InferenceError, match="invalid_json"):
+        await svc.list_models()
+
+
+async def test_list_models_http_error_raises():
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda req: httpx.Response(401, json={"error": "x"}))
+    )
+    svc = OpenAICompatibleService("http://llm.test/v1", http=client)
+    with pytest.raises(InferenceError, match="HTTP 401"):
+        await svc.list_models()
+
+
+async def test_list_models_recursion_error_sanitized():
+    """A deeply nested JSON body from the endpoint must not escape as a raw
+    RecursionError (unhandled 500): it maps to the fixed invalid_response code."""
+    body = b"[" * 100_000 + b"]" * 100_000
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda req: httpx.Response(200, content=body))
+    )
+    svc = OpenAICompatibleService("http://llm.test/v1", http=client)
+    with pytest.raises(InferenceError, match="invalid_response"):
+        await svc.list_models()
+
+
+async def test_list_models_body_capped():
+    """The models-list body is untrusted and user-directed: an oversized body
+    is rejected (invalid_response) instead of being fully parsed in memory."""
+    body = b'{"data":[' + b'"x",' * 600_000 + b'"x"]}'  # ~2.4 MB > the 2 MiB budget
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda req: httpx.Response(200, content=body))
+    )
+    svc = OpenAICompatibleService("http://llm.test/v1", http=client)
+    with pytest.raises(InferenceError, match="invalid_response"):
+        await svc.list_models()
+
+
+async def test_list_models_strips_and_drops_blank_ids():
+    """Blank or whitespace-only ids from the endpoint do not create dead
+    registry rows: they are stripped and the empty ones dropped."""
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda req: httpx.Response(
+                200, json={"data": [{"id": "  gpt-4o  "}, {"id": "   "}, {"id": ""}, {"id": "b"}]}
+            )
+        )
+    )
+    svc = OpenAICompatibleService("http://llm.test/v1", http=client)
+    assert await svc.list_models() == ["b", "gpt-4o"]
+
+
+async def test_list_models_rebind_protected_like_chat(monkeypatch):
+    """The listing goes through the same public-URL check as the inference calls
+    (pinned IP at call time, not only at registration)."""
+    import app.model_access as ma
+
+    monkeypatch.setattr(
+        ma.socket,
+        "getaddrinfo",
+        lambda host, port, **kw: [(2, 1, 6, "", ("93.184.216.34", port))],
+    )
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda req: httpx.Response(200, json={"data": [{"id": "m"}]}))
+    )
+    svc = OpenAICompatibleService("http://llm.test/v1", http=client, public_only=True)
+    assert await svc.list_models() == ["m"]
+
+    monkeypatch.setattr(ma.socket, "getaddrinfo", lambda host, port, **kw: [(2, 1, 6, "", ("127.0.0.1", port))])
+    svc2 = OpenAICompatibleService("http://llm.test/v1", public_only=True, timeout=0.5)
+    with pytest.raises(InferenceError, match="url_not_allowed"):
+        await svc2.list_models()

@@ -341,6 +341,22 @@ async def test_chat_stream_invalid_line_raises():
             pass
 
 
+async def test_chat_stream_openai_malformed_delta_raises():
+    """A non-dict ``delta`` (malformed provider line) raises InferenceError —
+    previously the AttributeError propagated: silent truncation after the 200."""
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda req: httpx.Response(
+                200, content=b'data: {"choices":[{"delta":"oops"}]}\n'
+            )
+        )
+    )
+    svc = OpenAICompatibleService("http://llm.test/v1", http=client)
+    with pytest.raises(InferenceError):
+        async for _ in svc.chat_stream("m", [{"role": "user", "content": "q"}]):
+            pass
+
+
 # ---------------------------------------------------------------------------
 # §3 endpoint — POST /projects/{id}/chat (SSE)
 # ---------------------------------------------------------------------------
@@ -495,3 +511,95 @@ async def test_chat_rate_limit_21st_429(client, session, researcher_user, do_log
         )
         last = resp
     assert last.status_code == 429
+
+
+# --- run-3: midstream exceptions — sanitized error event, never silent truncation ----
+
+
+async def test_chat_midstream_unhandled_exception_error_event(
+    client, session, researcher_user, do_login, monkeypatch
+):
+    """A non-InferenceError exception after the 200 (a provider/decrypt crash):
+    the stream ends with a sanitized ``error`` event — no partial-silent answer,
+    no exception detail in the response."""
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project_id = await _chat_project(session, researcher_user)
+
+    async def broken_stream(model, service, messages):
+        yield "partie "
+        raise RuntimeError("boom internal detail")
+
+    monkeypatch.setattr("app.api.v1.rag_chat.stream_with", broken_stream)
+    status, events = await _read_sse(client, project_id, {"question": "Q ?", "model": "Kev-4B"})
+    assert status == 200
+    assert "".join(e["t"] for e in events.get("token", [])) == "partie "
+    assert events["error"][0]["detail"] == "provider_error"
+    assert "done" not in events
+    assert "boom" not in str(events)  # the exception message never leaks
+
+
+async def test_chat_decrypt_failure_error_event(client, session, researcher_user, do_login):
+    """A corrupted ``api_key_enc`` (the decrypt crashes inside stream_with) ends
+    the stream with a sanitized ``error`` event."""
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project_id = await _chat_project(session, researcher_user)
+    m = ModelRegistry(
+        name="Ext-4B",
+        backend_type="OPENAI_API",
+        model_identifier="http://ext.example/v1#m",
+        api_key_enc=b"\x00\x01",
+    )
+    session.add(m)
+    await session.flush()
+    session.add(ModelShare(model_id=m.id, project_id=uuid.UUID(project_id)))
+    await session.commit()
+
+    status, events = await _read_sse(client, project_id, {"question": "Q ?", "model": "Ext-4B"})
+    assert status == 200
+    assert events["error"][0]["detail"] == "invalid_response"
+    assert "done" not in events
+
+
+async def test_chat_http_error_sse_fixed_code(
+    client, session, researcher_user, do_login, monkeypatch
+):
+    """The SSE error event carries a fixed code only: the provider status
+    (HTTP 401) would tell a project member that the owner's key is rejected."""
+    import app.api.v1.rag_chat as rc
+
+    async def fake_stream(model, service, messages):
+        raise InferenceError("HTTP 401")
+        yield ""  # pragma: no cover
+
+    monkeypatch.setattr(rc, "stream_with", fake_stream)
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project_id = await _chat_project(session, researcher_user)
+    status, events = await _read_sse(
+        client, project_id, {"question": "Q ?", "model": "Kev-4B"}
+    )
+    assert status == 200
+    assert events["error"][0]["detail"] == "http_error"
+    assert "401" not in json.dumps(events)
+
+
+async def test_chat_project_shared_model_annotator_gate(
+    client, session, researcher_user, do_login, outsider
+):
+    """A project share grants the model to the LEADs only: an ANNOTATOR member
+    no longer passes the model gate (unknown_model, not corpus_empty)."""
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project_id = await _chat_project(session, researcher_user)
+    session.add(
+        ProjectMember(
+            project_id=uuid.UUID(project_id),
+            user_id=outsider.id,
+            role_in_project=ProjectMemberRole.ANNOTATOR,
+        )
+    )
+    await session.commit()
+    await do_login("outsider@lab.fr", "outsider-pass-123", consent=True)
+    resp = await client.post(
+        f"/api/v1/projects/{project_id}/chat", json={"question": "q", "model": "Kev-4B"}
+    )
+    assert resp.status_code == 400
+    assert "unknown_model" in resp.text

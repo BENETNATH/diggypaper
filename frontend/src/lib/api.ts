@@ -1098,6 +1098,13 @@ export async function testExternalModel(p: ExternalModelInput): Promise<{ ok: bo
   return request("/models/external/test", { method: "POST", body: JSON.stringify(p) });
 }
 
+export async function listExternalModels(p: {
+  base_url: string;
+  api_key?: string;
+}): Promise<{ ok: boolean; error?: string; models?: string[] }> {
+  return request("/models/external/list", { method: "POST", body: JSON.stringify(p) });
+}
+
 export async function addExternalModel(p: ExternalModelInput): Promise<void> {
   await request("/models/external", { method: "POST", body: JSON.stringify(p) });
 }

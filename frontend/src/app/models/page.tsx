@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import {
   listModels,
@@ -11,6 +11,7 @@ import {
   ModelCapabilities,
   registerOllama,
   testExternalModel,
+  listExternalModels,
   testInstalledModel,
   addExternalModel,
   ModelInfo,
@@ -40,6 +41,14 @@ function ModelsContent() {
   const [caps, setCaps] = useState<ModelCapabilities | null>(null);
   const [ext, setExt] = useState({ name: "", base_url: "", model: "", api_key: "" });
   const [extMsg, setExtMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  // The endpoint model picker (listExternalModels): the fetched ids + the selection.
+  const [extList, setExtList] = useState<string[] | null>(null);
+  const [extSelected, setExtSelected] = useState<Set<string>>(new Set());
+  const [listing, setListing] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  // A listing request in flight must not populate the picker after the endpoint
+  // (or key) has changed: the request id captured at call time is stale.
+  const listReq = useRef(0);
   // "Test" result per installed model: "running" or {ok, error?}
   const [modelTests, setModelTests] = useState<Record<string, "running" | { ok: boolean; error?: string }>>({});
 
@@ -93,6 +102,39 @@ function ModelsContent() {
     }
   }
 
+  async function listExt() {
+    setExtMsg(null);
+    setListing(true);
+    const id = ++listReq.current;
+    try {
+      const r = await listExternalModels({ base_url: ext.base_url, api_key: ext.api_key || undefined });
+      // The endpoint or key changed while this request was in flight: drop the
+      // stale result instead of populating the picker for the new endpoint.
+      if (id !== listReq.current) return;
+      if (r.ok) {
+        setExtList(r.models ?? []);
+        setExtSelected(new Set(r.models ?? [])); // all selected by default
+        if ((r.models ?? []).length === 0) setExtMsg({ ok: true, text: t("extListEmpty") });
+      } else {
+        setExtMsg({ ok: false, text: t("extListFail", { error: modelErrorMessage(r.error ?? "?", t) }) });
+      }
+    } catch (e) {
+      if (id !== listReq.current) return;
+      setExtMsg({ ok: false, text: e instanceof Error ? modelErrorMessage(e.message, t) : "error" });
+    } finally {
+      setListing(false);
+    }
+  }
+
+  function toggleExtModel(model: string) {
+    setExtSelected((s) => {
+      const n = new Set(s);
+      if (n.has(model)) n.delete(model);
+      else n.add(model);
+      return n;
+    });
+  }
+
   async function testInstalled(modelId: string) {
     setModelTests((s) => ({ ...s, [modelId]: "running" }));
     try {
@@ -108,11 +150,31 @@ function ModelsContent() {
 
   async function addExt(e: React.FormEvent) {
     e.preventDefault();
-    await run(async () => {
-      await addExternalModel(ext);
-      setExt({ name: "", base_url: "", model: "", api_key: "" });
-      setExtMsg({ ok: true, text: t("extAdded") });
-    });
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      await run(async () => {
+        if (extList !== null && extSelected.size > 0) {
+          // the picker: one registry model per selection (name = the model id)
+          for (const model of extSelected) {
+            await addExternalModel({
+              name: model,
+              base_url: ext.base_url,
+              model,
+              api_key: ext.api_key || undefined,
+            });
+          }
+          setExtList(null);
+          setExtSelected(new Set());
+        } else {
+          await addExternalModel(ext);
+        }
+        setExt({ name: "", base_url: "", model: "", api_key: "" });
+        setExtMsg({ ok: true, text: t("extAdded") });
+      });
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -299,22 +361,76 @@ function ModelsContent() {
             <p className="mb-3 text-xs text-muted">{t("extHint")}</p>
             <form onSubmit={addExt} className="grid gap-3 sm:grid-cols-2">
               <Field label={t("name")}>
-                <Input value={ext.name} onChange={(e) => setExt({ ...ext, name: e.target.value })} placeholder="GPT-4o" required />
+                <Input value={ext.name} onChange={(e) => setExt({ ...ext, name: e.target.value })} placeholder="GPT-4o" required={!extList?.length} />
               </Field>
               <Field label={t("extModel")}>
-                <Input value={ext.model} onChange={(e) => setExt({ ...ext, model: e.target.value })} placeholder="gpt-4o-mini" required />
+                <Input value={ext.model} onChange={(e) => setExt({ ...ext, model: e.target.value })} placeholder="gpt-4o-mini" required={!extList?.length} />
               </Field>
               <Field label={t("extUrl")} hint={t("extUrlHint")}>
-                <Input value={ext.base_url} onChange={(e) => setExt({ ...ext, base_url: e.target.value })} placeholder="https://api.openai.com/v1" required />
+                <Input
+                  value={ext.base_url}
+                  onChange={(e) => {
+                    setExt({ ...ext, base_url: e.target.value });
+                    setExtList(null); // a stale list would be confusing on another endpoint
+                    listReq.current++; // invalidate any in-flight listing
+                  }}
+                  placeholder="https://api.openai.com/v1"
+                  required
+                />
               </Field>
               <Field label={t("extKey")} hint={t("extKeyHint")}>
-                <Input type="password" autoComplete="off" value={ext.api_key} onChange={(e) => setExt({ ...ext, api_key: e.target.value })} />
+                <Input
+                  type="password"
+                  autoComplete="off"
+                  value={ext.api_key}
+                  onChange={(e) => {
+                    setExt({ ...ext, api_key: e.target.value });
+                    setExtList(null); // the list was fetched with the previous key
+                    listReq.current++; // invalidate any in-flight listing
+                  }}
+                />
               </Field>
+              {extList !== null && extList.length > 0 && (
+                <div className="sm:col-span-2">
+                  <span className="mb-1 block text-sm font-medium text-foreground">{t("extListPick")}</span>
+                  <div
+                    role="group"
+                    aria-label={t("extListPick")}
+                    className="max-h-48 overflow-y-auto rounded-md border border-border bg-surface p-2"
+                  >
+                    {extList.map((m) => (
+                      <label
+                        key={m}
+                        className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 text-sm hover:bg-surface-muted"
+                      >
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 accent-primary"
+                          checked={extSelected.has(m)}
+                          onChange={() => toggleExtModel(m)}
+                        />
+                        <code className="text-foreground">{m}</code>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div className="flex flex-wrap items-center gap-3 sm:col-span-2">
+                <Button type="button" variant="secondary" onClick={() => void listExt()} disabled={listing || !ext.base_url.trim()}>
+                  {listing ? t("extListing") : t("extList")}
+                </Button>
                 <Button type="button" variant="secondary" onClick={() => void testExt()} disabled={!ext.base_url.trim() || !ext.model.trim()}>
                   {t("extTest")}
                 </Button>
-                <Button type="submit" variant="secondary" disabled={!ext.name.trim() || !ext.base_url.trim() || !ext.model.trim()}>
+                <Button
+                  type="submit"
+                  variant="secondary"
+                  disabled={
+                    submitting ||
+                    !ext.base_url.trim() ||
+                    (extList?.length ? extSelected.size === 0 : !ext.name.trim() || !ext.model.trim())
+                  }
+                >
                   {t("extAdd")}
                 </Button>
                 {extMsg && <span className={`text-sm ${extMsg.ok ? "text-success" : "text-danger"}`}>{extMsg.text}</span>}

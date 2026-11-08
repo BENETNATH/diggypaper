@@ -1153,3 +1153,127 @@ async def test_test_installed_redis_down_fails_open(
         resp = await client.post(f"/api/v1/models/{await _row_id(session, 'Q')}/test")
     assert resp.json() == {"ok": True}
     assert len(seen) == 1
+
+
+# --- POST /models/external/list (endpoint model picker, spec 2026-11-08) --------------
+
+
+async def test_external_list_models_ok(
+    client, session, researcher_user, do_login, monkeypatch
+):
+    from app.inference import OpenAICompatibleService
+
+    async def fake_list(self):
+        return ["b", "a", "a"]
+
+    monkeypatch.setattr(OpenAICompatibleService, "list_models", fake_list)
+    monkeypatch.setattr("app.api.v1.models.check_public_url", lambda url: None)  # no DNS in tests
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    r = await client.post(
+        "/api/v1/models/external/list",
+        json={"base_url": "https://api.example.com/v1", "api_key": "k"},
+    )
+    assert r.status_code == 200
+    assert r.json() == {"ok": True, "models": ["a", "b"]}
+
+
+async def test_external_list_error_sanitized(
+    client, session, researcher_user, do_login, monkeypatch
+):
+    from app.inference import InferenceError, OpenAICompatibleService
+
+    async def fake_list(self):
+        raise InferenceError("timeout")
+
+    monkeypatch.setattr(OpenAICompatibleService, "list_models", fake_list)
+    monkeypatch.setattr("app.api.v1.models.check_public_url", lambda url: None)  # no DNS in tests
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    r = await client.post(
+        "/api/v1/models/external/list", json={"base_url": "https://api.example.com/v1"}
+    )
+    assert r.status_code == 200
+    assert r.json() == {"ok": False, "error": "timeout"}
+
+
+async def test_external_list_internal_url_422(client, session, researcher_user, do_login):
+    """The same SSRF gate as registration: a non-admin cannot list an internal URL."""
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    for url in ("http://127.0.0.1:11434/v1", "http://10.0.0.5/v1"):
+        r = await client.post("/api/v1/models/external/list", json={"base_url": url})
+        assert r.status_code == 422, url
+
+
+async def test_external_list_url_with_secret_422(client, session, researcher_user, do_login):
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    r = await client.post(
+        "/api/v1/models/external/list",
+        json={"base_url": "https://u:pw@api.example.com/v1"},
+    )
+    assert r.status_code == 422
+
+
+async def test_external_list_rate_limited(
+    client, session, researcher_user, do_login, monkeypatch
+):
+    from app.inference import OpenAICompatibleService
+
+    async def fake_list(self):
+        return []
+
+    monkeypatch.setattr(OpenAICompatibleService, "list_models", fake_list)
+    monkeypatch.setattr("app.api.v1.models.check_public_url", lambda url: None)  # no DNS in tests
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    codes = [
+        (
+            await client.post(
+                "/api/v1/models/external/list", json={"base_url": "https://api.example.com/v1"}
+            )
+        ).status_code
+        for _ in range(11)
+    ]
+    assert codes[:10] == [200] * 10 and codes[10] == 429
+
+
+# --- POST /models/external — name gate (picker uses raw endpoint ids as names) ------
+
+
+async def test_external_register_name_hash_rejected(
+    client, session, researcher_user, do_login, monkeypatch
+):
+    """A model id containing '#' (from a hostile endpoint) must not be stored
+    as a name: same gate as the model field."""
+    monkeypatch.setattr("app.api.v1.models.check_public_url", lambda url: None)
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    r = await client.post(
+        "/api/v1/models/external",
+        json={"name": "a#b", "base_url": "https://api.example.com/v1", "model": "a#b"},
+    )
+    assert r.status_code == 422
+
+
+async def test_external_register_name_control_rejected(
+    client, session, researcher_user, do_login, monkeypatch
+):
+    """Control characters in the name (beyond NL/CR/NUL) are rejected."""
+    monkeypatch.setattr("app.api.v1.models.check_public_url", lambda url: None)
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    for name in ("a\x01b", "a\x1fb", "a\x7fb", "a\tb"):
+        r = await client.post(
+            "/api/v1/models/external",
+            json={"name": name, "base_url": "https://api.example.com/v1", "model": "m-ok"},
+        )
+        assert r.status_code == 422
+
+
+async def test_external_register_name_blank_rejected(
+    client, session, researcher_user, do_login, monkeypatch
+):
+    """A whitespace-only name (a blank endpoint id) must not create a dead
+    registry row with an empty name."""
+    monkeypatch.setattr("app.api.v1.models.check_public_url", lambda url: None)
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    r = await client.post(
+        "/api/v1/models/external",
+        json={"name": "   ", "base_url": "https://api.example.com/v1", "model": "   "},
+    )
+    assert r.status_code == 422

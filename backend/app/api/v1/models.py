@@ -396,6 +396,33 @@ async def create_model(payload: ModelCreate, db: DbDep, user: UserDep) -> dict:
     return _payload(m)
 
 
+class ExternalModelList(BaseModel):
+    """The endpoint to list (same fields as ``ExternalModel``, minus the name)."""
+
+    base_url: str = Field(min_length=1, max_length=500)
+    api_key: str | None = Field(default=None, max_length=500)
+
+
+@router.post("/external/list", dependencies=[Depends(rate_limit_user("model_list", 10))])
+async def list_external(payload: ExternalModelList, user: UserDep) -> dict:
+    """Lists the models served by an endpoint (``GET {base_url}/models``).
+
+    The endpoint model picker: instead of typing the model name by hand, the user
+    fetches the ids and picks. Same gates as registration (secret-free URL,
+    public URL for non-admins, sanitized errors).
+    """
+    _check_url_secrets(payload.base_url)
+    _check_url(payload.base_url, user)
+    svc = OpenAICompatibleService(
+        payload.base_url, payload.api_key, timeout=30, public_only=user.role != UserRole.ADMIN
+    )
+    try:
+        models = sorted(set(await svc.list_models()))[:500]
+    except InferenceError as exc:
+        return {"ok": False, "error": _ping_error(exc)}
+    return {"ok": True, "models": models}
+
+
 @router.post("/external/test", dependencies=[Depends(rate_limit_user("model_test", 10))])
 async def test_external(payload: ExternalModel, user: UserDep) -> dict:
     """A minimal call to check URL + key + model name (sanitized error)."""
@@ -421,7 +448,13 @@ async def register_external(payload: ExternalModel, db: DbDep, user: UserDep) ->
         raise HTTPException(status_code=422, detail="model must not contain '#'")
     _check_url(payload.base_url, user)
     name = payload.name.strip()
-    if "\n" in name or "\r" in name or "\x00" in name:
+    if not name:
+        raise HTTPException(status_code=422, detail="model name is required")
+    if "#" in name:
+        # the picker uses the raw endpoint id as the name: same gate as the
+        # model field, so a hostile listing cannot store junk identifiers
+        raise HTTPException(status_code=422, detail="model name must not contain '#'")
+    if any(ord(c) < 32 or ord(c) == 127 for c in name):
         raise HTTPException(
             status_code=422, detail="model name must not contain control characters"
         )
