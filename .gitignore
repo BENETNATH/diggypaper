@@ -2,6 +2,9 @@
 .env
 .env.*
 !.env.example
+# allowlist « don't ask again » de Claude Code : peut contenir des secrets
+# (repo public) — ne jamais committer .claude/settings.local.json
+.claude/
 
 # tool caches
 .swival/
