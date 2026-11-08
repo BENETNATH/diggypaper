@@ -183,3 +183,95 @@ test("a completed exchange renders exactly once — the streaming bubble is clea
   const cites = await screen.findByTestId("chat-citations");
   expect(cites.textContent).toContain("Zebrafish cryo");
 });
+
+
+// ---------------------------------------------------------------------------
+// Périmètre de chat (spec 2026-11-08-ui-concordance-chat-recherche)
+// ---------------------------------------------------------------------------
+
+const SEARCHES = [
+  {
+    id: "s1",
+    name: "Rich lot",
+    kind: "standard",
+    is_default: false,
+    question: null,
+    fields: [],
+    text_sections: null,
+    parent: null,
+    parent_spec: null,
+    created_at: null,
+  },
+] as unknown as api.SearchInfo[];
+
+function renderPanelWithSearches(overrides: { searches?: api.SearchInfo[] } = {}) {
+  return render(
+    <ChatRagPanel
+      projectId="p1"
+      models={MODELS as never}
+      isLead={false}
+      searches={overrides.searches ?? SEARCHES}
+    />
+  );
+}
+
+test("scope selector defaults to corpus and sends no search_id", async () => {
+  mockStream({ tokens: ["ok "] });
+  renderPanelWithSearches();
+  const scope = screen.getByTestId("chat-scope");
+  expect(scope).toHaveValue("corpus");
+  await submit("Quoi ?");
+  expect(streamChat).toHaveBeenCalledWith(
+    "p1",
+    { question: "Quoi ?", model: "Kev-4B", history: [] },
+    expect.any(Function),
+    expect.any(Function),
+    expect.any(Function),
+    expect.any(Function),
+    expect.any(AbortSignal)
+  );
+});
+
+test("selecting a search sends its search_id", async () => {
+  mockStream({ tokens: ["ok "] });
+  renderPanelWithSearches();
+  fireEvent.change(screen.getByTestId("chat-scope"), { target: { value: "s1" } });
+  await submit("Quoi ?");
+  expect(streamChat).toHaveBeenCalledWith(
+    "p1",
+    { question: "Quoi ?", model: "Kev-4B", history: [], search_id: "s1" },
+    expect.any(Function),
+    expect.any(Function),
+    expect.any(Function),
+    expect.any(Function),
+    expect.any(AbortSignal)
+  );
+});
+
+test("changing scope resets the conversation", async () => {
+  mockStream({ tokens: ["q1 "] });
+  renderPanelWithSearches();
+  await submit("q1");
+  await screen.findByTestId("chat-assistant-turn");
+  expect(screen.getByTestId("chat-user-turn")).toBeInTheDocument();
+  fireEvent.change(screen.getByTestId("chat-scope"), { target: { value: "s1" } });
+  expect(screen.queryByTestId("chat-user-turn")).toBeNull();
+  expect(screen.queryByTestId("chat-assistant-turn")).toBeNull();
+  expect(screen.getByTestId("chat-empty")).toBeInTheDocument();
+});
+
+test("no searches: no scope selector, existing behavior unchanged", async () => {
+  mockStream({ tokens: ["ok "] });
+  renderPanel();
+  expect(screen.queryByTestId("chat-scope")).toBeNull();
+  await submit("Quoi ?");
+  expect(streamChat).toHaveBeenCalledWith(
+    "p1",
+    { question: "Quoi ?", model: "Kev-4B", history: [] },
+    expect.any(Function),
+    expect.any(Function),
+    expect.any(Function),
+    expect.any(Function),
+    expect.any(AbortSignal)
+  );
+});

@@ -610,7 +610,10 @@
     "topOne": "Al frente: {model} ({metric})",
     "modelError": "Error del modelo",
     "retryErrors": "Reintentar errores",
-    "errors": "Errores"
+    "errors": "Errores",
+    "concordance": "Concordancias",
+    "concordanceIntro": "Comparación ad hoc de los análisis de IA y acuerdo de las relecturas, por búsqueda.",
+    "concordanceSearch": "Búsqueda"
   },
   "watches": {
     "title": "Vigilancia del corpus",
@@ -1289,6 +1292,9 @@
     "error": "Se produjo un error durante la respuesta.",
     "citations": "Fuentes citadas",
     "emptyHistory": "Haga una pregunta para consultar el corpus.",
-    "untitled": "Artículo sin título"
+    "untitled": "Artículo sin título",
+    "scope": "Alcance",
+    "scopeCorpus": "Todo el corpus",
+    "scopeSearch": "Esta búsqueda"
   }
 }

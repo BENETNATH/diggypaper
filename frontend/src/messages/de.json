@@ -610,7 +610,10 @@
     "topOne": "Führend: {model} ({metric})",
     "modelError": "Modellfehler",
     "retryErrors": "Fehler neu ausführen",
-    "errors": "Fehler"
+    "errors": "Fehler",
+    "concordance": "Kongruenzen",
+    "concordanceIntro": "Ad-hoc-Vergleich der KI-Analysen und Einigkeit der Relektüren, pro Suche.",
+    "concordanceSearch": "Suche"
   },
   "watches": {
     "title": "Korpus-Beobachtung",
@@ -1289,6 +1292,9 @@
     "error": "Bei der Antwort ist ein Fehler aufgetreten.",
     "citations": "Zitierte Quellen",
     "emptyHistory": "Stellen Sie eine Frage, um das Korpus abzufragen.",
-    "untitled": "Artikel ohne Titel"
+    "untitled": "Artikel ohne Titel",
+    "scope": "Umfang",
+    "scopeCorpus": "Gesamtes Korpus",
+    "scopeSearch": "Diese Suche"
   }
 }

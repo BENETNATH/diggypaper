@@ -10,6 +10,7 @@ import {
   ApiError,
   ChatCitation,
   ModelInfo,
+  SearchInfo,
 } from "@/lib/api";
 import { useSearchId } from "@/lib/useSearch";
 import { withSearch } from "@/lib/search";
@@ -22,6 +23,8 @@ type Props = {
   models: ModelInfo[];
   /** Lead or admin of the project (shows the « Indexer le corpus » button). */
   isLead: boolean;
+  /** Standard searches the member can scope the chat to (empty → no selector). */
+  searches?: SearchInfo[];
 };
 
 type Exchange =
@@ -88,12 +91,14 @@ function CitationsList({
  * cited sections. No persistence (RGPD): the history lives in this
  * component's state only.
  */
-export function ChatRagPanel({ projectId, models, isLead }: Props) {
+export function ChatRagPanel({ projectId, models, isLead, searches = [] }: Props) {
   const t = useTranslations("chatRag");
   const searchId = useSearchId(projectId);
   const defaultModel = models.find((m) => m.backend_type === "OLLAMA") ?? models[0];
   const [model, setModel] = useState("");
   const effectiveModel = model || defaultModel?.name || "";
+  // Chat scope: "corpus" (whole project) or the id of one standard search.
+  const [scope, setScope] = useState<string>("corpus");
   const [indexed, setIndexed] = useState<boolean | undefined>(undefined);
   const [question, setQuestion] = useState("");
   const [history, setHistory] = useState<Exchange[]>([]);
@@ -154,10 +159,14 @@ export function ChatRagPanel({ projectId, models, isLead }: Props) {
     abortRef.current = abort;
     // The API history is role/content only (citations are display-only).
     const sent = history.slice(-HISTORY_MAX).map((m) => ({ role: m.role, content: m.content }));
+    const body =
+      scope === "corpus"
+        ? { question: q, model: effectiveModel, history: sent }
+        : { question: q, model: effectiveModel, history: sent, search_id: scope };
     try {
       await streamChat(
         projectId,
-        { question: q, model: effectiveModel, history: sent },
+        body,
         (chunk) => setCurrent((c) => (c ? { ...c, answer: c.answer + chunk } : c)),
         (c) => {
           citations = c;
@@ -212,6 +221,13 @@ export function ChatRagPanel({ projectId, models, isLead }: Props) {
     setBusy(false);
   }
 
+  // A scope change switches the server-side context: a mixed history would
+  // carry citations from the other scope, so the conversation restarts.
+  function changeScope(next: string) {
+    setScope(next);
+    clearConversation();
+  }
+
   const canSend = Boolean(effectiveModel) && question.trim() !== "" && !busy && indexed !== false;
 
   return (
@@ -234,6 +250,31 @@ export function ChatRagPanel({ projectId, models, isLead }: Props) {
             </option>
           ))}
         </select>
+        {searches.length > 0 && (
+          <>
+            <label
+              className="text-xs font-medium uppercase tracking-wide text-muted"
+              htmlFor="chat-rag-scope"
+            >
+              {t("scope")}
+            </label>
+            <select
+              id="chat-rag-scope"
+              data-testid="chat-scope"
+              value={scope}
+              onChange={(e) => changeScope(e.target.value)}
+              disabled={busy}
+              className="rounded-lg border border-border bg-surface px-2 py-1 text-sm text-foreground focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-focus"
+            >
+              <option value="corpus">{t("scopeCorpus")}</option>
+              {searches.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {t("scopeSearch")} · {s.name}
+                </option>
+              ))}
+            </select>
+          </>
+        )}
         {(history.length > 0 || current !== null) && (
           <Button type="button" variant="ghost" size="sm" onClick={() => clearConversation()}>
             {t("clear")}

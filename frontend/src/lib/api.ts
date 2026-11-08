@@ -1765,6 +1765,8 @@ export async function streamChat(
     question: string;
     model: string;
     history?: { role: "user" | "assistant"; content: string }[];
+    /** Optional scope: limit the context to the articles of this search. */
+    search_id?: string;
   },
   onToken?: (chunk: string) => void,
   onCitations?: (citations: ChatCitation[]) => void,

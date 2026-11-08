@@ -29,6 +29,14 @@ jest.mock("next/navigation", () => {
   };
 });
 jest.mock("@/lib/auth", () => ({ useAuth: jest.fn() }));
+// Concordance panels (spec 2026-11-08): moved to the benchmarks page — these
+// markers let the page test assert they no longer render here.
+jest.mock("@/components/ComparisonPanel", () => ({
+  ComparisonPanel: () => <div data-testid="marker-comparison" />,
+}));
+jest.mock("@/components/AgreementPanel", () => ({
+  AgreementPanel: () => <div data-testid="marker-agreement" />,
+}));
 jest.mock("@/lib/api", () => ({
   ...jest.requireActual("@/lib/api"),
   listSearches: jest.fn(),
@@ -410,5 +418,28 @@ describe("inference page — creation panel polish (UI feedback 2026-11-03)", ()
     // the live preview is debounced (400 ms): wait for the selector's count to settle
     await waitFor(() => expect(screen.getByText("selected")).toBeInTheDocument(), { timeout: 2000 });
     expect(screen.queryByText("scopeCount")).not.toBeInTheDocument();
+  });
+});
+
+describe("inference page — concordance moved to benchmarks (2026-11-08)", () => {
+  it("no longer renders the comparison / agreement panels", async () => {
+    mount({ user: { role: "RESEARCHER" }, roleInProject: "LEAD" });
+    await panelOpen();
+    expect(screen.queryByTestId("marker-comparison")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("marker-agreement")).not.toBeInTheDocument();
+  });
+
+  it("chat scope selector offers the non-default standard searches only", async () => {
+    // The default search's lot is the whole corpus: offering it as a scope
+    // would duplicate the "whole corpus" option (audit finding
+    // lotall-scope-duplicates-corpus).
+    const saved = { ...search, id: "s2", is_default: false, name: "261103-1" };
+    mount({ user: { role: "RESEARCHER" }, roleInProject: "LEAD", searches: [search, saved] });
+    await panelOpen();
+    const select = await screen.findByTestId("chat-scope");
+    const options = Array.from(select.querySelectorAll("option")).map((o) => o.value);
+    // "corpus" is the panel's whole-corpus option; s1 (default, lot_all) is
+    // out — its scope is the corpus itself.
+    expect(options).toEqual(["corpus", "s2"]);
   });
 });

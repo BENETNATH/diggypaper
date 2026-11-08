@@ -610,7 +610,10 @@
     "topOne": "Leading: {model} ({metric})",
     "modelError": "Model error",
     "retryErrors": "Retry errors",
-    "errors": "Errors"
+    "errors": "Errors",
+    "concordance": "Concordance",
+    "concordanceIntro": "Ad-hoc comparison of the AI analyses and reviewer agreement, per search.",
+    "concordanceSearch": "Search"
   },
   "watches": {
     "title": "Corpus watch",
@@ -1289,6 +1292,9 @@
     "error": "An error occurred while answering.",
     "citations": "Cited sources",
     "emptyHistory": "Ask a question to query the corpus.",
-    "untitled": "Untitled article"
+    "untitled": "Untitled article",
+    "scope": "Scope",
+    "scopeCorpus": "Whole corpus",
+    "scopeSearch": "This search"
   }
 }

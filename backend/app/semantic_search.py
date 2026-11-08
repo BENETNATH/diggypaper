@@ -71,21 +71,31 @@ async def _project_sections(db: AsyncSession, project_id: uuid.UUID) -> list[dic
 
 
 async def _dense_topk(
-    db: AsyncSession, project_id: uuid.UUID, q_vec: list[float], k: int
+    db: AsyncSession,
+    project_id: uuid.UUID,
+    q_vec: list[float],
+    k: int,
+    article_ids: set[uuid.UUID] | None = None,
 ) -> list[tuple[uuid.UUID, int, float]]:
     """Top-k sections by cosine similarity: (article_id, section_index, score).
+
+    ``article_ids`` optionally restricts the candidates to those articles
+    (scoping the ranking, not the output).
 
     PostgreSQL: the pgvector cosine operator (``<=>``, served by the HNSW
     index). Other dialects (SQLite tests): an in-Python scan of the project's
     vectors — same ranking semantics."""
     bind = db.bind
     if bind is not None and bind.dialect.name == "postgresql":
+        where = [Article.project_id == project_id]
+        if article_ids is not None:
+            where.append(Article.id.in_(list(article_ids)))
         distance = SectionEmbedding.embedding.cosine_distance(q_vec)
         rows = (
             await db.execute(
                 select(SectionEmbedding, distance)
                 .join(Article, Article.id == SectionEmbedding.article_id)
-                .where(Article.project_id == project_id)
+                .where(*where)
                 .order_by(distance)
                 .limit(k)
             )
@@ -115,6 +125,8 @@ async def _dense_topk(
     }
     scored: list[tuple[tuple[uuid.UUID, int], float]] = []
     for s in sections:
+        if article_ids is not None and s["article"].id not in article_ids:
+            continue
         vec = vectors.get((s["article"].id, s["index"]))
         if vec is None:
             continue
@@ -191,12 +203,23 @@ async def _stored_embedding_model(db: AsyncSession, project_id: uuid.UUID) -> st
 
 
 async def semantic_search(
-    db: AsyncSession, project_id: uuid.UUID, query: str, limit: int = DEFAULT_LIMIT
+    db: AsyncSession,
+    project_id: uuid.UUID,
+    query: str,
+    limit: int = DEFAULT_LIMIT,
+    article_ids: set[uuid.UUID] | None = None,
 ) -> dict:
     """Hybrid search over the project's sections. Returns ``{"results": [...],
     "indexed": bool}`` — an unvectorized corpus yields an empty result list
-    with ``indexed: false`` (the client shows the "not indexed yet" state)."""
+    with ``indexed: false`` (the client shows the "not indexed yet" state).
+
+    ``article_ids``, when given, restricts the RANKING to those articles —
+    not merely the final list, so a small scope keeps its own top-N instead
+    of losing every candidate to the whole-corpus ranking (chat scoped to a
+    frozen lot)."""
     sections = await _project_sections(db, project_id)
+    if article_ids is not None:
+        sections = [s for s in sections if s["article"].id in article_ids]
     indexed = bool(
         (
             await db.execute(
@@ -218,7 +241,7 @@ async def semantic_search(
 
     q_vec = embeddings.get_embedder(await _stored_embedding_model(db, project_id)).embed(query)
     k = min(limit * _CANDIDATE_FACTOR, MAX_LIMIT)
-    dense = await _dense_topk(db, project_id, q_vec, k)
+    dense = await _dense_topk(db, project_id, q_vec, k, article_ids)
     lexical = _lexical_rank(sections, query_tokens)
     fused = _rrf([[(a, i) for a, i, _ in dense], lexical])
 

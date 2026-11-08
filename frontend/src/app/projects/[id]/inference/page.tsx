@@ -38,8 +38,6 @@ import { ValidationView } from "@/components/ValidationView";
 import { Card, Badge, statusColor } from "@/components/ui/Card";
 import { EmptyState, ErrorBanner, Skeleton } from "@/components/ui/Feedback";
 import { JobProgress } from "@/components/JobProgress";
-import { ComparisonPanel } from "@/components/ComparisonPanel";
-import { AgreementPanel } from "@/components/AgreementPanel";
 import { ChatRagPanel } from "@/components/ChatRagPanel";
 import { cleanSelection, isUntouched, searchStoreKey, withSearch } from "@/lib/search";
 import {
@@ -805,27 +803,18 @@ function AnalyseContent() {
         </div>
       )}
 
-      {/* Compare two analyses of this search (spec 2026-11-07 §4): visible to members.
-          Remounted per search (key): the panel state resets with the selection. */}
-      {current && (
-        <ComparisonPanel key={current.id} projectId={projectId} searchId={current.id} />
-      )}
-
-      {/* Reviewer agreement (spec 2026-11-07-accord-reviews §5): visible to members.
-          Remounted per search (key): the panel state resets with the selection. */}
-      {current && (
-        <AgreementPanel
-          key={current.id}
-          projectId={projectId}
-          searchId={current.id}
-          models={models}
-        />
-      )}
+      {/* Compare two analyses / reviewer agreement: moved to the benchmarks
+          page (spec 2026-11-08 — single home for the concordances). */}
 
       {/* Corpus chat (spec 2026-11-07-chat-rag §5): visible to members —
-          it questions the whole project corpus, not a single analysis. */}
+          it questions the whole project corpus, or the lot of one search. */}
       <Card title={t("chatTitle")}>
-        <ChatRagPanel projectId={projectId} models={models} isLead={isLead} />
+        <ChatRagPanel
+          projectId={projectId}
+          models={models}
+          isLead={isLead}
+          searches={(searches ?? []).filter((s) => s.kind === "standard" && !s.is_default)}
+        />
       </Card>
 
       {/* Gold standard & benchmark: how the references feed the analysis, with links. */}

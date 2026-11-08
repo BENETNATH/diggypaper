@@ -40,7 +40,10 @@
     "chat_system_prompt": "You are the Diggypaper document assistant. Answer the question STRICTLY from the provided CONTEXTE (corpus sections [1]…[n]). Cite the sections you use in [n] format in your text. If the context does not allow answering, say so clearly and do not invent anything. Answer in the language of the question.",
     "chat_unknown_model": "Unknown model or not allowed for this project.",
     "chat_corpus_empty": "No section of the corpus matches this question.",
-    "chat_model_busy": "This model is busy with a running analysis. Try again later."
+    "chat_model_busy": "This model is busy with a running analysis. Try again later.",
+    "search_not_found": "Search not found.",
+    "chat_scope_empty": "No indexed section of this search matches this question.",
+    "chat_system_prompt_scoped": "You are the Diggypaper document assistant. The provided CONTEXT is limited to the articles of the selected search (sections [1]…[n]): never allude to the rest of the corpus and never assert anything that is not in it. Answer the question STRICTLY from the CONTEXT, citing the sections used in the [n] format in your text. If the context does not allow you to answer, say so clearly and invent nothing. Answer in the language of the question."
   },
   "fr": {
     "consent_required": "Vous devez accepter le traitement de vos données avant de vous connecter.",
@@ -83,7 +86,10 @@
     "chat_system_prompt": "Tu es l'assistant documentaire de Diggypaper. Réponds à la question STRICTEMENT à partir du CONTEXTE fourni (sections [1]…[n] du corpus). Cite les sections utilisées au format [n] dans ton texte. Si le contexte ne permet pas de répondre, dis-le clairement et n'invente rien. Réponds dans la langue de la question.",
     "chat_unknown_model": "Modèle inconnu ou non autorisé pour ce projet.",
     "chat_corpus_empty": "Aucune section du corpus ne correspond à cette question.",
-    "chat_model_busy": "Ce modèle est occupé par une analyse en cours. Réessayez plus tard."
+    "chat_model_busy": "Ce modèle est occupé par une analyse en cours. Réessayez plus tard.",
+    "search_not_found": "Recherche introuvable.",
+    "chat_scope_empty": "Aucune section indexée de cette recherche ne correspond à cette question.",
+    "chat_system_prompt_scoped": "Tu es l'assistant documentaire de Diggypaper. Le CONTEXTE fourni est limité aux articles de la recherche choisie (sections [1]…[n]) : ne fais aucune allusion au reste du corpus et n'affirme rien qui ne s'y trouve. Réponds à la question STRICTEMENT à partir du CONTEXTE et cite les sections utilisées au format [n] dans ton texte. Si le contexte ne permet pas de répondre, dis-le clairement et n'invente rien. Réponds dans la langue de la question."
   },
   "de": {
     "consent_required": "Sie müssen die Datenverarbeitungsbedingungen akzeptieren, bevor Sie sich anmelden.",
@@ -126,7 +132,10 @@
     "chat_system_prompt": "Du bist der Dokument-Assistent von Diggypaper. Beantworte die Frage AUSCHLIESSLICH anhand des mitgelieferten KONTEXTES (Korpusabschnitte [1]…[n]). Zitiere die verwendeten Abschnitte im Format [n]. Wenn der Kontext keine Antwort erlaubt, sage dies klar und erfinde nichts. Antworte in der Sprache der Frage.",
     "chat_unknown_model": "Unbekanntes Modell oder für dieses Projekt nicht erlaubt.",
     "chat_corpus_empty": "Kein Abschnitt des Korpus passt zu dieser Frage.",
-    "chat_model_busy": "Dieses Modell ist mit einer laufenden Analyse beschäftigt. Versuchen Sie es später erneut."
+    "chat_model_busy": "Dieses Modell ist mit einer laufenden Analyse beschäftigt. Versuchen Sie es später erneut.",
+    "search_not_found": "Suche nicht gefunden.",
+    "chat_scope_empty": "Kein indexierter Abschnitt dieser Suche passt zu dieser Frage.",
+    "chat_system_prompt_scoped": "Du bist der Dokumentationsassistent von Diggypaper. Der bereitgestellte KONTEXT ist auf die Artikel der gewählten Suche beschränkt (Abschnitte [1]…[n]): Beziehe dich nie auf den restlichen Korpus und behaupte nichts, was sich darin nicht befindet. Beantworte die Frage STRENG aus dem KONTEXT und zitiere die verwendeten Abschnitte im Format [n] in deinem Text. Wenn der Kontext keine Antwort zulässt, sage es klar und erfinde nichts. Antworte in der Sprache der Frage."
   },
   "es": {
     "consent_required": "Debe aceptar las condiciones de tratamiento de datos antes de iniciar sesión.",
@@ -169,6 +178,9 @@
     "chat_system_prompt": "Eres el asistente documental de Diggypaper. Responde a la pregunta ESTRICAMENTE a partir del CONTEXTO proporcionado (secciones [1]…[n] del corpus). Cita las secciones utilizadas en formato [n]. Si el contexto no permite responder, dilo claramente y no inventes nada. Responde en el idioma de la pregunta.",
     "chat_unknown_model": "Modelo desconocido o no permitido para este proyecto.",
     "chat_corpus_empty": "Ninguna sección del corpus corresponde a esta pregunta.",
-    "chat_model_busy": "Este modelo está ocupado con un análisis en curso. Inténtelo de nuevo más tarde."
+    "chat_model_busy": "Este modelo está ocupado con un análisis en curso. Inténtelo de nuevo más tarde.",
+    "search_not_found": "Búsqueda no encontrada.",
+    "chat_scope_empty": "Ninguna sección indexada de esta búsqueda corresponde a esta pregunta.",
+    "chat_system_prompt_scoped": "Eres el asistente documental de Diggypaper. El CONTEXTO proporcionado está limitado a los artículos de la búsqueda elegida (secciones [1]…[n]): nunca aludas al resto del corpus y no afirmes nada que no esté en él. Responde a la pregunta ESTRICTAMENTE a partir del CONTEXTO, citando las secciones usadas en el formato [n] en tu texto. Si el contexto no permite responder, dilo claramente y no inventes nada. Responde en el idioma de la pregunta."
   }
 }

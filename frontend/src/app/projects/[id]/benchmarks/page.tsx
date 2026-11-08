@@ -18,6 +18,8 @@ import { useSearchId, useSearches } from "@/lib/useSearch";
 import { useApiError } from "@/lib/errorMsg";
 import { BenchmarkForm } from "@/components/BenchmarkForm";
 import { BenchmarkRunCard } from "@/components/BenchmarkRunCard";
+import { ComparisonPanel } from "@/components/ComparisonPanel";
+import { AgreementPanel } from "@/components/AgreementPanel";
 import { RequireAuth } from "@/components/RequireAuth";
 import { Button } from "@/components/ui/Button";
 import { Skeleton, ErrorBanner, EmptyState } from "@/components/ui/Feedback";
@@ -27,13 +29,15 @@ function BenchmarksContent() {
   const toError = useApiError();
   const projectId = useParams<{ id: string }>().id;
   const searchId = useSearchId(projectId);
-  const { searches } = useSearches(projectId, searchId);
+  const { searches, current } = useSearches(projectId, searchId);
   const runParam = useSearchParams().get("run"); // deep-link from the analyses list
 
   const [runs, setRuns] = useState<BenchmarkRun[] | null>(null);
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
+  // Concordance scope (spec 2026-11-08): one search selector for both panels.
+  const [concChoice, setConcChoice] = useState<string | null>(null);
 
   const hasActive = (runs ?? []).some((r) => r.status === "PENDING" || r.status === "RUNNING");
 
@@ -112,6 +116,18 @@ function BenchmarksContent() {
   if (error && !runs) return <ErrorBanner message={error} onRetry={() => void load()} />;
   if (!runs || !searches) return <Skeleton rows={3} />;
 
+  // Concordance is posed to a standard search (its analyses); the current one
+  // wins by default, then the first standard. A stored choice that no longer
+  // exists in the list (search deleted in the meantime) falls back instead of
+  // leaving the panels pointed at a dead id.
+  const standard = searches.filter((s) => s.kind === "standard");
+  const concSearchId =
+    concChoice && standard.some((s) => s.id === concChoice)
+      ? concChoice
+      : current && standard.some((s) => s.id === current.id)
+        ? current.id
+        : (standard[0]?.id ?? null);
+
   // Newest first.
   const ordered = [...runs].reverse();
 
@@ -163,6 +179,58 @@ function BenchmarksContent() {
             />
           ))}
         </div>
+      )}
+
+      {/* Concordance (spec 2026-11-08): the analyses page is simplified — this
+          page is the single home for the ad-hoc model comparison and the
+          reviewer agreement, per search. */}
+      {standard.length > 0 && (
+        <section data-testid="bm-concordance" className="flex flex-col gap-3">
+          <div>
+            <h2 className="text-lg font-bold text-foreground">{t("concordance")}</h2>
+            <p className="mt-1 text-sm text-muted">{t("concordanceIntro")}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <label
+              className="text-xs font-medium uppercase tracking-wide text-muted"
+              htmlFor="bm-concordance-search"
+            >
+              {t("concordanceSearch")}
+            </label>
+            <select
+              id="bm-concordance-search"
+              data-testid="bm-concordance-search"
+              value={concSearchId ?? ""}
+              onChange={(e) => setConcChoice(e.target.value)}
+              className="rounded-lg border border-border bg-surface px-2 py-1 text-sm text-foreground focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-focus"
+            >
+              {standard.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          {concSearchId && (
+            <>
+              <div data-testid="bm-comparison">
+                <ComparisonPanel
+                  key={`cmp-${concSearchId}`}
+                  projectId={projectId}
+                  searchId={concSearchId}
+                />
+              </div>
+              <div data-testid="bm-agreement">
+                <AgreementPanel
+                  key={`agr-${concSearchId}`}
+                  projectId={projectId}
+                  searchId={concSearchId}
+                  models={models}
+                />
+              </div>
+            </>
+          )}
+        </section>
       )}
     </div>
   );

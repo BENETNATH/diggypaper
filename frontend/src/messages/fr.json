@@ -610,7 +610,10 @@
     "topOne": "En tête : {model} ({metric})",
     "modelError": "Erreur du modèle",
     "retryErrors": "Relancer les erreurs",
-    "errors": "Erreurs"
+    "errors": "Erreurs",
+    "concordance": "Concordances",
+    "concordanceIntro": "Comparaison ad hoc des analyses IA et accord des relectures, par recherche.",
+    "concordanceSearch": "Recherche"
   },
   "watches": {
     "title": "Veille du corpus",
@@ -1289,6 +1292,9 @@
     "error": "Une erreur est survenue pendant la réponse.",
     "citations": "Sources citées",
     "emptyHistory": "Posez une question pour interroger le corpus.",
-    "untitled": "Article sans titre"
+    "untitled": "Article sans titre",
+    "scope": "Périmètre",
+    "scopeCorpus": "Tout le corpus",
+    "scopeSearch": "Cette recherche"
   }
 }

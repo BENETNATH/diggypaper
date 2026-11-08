@@ -21,7 +21,7 @@ from starlette.responses import StreamingResponse
 
 from app.api.deps import get_current_user, get_db, rate_limit_user
 from app.api.v1.projects import _require_project_member
-from app.db.models import InferenceJob, InferenceJobStatus, User
+from app.db.models import InferenceJob, InferenceJobStatus, Search, SearchArticle, User
 from app.i18n import t
 from app.inference import InferenceError, make_inference_service, stream_with
 from app.model_access import usable_models
@@ -56,6 +56,8 @@ class ChatRequest(BaseModel):
     question: str = Field(min_length=1, max_length=8000)
     model: str = Field(min_length=1, max_length=200)
     history: list[ChatHistoryMsg] = Field(default_factory=list, max_length=2 * HISTORY_MAX_PAIRS)
+    # Optional scope: limit the context to the articles of this search.
+    search_id: uuid.UUID | None = None
 
 
 def _sse(event: str, data) -> str:
@@ -87,10 +89,38 @@ async def chat(
             status_code=400, detail=f"unknown_model — {t(lang, 'chat_unknown_model')}"
         )
     model = models[0]
-    found = await semantic_search(db, project_id, payload.question, limit=CHAT_CONTEXT_SECTIONS)
+    # Optional scope: limit the RANKING to the articles of one search's
+    # frozen lot (pre-filter, not a post-filter on the unscoped top-N — a
+    # small lot would otherwise systematically lose to the corpus ranking).
+    scope_uuids: set[uuid.UUID] | None = None
+    if payload.search_id is not None:
+        search = (
+            (await db.execute(select(Search).where(Search.id == payload.search_id)))
+            .scalars()
+            .first()
+        )
+        if search is None or search.project_id != project_id:
+            raise HTTPException(404, detail=f"search_not_found — {t(lang, 'search_not_found')}")
+        if not search.lot_all:
+            scope_uuids = {
+                row[0]
+                for row in (
+                    await db.execute(
+                        select(SearchArticle.article_id).where(SearchArticle.search_id == search.id)
+                    )
+                ).all()
+            }
+            if not scope_uuids:
+                raise HTTPException(400, detail=f"chat_scope_empty — {t(lang, 'chat_scope_empty')}")
+    found = await semantic_search(
+        db, project_id, payload.question, limit=CHAT_CONTEXT_SECTIONS, article_ids=scope_uuids
+    )
     if not found["results"]:
+        scoped = scope_uuids is not None
         raise HTTPException(
-            status_code=400, detail=f"corpus_empty — {t(lang, 'chat_corpus_empty')}"
+            status_code=400,
+            detail=f"{'chat_scope_empty' if scoped else 'corpus_empty'} — "
+            f"{t(lang, 'chat_scope_empty' if scoped else 'chat_corpus_empty')}",
         )
     busy = (
         await db.execute(
@@ -108,7 +138,7 @@ async def chat(
 
     context_block, included = build_context(found["results"])
     messages = build_chat_messages(
-        t(lang, "chat_system_prompt"),
+        t(lang, "chat_system_prompt_scoped" if scope_uuids is not None else "chat_system_prompt"),
         [m.model_dump() for m in payload.history],
         payload.question,
         context_block,

@@ -6,6 +6,7 @@ fake embedder for the corpus, mocked LLM transport, monkeypatched stream.
 
 import json
 import uuid
+from uuid import uuid4
 
 import httpx
 import pytest
@@ -23,10 +24,14 @@ from app.db.models import (
     Project,
     ProjectMember,
     ProjectMemberRole,
+    Search,
+    SearchArticle,
     User,
     UserRole,
 )
 from app.inference import InferenceError, OpenAICompatibleService
+from app.searches import default_search
+from app.semantic_search import semantic_search
 from app.tasks.vectorize import vectorize_project
 
 # ---------------------------------------------------------------------------
@@ -599,3 +604,224 @@ async def test_chat_project_shared_model_annotator_gate(
     )
     assert resp.status_code == 400
     assert "unknown_model" in resp.text
+
+
+# ---------------------------------------------------------------------------
+# Chat par recherche (spec 2026-11-08-ui-concordance-chat-recherche)
+# ---------------------------------------------------------------------------
+async def _project(session, project_id: str) -> Project:
+    return (
+        (await session.execute(select(Project).where(Project.id == uuid.UUID(project_id))))
+        .scalars()
+        .first()
+    )
+
+
+async def _lot_search(session, project, article_ids, name="Lot test"):
+    """A standard search with a FROZEN lot (lot_all=False)."""
+    s = Search(
+        project_id=project.id,
+        name=name,
+        question="Question du lot ?",
+        fields=[{"key": "ai", "label": "AI", "type": "boolean"}],
+        kind="standard",
+        lot_all=False,
+    )
+    session.add(s)
+    await session.flush()
+    for aid in article_ids:
+        session.add(SearchArticle(search_id=s.id, article_id=aid))
+    await session.commit()
+    await session.refresh(s)
+    return s
+
+
+async def test_chat_scoped_to_search_lot(client, session, researcher_user, do_login, monkeypatch):
+    """search_id → the context is limited to the search's frozen lot."""
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project_id = await _chat_project(session, researcher_user)
+    project = await _project(session, project_id)
+    article = (
+        (
+            await session.execute(
+                select(Article).where(Article.project_id == project.id, Article.pmid == "91")
+            )
+        )
+        .scalars()
+        .first()
+    )
+    lot = await _lot_search(session, project, [article.id])
+    seen = {}
+
+    async def fake_stream(self, model, messages):
+        seen["ctx"] = messages[-1]["content"]
+        yield "[1] cryolésion."
+
+    monkeypatch.setattr(OpenAICompatibleService, "chat_stream", fake_stream)
+
+    status, events = await _read_sse(
+        client, project_id, {"question": "Quoi ?", "model": "Kev-4B", "search_id": str(lot.id)}
+    )
+    assert status == 200
+    # Only the Zebrafish sections (pmid 91) may appear in the context.
+    assert "Zebrafish regeneration" in seen["ctx"]
+    assert "Rat ventricle" not in seen["ctx"]
+    citations = events["citations"][0]
+    assert len(citations) == 1
+    assert citations[0]["n"] == 1
+
+
+async def test_chat_scoped_lot_all_search_unfiltered(
+    client, session, researcher_user, do_login, monkeypatch
+):
+    """A lot_all search (e.g. the default one) covers the whole corpus."""
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project_id = await _chat_project(session, researcher_user)
+    project = await _project(session, project_id)
+    s = await default_search(session, project)
+    assert s.lot_all is True
+
+    async def fake_stream(self, model, messages):
+        yield "[1] x"
+        yield "[2] y"
+
+    monkeypatch.setattr(OpenAICompatibleService, "chat_stream", fake_stream)
+
+    status, events = await _read_sse(
+        client, project_id, {"question": "Quoi ?", "model": "Kev-4B", "search_id": str(s.id)}
+    )
+    assert status == 200
+    assert events["done"][0]["n_citations"] == 2
+
+
+async def test_chat_unknown_search_id_404(client, session, researcher_user, do_login):
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project_id = await _chat_project(session, researcher_user)
+    resp = await client.post(
+        f"/api/v1/projects/{project_id}/chat",
+        json={"question": "Quoi ?", "model": "Kev-4B", "search_id": str(uuid4())},
+    )
+    assert resp.status_code == 404
+    assert "search_not_found" in resp.text
+
+
+async def test_chat_empty_scope_400(client, session, researcher_user, do_login):
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project_id = await _chat_project(session, researcher_user)
+    project = await _project(session, project_id)
+    lot = await _lot_search(session, project, [])
+    resp = await client.post(
+        f"/api/v1/projects/{project_id}/chat",
+        json={"question": "Quoi ?", "model": "Kev-4B", "search_id": str(lot.id)},
+    )
+    assert resp.status_code == 400
+    assert "chat_scope_empty" in resp.text
+
+
+async def test_chat_scoped_small_lot_recall(
+    client, session, researcher_user, do_login, monkeypatch
+):
+    """The scope must filter the RANKING, not only the results (audit finding
+    chat-scope-post-filter-recall): a lot whose sections never reach the
+    whole-corpus top-N must still be answerable from its own sections."""
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project_id = await _chat_project(session, researcher_user)
+    project = await _project(session, project_id)
+    zebrafish = (
+        (
+            await session.execute(
+                select(Article).where(Article.project_id == project.id, Article.pmid == "91")
+            )
+        )
+        .scalars()
+        .first()
+    )
+
+    # Seven noise articles whose sections dominate the whole-corpus ranking
+    # for "cryoinjury" (repeated tokens -> top lexical and dense scores).
+    for i in range(7):
+        session.add(
+            Article(
+                project_id=project.id,
+                title=f"Noise {i}",
+                pmid=str(100 + i),
+                sections=[
+                    {
+                        "title": "Methods",
+                        "kind": "methods",
+                        "text": "cryoinjury cryoinjury cryoinjury cryoinjury regeneration",
+                    }
+                ],
+            )
+        )
+    await session.commit()
+    await vectorize_project(session, project.id)
+
+    # Test invariant: on the whole corpus the lot's sections rank outside
+    # the top-6, so a post-filter on the unscoped top-N would be empty.
+    corpus = await semantic_search(session, project.id, "cryoinjury", limit=6)
+    assert all(r["article"]["id"] != str(zebrafish.id) for r in corpus["results"])
+
+    lot = await _lot_search(session, project, [zebrafish.id])
+
+    async def fake_stream(self, model, messages):
+        yield "[1] cryoinjury."
+        yield "[2] phlda2."
+
+    monkeypatch.setattr(OpenAICompatibleService, "chat_stream", fake_stream)
+
+    status, events = await _read_sse(
+        client,
+        project_id,
+        {"question": "cryoinjury", "model": "Kev-4B", "search_id": str(lot.id)},
+    )
+    assert status == 200
+    citations = events["citations"][0]
+    assert len(citations) == 2
+    assert all(c["title"] == "Zebrafish regeneration" for c in citations)
+
+
+async def test_chat_foreign_project_search_id_404(
+    client, session, researcher_user, do_login, monkeypatch
+):
+    """A search belonging to another project is a 404 (same body as an unknown
+    search — no existence oracle), and the LLM must never run (audit finding
+    idor-branch-not-in-tests)."""
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project_id = await _chat_project(session, researcher_user)
+
+    second = Project(title="Foreign P", created_by=researcher_user.id)
+    session.add(second)
+    await session.flush()
+    session.add(
+        ProjectMember(
+            project_id=second.id,
+            user_id=researcher_user.id,
+            role_in_project=ProjectMemberRole.LEAD,
+        )
+    )
+    foreign_article = Article(
+        project_id=second.id,
+        title="Foreign paper",
+        pmid="77",
+        sections=[{"title": "Methods", "kind": "methods", "text": "nothing to see"}],
+    )
+    session.add(foreign_article)
+    await session.flush()
+    lot = await _lot_search(session, second, [foreign_article.id])
+
+    calls = []
+
+    async def fake_stream(self, model, messages):
+        calls.append(model)
+        yield "[1] x"
+
+    monkeypatch.setattr(OpenAICompatibleService, "chat_stream", fake_stream)
+
+    resp = await client.post(
+        f"/api/v1/projects/{project_id}/chat",
+        json={"question": "Quoi ?", "model": "Kev-4B", "search_id": str(lot.id)},
+    )
+    assert resp.status_code == 404
+    assert "search_not_found" in resp.text
+    assert calls == []
