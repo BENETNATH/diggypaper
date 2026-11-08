@@ -24,7 +24,9 @@ type Props = {
   isLead: boolean;
 };
 
-type Exchange = { role: "user" | "assistant"; content: string };
+type Exchange =
+  | { role: "user"; content: string }
+  | { role: "assistant"; content: string; citations: ChatCitation[] };
 
 type Current = {
   question: string;
@@ -45,6 +47,38 @@ function renderCited(text: string) {
     ) : (
       <span key={i}>{part}</span>
     )
+  );
+}
+
+/** The « Sources citées » block under an answer (streaming or committed). */
+function CitationsList({
+  citations,
+  projectId,
+  searchId,
+}: {
+  citations: ChatCitation[];
+  projectId: string;
+  searchId: string | undefined;
+}) {
+  const t = useTranslations("chatRag");
+  if (citations.length === 0) return null;
+  return (
+    <div data-testid="chat-citations" className="mt-2">
+      <p className="text-xs font-medium uppercase tracking-wide text-muted">{t("citations")}</p>
+      <ul className="mt-1 flex flex-col gap-1">
+        {citations.map((c) => (
+          <li key={c.n} className="rounded-lg border border-border bg-surface p-2 text-sm">
+            <Link
+              href={withSearch(`/projects/${projectId}/annotate?article=${c.article_id}`, searchId)}
+              className="font-medium text-primary hover:underline"
+            >
+              [{c.n}] {c.title || t("untitled")}
+            </Link>
+            <p className="mt-1 line-clamp-2 text-muted">{c.excerpt}</p>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -98,11 +132,13 @@ export function ChatRagPanel({ projectId, models, isLead }: Props) {
     return () => abortRef.current?.abort();
   }, []);
 
-  function commitExchange(q: string, done: { full_text: string }) {
+  function commitExchange(q: string, done: { full_text: string }, citations: ChatCitation[]) {
     setHistory((h) =>
-      [...h, { role: "user" as const, content: q }, { role: "assistant" as const, content: done.full_text }].slice(
-        -HISTORY_MAX
-      )
+      [
+        ...h,
+        { role: "user" as const, content: q },
+        { role: "assistant" as const, content: done.full_text, citations },
+      ].slice(-HISTORY_MAX)
     );
   }
 
@@ -112,19 +148,26 @@ export function ChatRagPanel({ projectId, models, isLead }: Props) {
     setBusy(true);
     setElapsed(0);
     setError(null);
+    let citations: ChatCitation[] = [];
     setCurrent({ question: q, answer: "", citations: [], streaming: true });
     const abort = new AbortController();
     abortRef.current = abort;
-    const sent = history.slice(-HISTORY_MAX);
+    // The API history is role/content only (citations are display-only).
+    const sent = history.slice(-HISTORY_MAX).map((m) => ({ role: m.role, content: m.content }));
     try {
       await streamChat(
         projectId,
         { question: q, model: effectiveModel, history: sent },
         (chunk) => setCurrent((c) => (c ? { ...c, answer: c.answer + chunk } : c)),
-        (citations) => setCurrent((c) => (c ? { ...c, citations } : c)),
+        (c) => {
+          citations = c;
+          setCurrent((cur) => (cur ? { ...cur, citations: c } : cur));
+        },
         (done) => {
-          setCurrent((c) => (c ? { ...c, streaming: false } : c));
-          commitExchange(q, done);
+          // Commit the finished exchange to the history and clear the
+          // streaming bubble — the answer renders exactly once.
+          commitExchange(q, done, citations);
+          setCurrent(null);
         },
         (detail) => {
           setCurrent((c) => (c ? { ...c, streaming: false } : c));
@@ -237,6 +280,9 @@ export function ChatRagPanel({ projectId, models, isLead }: Props) {
             >
               {m.role === "user" ? m.content : renderCited(m.content)}
             </div>
+            {m.role === "assistant" && (
+              <CitationsList citations={m.citations} projectId={projectId} searchId={searchId} />
+            )}
           </li>
         ))}
         {current && (
@@ -260,23 +306,8 @@ export function ChatRagPanel({ projectId, models, isLead }: Props) {
                 {t("thinking")} {elapsed}s
               </p>
             )}
-            {!current.streaming && current.citations.length > 0 && (
-              <div data-testid="chat-citations" className="mt-2">
-                <p className="text-xs font-medium uppercase tracking-wide text-muted">{t("citations")}</p>
-                <ul className="mt-1 flex flex-col gap-1">
-                  {current.citations.map((c) => (
-                    <li key={c.n} className="rounded-lg border border-border bg-surface p-2 text-sm">
-                      <Link
-                        href={withSearch(`/projects/${projectId}/annotate?article=${c.article_id}`, searchId)}
-                        className="font-medium text-primary hover:underline"
-                      >
-                        [{c.n}] {c.title || t("untitled")}
-                      </Link>
-                      <p className="mt-1 line-clamp-2 text-muted">{c.excerpt}</p>
-                    </li>
-                  ))}
-                </ul>
-              </div>
+            {!current.streaming && (
+              <CitationsList citations={current.citations} projectId={projectId} searchId={searchId} />
             )}
           </li>
         )}

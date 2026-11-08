@@ -968,7 +968,8 @@ class Watch(Base):
     search: Mapped["Search"] = relationship(back_populates="watches")
 
 
-#: RAG: embedding dimension of the default local model (all-MiniLM-L6-v2, 384-dim).
+#: RAG: embedding dimension of the default local model
+#: (paraphrase-multilingual-MiniLM-L12-v2, 384-dim).
 #: Changing the embedding model to a different dimension requires a new migration.
 EMBEDDING_DIM = 384
 
@@ -983,7 +984,13 @@ class SectionEmbedding(Base):
     """
 
     __tablename__ = "section_embeddings"
-    __table_args__ = (Index("ix_section_embeddings_article_id", "article_id"),)
+    __table_args__ = (
+        Index("ix_section_embeddings_article_id", "article_id"),
+        # One vector per (article, section): the DB guard that makes
+        # vectorize_project concurrency-safe (a raced run must not create
+        # duplicate rows the RRF search would then double-count).
+        UniqueConstraint("article_id", "section_index", name="uq_section_embeddings_article_idx"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, **_uuid_pk())
     article_id: Mapped[uuid.UUID] = mapped_column(

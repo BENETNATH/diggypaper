@@ -244,3 +244,25 @@ async def test_vectorize_trigger_outsider_403(
     await do_login("outsider@lab.fr", "outsider-pass-123", consent=True)
     r = await client.post(f"/api/v1/projects/{project.id}/vectorize")
     assert r.status_code == 403, r.text
+
+
+async def test_query_uses_stored_embedding_model(session, search_project, monkeypatch):
+    """The query must be embedded with the model the project's rows were
+    embedded with — even if the process cache holds a different model (a model
+    switch must never mix embedding spaces in the same search)."""
+    import app.semantic_search as ss
+    from app import embeddings as emb_mod
+
+    project, _, _, _ = search_project
+    await vectorize_project(session, project.id)  # rows carry "fake-bow-v1"
+    cached_other = FakeEmbedder(name="other-model-v9")
+    emb_mod._embedder = cached_other  # the process cache holds another model
+    requested: list[str | None] = []
+
+    def spy(name=None):
+        requested.append(name)
+        return emb_mod._embedder
+
+    monkeypatch.setattr(emb_mod, "get_embedder", spy)
+    await ss.semantic_search(session, project.id, "cryoinjury zebrafish")
+    assert requested == ["fake-bow-v1"]

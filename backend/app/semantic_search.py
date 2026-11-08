@@ -13,7 +13,7 @@ import re
 import uuid
 from collections import Counter
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import embeddings
@@ -90,7 +90,18 @@ async def _dense_topk(
                 .limit(k)
             )
         ).all()
-        return [(se.article_id, se.section_index, 1.0 - float(dist)) for se, dist in rows]
+        # Defensive: a legacy row duplicated by a pre-constraint race would
+        # otherwise be returned twice (RRF would double-count it). Keep the
+        # nearest vector of each (article, section).
+        seen: set[tuple[uuid.UUID, int]] = set()
+        out: list[tuple[uuid.UUID, int, float]] = []
+        for se, dist in rows:
+            key = (se.article_id, se.section_index)
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append((se.article_id, se.section_index, 1.0 - float(dist)))
+        return out
     sections = await _project_sections(db, project_id)
     vectors = {
         (se.article_id, se.section_index): _as_list(se.embedding)
@@ -161,6 +172,24 @@ def _excerpt(text: str, query_tokens: list[str]) -> str:
     return text[start : start + _EXCERPT_LEN]
 
 
+async def _stored_embedding_model(db: AsyncSession, project_id: uuid.UUID) -> str | None:
+    """The model the project's vectors were produced with (None when the corpus
+    is empty). The query must be embedded in that same space — a model change
+    must never mix vectors from different spaces in one search. During a
+    model-change re-vectorization the table is transiently mixed; the majority
+    model wins until the rerun completes."""
+    row = (
+        await db.execute(
+            select(SectionEmbedding.embedding_model, func.count())
+            .join(Article, Article.id == SectionEmbedding.article_id)
+            .where(Article.project_id == project_id)
+            .group_by(SectionEmbedding.embedding_model)
+            .order_by(func.count().desc())
+        )
+    ).first()
+    return row[0] if row else None
+
+
 async def semantic_search(
     db: AsyncSession, project_id: uuid.UUID, query: str, limit: int = DEFAULT_LIMIT
 ) -> dict:
@@ -187,7 +216,7 @@ async def semantic_search(
     if not sections or not query_tokens:
         return {"results": [], "indexed": indexed}
 
-    q_vec = embeddings.get_embedder().embed(query)
+    q_vec = embeddings.get_embedder(await _stored_embedding_model(db, project_id)).embed(query)
     k = min(limit * _CANDIDATE_FACTOR, MAX_LIMIT)
     dense = await _dense_topk(db, project_id, q_vec, k)
     lexical = _lexical_rank(sections, query_tokens)

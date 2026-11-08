@@ -4,9 +4,13 @@ Souverain par construction : le modèle d'embedding est local (CPU) et chargé
 **paresseusement** — à la première vectorisation, pas au démarrage de l'API ni
 du worker (torch n'est payé qu'une fois, et seulement si on s'en sert).
 
-Le nom de modèle est un paramètre système (``embedding_model``) ; le défaut est
-``all-MiniLM-L6-v2`` (384-dim). Un changement de modèle invalide les vecteurs
-existants (re-vectorisation, cf. ``app.tasks.vectorize``).
+Le nom de modèle est lu du paramètre système ``embedding_model`` s'il existe
+(valeur de base de données uniquement : la clé n'est pas dans ``KNOWN_KEYS``,
+aucun endpoint ne peut la fixer), sinon le défaut du code est
+``paraphrase-multilingual-MiniLM-L12-v2`` (384-dim, multilingue ~50 langues) :
+les questions peuvent être posées dans n'importe quelle langue du corpus, pas
+seulement l'anglais. Un changement de modèle invalide les vecteurs existants
+(re-vectorisation, cf. ``app.tasks.vectorize``).
 """
 
 from __future__ import annotations
@@ -15,8 +19,8 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-#: Default local embedding model (384-dim, ~22 M params, CPU-friendly).
-DEFAULT_EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+#: Default local embedding model (384-dim, multilingual, CPU-friendly).
+DEFAULT_EMBEDDING_MODEL = "paraphrase-multilingual-MiniLM-L12-v2"
 
 #: The live embedder, or ``None`` until first use. Tests replace this with a
 #: fake (no model download in the suite).

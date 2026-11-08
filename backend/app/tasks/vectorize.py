@@ -26,6 +26,18 @@ from app.tasks import _make_session_factory, _session_factory_override
 logger = logging.getLogger(__name__)
 
 
+def _upsert_dialect(dialect_name: str):
+    """The dialect-specific INSERT for the upsert of pass 2.
+
+    PostgreSQL and SQLite both support ``ON CONFLICT DO UPDATE`` on the
+    ``uq_section_embeddings_article_idx`` unique constraint; the insert
+    constructors are dialect-specific in SQLAlchemy."""
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+    from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+
+    return pg_insert if dialect_name == "postgresql" else sqlite_insert
+
+
 def _units(article: Article) -> list[tuple[int, str | None, str]]:
     """The embeddable units of an article: its sections (original indices), or
     a synthetic ``Abstract`` unit when there is none, or none at all."""
@@ -72,41 +84,59 @@ async def vectorize_project(
         live: dict[int, str] = {
             idx: hashlib.sha256(text.encode("utf-8")).hexdigest() for idx, _, text in units
         }
-        existing = {
-            e.section_index: e
-            for e in (
-                await db.execute(
-                    select(SectionEmbedding).where(SectionEmbedding.article_id == article.id)
-                )
-            ).scalars()
-        }
+        existing_by_idx: dict[int, list[SectionEmbedding]] = {}
+        for e in (
+            await db.execute(
+                select(SectionEmbedding).where(SectionEmbedding.article_id == article.id)
+            )
+        ).scalars():
+            existing_by_idx.setdefault(e.section_index, []).append(e)
         for idx, title, text in units:
             digest = live[idx]
-            row = existing.get(idx)
-            if row is not None and row.content_hash == digest and row.embedding_model == model_name:
-                continue  # idempotent — same text, same model
-            if row is not None:
-                await db.delete(row)  # replaced text or model change
+            rows = existing_by_idx.get(idx, [])
+            # Idempotent skip: exactly one row, same text, same model.
+            if len(rows) == 1 and rows[0].content_hash == digest and rows[0].embedding_model == model_name:
+                continue
+            # Replaced text, model change — or duplicate rows left by a
+            # raced concurrent run: drop them all, the upsert below re-adds
+            # exactly one (convergence).
+            for row in rows:
+                await db.delete(row)
             pending.append((article, idx, title, text, digest))
-        for idx, row in existing.items():
+        for idx, rows in existing_by_idx.items():
             if idx not in live:
-                await db.delete(row)  # section vanished
+                for row in rows:  # section vanished (deleted / replaced text)
+                    await db.delete(row)
 
     # Pass 2: embed in one batch (32/appel dans le vrai modèle), then upsert.
+    # The upsert (ON CONFLICT DO UPDATE) is the concurrency guard: if a second
+    # run inserted the same (article, section_index) between our delete and
+    # insert, we update that row instead of crashing on the unique constraint.
     vectorized = 0
     if pending:
         vectors = emb.embed_batch([text for _, _, _, text, _ in pending])
+        dialect = db.bind.dialect.name if db.bind is not None else "sqlite"
+        insert = _upsert_dialect(dialect)
         for (article, idx, title, _, digest), vec in zip(pending, vectors, strict=True):
-            db.add(
-                SectionEmbedding(
-                    article_id=article.id,
-                    section_index=idx,
-                    section_title=title,
-                    content_hash=digest,
-                    embedding=vec,
-                    embedding_model=model_name,
-                )
+            stmt = insert(SectionEmbedding).values(
+                id=uuid.uuid4(),
+                article_id=article.id,
+                section_index=idx,
+                section_title=title,
+                content_hash=digest,
+                embedding=vec,
+                embedding_model=model_name,
             )
+            stmt = stmt.on_conflict_do_update(
+                index_elements=["article_id", "section_index"],
+                set_={
+                    "section_title": title,
+                    "content_hash": digest,
+                    "embedding": vec,
+                    "embedding_model": model_name,
+                },
+            )
+            await db.execute(stmt)
             vectorized += 1
     await db.commit()
     return {"vectorized": vectorized, "articles": len(articles)}

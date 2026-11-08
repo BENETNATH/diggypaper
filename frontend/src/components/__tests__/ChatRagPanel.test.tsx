@@ -96,7 +96,7 @@ test("sends the question with the default Ollama model and an empty history", as
     expect.any(Function),
     expect.any(AbortSignal)
   );
-  const answer = await screen.findByTestId("chat-current-answer");
+  const answer = await screen.findByTestId("chat-assistant-turn");
   expect(answer.textContent).toBe("D'après [1] la cryo.");
 });
 
@@ -107,7 +107,7 @@ test("highlights [n] markers and lists the cited sources under the answer", asyn
   });
   renderPanel();
   await submit("Quoi ?");
-  const answer = await screen.findByTestId("chat-current-answer");
+  const answer = await screen.findByTestId("chat-assistant-turn");
   const mark = answer.querySelector("mark");
   expect(mark?.textContent).toBe("[1]");
   const cites = await screen.findByTestId("chat-citations");
@@ -147,7 +147,7 @@ test("clearing the conversation resets the state and sends a follow-up with hist
   mockStream({ tokens: ["r1 [1]"] });
   renderPanel();
   await submit("q1");
-  await screen.findByTestId("chat-current-answer");
+  await screen.findByTestId("chat-assistant-turn");
 
   streamChat.mockClear();
   mockStream({ tokens: ["r2"] });
@@ -163,4 +163,23 @@ test("clearing the conversation resets the state and sends a follow-up with hist
   fireEvent.click(screen.getByText("clear"));
   await waitFor(() => expect(screen.queryByTestId("chat-empty")).toBeTruthy());
   expect(screen.queryByTestId("chat-current-answer")).toBeNull();
+});
+
+test("a completed exchange renders exactly once — the streaming bubble is cleared", async () => {
+  mockStream({
+    tokens: ["r1 [1]"],
+    citations: [{ n: 1, article_id: "a1", title: "Zebrafish cryo", excerpt: "Cryoinjury." }],
+  });
+  renderPanel();
+  await submit("q1");
+  await screen.findByTestId("chat-assistant-turn");
+  // The finished exchange lives in the history only: one user turn, one
+  // assistant turn, no leftover streaming bubble (the bug showed the last
+  // question + answer twice).
+  expect(screen.getAllByTestId("chat-user-turn")).toHaveLength(1);
+  expect(screen.getAllByTestId("chat-assistant-turn")).toHaveLength(1);
+  expect(screen.queryByTestId("chat-current-answer")).toBeNull();
+  // The citations travel with the committed answer.
+  const cites = await screen.findByTestId("chat-citations");
+  expect(cites.textContent).toContain("Zebrafish cryo");
 });
