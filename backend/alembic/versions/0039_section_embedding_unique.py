@@ -10,7 +10,9 @@ Guard against duplicate vectors per section: a concurrent vectorize run (manual
 vectorize_project relies on this constraint; legacy duplicates are purged in
 the same transaction before it is created.
 """
+
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = "0039"

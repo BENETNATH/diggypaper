@@ -95,7 +95,11 @@ async def vectorize_project(
             digest = live[idx]
             rows = existing_by_idx.get(idx, [])
             # Idempotent skip: exactly one row, same text, same model.
-            if len(rows) == 1 and rows[0].content_hash == digest and rows[0].embedding_model == model_name:
+            if (
+                len(rows) == 1
+                and rows[0].content_hash == digest
+                and rows[0].embedding_model == model_name
+            ):
                 continue
             # Replaced text, model change — or duplicate rows left by a
             # raced concurrent run: drop them all, the upsert below re-adds
