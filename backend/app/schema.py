@@ -41,7 +41,10 @@ def check_fields(fields: list[dict]) -> list[dict]:
     out = []
     for f in fields:
         key = str(f.get("key", ""))
-        if not _KEY_RE.match(key) or key in STANDARD_KEYS:
+        if not _KEY_RE.match(key) or key in STANDARD_KEYS or key.startswith("watch_q_"):
+            # "watch_q_" is reserved: the watch engine injects free-question
+            # answers under watch_q_<index> — a field with the same key would
+            # make the decision ambiguous.
             raise ValueError(f"invalid field key: {key!r}")
         if key in seen:
             raise ValueError(f"duplicate field key: {key}")

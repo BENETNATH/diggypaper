@@ -947,8 +947,14 @@ class Watch(Base):
     )  # pubmed | europepmc | openalex | hal
     query: Mapped[str] = mapped_column(Text, nullable=False)  # the unbounded query
     date_from: Mapped[date | None] = mapped_column(Date)
-    match_threshold: Mapped[float | None] = mapped_column(Float)  # None = project default
+    match_threshold: Mapped[float | None] = mapped_column(
+        Float
+    )  # None = project default (legacy watches only)
     notify_all: Mapped[bool] = mapped_column(Boolean, server_default=text("false"), default=False)
+    # Configurable alert criteria (spec 2026-11-08-criteres-veille). None =
+    # legacy rule (primary field positive OR confidence >= match_threshold).
+    criteria: Mapped[list | None] = mapped_column(JSONB)
+    combine: Mapped[str | None] = mapped_column(String)  # "AND" (default) | "OR"
     last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_matched: Mapped[dict | None] = mapped_column(JSONB)
     inference_job_id: Mapped[uuid.UUID | None] = mapped_column(

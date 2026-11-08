@@ -56,6 +56,8 @@ const WATCH: api.Watch = {
   search: { id: "s1", name: "Recherche principale" },
   match_threshold: null,
   notify_all: false,
+  criteria: null,
+  combine: null,
   last_run_at: "2026-11-06T08:00:00Z",
   last_matched: {
     run_at: "2026-11-06T08:00:00Z",
@@ -105,6 +107,20 @@ describe("watches page", () => {
     expect(screen.getByText("P1")).toBeInTheDocument();
   });
 
+  it("shows the criteria summary on a criteria-based watch", async () => {
+    await renderWith([
+      {
+        ...WATCH,
+        criteria: [
+          { kind: "field", field_key: "ai", expected: true, conf_min: 0.7 },
+          { kind: "free", question: "In vivo ?", expected: true },
+        ],
+        combine: "OR",
+      },
+    ]);
+    expect(screen.getByText("2 criteria · OR")).toBeInTheDocument();
+  });
+
   it("runs a pass on demand", async () => {
     await renderWith([WATCH]);
     fireEvent.click(screen.getByRole("button", { name: "runNow" }));
@@ -149,18 +165,20 @@ describe("watches create form", () => {
         source: "pubmed",
         query: "rat phenotype",
         date_from: null,
-        match_threshold: null,
         notify_all: false,
+        criteria: null,
+        combine: null,
       })
     );
   });
 
-  it("sends the threshold and notify-all flags when filled", async () => {
+  it("sends the alert criteria and the combine mode when built", async () => {
     await renderWith([]);
     fireEvent.click(screen.getByRole("button", { name: "new" }));
     const query = await screen.findByRole("textbox", { name: /query/ });
     fireEvent.change(query, { target: { value: "q" } });
-    fireEvent.change(screen.getByRole("spinbutton", { name: /threshold/ }), {
+    fireEvent.click(screen.getByRole("button", { name: "criteriaAdd" }));
+    fireEvent.change(screen.getByRole("spinbutton", { name: /critConfMin/ }), {
       target: { value: "0.7" },
     });
     fireEvent.click(screen.getByRole("checkbox", { name: "notifyAll" }));
@@ -171,8 +189,9 @@ describe("watches create form", () => {
         source: "pubmed",
         query: "q",
         date_from: null,
-        match_threshold: 0.7,
         notify_all: true,
+        criteria: [{ kind: "field", field_key: "ai", expected: true, conf_min: 0.7 }],
+        combine: "AND",
       })
     );
   });

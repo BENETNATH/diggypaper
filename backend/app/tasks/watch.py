@@ -112,6 +112,77 @@ def _threshold(watch: Watch) -> float:
     return watch.match_threshold if watch.match_threshold is not None else RELEVANT_AT
 
 
+# --- Configurable criteria match engine (spec 2026-11-08-criteres-veille) ----
+
+
+def criterion_key(criterion: dict, index: int) -> str:
+    """Decision key of a criterion: its field for ``kind="field"``, the stable
+    ``watch_q_<index>`` (index of the criterion in the criteria list) for a
+    free question."""
+    if criterion.get("kind") == "free":
+        return f"watch_q_{index}"
+    return criterion["field_key"]
+
+
+def criterion_met(decision: dict | None, criterion: dict, key: str, pass_keys: set[str]) -> bool:
+    """Does the article decision satisfy one criterion?
+
+    Snapshot guard: the key must be a field of the pass (``pass_keys``) — a
+    field removed from the search since the pass was launched never matches,
+    never raises. The answer must equal ``expected`` (strict bool for boolean
+    fields, case-insensitive for choice), and the article confidence must fall
+    inside the optional [conf_min, conf_max] window (a bound set with no
+    confidence is not satisfied).
+    """
+    if decision is None or key not in pass_keys or key not in decision:
+        return False
+    value = decision[key]
+    if isinstance(criterion.get("expected"), bool):
+        # Boolean criterion (field of type boolean, or free question):
+        # strict bool equality — a string "yes" never satisfies it.
+        if not (isinstance(value, bool) and value == criterion["expected"]):
+            return False
+    else:
+        # Choice field: case-insensitive equality with the expected option.
+        if str(value).strip().lower() != str(criterion["expected"]).strip().lower():
+            return False
+    conf = confidence(decision.get("confidence_score"))
+    if criterion.get("conf_min") is not None and (conf is None or conf < criterion["conf_min"]):
+        return False
+    if criterion.get("conf_max") is not None and (conf is None or conf > criterion["conf_max"]):
+        return False
+    return True
+
+
+def watch_matches(
+    criteria: list[dict] | None,
+    combine: str | None,
+    decision: dict | None,
+    pass_fields: list[dict] | None,
+    legacy_threshold: float,
+    primary: dict | None,
+) -> bool:
+    """Match rule of a watch: with criteria, all (AND) or one (OR) of them is
+    satisfied; without (None/empty) the legacy rule — unchanged."""
+    if not criteria:
+        return article_matches(decision, primary, legacy_threshold)
+    pass_keys = {f["key"] for f in pass_fields or []}
+    met = [
+        criterion_met(decision, c, criterion_key(c, i), pass_keys) for i, c in enumerate(criteria)
+    ]
+    return any(met) if combine == "OR" else all(met)
+
+
+def free_question_fields(criteria: list[dict] | None) -> list[dict]:
+    """Pass-search fields of the watch's free questions: one boolean field
+    ``watch_q_<i>`` per free criterion, in list order (stable index)."""
+    return [
+        {"key": f"watch_q_{i}", "type": "boolean", "label": c.get("question", "")}
+        for i, c in enumerate(criteria or [])
+        if c.get("kind") == "free"
+    ]
+
+
 # --- Import of the fresh ids (reuses _insert_article) -----------------------
 
 
@@ -216,7 +287,9 @@ async def _launch_pass_inference(
         project_id=project.id,
         name=f"Veille {watch.source} {datetime.now(UTC).strftime('%Y-%m-%d %H:%M')}",
         question=search.question,
-        fields=search.fields,
+        # The watch's free questions ride along as boolean pass fields
+        # (spec 2026-11-08-criteres-veille); the search fields are untouched.
+        fields=[*(search.fields or []), *free_question_fields(watch.criteria)],
         text_sections=search.text_sections,
         read_windows=search.read_windows,
         kind="standard",
@@ -435,19 +508,30 @@ async def evaluate_watch_matches(
             ).scalars()
         )
         decisions = await _decisions_for(db, lot, job.search_id, search)
+        pass_fields = search.fields if search else None
+        pass_keys = {f["key"] for f in pass_fields or []}
+        criteria = watch.criteria
+        combine = watch.combine
         matched: list[dict] = []
         for aid in lot:
             d = decisions.get(aid)
-            if article_matches(d, primary, threshold):
+            if watch_matches(criteria, combine, d, pass_fields, threshold, primary):
                 art = await db.get(Article, aid)
                 if art is None:
                     continue
+                # The satisfied criteria (indices, stable) for the e-mail labels.
+                met_idx = [
+                    i
+                    for i, c in enumerate(criteria or [])
+                    if criterion_met(d, c, criterion_key(c, i), pass_keys)
+                ]
                 matched.append(
                     {
                         "article_id": str(aid),
                         "title": art.title,
                         "pmid": art.pmid,
                         "confidence": confidence((d or {}).get("confidence_score")),
+                        "criteria": met_idx,
                     }
                 )
         watch.last_matched = {
@@ -498,6 +582,43 @@ async def _decisions_for(
     return out
 
 
+def _criterion_interval(criterion: dict) -> str:
+    """Compact confidence window of a criterion: ``0.7–1``, ``0.7–``, ``–0.9`` or ``""``."""
+    lo, hi = criterion.get("conf_min"), criterion.get("conf_max")
+    if lo is not None and hi is not None:
+        return f"{lo:g}–{hi:g}"
+    if lo is not None:
+        return f"{lo:g}–"
+    if hi is not None:
+        return f"–{hi:g}"
+    return ""
+
+
+def _criterion_label(criterion: dict, index: int, pass_fields: list[dict] | None, lang: str) -> str:
+    """Compact i18n label of a criterion for the e-mail and the UI card."""
+    expected = criterion.get("expected")
+    if expected is True:
+        ans = t(lang, "watch_yes")
+    elif expected is False:
+        ans = t(lang, "watch_no")
+    else:
+        ans = str(expected)
+    iv = _criterion_interval(criterion)
+    if criterion.get("kind") == "free":
+        label = t(lang, "watch_crit_free", question=criterion.get("question", ""), expected=ans)
+    else:
+        field = next(
+            (f for f in pass_fields or [] if f.get("key") == criterion.get("field_key")), None
+        )
+        label = t(
+            lang,
+            "watch_crit_field",
+            label=(field.get("label") if field else None) or str(criterion.get("field_key", "")),
+            expected=ans,
+        )
+    return f"{label} [{iv}]" if iv else label
+
+
 async def _watch_email(
     db: AsyncSession,
     watch: Watch,
@@ -521,9 +642,15 @@ async def _watch_email(
     imported = (watch.last_matched or {}).get("imported", len(matched))
     if matched:
         lines = []
+        criteria = watch.criteria
+        pass_fields = search.fields if search else None
         for m in matched:
             conf = f" ({m['confidence']:.2f})" if m.get("confidence") is not None else ""
             lines.append(f"- {m.get('title') or m['article_id']} [{m.get('pmid') or ''}]{conf}")
+            # Met criteria, one compact label per line (criteria-based watches).
+            for i in m.get("criteria") or []:
+                label = _criterion_label(criteria[i], i, pass_fields, lang)
+                lines.append(f"    — {label}")
         subject = t(lang, "watch_alert_subject", m=str(len(matched)), search_name=name)
         body = t(
             lang,

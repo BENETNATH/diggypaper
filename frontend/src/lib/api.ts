@@ -1647,6 +1647,16 @@ export const deleteSearch = (projectId: string, searchId: string): Promise<void>
 
 // --- Watches (corpus watch / veille) -----------------------------------------
 
+/** One alert criterion (spec 2026-11-08-criteres-veille). */
+export interface WatchCriterion {
+  kind: "field" | "free";
+  field_key?: string;
+  question?: string;
+  expected: boolean | string;
+  conf_min?: number | null;
+  conf_max?: number | null;
+}
+
 /** Snapshot of the last pass: `{run_at, found, imported, new, matched, matched_ids}`. */
 export interface Watch {
   id: string;
@@ -1655,8 +1665,10 @@ export interface Watch {
   query: string;
   date_from: string | null;
   search: { id: string; name: string } | null;
-  match_threshold: number | null;
+  match_threshold: number | null; // legacy watches only (criteria is null)
   notify_all: boolean;
+  criteria: WatchCriterion[] | null;
+  combine: "AND" | "OR" | null;
   last_run_at: string | null;
   last_matched: {
     run_at?: string | null;
@@ -1679,14 +1691,16 @@ export interface WatchCreate {
   query: string;
   search_id: string;
   date_from?: string | null;
-  match_threshold?: number | null;
   notify_all?: boolean;
+  criteria?: WatchCriterion[] | null;
+  combine?: "AND" | "OR" | null;
 }
 
 export interface WatchUpdate {
   status?: "ACTIVE" | "PAUSED";
-  match_threshold?: number | null;
   notify_all?: boolean;
+  criteria?: WatchCriterion[] | null;
+  combine?: "AND" | "OR" | null;
 }
 
 export const listWatches = async (projectId: string): Promise<Watch[]> =>

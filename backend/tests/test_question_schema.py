@@ -17,6 +17,7 @@ def test_check_fields_rejects_bad_input():
         [],
         [{"key": "Bad Key", "type": "text"}],
         [{"key": "confidence_score", "type": "text"}],
+        [{"key": "watch_q_0", "type": "boolean"}],
         [{"key": "a", "type": "choice", "options": ["x"]}],
         [{"key": "a", "type": "text"}, {"key": "a", "type": "text"}],
     ):

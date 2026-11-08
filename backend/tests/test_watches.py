@@ -7,7 +7,7 @@ launcher; the import unit (_insert_article) is exercised for real.
 import uuid
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from app.db.models import (
     Article,
@@ -217,6 +217,8 @@ async def test_pause_and_resume_watch(client, watch_project):
 
 
 async def test_update_threshold_and_notify_all(client, watch_project):
+    """match_threshold is no longer writable (legacy-only) — ignored without error;
+    notify_all still updates."""
     project, search, _ = watch_project
     wid = (
         await client.post(
@@ -228,7 +230,9 @@ async def test_update_threshold_and_notify_all(client, watch_project):
         f"/api/v1/projects/{project.id}/watches/{wid}",
         json={"match_threshold": 0.7, "notify_all": True},
     )
-    assert r.json()["match_threshold"] == 0.7 and r.json()["notify_all"] is True
+    assert r.status_code == 200, r.text
+    assert r.json()["match_threshold"] is None  # ignored, not stored
+    assert r.json()["notify_all"] is True
 
 
 async def test_delete_watch_204_and_404(client, watch_project):
@@ -241,6 +245,277 @@ async def test_delete_watch_204_and_404(client, watch_project):
     ).json()["id"]
     assert (await client.delete(f"/api/v1/projects/{project.id}/watches/{wid}")).status_code == 204
     assert (await client.delete(f"/api/v1/projects/{project.id}/watches/{wid}")).status_code == 404
+
+
+# --- Criteria validation (spec 2026-11-08-criteres-veille) -------------------
+
+FIELDS_RICH = [
+    {"key": "ai", "label": "Uses AI", "type": "boolean"},
+    {"key": "design", "label": "Design", "type": "choice", "options": ["In vivo", "In vitro"]},
+    {"key": "notes", "label": "Notes", "type": "text"},
+]
+
+
+async def _rich_search(session, project) -> Search:
+    """A search with boolean + choice + text fields (criteria targets)."""
+    s = Search(
+        project_id=project.id, name="Rich", question="Q ?", fields=FIELDS_RICH, kind="standard"
+    )
+    session.add(s)
+    await session.commit()
+    await session.refresh(s)
+    return s
+
+
+async def test_create_watch_with_criteria_201(client, session, watch_project):
+    project, search, _ = watch_project
+    s = await _rich_search(session, project)
+    criteria = [
+        {"kind": "field", "field_key": "ai", "expected": True, "conf_min": 0.7},
+        {"kind": "free", "question": "Est-ce in vivo ?", "expected": True, "conf_max": 0.9},
+    ]
+    r = await client.post(
+        f"/api/v1/projects/{project.id}/watches",
+        json={
+            "source": "pubmed",
+            "query": "q",
+            "search_id": str(s.id),
+            "combine": "OR",
+            "criteria": criteria,
+        },
+    )
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert body["criteria"] == criteria
+    assert body["combine"] == "OR"
+    # GET list returns the same
+    items = (await client.get(f"/api/v1/projects/{project.id}/watches")).json()["items"]
+    assert items[0]["criteria"] == criteria and items[0]["combine"] == "OR"
+
+
+async def test_create_watch_unknown_field_key_422(client, session, watch_project):
+    project, search, _ = watch_project
+    s = await _rich_search(session, project)
+    r = await client.post(
+        f"/api/v1/projects/{project.id}/watches",
+        json={
+            "source": "pubmed",
+            "query": "q",
+            "search_id": str(s.id),
+            "criteria": [{"kind": "field", "field_key": "nope", "expected": True}],
+        },
+    )
+    assert r.status_code == 422, r.text
+
+
+async def test_create_watch_text_field_422(client, session, watch_project):
+    """Text fields are not eligible for criteria (unreliable matching)."""
+    project, search, _ = watch_project
+    s = await _rich_search(session, project)
+    r = await client.post(
+        f"/api/v1/projects/{project.id}/watches",
+        json={
+            "source": "pubmed",
+            "query": "q",
+            "search_id": str(s.id),
+            "criteria": [{"kind": "field", "field_key": "notes", "expected": "x"}],
+        },
+    )
+    assert r.status_code == 422, r.text
+
+
+async def test_create_watch_expected_incoherent_422(client, session, watch_project):
+    project, search, _ = watch_project
+    s = await _rich_search(session, project)
+    # a string on a boolean field
+    r = await client.post(
+        f"/api/v1/projects/{project.id}/watches",
+        json={
+            "source": "pubmed",
+            "query": "q",
+            "search_id": str(s.id),
+            "criteria": [{"kind": "field", "field_key": "ai", "expected": "oui"}],
+        },
+    )
+    assert r.status_code == 422, r.text
+    # a choice answer not in the options
+    r = await client.post(
+        f"/api/v1/projects/{project.id}/watches",
+        json={
+            "source": "pubmed",
+            "query": "q",
+            "search_id": str(s.id),
+            "criteria": [{"kind": "field", "field_key": "design", "expected": "In silico"}],
+        },
+    )
+    assert r.status_code == 422, r.text
+
+
+async def test_create_watch_choice_case_insensitive_ok(client, session, watch_project):
+    project, search, _ = watch_project
+    s = await _rich_search(session, project)
+    r = await client.post(
+        f"/api/v1/projects/{project.id}/watches",
+        json={
+            "source": "pubmed",
+            "query": "q",
+            "search_id": str(s.id),
+            "criteria": [{"kind": "field", "field_key": "design", "expected": "in VIVO"}],
+        },
+    )
+    assert r.status_code == 201, r.text
+
+
+async def test_create_watch_free_question_422s(client, session, watch_project):
+    project, search, _ = watch_project
+    s = await _rich_search(session, project)
+    base = {"source": "pubmed", "query": "q", "search_id": str(s.id)}
+    # empty question
+    r = await client.post(
+        f"/api/v1/projects/{project.id}/watches",
+        json={**base, "criteria": [{"kind": "free", "question": "   ", "expected": True}]},
+    )
+    assert r.status_code == 422, r.text
+    # too long
+    r = await client.post(
+        f"/api/v1/projects/{project.id}/watches",
+        json={**base, "criteria": [{"kind": "free", "question": "x" * 501, "expected": True}]},
+    )
+    assert r.status_code == 422, r.text
+    # duplicated
+    r = await client.post(
+        f"/api/v1/projects/{project.id}/watches",
+        json={
+            **base,
+            "criteria": [
+                {"kind": "free", "question": "Est-ce in vivo ?", "expected": True},
+                {"kind": "free", "question": "est-ce in vivo ?", "expected": False},
+            ],
+        },
+    )
+    assert r.status_code == 422, r.text
+
+
+async def test_create_watch_conf_bounds_422(client, session, watch_project):
+    project, search, _ = watch_project
+    s = await _rich_search(session, project)
+    base = {"source": "pubmed", "query": "q", "search_id": str(s.id)}
+    for crit in (
+        {"kind": "field", "field_key": "ai", "expected": True, "conf_min": 0.8, "conf_max": 0.5},
+        {"kind": "field", "field_key": "ai", "expected": True, "conf_min": -0.1},
+        {"kind": "field", "field_key": "ai", "expected": True, "conf_max": 1.5},
+    ):
+        r = await client.post(
+            f"/api/v1/projects/{project.id}/watches",
+            json={**base, "criteria": [crit]},
+        )
+        assert r.status_code == 422, (crit, r.text)
+
+
+async def test_create_watch_combine_invalid_422(client, watch_project):
+    project, search, _ = watch_project
+    r = await client.post(
+        f"/api/v1/projects/{project.id}/watches",
+        json={"source": "pubmed", "query": "q", "search_id": str(search.id), "combine": "XOR"},
+    )
+    assert r.status_code == 422, r.text
+
+
+async def test_create_watch_match_threshold_ignored(client, watch_project):
+    """A legacy client still sending match_threshold: no error, not stored."""
+    project, search, _ = watch_project
+    r = await client.post(
+        f"/api/v1/projects/{project.id}/watches",
+        json={
+            "source": "pubmed",
+            "query": "q",
+            "search_id": str(search.id),
+            "match_threshold": 0.9,
+        },
+    )
+    assert r.status_code == 201, r.text
+    assert r.json()["match_threshold"] is None
+    assert r.json()["criteria"] is None
+
+
+async def test_update_watch_criteria_and_combine(client, session, watch_project):
+    project, search, _ = watch_project
+    s = await _rich_search(session, project)
+    wid = (
+        await client.post(
+            f"/api/v1/projects/{project.id}/watches",
+            json={"source": "pubmed", "query": "q", "search_id": str(s.id)},
+        )
+    ).json()["id"]
+    criteria = [{"kind": "field", "field_key": "ai", "expected": True, "conf_min": 0.6}]
+    r = await client.patch(
+        f"/api/v1/projects/{project.id}/watches/{wid}",
+        json={"criteria": criteria, "combine": "OR"},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["criteria"] == criteria and r.json()["combine"] == "OR"
+    # an invalid field key on update is a 422 too (validated against the search)
+    r = await client.patch(
+        f"/api/v1/projects/{project.id}/watches/{wid}",
+        json={"criteria": [{"kind": "field", "field_key": "nope", "expected": True}]},
+    )
+    assert r.status_code == 422, r.text
+
+
+async def test_update_watch_criteria_deleted_search_404(client, session, watch_project):
+    """Deleting the search leaves no watch behind that could 500 on criteria
+    validation: the reference is gone, the API answers 404, never 500."""
+    project, _, _ = watch_project
+    s = await _rich_search(session, project)
+    wid = (
+        await client.post(
+            f"/api/v1/projects/{project.id}/watches",
+            json={"source": "pubmed", "query": "q", "search_id": str(s.id)},
+        )
+    ).json()["id"]
+    await session.execute(delete(Search).where(Search.id == s.id))
+    await session.commit()
+    r = await client.patch(
+        f"/api/v1/projects/{project.id}/watches/{wid}",
+        json={"criteria": [{"kind": "free", "question": "Q ?", "expected": True}]},
+    )
+    assert r.status_code == 404, r.text
+
+
+async def test_update_watch_criteria_empty(client, watch_project):
+    """criteria: [] → cleared (fallback to the legacy rule at evaluation)."""
+    project, search, _ = watch_project
+    wid = (
+        await client.post(
+            f"/api/v1/projects/{project.id}/watches",
+            json={
+                "source": "pubmed",
+                "query": "q",
+                "search_id": str(search.id),
+                "criteria": [{"kind": "free", "question": "Q ?", "expected": True}],
+            },
+        )
+    ).json()["id"]
+    r = await client.patch(f"/api/v1/projects/{project.id}/watches/{wid}", json={"criteria": []})
+    assert r.status_code == 200, r.text
+    assert r.json()["criteria"] == []
+
+
+async def test_update_watch_frozen_fields_ignored(client, watch_project):
+    """source/query/search_id/date_from are frozen after creation: PATCH ignores them."""
+    project, search, _ = watch_project
+    wid = (
+        await client.post(
+            f"/api/v1/projects/{project.id}/watches",
+            json={"source": "pubmed", "query": "rat", "search_id": str(search.id)},
+        )
+    ).json()["id"]
+    r = await client.patch(
+        f"/api/v1/projects/{project.id}/watches/{wid}",
+        json={"source": "hal", "query": "mouse", "search_id": str(uuid.uuid4())},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["source"] == "pubmed" and r.json()["query"] == "rat"
 
 
 # --- One pass (fake adapter, real import unit, injected launcher) -----------
@@ -483,6 +758,176 @@ async def test_no_watch_for_job_returns_empty(session, watch_project):
     await session.commit()
     out = await evaluate_watch_matches(session, job, mailer=RecordingMailer())
     assert out == {}
+
+
+# --- Criteria-based match (spec 2026-11-08-criteres-veille) ------------------
+
+
+async def _seed_pass_criteria(
+    session, watch_project, decisions, criteria, combine, pass_fields, notify_all=False
+):
+    """A watch WITH criteria + a pass search (given fields) + job + articles + predictions."""
+    project, search, _ = watch_project
+    w = Watch(
+        project_id=project.id,
+        search_id=search.id,
+        source="pubmed",
+        query="q",
+        created_by=search.created_by,
+        criteria=criteria,
+        combine=combine,
+        notify_all=notify_all,
+    )
+    session.add(w)
+    await session.commit()
+    ps = Search(project_id=project.id, name="pass", lot_all=False, fields=pass_fields, question="Q")
+    session.add(ps)
+    await session.commit()
+    job = InferenceJob(
+        project_id=project.id,
+        search_id=ps.id,
+        model_used="m",
+        status=InferenceJobStatus.COMPLETED,
+    )
+    session.add(job)
+    await session.flush()
+    w.inference_job_id = job.id
+    arts = []
+    for i, dec in enumerate(decisions, start=1):
+        a = Article(
+            project_id=project.id, source="pubmed", native_id=str(i), pmid=f"P{i}", title=f"T{i}"
+        )
+        session.add(a)
+        await session.flush()
+        session.add(ArticlePrediction_row(a.id, ps.id, dec))
+        session.add(SearchArticle(search_id=ps.id, article_id=a.id))
+        arts.append(a)
+    await session.commit()
+    return w, job, arts
+
+
+PASS_FIELDS_WITH_Q = FIELDS + [{"key": "watch_q_0", "type": "boolean", "label": "Est-ce in vivo ?"}]
+
+
+async def test_hook_criteria_field_confidence(session, watch_project, mock_mailer):
+    """A field criterion (boolean oui, conf >= 0.7): 0.8 matches, 0.5 does not."""
+    w, job, _ = await _seed_pass_criteria(
+        session,
+        watch_project,
+        [{"ai": True, "confidence_score": 0.8}, {"ai": True, "confidence_score": 0.5}],
+        [{"kind": "field", "field_key": "ai", "expected": True, "conf_min": 0.7}],
+        "AND",
+        FIELDS,
+    )
+    out = await evaluate_watch_matches(session, job, mailer=mock_mailer)
+    assert out["matched"] == 1
+    assert w.last_matched["matched_ids"] == [str(w.last_matched["matched_details"][0]["id"])]
+    assert len(mock_mailer.sent) == 1
+    assert "Uses AI" in mock_mailer.sent[0]["body"]  # met criterion label in the e-mail
+
+
+async def test_hook_criteria_free_question(session, watch_project, mock_mailer):
+    """A free question criterion is evaluated on its watch_q_<i> key."""
+    w, job, _ = await _seed_pass_criteria(
+        session,
+        watch_project,
+        [{"watch_q_0": True}, {"watch_q_0": False}],
+        [{"kind": "free", "question": "Est-ce in vivo ?", "expected": True}],
+        "AND",
+        PASS_FIELDS_WITH_Q,
+    )
+    out = await evaluate_watch_matches(session, job, mailer=mock_mailer)
+    assert out["matched"] == 1
+    body = mock_mailer.sent[0]["body"]
+    assert "in vivo" in body  # the free question label is listed
+
+
+async def test_hook_criteria_or_combine(session, watch_project):
+    """combine=OR: one satisfied criterion is enough."""
+    w, job, _ = await _seed_pass_criteria(
+        session,
+        watch_project,
+        [{"ai": False, "confidence_score": 0.1, "watch_q_1": True}],
+        [
+            {"kind": "field", "field_key": "ai", "expected": True},
+            {"kind": "free", "question": "Est-ce in vivo ?", "expected": True},
+        ],
+        "OR",
+        FIELDS + [{"key": "watch_q_1", "type": "boolean", "label": "Est-ce in vivo ?"}],
+    )
+    out = await evaluate_watch_matches(session, job, mailer=RecordingMailer())
+    assert out["matched"] == 1
+
+
+async def test_hook_criteria_empty_falls_back_to_legacy(session, watch_project, mock_mailer):
+    """criteria=[] → the legacy rule (primary positive OR conf >= threshold)."""
+    w, job, _ = await _seed_pass_criteria(
+        session,
+        watch_project,
+        [{"ai": True, "confidence_score": 0.1}],
+        [],
+        "AND",
+        FIELDS,
+    )
+    out = await evaluate_watch_matches(session, job, mailer=mock_mailer)
+    assert out["matched"] == 1  # primary field positive
+
+
+async def test_hook_criteria_legacy_none_unchanged(session, watch_project, mock_mailer):
+    """criteria=None (existing watches) → exact legacy behaviour."""
+    w, job, _ = await _seed_pass_with_predictions(
+        session,
+        watch_project,
+        [{"ai": False, "confidence_score": 0.9}, {"ai": False, "confidence_score": 0.2}],
+    )
+    out = await evaluate_watch_matches(session, job, mailer=mock_mailer)
+    assert out["matched"] == 1  # high confidence alone (legacy rule)
+
+
+async def test_hook_criteria_snapshot_guard(session, watch_project):
+    """A criterion key missing from the pass fields never matches, never raises."""
+    w, job, _ = await _seed_pass_criteria(
+        session,
+        watch_project,
+        [{"ai": True, "confidence_score": 0.9}],
+        [{"kind": "field", "field_key": "gone", "expected": True}],
+        "AND",
+        FIELDS,  # "gone" is not a pass field
+    )
+    out = await evaluate_watch_matches(session, job, mailer=RecordingMailer())
+    assert out["matched"] == 0
+
+
+async def test_pass_injects_free_question_fields(session, watch_project, monkeypatch):
+    """The REAL launcher: pass fields = search fields + watch_q_<i>, and the
+    prompt template carries the free question."""
+    from app.db.models import PromptTemplate
+
+    project, search, _ = watch_project
+    session.add(_model("real-m", True))
+    await session.commit()
+    w = Watch(
+        project_id=project.id,
+        search_id=search.id,
+        source="pubmed",
+        query="q",
+        created_by=search.created_by,
+        criteria=[{"kind": "free", "question": "Est-ce in vivo ?", "expected": True}],
+        combine="AND",
+    )
+    session.add(w)
+    await session.commit()
+    delays = []
+    monkeypatch.setattr(
+        "app.tasks.inference.inference_task.delay", lambda job_id: delays.append(job_id)
+    )
+    res = await run_watch_pass(session, w, adapter=FakeAdapter(["1"]))
+    assert res["job_id"] is not None
+    job = await session.get(InferenceJob, uuid.UUID(res["job_id"]))
+    ps = await session.get(Search, job.search_id)
+    assert [f["key"] for f in ps.fields] == ["ai", "watch_q_0"]
+    prompt = await session.get(PromptTemplate, job.prompt_template_id)
+    assert "Est-ce in vivo ?" in prompt.system_prompt
 
 
 # --- PRISMA traceability ----------------------------------------------------

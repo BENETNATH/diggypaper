@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import {
   Watch,
+  WatchCriterion,
   createWatch,
   deleteWatch,
   listWatches,
@@ -18,6 +19,7 @@ import { RequireAuth } from "@/components/RequireAuth";
 import { Button } from "@/components/ui/Button";
 import { EmptyState, ErrorBanner, Skeleton } from "@/components/ui/Feedback";
 import { Checkbox, Field, Input, Select, Textarea } from "@/components/ui/Field";
+import CriteriaBuilder from "./CriteriaBuilder";
 
 const SOURCES = [
   { key: "pubmed", labelKey: "source_pubmed" },
@@ -101,6 +103,17 @@ function WatchCard({
               {t("search")}: {watch.search.name}
             </p>
           )}
+          {(watch.criteria?.length ?? 0) > 0 ? (
+            <p className="mt-0.5 text-xs text-muted">
+              {watch.criteria!.length} {t("criteria")} · {watch.combine ?? "AND"}
+            </p>
+          ) : (
+            watch.match_threshold != null && (
+              <p className="mt-0.5 text-xs text-muted">
+                {t("threshold")} ≥ {watch.match_threshold.toFixed(2)}
+              </p>
+            )
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
           <Button
@@ -162,13 +175,16 @@ function WatchForm({
   const [source, setSource] = useState(SOURCES[0].key);
   const [query, setQuery] = useState("");
   const [dateFrom, setDateFrom] = useState("");
-  const [threshold, setThreshold] = useState("");
   const [notifyAll, setNotifyAll] = useState(false);
+  const [criteria, setCriteria] = useState<WatchCriterion[]>([]);
+  const [combine, setCombine] = useState<"AND" | "OR">("AND");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const standard = (searches ?? []).filter((s) => s.kind === "standard");
   const options = standard.length > 0 ? standard : searches ?? [];
+  // Eligible fields of the chosen search (the criteria builder offers boolean/choice).
+  const fields = (searches ?? []).find((s) => s.id === searchId)?.fields ?? [];
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -184,8 +200,9 @@ function WatchForm({
         source,
         query: query.trim(),
         date_from: dateFrom || null,
-        match_threshold: threshold === "" ? null : Number(threshold),
         notify_all: notifyAll,
+        criteria: criteria.length ? criteria : null,
+        combine: criteria.length ? combine : null,
       });
       onCreated();
     } catch (err) {
@@ -201,7 +218,13 @@ function WatchForm({
     >
       <div className="grid gap-3 md:grid-cols-2">
         <Field label={t("search")}>
-          <Select value={searchId} onChange={(e) => setSearchId(e.target.value)}>
+          <Select
+            value={searchId}
+            onChange={(e) => {
+              setSearchId(e.target.value);
+              setCriteria([]); // criteria refer to the previous search's fields
+            }}
+          >
             {options.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.name}
@@ -222,24 +245,25 @@ function WatchForm({
       <Field label={t("query")} hint={t("queryHint")}>
         <Textarea value={query} onChange={(e) => setQuery(e.target.value)} rows={2} required />
       </Field>
-      <div className="grid gap-3 md:grid-cols-3">
+      <div className="grid gap-3 md:grid-cols-2">
         <Field label={t("dateFrom")} hint={t("dateFromHint")}>
           <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
-        </Field>
-        <Field label={t("threshold")} hint={t("thresholdHint")}>
-          <Input
-            type="number"
-            step="0.05"
-            min="0"
-            max="1"
-            value={threshold}
-            onChange={(e) => setThreshold(e.target.value)}
-          />
         </Field>
         <div className="flex items-end">
           <Checkbox label={t("notifyAll")} checked={notifyAll} onChange={(e) => setNotifyAll(e.target.checked)} />
         </div>
       </div>
+      {fields.length > 0 && (
+        <CriteriaBuilder
+          fields={fields}
+          criteria={criteria}
+          combine={combine}
+          onChange={(c, k) => {
+            setCriteria(c);
+            setCombine(k);
+          }}
+        />
+      )}
       {error && (
         <div role="alert" className="flex items-center gap-1 text-sm text-danger">
           <span aria-hidden>⚠</span>
