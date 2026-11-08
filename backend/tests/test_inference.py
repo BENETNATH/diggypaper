@@ -970,7 +970,9 @@ async def test_list_models_rebind_protected_like_chat(monkeypatch):
     svc = OpenAICompatibleService("http://llm.test/v1", http=client, public_only=True)
     assert await svc.list_models() == ["m"]
 
-    monkeypatch.setattr(ma.socket, "getaddrinfo", lambda host, port, **kw: [(2, 1, 6, "", ("127.0.0.1", port))])
+    monkeypatch.setattr(
+        ma.socket, "getaddrinfo", lambda host, port, **kw: [(2, 1, 6, "", ("127.0.0.1", port))]
+    )
     svc2 = OpenAICompatibleService("http://llm.test/v1", public_only=True, timeout=0.5)
     with pytest.raises(InferenceError, match="url_not_allowed"):
         await svc2.list_models()

@@ -346,9 +346,7 @@ async def test_chat_stream_openai_malformed_delta_raises():
     previously the AttributeError propagated: silent truncation after the 200."""
     client = httpx.AsyncClient(
         transport=httpx.MockTransport(
-            lambda req: httpx.Response(
-                200, content=b'data: {"choices":[{"delta":"oops"}]}\n'
-            )
+            lambda req: httpx.Response(200, content=b'data: {"choices":[{"delta":"oops"}]}\n')
         )
     )
     svc = OpenAICompatibleService("http://llm.test/v1", http=client)
@@ -574,9 +572,7 @@ async def test_chat_http_error_sse_fixed_code(
     monkeypatch.setattr(rc, "stream_with", fake_stream)
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     project_id = await _chat_project(session, researcher_user)
-    status, events = await _read_sse(
-        client, project_id, {"question": "Q ?", "model": "Kev-4B"}
-    )
+    status, events = await _read_sse(client, project_id, {"question": "Q ?", "model": "Kev-4B"})
     assert status == 200
     assert events["error"][0]["detail"] == "http_error"
     assert "401" not in json.dumps(events)

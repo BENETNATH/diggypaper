@@ -146,7 +146,9 @@ async def test_project_share_grants_lead_only_not_every_member(
     member (annotator: the model is not usable, and it stays out of the picker)."""
     project = await _project(session, alice)
     session.add(
-        ProjectMember(project_id=project.id, user_id=bob.id, role_in_project=ProjectMemberRole.ANNOTATOR)
+        ProjectMember(
+            project_id=project.id, user_id=bob.id, role_in_project=ProjectMemberRole.ANNOTATOR
+        )
     )
     await session.commit()
     await _login(client, "alice@lab.fr", "alice-pass-123")
@@ -555,9 +557,7 @@ async def test_dns_rebinding_cannot_reach_internal_target(monkeypatch):
 
     monkeypatch.setattr(ma.socket, "getaddrinfo", fake_dns)
     try:
-        svc = OpenAICompatibleService(
-            f"http://x.example:{port}/v1", timeout=2.0, public_only=True
-        )
+        svc = OpenAICompatibleService(f"http://x.example:{port}/v1", timeout=2.0, public_only=True)
         with pytest.raises(InferenceError):
             async for _ in svc.chat_stream("m", [{"role": "user", "content": "q"}]):
                 pass

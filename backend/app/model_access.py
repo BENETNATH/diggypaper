@@ -15,7 +15,14 @@ from urllib.parse import urlsplit
 from sqlalchemy import and_, or_, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import ModelRegistry, ModelShare, ProjectMember, ProjectMemberRole, User, UserRole
+from app.db.models import (
+    ModelRegistry,
+    ModelShare,
+    ProjectMember,
+    ProjectMemberRole,
+    User,
+    UserRole,
+)
 
 
 def access_filter(user: User, project_id: uuid.UUID | None = None):

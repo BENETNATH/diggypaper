@@ -1158,9 +1158,7 @@ async def test_test_installed_redis_down_fails_open(
 # --- POST /models/external/list (endpoint model picker, spec 2026-11-08) --------------
 
 
-async def test_external_list_models_ok(
-    client, session, researcher_user, do_login, monkeypatch
-):
+async def test_external_list_models_ok(client, session, researcher_user, do_login, monkeypatch):
     from app.inference import OpenAICompatibleService
 
     async def fake_list(self):
@@ -1212,9 +1210,7 @@ async def test_external_list_url_with_secret_422(client, session, researcher_use
     assert r.status_code == 422
 
 
-async def test_external_list_rate_limited(
-    client, session, researcher_user, do_login, monkeypatch
-):
+async def test_external_list_rate_limited(client, session, researcher_user, do_login, monkeypatch):
     from app.inference import OpenAICompatibleService
 
     async def fake_list(self):

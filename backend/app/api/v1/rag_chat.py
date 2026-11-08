@@ -137,7 +137,9 @@ async def chat(
         except Exception:  # midstream crash (a decrypt, a malformed provider line):
             # a sanitized error event — never a silent truncation after the 200
             # (run-3 finding ``rag-chat.midstream-unhandled-exception-silent-truncation``)
-            logger.exception("rag-chat midstream error project=%s model=%s", project_id, payload.model)
+            logger.exception(
+                "rag-chat midstream error project=%s model=%s", project_id, payload.model
+            )
             yield _sse("error", {"detail": "provider_error"})
             return
         text = "".join(parts)

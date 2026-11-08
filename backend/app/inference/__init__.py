@@ -23,7 +23,6 @@ from urllib.parse import urlsplit
 
 import httpcore
 import httpx
-
 from cryptography.exceptions import InvalidTag
 
 from app.core.crypto import decrypt_secret
