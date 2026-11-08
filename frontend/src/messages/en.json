@@ -1296,5 +1296,13 @@
     "scope": "Scope",
     "scopeCorpus": "Whole corpus",
     "scopeSearch": "This search"
+  },
+  "index": {
+    "title": "Indexing in progress",
+    "notIndexed": "Corpus not indexed yet.",
+    "indexButton": "Index the corpus",
+    "indexStarted": "Indexing started — check back in a few minutes.",
+    "indexed": "Corpus indexed.",
+    "error": "Could not load the index status."
   }
 }

@@ -1735,6 +1735,24 @@ export const semanticSearch = (projectId: string, query: string, limit = 20): Pr
 export const triggerVectorize = (projectId: string): Promise<{ task_id: string; queued: boolean }> =>
   request(`/projects/${projectId}/vectorize`, { method: "POST" });
 
+/** Live status of the corpus index + the current (re)indexing run (RAG). */
+export interface VectorizeProgress {
+  status: "IDLE" | "RUNNING" | "DONE" | "ERROR" | null;
+  total: number;
+  done: number;
+  model: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  indexed: boolean;
+}
+
+/**
+ * Cheap status read for the index: replaces the previous probe (a fake
+ * semantic search that loaded every section just to learn ``indexed``).
+ */
+export const getVectorizeProgress = (projectId: string): Promise<VectorizeProgress> =>
+  request(`/projects/${projectId}/vectorize-progress`);
+
 // --- Chat RAG (spec 2026-11-07-chat-rag §5) ----------------------------------
 
 /** A cited section of the corpus (the `[n]` markers of the streamed answer). */

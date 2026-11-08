@@ -11,14 +11,25 @@ jest.mock("@/lib/useSearch", () => ({ useSearchId: () => undefined }));
 jest.mock("@/lib/search", () => ({ withSearch: (p: string) => p }));
 jest.mock("@/lib/api", () => ({
   ...jest.requireActual("@/lib/api"),
-  semanticSearch: jest.fn(),
+  getVectorizeProgress: jest.fn(),
   triggerVectorize: jest.fn(),
   streamChat: jest.fn(),
 }));
 
-const semanticSearch = api.semanticSearch as jest.Mock;
+const getVectorizeProgress = api.getVectorizeProgress as jest.Mock;
 const triggerVectorize = api.triggerVectorize as jest.Mock;
 const streamChat = api.streamChat as jest.Mock;
+
+/** A progress payload with a given ``indexed`` flag and an optional status. */
+const progressOf = (indexed: boolean, status: api.VectorizeProgress["status"] = null) => ({
+  status,
+  total: 0,
+  done: 0,
+  model: null,
+  started_at: null,
+  finished_at: null,
+  indexed,
+});
 
 const MODELS = [
   {
@@ -61,7 +72,7 @@ function mockStream(options: {
   citations?: api.ChatCitation[];
   reject?: Error;
 } = {}) {
-  semanticSearch.mockResolvedValue({ results: [], indexed: options.indexed ?? true });
+  getVectorizeProgress.mockResolvedValue(progressOf(options.indexed ?? true));
   if (options.reject) {
     streamChat.mockRejectedValue(options.reject);
     return;
@@ -128,19 +139,19 @@ test("model_busy rejection shows the localized message", async () => {
 test("unindexed corpus: input disabled, index button lead-only", async () => {
   mockStream({ indexed: false });
   renderPanel({ isLead: true });
-  await screen.findByTestId("chat-not-indexed");
+  await screen.findByTestId("index-not-indexed");
   expect((screen.getByTestId("chat-input") as HTMLInputElement).disabled).toBe(true);
-  expect(screen.getByTestId("chat-index-button")).toBeTruthy();
-  fireEvent.click(screen.getByTestId("chat-index-button"));
+  expect(screen.getByTestId("index-button")).toBeTruthy();
+  fireEvent.click(screen.getByTestId("index-button"));
   await waitFor(() => expect(triggerVectorize).toHaveBeenCalledWith("p1"));
-  expect(screen.getByTestId("chat-index-started")).toBeTruthy();
+  expect(screen.getByTestId("index-started")).toBeTruthy();
 });
 
 test("members without lead rights see no index button", async () => {
   mockStream({ indexed: false });
   renderPanel({ isLead: false });
-  await screen.findByTestId("chat-not-indexed");
-  expect(screen.queryByTestId("chat-index-button")).toBeNull();
+  await screen.findByTestId("index-not-indexed");
+  expect(screen.queryByTestId("index-button")).toBeNull();
 });
 
 test("clearing the conversation resets the state and sends a follow-up with history", async () => {

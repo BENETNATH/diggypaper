@@ -297,3 +297,40 @@ async def test_targeted_article_ids(session, rag_project, researcher_user):
     stats = await vectorize_project(session, project.id, article_ids=[str(article.id)])
     assert stats["vectorized"] == 2
     assert len(await _embeddings_of(session, other.id)) == 0
+
+
+async def test_vectorize_records_run_progress(session, rag_project):
+    """The run persists progress so the UI can show n/N live: at the end the
+    row is DONE with ``done == total`` (total = sections (re)indexed this run)."""
+    from app.db.models import VectorizeProgress
+    from app.tasks.vectorize import vectorize_project
+
+    project, _article = rag_project
+    await vectorize_project(session, project.id)
+    p = await session.scalar(
+        select(VectorizeProgress).where(VectorizeProgress.project_id == project.id)
+    )
+    assert p is not None
+    assert p.status == "DONE"
+    assert p.total == 2
+    assert p.done == 2
+    assert p.model == "fake-bow-v1"
+    assert p.finished_at is not None
+
+
+async def test_vectorize_noop_run_records_zero_total(session, rag_project):
+    """A second (no-op) run records total == 0 — nothing (re)indexed — and
+    still lands DONE, so the progress read is always a single coherent row."""
+    from app.db.models import VectorizeProgress
+    from app.tasks.vectorize import vectorize_project
+
+    project, _article = rag_project
+    await vectorize_project(session, project.id)
+    result = await vectorize_project(session, project.id)
+    assert result["vectorized"] == 0
+    p = await session.scalar(
+        select(VectorizeProgress).where(VectorizeProgress.project_id == project.id)
+    )
+    assert p.status == "DONE"
+    assert p.total == 0
+    assert p.done == 0

@@ -23,6 +23,8 @@ import { useAuth } from "@/lib/auth";
 import { isProjectLead } from "@/lib/role";
 import { isUntouched, withSearch } from "@/lib/search";
 import { useSearchId } from "@/lib/useSearch";
+import { useVectorizeProgress } from "@/hooks/useVectorizeProgress";
+import { IndexProgress } from "@/components/IndexProgress";
 import { RequireAuth } from "@/components/RequireAuth";
 import { ModelRef } from "@/components/ModelRef";
 import { Badge } from "@/components/ui/Card";
@@ -231,6 +233,10 @@ function ProjectDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [modelCount, setModelCount] = useState<number | null>(null);
 
+  // Live corpus-index state + trigger (cheap status read, not a probe) — the
+  // overview is where the index progress is most visible (« indexation visible »).
+  const { progress, indexing, index } = useVectorizeProgress(projectId);
+
   const load = useCallback(() => {
     return Promise.all([getProject(projectId), getOverview(projectId), listJobs(projectId)])
       .then(([p, o, js]) => {
@@ -327,6 +333,20 @@ function ProjectDashboard() {
           />
           <Kpi label={t("kpiToReview")} value={toReviewTotal.toLocaleString()} title={t("kpiScopeAll")} />
           <Kpi label={t("kpiGold")} value={overview.gold.toLocaleString()} />
+        </section>
+      )}
+
+      {/* Corpus index status + live progress (« indexation visible ») */}
+      {!empty && progress !== null && (
+        <section className="rounded-lg border border-border bg-surface p-3">
+          <IndexProgress
+            progress={progress}
+            isLead={isLead}
+            indexing={indexing}
+            onIndex={() => void index()}
+            showIndexed
+            detailed
+          />
         </section>
       )}
 

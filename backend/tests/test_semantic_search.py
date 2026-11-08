@@ -266,3 +266,55 @@ async def test_query_uses_stored_embedding_model(session, search_project, monkey
     monkeypatch.setattr(emb_mod, "get_embedder", spy)
     await ss.semantic_search(session, project.id, "cryoinjury zebrafish")
     assert requested == ["fake-bow-v1"]
+
+
+async def test_vectorize_progress_unindexed(client, session, search_project, do_login):
+    """The progress read is a cheap status GET (no probe): before any run it
+    reports ``indexed: false`` and no run (status null)."""
+    project, _, _, _ = search_project
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    r = await client.get(f"/api/v1/projects/{project.id}/vectorize-progress")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["indexed"] is False
+    assert body["status"] is None
+    assert body["total"] == 0
+    assert body["done"] == 0
+
+
+async def test_vectorize_progress_after_run(client, session, search_project, do_login):
+    """After a run the read reports ``indexed: true`` and DONE with
+    ``done == total`` (the sections (re)indexed this run)."""
+    project, _, _, _ = search_project
+    await vectorize_project(session, project.id)
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    r = await client.get(f"/api/v1/projects/{project.id}/vectorize-progress")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["indexed"] is True
+    assert body["status"] == "DONE"
+    assert body["done"] == body["total"] == 3
+
+
+async def test_vectorize_progress_outsider_403(client, session, search_project, do_login):
+    """Only project members can read the index progress (no existence oracle)."""
+    from app.core.security import hash_password
+    from app.db.models import User, UserRole
+
+    project, _, _, _ = search_project
+    u = User(
+        email="outsider@lab.fr",
+        hashed_password=hash_password("outsider-pass-123"),
+        role=UserRole.RESEARCHER,
+    )
+    session.add(u)
+    await session.commit()
+    await do_login("outsider@lab.fr", "outsider-pass-123", consent=True)
+    r = await client.get(f"/api/v1/projects/{project.id}/vectorize-progress")
+    assert r.status_code == 403, r.text
+
+
+async def test_vectorize_progress_missing_project_404(client, session, researcher_user, do_login):
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    r = await client.get(f"/api/v1/projects/{uuid.uuid4()}/vectorize-progress")
+    assert r.status_code == 404, r.text

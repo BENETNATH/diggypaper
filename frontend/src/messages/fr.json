@@ -1296,5 +1296,13 @@
     "scope": "Périmètre",
     "scopeCorpus": "Tout le corpus",
     "scopeSearch": "Cette recherche"
+  },
+  "index": {
+    "title": "Indexation en cours",
+    "notIndexed": "Corpus pas encore indexé.",
+    "indexButton": "Indexer le corpus",
+    "indexStarted": "Indexation lancée — revenez dans quelques minutes.",
+    "indexed": "Corpus indexé.",
+    "error": "Impossible de charger l'état de l'index."
   }
 }

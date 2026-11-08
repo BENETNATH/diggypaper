@@ -1296,5 +1296,13 @@
     "scope": "Umfang",
     "scopeCorpus": "Gesamtes Korpus",
     "scopeSearch": "Diese Suche"
+  },
+  "index": {
+    "title": "Indizierung läuft",
+    "notIndexed": "Korpus noch nicht indiziert.",
+    "indexButton": "Korpus indizieren",
+    "indexStarted": "Indizierung gestartet — bitte später erneut prüfen.",
+    "indexed": "Korpus indiziert.",
+    "error": "Indexstatus konnte nicht geladen werden."
   }
 }

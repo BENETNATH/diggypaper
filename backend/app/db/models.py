@@ -1012,3 +1012,26 @@ class SectionEmbedding(Base):
     created_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+
+
+class VectorizeProgress(Base):
+    """Live progress of a corpus (re)indexing run (« indexation visible »).
+
+    One row per project, upserted by the vectorize task: RUNNING with
+    ``total`` = sections to (re)embed at start, ``done`` incremented per batch,
+    then DONE/ERROR. ``indexed`` is NOT derived from this row — it is the
+    cheap ``exists(SectionEmbedding)`` read, so a legacy corpus (embedded
+    before this table existed) still reports indexed.
+    """
+
+    __tablename__ = "vectorize_progress"
+
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("projects.id", ondelete="CASCADE"), primary_key=True
+    )
+    status: Mapped[str] = mapped_column(String, nullable=False, default="IDLE")
+    total: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    done: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    model: Mapped[str | None] = mapped_column(String)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

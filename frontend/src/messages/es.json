@@ -1296,5 +1296,13 @@
     "scope": "Alcance",
     "scopeCorpus": "Todo el corpus",
     "scopeSearch": "Esta búsqueda"
+  },
+  "index": {
+    "title": "Indexación en curso",
+    "notIndexed": "Corpus aún no indexado.",
+    "indexButton": "Indexar el corpus",
+    "indexStarted": "Indexación iniciada — vuelva en unos minutos.",
+    "indexed": "Corpus indexado.",
+    "error": "No se pudo cargar el estado del índice."
   }
 }

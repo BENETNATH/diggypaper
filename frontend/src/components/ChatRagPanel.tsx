@@ -5,8 +5,6 @@ import Link from "next/link";
 import { useTranslations } from "next-intl";
 import {
   streamChat,
-  semanticSearch,
-  triggerVectorize,
   ApiError,
   ChatCitation,
   ModelInfo,
@@ -14,6 +12,8 @@ import {
 } from "@/lib/api";
 import { useSearchId } from "@/lib/useSearch";
 import { withSearch } from "@/lib/search";
+import { useVectorizeProgress } from "@/hooks/useVectorizeProgress";
+import { IndexProgress } from "@/components/IndexProgress";
 import { Button } from "@/components/ui/Button";
 import { ErrorBanner } from "@/components/ui/Feedback";
 
@@ -99,31 +99,18 @@ export function ChatRagPanel({ projectId, models, isLead, searches = [] }: Props
   const effectiveModel = model || defaultModel?.name || "";
   // Chat scope: "corpus" (whole project) or the id of one standard search.
   const [scope, setScope] = useState<string>("corpus");
-  const [indexed, setIndexed] = useState<boolean | undefined>(undefined);
   const [question, setQuestion] = useState("");
   const [history, setHistory] = useState<Exchange[]>([]);
   const [current, setCurrent] = useState<Current | null>(null);
   const [busy, setBusy] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const [indexing, setIndexing] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
-  // Probe the corpus state (no embedding: a punctuation-only query returns
-  // early with the `indexed` flag).
-  useEffect(() => {
-    let cancelled = false;
-    semanticSearch(projectId, ".", 1)
-      .then((r) => {
-        if (!cancelled) setIndexed(r.indexed);
-      })
-      .catch(() => {
-        if (!cancelled) setIndexed(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [projectId]);
+  // Live corpus-index state + trigger (one cheap status read, not a probe
+  // semantic search); the hook polls while a run is in flight.
+  const { progress, indexing, index } = useVectorizeProgress(projectId);
+  const indexed = progress?.indexed;
 
   // Elapsed-time ticker while the answer streams (latence assumée).
   useEffect(() => {
@@ -201,18 +188,6 @@ export function ChatRagPanel({ projectId, models, isLead, searches = [] }: Props
     }
   }
 
-  async function indexCorpus() {
-    if (indexing) return;
-    setIndexing(true);
-    setError(null);
-    try {
-      await triggerVectorize(projectId);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-      setIndexing(false);
-    }
-  }
-
   function clearConversation() {
     abortRef.current?.abort();
     setHistory([]);
@@ -282,22 +257,13 @@ export function ChatRagPanel({ projectId, models, isLead, searches = [] }: Props
         )}
       </div>
 
-      {indexed === false && !busy && (
-        <div className="flex flex-wrap items-center gap-2 text-sm text-muted">
-          <span data-testid="chat-not-indexed">{t("notIndexed")}</span>
-          {isLead && (
-            <Button
-              variant="secondary"
-              size="sm"
-              data-testid="chat-index-button"
-              onClick={() => void indexCorpus()}
-              disabled={indexing}
-            >
-              {t("indexButton")}
-            </Button>
-          )}
-          {indexing && <span data-testid="chat-index-started">{t("indexStarted")}</span>}
-        </div>
+      {progress !== null && !busy && (
+        <IndexProgress
+          progress={progress}
+          isLead={isLead}
+          indexing={indexing}
+          onIndex={() => void index()}
+        />
       )}
 
       {error && <ErrorBanner message={error} />}

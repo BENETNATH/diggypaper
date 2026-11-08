@@ -13,17 +13,35 @@ import asyncio
 import hashlib
 import logging
 import uuid
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import embeddings
 from app.celery_app import celery_app
-from app.db.models import Article, SectionEmbedding
+from app.db.models import Article, SectionEmbedding, VectorizeProgress
 from app.settings.service import get_setting
 from app.tasks import _make_session_factory, _session_factory_override
 
 logger = logging.getLogger(__name__)
+
+#: Batch size for the embedding pass: the real model already chunks at 32, so
+#: this matches its natural batching and gives a live progress tick per batch.
+_EMBED_BATCH = 32
+
+
+async def _set_progress(db: AsyncSession, project_id: uuid.UUID, **fields) -> None:
+    """Upsert the project's ``vectorize_progress`` row, touching only the given
+    fields (pass ``finished_at=None`` to clear it at a new run's start)."""
+    row = await db.scalar(
+        select(VectorizeProgress).where(VectorizeProgress.project_id == project_id)
+    )
+    if row is None:
+        row = VectorizeProgress(project_id=project_id)
+        db.add(row)
+    for key, value in fields.items():
+        setattr(row, key, value)
 
 
 def _upsert_dialect(dialect_name: str):
@@ -112,37 +130,67 @@ async def vectorize_project(
                 for row in rows:  # section vanished (deleted / replaced text)
                     await db.delete(row)
 
-    # Pass 2: embed in one batch (32/appel dans le vrai modèle), then upsert.
-    # The upsert (ON CONFLICT DO UPDATE) is the concurrency guard: if a second
-    # run inserted the same (article, section_index) between our delete and
-    # insert, we update that row instead of crashing on the unique constraint.
-    vectorized = 0
-    if pending:
-        vectors = emb.embed_batch([text for _, _, _, text, _ in pending])
-        dialect = db.bind.dialect.name if db.bind is not None else "sqlite"
-        insert = _upsert_dialect(dialect)
-        for (article, idx, title, _, digest), vec in zip(pending, vectors, strict=True):
-            stmt = insert(SectionEmbedding).values(
-                id=uuid.uuid4(),
-                article_id=article.id,
-                section_index=idx,
-                section_title=title,
-                content_hash=digest,
-                embedding=vec,
-                embedding_model=model_name,
-            )
-            stmt = stmt.on_conflict_do_update(
-                index_elements=["article_id", "section_index"],
-                set_={
-                    "section_title": title,
-                    "content_hash": digest,
-                    "embedding": vec,
-                    "embedding_model": model_name,
-                },
-            )
-            await db.execute(stmt)
-            vectorized += 1
+    # Persist the run: RUNNING with total = sections to (re)embed. Committing
+    # here also lands pass 1's deletes, so concurrent reads see a coherent state.
+    now = datetime.now(UTC)
+    await _set_progress(
+        db,
+        project_id,
+        status="RUNNING",
+        total=len(pending),
+        done=0,
+        model=model_name,
+        started_at=now,
+        finished_at=None,
+    )
     await db.commit()
+
+    # Pass 2: embed in batches (32 — the real model's natural batch size), then
+    # upsert. The upsert (ON CONFLICT DO UPDATE) is the concurrency guard: if a
+    # second run inserted the same (article, section_index) between our delete
+    # and insert, we update that row instead of crashing on the unique
+    # constraint. Each batch commits so the progress row is readable mid-run.
+    vectorized = 0
+    try:
+        if pending:
+            dialect = db.bind.dialect.name if db.bind is not None else "sqlite"
+            insert = _upsert_dialect(dialect)
+            for start in range(0, len(pending), _EMBED_BATCH):
+                part = pending[start : start + _EMBED_BATCH]
+                vectors = emb.embed_batch([text for _, _, _, text, _ in part])
+                for (article, idx, title, _, digest), vec in zip(part, vectors, strict=True):
+                    stmt = insert(SectionEmbedding).values(
+                        id=uuid.uuid4(),
+                        article_id=article.id,
+                        section_index=idx,
+                        section_title=title,
+                        content_hash=digest,
+                        embedding=vec,
+                        embedding_model=model_name,
+                    )
+                    stmt = stmt.on_conflict_do_update(
+                        index_elements=["article_id", "section_index"],
+                        set_={
+                            "section_title": title,
+                            "content_hash": digest,
+                            "embedding": vec,
+                            "embedding_model": model_name,
+                        },
+                    )
+                    await db.execute(stmt)
+                    vectorized += 1
+                await _set_progress(db, project_id, done=vectorized)
+                await db.commit()
+        await _set_progress(db, project_id, status="DONE", done=vectorized, finished_at=now)
+        await db.commit()
+    except Exception:
+        # Leave a coherent ERROR row so the UI never shows a stuck RUNNING.
+        try:
+            await db.rollback()
+            await _set_progress(db, project_id, status="ERROR", done=vectorized, finished_at=now)
+            await db.commit()
+        finally:
+            raise
     return {"vectorized": vectorized, "articles": len(articles)}
 
 

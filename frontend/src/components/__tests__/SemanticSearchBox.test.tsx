@@ -12,11 +12,24 @@ jest.mock("@/lib/search", () => ({ withSearch: (p: string) => p }));
 jest.mock("@/lib/api", () => ({
   ...jest.requireActual("@/lib/api"),
   semanticSearch: jest.fn(),
+  getVectorizeProgress: jest.fn(),
   triggerVectorize: jest.fn(),
 }));
 
 const semanticSearch = api.semanticSearch as jest.Mock;
+const getVectorizeProgress = api.getVectorizeProgress as jest.Mock;
 const triggerVectorize = api.triggerVectorize as jest.Mock;
+
+/** A progress payload with a given ``indexed`` flag and an optional status. */
+const progressOf = (indexed: boolean, status: api.VectorizeProgress["status"] = null) => ({
+  status,
+  total: 0,
+  done: 0,
+  model: null,
+  started_at: null,
+  finished_at: null,
+  indexed,
+});
 
 const RESULTS = [
   {
@@ -41,6 +54,7 @@ async function submit(query: string) {
 
 describe("SemanticSearchBox (§5)", () => {
   it("lists article, section, excerpt and score for a hybrid query", async () => {
+    getVectorizeProgress.mockResolvedValue(progressOf(true));
     semanticSearch.mockResolvedValue({ results: RESULTS, indexed: true });
     render(<SemanticSearchBox projectId="p1" isLead={false} />);
     await submit("cryoinjury zebrafish");
@@ -53,6 +67,7 @@ describe("SemanticSearchBox (§5)", () => {
   });
 
   it("shows the empty state when the query matches nothing", async () => {
+    getVectorizeProgress.mockResolvedValue(progressOf(true));
     semanticSearch.mockResolvedValue({ results: [], indexed: true });
     render(<SemanticSearchBox projectId="p1" isLead={false} />);
     await submit("nothing at all");
@@ -60,22 +75,24 @@ describe("SemanticSearchBox (§5)", () => {
   });
 
   it("shows the not-indexed state and the lead-only index button", async () => {
-    semanticSearch.mockResolvedValue({ results: [], indexed: false });
+    // The not-indexed state is now driven by the cheap status read (progress),
+    // visible on mount — no probe search required.
+    getVectorizeProgress.mockResolvedValue(progressOf(false));
     const { rerender } = render(<SemanticSearchBox projectId="p1" isLead={false} />);
-    await submit("cryo");
-    expect(await screen.findByTestId("semantic-not-indexed")).toBeInTheDocument();
-    expect(screen.queryByTestId("semantic-index-button")).toBeNull(); // not a lead
+    expect(await screen.findByTestId("index-not-indexed")).toBeInTheDocument();
+    expect(screen.queryByTestId("index-button")).toBeNull(); // not a lead
 
     rerender(<SemanticSearchBox projectId="p1" isLead={true} />);
-    const btn = screen.getByTestId("semantic-index-button");
+    const btn = screen.getByTestId("index-button");
     expect(btn).toBeInTheDocument();
     triggerVectorize.mockResolvedValue({ task_id: "t1", queued: true });
     fireEvent.click(btn);
     await waitFor(() => expect(triggerVectorize).toHaveBeenCalledWith("p1"));
-    expect(screen.getByTestId("semantic-index-started")).toBeInTheDocument();
+    expect(screen.getByTestId("index-started")).toBeInTheDocument();
   });
 
   it("surfaces API errors", async () => {
+    getVectorizeProgress.mockResolvedValue(progressOf(true));
     semanticSearch.mockRejectedValue(new Error("boom"));
     render(<SemanticSearchBox projectId="p1" isLead={false} />);
     await submit("cryo");

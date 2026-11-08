@@ -3,9 +3,11 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { semanticSearch, triggerVectorize, SemanticResult } from "@/lib/api";
+import { semanticSearch, SemanticResult } from "@/lib/api";
 import { useSearchId } from "@/lib/useSearch";
 import { withSearch } from "@/lib/search";
+import { useVectorizeProgress } from "@/hooks/useVectorizeProgress";
+import { IndexProgress } from "@/components/IndexProgress";
 import { Button } from "@/components/ui/Button";
 import { ErrorBanner } from "@/components/ui/Feedback";
 
@@ -26,10 +28,14 @@ export function SemanticSearchBox({ projectId, isLead }: Props) {
   const searchId = useSearchId(projectId);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SemanticResult[] | null>(null);
-  const [indexed, setIndexed] = useState<boolean | undefined>(undefined);
+  const [searchIndexed, setSearchIndexed] = useState<boolean | undefined>(undefined);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [indexing, setIndexing] = useState(false);
+
+  // Live corpus-index state + trigger (one cheap status read, not a probe
+  // semantic search); the hook polls while a run is in flight.
+  const { progress, indexing, index } = useVectorizeProgress(projectId);
+  const indexed = progress?.indexed ?? searchIndexed;
 
   async function runSearch(q: string) {
     const value = q.trim();
@@ -39,25 +45,12 @@ export function SemanticSearchBox({ projectId, isLead }: Props) {
     try {
       const r = await semanticSearch(projectId, value);
       setResults(r.results);
-      setIndexed(r.indexed);
+      setSearchIndexed(r.indexed);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setResults(null);
     } finally {
       setLoading(false);
-    }
-  }
-
-  async function indexCorpus() {
-    if (indexing) return;
-    setIndexing(true);
-    setError(null);
-    try {
-      await triggerVectorize(projectId);
-      // The task runs in the worker; the next search re-checks the flag.
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-      setIndexing(false);
     }
   }
 
@@ -88,22 +81,13 @@ export function SemanticSearchBox({ projectId, isLead }: Props) {
 
       {error && <ErrorBanner message={error} />}
 
-      {indexed === false && !loading && (
-        <div className="flex flex-wrap items-center gap-2 text-sm text-muted">
-          <span data-testid="semantic-not-indexed">{t("notIndexed")}</span>
-          {isLead && (
-            <Button
-              variant="secondary"
-              size="sm"
-              data-testid="semantic-index-button"
-              onClick={() => void indexCorpus()}
-              disabled={indexing}
-            >
-              {t("indexButton")}
-            </Button>
-          )}
-          {indexing && <span data-testid="semantic-index-started">{t("indexStarted")}</span>}
-        </div>
+      {progress !== null && !loading && (
+        <IndexProgress
+          progress={progress}
+          isLead={isLead}
+          indexing={indexing}
+          onIndex={() => void index()}
+        />
       )}
 
       {loading && <p className="text-sm text-muted">{t("loading")}</p>}
