@@ -123,7 +123,7 @@ export function ArticleSelector({
       </label>
       )}
 
-      <div className="flex flex-wrap items-end gap-3 rounded-lg border border-border bg-surface p-3">
+      <div className="flex flex-wrap items-end gap-3 rounded-lg bg-surface-muted p-3">
         {analysed && (
           <>
         <label className="flex flex-col gap-0.5 text-xs text-muted">
@@ -200,7 +200,7 @@ export function ArticleSelector({
         )}
       </div>
 
-      <div className="flex flex-wrap items-end gap-3 rounded-lg border border-border bg-surface p-3">
+      <div className="flex flex-wrap items-end gap-3 rounded-lg bg-surface-muted p-3">
         <label className="flex flex-col gap-0.5 text-xs text-muted">
           {t("selSample")}
           <input

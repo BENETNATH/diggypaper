@@ -97,7 +97,7 @@ export function AnswerCell({
   // Not focusable: the row link is the only focus stop; the tooltip opens on the link's focus (group/row).
   return (
     <div className="group/cell relative">
-      <div className={`h-[3.4rem] overflow-hidden rounded-md border border-border/70 px-2.5 py-1.5 ${CELL_TONE_BG[tone]}`}>
+      <div className={`h-[3.4rem] overflow-hidden rounded-md px-2.5 py-1.5 ${CELL_TONE_BG[tone]}`}>
         <div className="flex items-center justify-between gap-2">
           <span className="truncate text-[11px] text-muted">{r.label}</span>
           <span className="flex shrink-0 items-center gap-1.5">

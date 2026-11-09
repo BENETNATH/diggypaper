@@ -139,7 +139,7 @@ export function QuestionEditor({
         <p className="mb-2 text-xs text-muted">{t("fieldsHint")}</p>
         <div className="flex flex-col gap-3">
           {fields.map((f, i) => (
-            <div key={i} className="grid gap-3 rounded-lg border border-border p-3 sm:grid-cols-[1fr_9rem_auto]">
+            <div key={i} className="grid gap-3 rounded-lg bg-surface-muted p-3 sm:grid-cols-[1fr_9rem_auto]">
               <Field label={t("fieldLabel")}>
                 <Input value={f.label} onChange={(e) => patchField(i, { label: e.target.value })} />
               </Field>

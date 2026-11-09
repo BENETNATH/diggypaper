@@ -40,7 +40,7 @@ export function OnboardingSteps({
         <div
           key={s.n}
           className={`flex items-start gap-3 rounded-xl p-3 ${
-            s.active ? "border-2 border-primary bg-primary/5" : "border border-border opacity-60"
+            s.active ? "border-2 border-primary bg-primary/5" : "opacity-60"
           }`}
         >
           <span

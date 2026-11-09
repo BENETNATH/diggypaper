@@ -26,7 +26,7 @@ export function ActiveJobsBanner({ projectId }: { projectId: string }) {
     <section
       data-testid="active-jobs"
       aria-label={t("activeJobs")}
-      className="rounded-lg border border-primary/40 bg-primary/5 p-3"
+      className="rounded-lg bg-primary/5 p-3"
     >
       <ActiveJobsList jobs={jobs} projectId={projectId} />
     </section>

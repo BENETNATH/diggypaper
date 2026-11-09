@@ -70,7 +70,7 @@ export default function CriteriaBuilder({
         const field =
           c.kind === "field" ? eligible.find((f) => f.key === c.field_key) : undefined;
         return (
-          <div key={i} className="flex flex-wrap items-end gap-2 rounded-lg border border-border bg-surface p-2">
+          <div key={i} className="flex flex-wrap items-end gap-2 rounded-lg bg-surface-muted p-2">
             <label className="flex flex-col gap-1 text-xs text-muted">
               {t("critKind")}
               <Select

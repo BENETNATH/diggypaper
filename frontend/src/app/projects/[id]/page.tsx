@@ -35,7 +35,7 @@ const pct = (n: number, d: number): number => (d > 0 ? Math.round((n / d) * 100)
 
 function Kpi({ label, value, sub, title }: { label: string; value: ReactNode; sub?: ReactNode; title?: string }) {
   return (
-    <div className="rounded-lg border border-border bg-surface px-3 py-2.5" title={title}>
+    <div className="rounded-lg bg-surface shadow-sm px-3 py-2.5" title={title}>
       <div className="text-xs text-muted">{label}</div>
       <div className="mt-0.5 text-xl font-semibold tabular-nums text-foreground">{value}</div>
       {sub && <div className="text-xs text-muted">{sub}</div>}
@@ -110,7 +110,7 @@ function SearchRow({
           ? "border-2 border-primary bg-primary/5"
           : untouched
             ? "border border-dashed border-border bg-surface"
-            : "border border-border bg-surface"
+            : "bg-surface shadow-sm"
       }`}
     >
       <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
@@ -338,7 +338,7 @@ function ProjectDashboard() {
 
       {/* Corpus index status + live progress (« indexation visible ») */}
       {!empty && progress !== null && (
-        <section className="rounded-lg border border-border bg-surface p-3">
+        <section className="rounded-lg bg-surface shadow-sm p-3">
           <IndexProgress
             progress={progress}
             isLead={isLead}
@@ -362,7 +362,7 @@ function ProjectDashboard() {
             </h2>
           </div>
           {shown.length === 0 ? (
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary/40 bg-primary/5 p-4 text-sm text-foreground">
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-primary/5 p-4 text-sm text-foreground">
               <span>{t("noSearchYet", { n: overview.articles })}</span>
               {isLead && (
                 <Link href={`/projects/${projectId}/inference?new=1`}>
@@ -445,7 +445,7 @@ function ProjectDashboard() {
         <section className="flex flex-col gap-3">
           <h2 className="text-sm font-bold uppercase tracking-wide text-violet-700">{t("optionalTooling")}</h2>
           <div className="grid gap-3 sm:grid-cols-2">
-            <div className="flex items-center justify-between gap-3 rounded-xl border border-violet-300 bg-violet-50 p-3">
+            <div className="flex items-center justify-between gap-3 rounded-xl bg-violet-50 p-3">
               <span>
                 <span className="block font-semibold text-violet-800">{t("goldCard")}</span>
                 <span className="block text-sm text-muted">{t("goldCardState", { n: overview.gold })}</span>
@@ -457,7 +457,7 @@ function ProjectDashboard() {
                 {t("openTooling")}
               </Link>
             </div>
-            <div className="flex items-center justify-between gap-3 rounded-xl border border-violet-300 bg-violet-50 p-3">
+            <div className="flex items-center justify-between gap-3 rounded-xl bg-violet-50 p-3">
               <span>
                 <span className="block font-semibold text-violet-800">{t("benchCard")}</span>
                 <span className="block text-sm text-muted">{t("benchCardState", { n: benchCount })}</span>
@@ -490,7 +490,7 @@ function ProjectDashboard() {
       )}
 
       {!empty && (
-        <details className="rounded-lg border border-border bg-surface p-3 text-sm">
+        <details className="rounded-lg bg-surface shadow-sm p-3 text-sm">
           <summary className="cursor-pointer font-medium text-foreground">{tAct("title")}</summary>
           <div className="mt-2">
             <ActivityPanel projectId={projectId} />
@@ -499,7 +499,7 @@ function ProjectDashboard() {
       )}
 
       {!empty && (
-        <details className="rounded-lg border border-border bg-surface p-3 text-sm">
+        <details className="rounded-lg bg-surface shadow-sm p-3 text-sm">
           <summary className="cursor-pointer font-medium text-foreground">{t("howTitle")}</summary>
           <ol className="mt-2 list-decimal space-y-1 pl-5 text-muted">
             <li>{t("howStep1")}</li>

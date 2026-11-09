@@ -212,7 +212,7 @@ export function BenchmarkDisagreements({
         <p className="text-sm text-muted">{live ? t("liveEmpty") : onlyDisagree ? t("noDisagree") : t("noArticles")}</p>
       )}
       {data?.items.map((row) => (
-        <article key={row.article_id} className="rounded-lg border border-border p-3">
+        <article key={row.article_id} className="rounded-lg bg-surface-muted p-3">
           <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
             <Link
               href={withSearch(`/projects/${projectId}/annotate?article=${row.article_id}`, searchId ?? undefined)}
@@ -224,7 +224,7 @@ export function BenchmarkDisagreements({
           </div>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {row.gold && (
-              <div className="rounded-lg border border-primary/40 bg-primary/5 p-2">
+              <div className="rounded-lg bg-primary/5 p-2">
                 <p className="mb-1 text-xs font-semibold text-primary">{t("goldRef")}</p>
                 <Answers decision={row.gold} fields={fields} />
               </div>

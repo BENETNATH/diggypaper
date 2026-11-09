@@ -329,7 +329,7 @@ export function BenchmarkRunCard({
           )}
 
           {!!run.variants?.length && (
-            <details className="rounded-lg border border-border p-3">
+            <details className="rounded-lg bg-surface-muted p-3">
               <summary className="cursor-pointer text-sm font-semibold text-foreground">{t("promptsCompared")}</summary>
               {copyError && <p className="mt-2 text-xs text-danger">{t("copyFailed")}</p>}
               <div className="mt-3 flex flex-col gap-3">

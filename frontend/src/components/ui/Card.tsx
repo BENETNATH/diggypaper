@@ -1,6 +1,6 @@
 import { ReactNode } from "react";
 
-/** Content card (semantic tokens, border + padding). */
+/** Content card (semantic tokens, bg-surface + shadow-sm — no border, spec 2026-11-09-politique-surfaces). */
 export function Card({
   title,
   children,
@@ -12,7 +12,7 @@ export function Card({
 }) {
   return (
     <section
-      className={`rounded-xl border border-border bg-surface p-4 ${className}`}
+      className={`rounded-xl bg-surface shadow-sm p-4 ${className}`}
     >
       {title && (
         <h2 className="mb-3 text-base font-semibold text-foreground">{title}</h2>

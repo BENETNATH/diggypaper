@@ -81,7 +81,7 @@ function WatchCard({
   const t = useTranslations("watches");
   const active = watch.status === "ACTIVE";
   return (
-    <div className="rounded-lg border border-border bg-surface p-3">
+    <div className="rounded-lg bg-surface shadow-sm p-3">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
@@ -214,7 +214,7 @@ function WatchForm({
   return (
     <form
       onSubmit={(e) => void submit(e)}
-      className="flex flex-col gap-3 rounded-lg border border-primary/40 bg-primary/5 p-3"
+      className="flex flex-col gap-3 rounded-lg bg-primary/5 p-3"
     >
       <div className="grid gap-3 md:grid-cols-2">
         <Field label={t("search")}>

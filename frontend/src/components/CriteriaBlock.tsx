@@ -254,7 +254,7 @@ export function CriteriaBlock({
         </div>
       </div>
 
-      <div className="mt-3 border-t border-border pt-2">
+      <div className="mt-3 pt-2">
         <p
           data-testid="crit-count"
           role="status"

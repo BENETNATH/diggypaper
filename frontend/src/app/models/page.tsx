@@ -315,7 +315,7 @@ function ModelsContent() {
                 )}
               </li>
             </ul>
-            <div className="mt-4 border-t border-border pt-3 text-sm">
+            <div className="mt-4 pt-3 text-sm">
               <p className="font-medium text-foreground">
                 {t("hwTitle")} : {caps.hardware.cores} {t("hwCores")} · {caps.hardware.ram_gb} {t("hwRam")} ·{" "}
                 {caps.hardware.gpu ? t("hwGpu") : t("hwNoGpu")}
@@ -343,13 +343,13 @@ function ModelsContent() {
               <p className="mt-2 text-xs text-muted">{t("hwEstimate")}</p>
             </div>
             {isAdmin && caps.ollama.configured && (
-              <div className="mt-6 border-t border-border pt-4">
+              <div className="mt-6 pt-4">
                 <HfSearch onStarted={() => void load()} onError={setError} />
               </div>
             )}
           </section>
         )}
-        <section className={isAdmin && caps ? "mt-6 border-t border-border pt-4" : ""}>
+        <section className={isAdmin && caps ? "mt-6 pt-4" : ""}>
           <h3 className="mb-2 text-sm font-semibold text-foreground">{t("addExternal")}</h3>
           <p className="text-sm font-medium text-foreground">{t("svcExternal")}</p>
           <div className="mt-3 rounded-lg bg-surface-muted p-3 text-sm">
@@ -396,7 +396,7 @@ function ModelsContent() {
                   <div
                     role="group"
                     aria-label={t("extListPick")}
-                    className="max-h-48 overflow-y-auto rounded-md border border-border bg-surface p-2"
+                    className="max-h-48 overflow-y-auto rounded-md bg-surface-muted p-2"
                   >
                     {extList.map((m) => (
                       <label

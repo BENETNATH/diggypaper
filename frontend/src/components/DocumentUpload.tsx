@@ -311,7 +311,7 @@ export function DocumentUpload({
 
       {/* R2 — OCR confirmation panel, after the upload queue settles */}
       {showOcrPanel && (
-        <div className="flex flex-col gap-2 rounded-lg border border-border bg-surface p-3 text-sm">
+        <div className="flex flex-col gap-2 rounded-lg bg-surface-muted p-3 text-sm">
           <p className="text-muted">
             {t("ocrSummary", { n: done.length, m: withText, k: scannedDone.length })}
             {ocr.running && (

@@ -401,8 +401,8 @@ export default function AnnotatePage() {
               {sections.includes("all") ? ti("kind_all") : sections.map((k) => ti(`kind_${k}`)).join(" · ")}
             </h2>
             <div
-              className={`mb-2 rounded border p-2 text-xs ${
-                article.has_fulltext ? "border-border" : "border-warning/40 bg-warning/10"
+              className={`mb-2 rounded p-2 text-xs ${
+                article.has_fulltext ? "bg-surface-muted" : "border border-warning/40 bg-warning/10"
               }`}
             >
               {!article.has_fulltext && (

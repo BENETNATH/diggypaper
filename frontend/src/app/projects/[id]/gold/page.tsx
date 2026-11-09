@@ -242,7 +242,7 @@ function GoldContent() {
                         .map((r) => (
                           <span
                             key={r.user_id}
-                            className="rounded-full border border-border bg-surface px-2 py-0.5 text-xs text-muted"
+                            className="rounded-full bg-surface-muted px-2 py-0.5 text-xs text-muted"
                           >
                             {r.by ?? "?"} :{" "}
                             {fields.map((f) => answer((r.answers ?? {})[f.key])).filter(Boolean).join(" · ") || "—"}

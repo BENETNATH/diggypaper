@@ -43,7 +43,7 @@ export function CtaBanner({
 }) {
   const t = useTranslations("inference");
   return (
-    <div data-testid="cta-banner" className="mt-4 rounded-lg border border-border bg-surface p-3">
+    <div data-testid="cta-banner" className="mt-4 rounded-lg bg-surface shadow-sm p-3">
       <p className="mb-3 text-sm font-semibold text-foreground">
         <span className="mr-1 text-success">✓</span>
         {t("ctaDone", { n: nResults })}

@@ -40,7 +40,7 @@ export function Modal({
         tabIndex={-1}
         className={`w-full ${wide ? "max-w-4xl" : "max-w-lg"} rounded-xl border border-border bg-surface shadow-xl outline-none`}
       >
-        <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+        <div className="flex items-center justify-between gap-3 px-4 py-3">
           <h2 className="text-base font-semibold text-foreground">{title}</h2>
           <button
             type="button"

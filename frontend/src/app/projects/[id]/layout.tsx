@@ -228,7 +228,7 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
       </div>
 
       {importing && (
-        <div className="rounded-lg border border-primary/40 bg-primary/5 p-3">
+        <div className="rounded-lg bg-primary/5 p-3">
           <ProgressBar
             value={total > 0 ? (done / total) * 100 : null}
             label={total > 0 ? t("importBanner", { done, total }) : t("importBannerStart")}
@@ -245,7 +245,7 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
       )}
 
       {ft && (
-        <div className="rounded-lg border border-primary/40 bg-primary/5 p-3">
+        <div className="rounded-lg bg-primary/5 p-3">
           <ProgressBar
             value={ftotal > 0 ? (fdone / ftotal) * 100 : null}
             label={ftotal > 0 ? t("fulltextBanner", { done: fdone, total: ftotal, found: ffound }) : t("fulltextBannerStart")}

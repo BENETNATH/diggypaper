@@ -137,7 +137,7 @@ export function ResultsTable({
             {t("legendWarn")}
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <span className="h-3 w-3 rounded border border-border bg-surface-muted/40" aria-hidden />
+            <span className="h-3 w-3 rounded bg-surface-muted/40" aria-hidden />
             {t("legendNeutral")}
           </span>
           <span className="inline-flex items-center gap-1.5">

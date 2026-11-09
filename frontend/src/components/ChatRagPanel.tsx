@@ -77,7 +77,7 @@ function CitationsList({
       <p className="text-xs font-medium uppercase tracking-wide text-muted">{t("citations")}</p>
       <ul className="mt-1 flex flex-col gap-1">
         {citations.map((c) => (
-          <li key={c.n} className="rounded-lg border border-border bg-surface p-2 text-sm">
+          <li key={c.n} className="rounded-lg bg-surface-muted p-2 text-sm">
             <Link
               href={withSearch(`/projects/${projectId}/annotate?article=${c.article_id}`, searchId)}
               className="font-medium text-primary hover:underline"
@@ -311,7 +311,7 @@ export function ChatRagPanel({ projectId, models, isLead, searches = [], results
     (mode !== "results" || resultsReady);
 
   return (
-    <div data-testid="chat-rag-panel" className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-3">
+    <div data-testid="chat-rag-panel" className="flex flex-col gap-3 rounded-lg bg-surface shadow-sm p-3">
       <div className="flex flex-wrap items-center gap-2">
         <label className="text-xs font-medium uppercase tracking-wide text-muted" htmlFor="chat-rag-model">
           {t("model")}
@@ -495,7 +495,7 @@ export function ChatRagPanel({ projectId, models, isLead, searches = [], results
               className={`ml-auto max-w-[85%] whitespace-pre-wrap rounded-lg px-3 py-2 text-sm ${
                 m.role === "user"
                   ? "bg-primary/10 text-foreground"
-                  : "border border-border bg-surface-muted text-foreground"
+                  : "bg-surface-muted text-foreground"
               }`}
             >
               {m.role === "user" ? m.content : renderCited(m.content)}
@@ -512,7 +512,7 @@ export function ChatRagPanel({ projectId, models, isLead, searches = [], results
             </div>
             <div
               data-testid="chat-current-answer"
-              className="mt-2 max-w-[95%] whitespace-pre-wrap rounded-lg border border-border bg-surface-muted px-3 py-2 text-sm text-foreground"
+              className="mt-2 max-w-[95%] whitespace-pre-wrap rounded-lg bg-surface-muted px-3 py-2 text-sm text-foreground"
             >
               {renderCited(current.answer)}
               {current.streaming && (

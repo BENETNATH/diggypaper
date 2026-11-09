@@ -57,7 +57,7 @@ export function SemanticSearchBox({ projectId, isLead }: Props) {
   return (
     <div
       data-testid="semantic-box"
-      className="flex flex-col gap-2 rounded-lg border border-border bg-surface p-3"
+      className="flex flex-col gap-2 rounded-lg bg-surface shadow-sm p-3"
     >
       <form
         className="flex gap-2"
@@ -100,7 +100,7 @@ export function SemanticSearchBox({ projectId, isLead }: Props) {
           ) : (
             <ul className="flex flex-col gap-2">
               {results.map((r, i) => (
-                <li key={`${r.article.id}-${i}`} className="rounded-lg border border-border bg-surface-muted p-3">
+                <li key={`${r.article.id}-${i}`} className="rounded-lg bg-surface-muted p-3">
                   <Link
                     href={withSearch(`/projects/${projectId}/annotate?article=${r.article.id}`, searchId)}
                     className="text-sm font-medium text-primary hover:underline"

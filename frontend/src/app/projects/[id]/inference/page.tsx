@@ -91,7 +91,7 @@ export function AnalysisRow({
   const tj = useTranslations("jobs");
   const tp = useTranslations("project");
   return (
-    <li className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-lg border border-border bg-surface p-3">
+    <li className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-lg bg-surface shadow-sm p-3">
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-medium text-foreground">{s.name}</span>
@@ -568,7 +568,7 @@ function AnalyseContent() {
 
       {error && <ErrorBanner message={error} />}
       {notice && (
-        <p className="rounded-lg border border-primary/40 bg-primary/5 p-3 text-sm text-foreground">{notice}</p>
+        <p className="rounded-lg bg-primary/5 p-3 text-sm text-foreground">{notice}</p>
       )}
 
       {isLead && (
@@ -620,7 +620,7 @@ function AnalyseContent() {
                 </div>
               )}
               {isLead && models.length > 0 && (
-                <div className="flex flex-col gap-4 rounded-lg border border-border p-3">
+                <div className="flex flex-col gap-4 rounded-lg bg-surface-muted p-3">
                   <div className="grid gap-3 md:grid-cols-2">
                     <div className="flex flex-col gap-2">
                       <p className="text-sm font-semibold text-foreground">{t("stage1")}</p>
@@ -674,7 +674,8 @@ function AnalyseContent() {
                     )}
                   </div>
                   {chainable && (
-                    <div className="rounded-lg border border-border p-3">
+                    /* shortcut: 3e niveau visuel aplatit (R2) — espacement seul, pas de fond ni bordure */
+                    <div className="rounded-lg p-3">
                       <Checkbox label={t("chainLabel", { name: current?.name ?? "…" })} checked={chain} onChange={(e) => setChain(e.target.checked)} />
                       <p className="mt-1 text-xs text-muted">{t("chainHint")}</p>
                     </div>
@@ -760,7 +761,7 @@ function AnalyseContent() {
             )}
             {/* The questions as created (orientation + answer fields) — never the raw prompt */}
             {q && (q.question || q.fields.length > 0) && (
-              <div className="mb-3 rounded-lg border border-border p-3 text-sm">
+              <div className="mb-3 rounded-lg bg-surface-muted p-3 text-sm">
                 <p className="mb-1 text-xs font-medium text-muted">{t("questionsTitle")}</p>
                 {q.question && (
                   <p className="mb-2 text-foreground">
@@ -798,7 +799,7 @@ function AnalyseContent() {
               <p className="mt-2 text-xs text-warning">{t("invalidJson", { n: num(r.invalid_json) })}</p>
             )}
             {job?.status === "COMPLETED" && !!r.validation && (
-              <div className="mt-4 rounded-lg border border-border p-3">
+              <div className="mt-4 rounded-lg bg-surface-muted p-3">
                 <h3 className="mb-2 text-sm font-semibold text-foreground">{t("validationTitle")}</h3>
                 <ValidationView scored={r.validation as Validation} primary={(r.validation as Validation).primary} fields={q?.fields ?? []} />
               </div>

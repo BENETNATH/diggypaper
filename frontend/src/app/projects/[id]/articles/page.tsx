@@ -265,7 +265,7 @@ function ResultsContent() {
       </div>
 
       {!triaged && count("ALL") > 0 && isLead && (
-        <p className="rounded-lg border border-primary/40 bg-primary/5 px-3 py-2 text-sm">
+        <p className="rounded-lg bg-primary/5 px-3 py-2 text-sm">
           {t("notTriaged")}{" "}
           <Link href={withSearch(`/projects/${projectId}/inference`, searchId)} className="font-medium text-primary hover:underline">
             {t("goTriage")} →
@@ -371,7 +371,7 @@ function ResultsContent() {
       </div>
 
       {fields.length > 0 && (filtersOpen || hasAnswerFilter) && (
-        <div className="flex flex-wrap items-end gap-3 rounded-lg border border-border bg-surface p-3">
+        <div className="flex flex-wrap items-end gap-3 rounded-lg bg-surface shadow-sm p-3">
           <AnswerFilters
             fields={fields}
             values={draft}
@@ -397,7 +397,7 @@ function ResultsContent() {
         <Modal title={t("prisma")} onClose={() => setPrismaOpen(false)} wide>
           <div className="flex flex-col items-start gap-3">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={prismaUrl(projectId, locale, searchId)} alt={t("prisma")} className="aspect-[3/4] w-full rounded border border-border bg-surface-muted object-contain" />
+            <img src={prismaUrl(projectId, locale, searchId)} alt={t("prisma")} className="aspect-[3/4] w-full rounded bg-surface-muted object-contain" />
             <div className="flex gap-4 text-sm">
               <a href={prismaUrl(projectId, locale, searchId)} download="prisma.svg" className="text-primary hover:underline">
                 ⬇ {t("prismaDownload")}

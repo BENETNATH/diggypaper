@@ -155,7 +155,7 @@ export function ComparisonPanel({
             <p className="text-sm text-muted">{t("noCommon")}</p>
           ) : (
             <>
-              <div className="overflow-x-auto rounded-lg border border-border">
+              <div className="overflow-x-auto rounded-lg">
                 <table className="w-full text-left text-sm">
                   <thead className="bg-surface-muted text-xs text-muted">
                     <tr>

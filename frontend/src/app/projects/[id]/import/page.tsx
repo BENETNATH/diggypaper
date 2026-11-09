@@ -392,7 +392,7 @@ function ImportContent() {
               />
             ) : (
             <div className="flex flex-col gap-4">
-            <details className="rounded-lg border border-border p-3">
+            <details className="rounded-lg bg-surface shadow-sm p-3">
               <summary className="cursor-pointer text-sm font-medium text-foreground">{t("qaTitle")}</summary>
               <div className="mt-3">
                 <QueryAssistant

@@ -230,7 +230,7 @@ export function BenchmarkForm({
               </Button>
             </div>
           ) : (
-            <div className="flex flex-col gap-3 rounded-lg border border-border p-3">
+            <div className="flex flex-col gap-3 rounded-lg bg-surface-muted p-3">
               <p className="text-sm font-medium text-foreground">{t("tuningTitle")}</p>
               <p className="text-xs text-muted">{t("tuningHint")}</p>
               <Field label={t("tuningName")}>
@@ -283,7 +283,7 @@ export function BenchmarkForm({
           <p className="text-xs text-muted">{t("variantsHint")}</p>
           {drafts.length === 0 && <p className="text-sm text-foreground">{t("variantsNone")}</p>}
           {drafts.map((d, i) => (
-            <div key={i} className="flex flex-col gap-2 rounded-lg border border-border p-3">
+            <div key={i} className="flex flex-col gap-2 rounded-lg bg-surface-muted p-3">
               <div className="flex items-end gap-2">
                 <div className="flex-1">
                   <Field label={t("variantName")}>
