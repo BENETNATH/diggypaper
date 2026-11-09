@@ -15,9 +15,12 @@ from collections import Counter
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app import embeddings
-from app.db.models import Article, SectionEmbedding
+from app.db.models import Article, ArticlePrediction, Search, SectionEmbedding
+from app.result_text import render_response
+from app.searches import in_search, lot_ids
 
 #: Reciprocal rank fusion constant (spec §4).
 RRF_K = 60
@@ -76,11 +79,14 @@ async def _dense_topk(
     q_vec: list[float],
     k: int,
     article_ids: set[uuid.UUID] | None = None,
+    search_id: uuid.UUID | None = None,
+    sections: list[dict] | None = None,
 ) -> list[tuple[uuid.UUID, int, float]]:
     """Top-k sections by cosine similarity: (article_id, section_index, score).
 
     ``article_ids`` optionally restricts the candidates to those articles
-    (scoping the ranking, not the output).
+    (scoping the ranking, not the output). ``search_id`` restricts the
+    vectors to one search's RESULTS rows (R4).
 
     PostgreSQL: the pgvector cosine operator (``<=>``, served by the HNSW
     index). Other dialects (SQLite tests): an in-Python scan of the project's
@@ -90,6 +96,8 @@ async def _dense_topk(
         where = [Article.project_id == project_id]
         if article_ids is not None:
             where.append(Article.id.in_(list(article_ids)))
+        if search_id is not None:
+            where.append(SectionEmbedding.search_id == search_id)
         distance = SectionEmbedding.embedding.cosine_distance(q_vec)
         rows = (
             await db.execute(
@@ -112,14 +120,18 @@ async def _dense_topk(
             seen.add(key)
             out.append((se.article_id, se.section_index, 1.0 - float(dist)))
         return out
-    sections = await _project_sections(db, project_id)
+    if sections is None:
+        sections = await _project_sections(db, project_id)
+    vector_where = [Article.project_id == project_id]
+    if search_id is not None:
+        vector_where.append(SectionEmbedding.search_id == search_id)
     vectors = {
         (se.article_id, se.section_index): _as_list(se.embedding)
         for se in (
             await db.execute(
                 select(SectionEmbedding)
                 .join(Article, Article.id == SectionEmbedding.article_id)
-                .where(Article.project_id == project_id)
+                .where(*vector_where)
             )
         ).scalars()
     }
@@ -184,17 +196,63 @@ def _excerpt(text: str, query_tokens: list[str]) -> str:
     return text[start : start + _EXCERPT_LEN]
 
 
-async def _stored_embedding_model(db: AsyncSession, project_id: uuid.UUID) -> str | None:
+async def _result_sections(db: AsyncSession, project_id: uuid.UUID, search: Search) -> list[dict]:
+    """The results of a search as pseudo-sections: one unit per article of the
+    lot whose LATEST prediction renders a non-empty answer (R4 — the same
+    unit the results index embeds). Lot + latest predictions in ONE aggregate
+    query (audit minor: no per-article N+1)."""
+    lot = await lot_ids(db, search)
+    if not lot:
+        return []
+    p2 = aliased(ArticlePrediction)
+    latest_id = (
+        select(p2.id)
+        .where(
+            p2.article_id == ArticlePrediction.article_id,
+            in_search(p2.search_id, search),
+        )
+        .order_by(p2.created_at.desc().nulls_last(), p2.id.desc())
+        .limit(1)
+        .scalar_subquery()
+    )
+    rows = (
+        await db.execute(
+            select(Article, ArticlePrediction)
+            .select_from(Article)
+            .join(ArticlePrediction, ArticlePrediction.article_id == Article.id)
+            .where(
+                Article.id.in_(lot),
+                in_search(ArticlePrediction.search_id, search),
+                ArticlePrediction.id == latest_id,
+            )
+            .order_by(Article.id)
+        )
+    ).all()
+    out: list[dict] = []
+    for article, pred in rows:
+        rendered = render_response(pred.decision_json, pred.field_confidences, search.fields)
+        if rendered:
+            out.append({"article": article, "index": 0, "title": None, "text": rendered})
+    return out
+
+
+async def _stored_embedding_model(
+    db: AsyncSession, project_id: uuid.UUID, search_id: uuid.UUID | None = None
+) -> str | None:
     """The model the project's vectors were produced with (None when the corpus
     is empty). The query must be embedded in that same space — a model change
     must never mix vectors from different spaces in one search. During a
     model-change re-vectorization the table is transiently mixed; the majority
-    model wins until the rerun completes."""
+    model wins until the rerun completes. ``search_id`` scopes the count to
+    one search's results rows."""
+    where = [Article.project_id == project_id]
+    if search_id is not None:
+        where.append(SectionEmbedding.search_id == search_id)
     row = (
         await db.execute(
             select(SectionEmbedding.embedding_model, func.count())
             .join(Article, Article.id == SectionEmbedding.article_id)
-            .where(Article.project_id == project_id)
+            .where(*where)
             .group_by(SectionEmbedding.embedding_model)
             .order_by(func.count().desc())
         )
@@ -208,6 +266,7 @@ async def semantic_search(
     query: str,
     limit: int = DEFAULT_LIMIT,
     article_ids: set[uuid.UUID] | None = None,
+    search_id: uuid.UUID | None = None,
 ) -> dict:
     """Hybrid search over the project's sections. Returns ``{"results": [...],
     "indexed": bool}`` — an unvectorized corpus yields an empty result list
@@ -216,7 +275,60 @@ async def semantic_search(
     ``article_ids``, when given, restricts the RANKING to those articles —
     not merely the final list, so a small scope keeps its own top-N instead
     of losing every candidate to the whole-corpus ranking (chat scoped to a
-    frozen lot)."""
+    frozen lot).
+
+    ``search_id`` (R4): the retrieval is limited to that search's RESULTS
+    rows (rendered answers, dense filtered by search_id + lexical over the
+    rendered texts, same RRF k=60)."""
+    if search_id is not None:
+        search = await db.get(Search, search_id)
+        if search is None or search.project_id != project_id:
+            raise LookupError(f"search {search_id} not found (project {project_id})")
+        sections = await _result_sections(db, project_id, search)
+        indexed = bool(
+            (
+                await db.execute(
+                    select(SectionEmbedding.id)
+                    .where(SectionEmbedding.search_id == search.id)
+                    .limit(1)
+                )
+            ).first()
+            is not None
+        )
+        if not indexed:
+            return {"results": [], "indexed": False}
+        query_tokens = _tokens(query)
+        if not sections or not query_tokens:
+            return {"results": [], "indexed": indexed}
+        model = await _stored_embedding_model(db, project_id, search.id)
+        q_vec = embeddings.get_embedder(model).embed(query)
+        k = min(limit * _CANDIDATE_FACTOR, MAX_LIMIT)
+        dense = await _dense_topk(db, project_id, q_vec, k, search_id=search.id, sections=sections)
+        lexical = _lexical_rank(sections, query_tokens)
+        fused = _rrf([[(a, i) for a, i, _ in dense], lexical])
+        results = []
+        by_key = {(s["article"].id, s["index"]): s for s in sections}
+        for (article_id, index), score in sorted(fused.items(), key=lambda x: x[1], reverse=True):
+            if len(results) >= limit:
+                break
+            s = by_key.get((article_id, index))
+            if s is None:
+                continue
+            article = s["article"]
+            results.append(
+                {
+                    "article": {
+                        "id": str(article.id),
+                        "title": article.title,
+                        "pmid": article.pmid,
+                        "doi": article.doi,
+                    },
+                    "section_title": s["title"],
+                    "excerpt": _excerpt(s["text"], query_tokens),
+                    "score": round(score, 6),
+                }
+            )
+        return {"results": results, "indexed": indexed}
     sections = await _project_sections(db, project_id)
     if article_ids is not None:
         sections = [s for s in sections if s["article"].id in article_ids]

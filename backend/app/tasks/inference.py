@@ -50,6 +50,7 @@ from app.db.models import (
     Project,
     ProjectStatus,
     PromptTemplate,
+    Search,
 )
 from app.emails import Mailer
 from app.gold_examples import examples_block, pick_examples
@@ -297,6 +298,26 @@ async def _run_inference(
                 raise
             if stats.get("cancelled"):
                 return stats  # stopped by the user: no "finished" e-mail
+
+            # Results indexing (spec 2026-11-09-sous-analyse-criteres R4):
+            # automatic on completion, same pattern as the corpus
+            # (vectorize_task.delay). Best-effort: a failure here must never
+            # break the finished job.
+            if job.search_id is not None:
+                s_kind = await session.scalar(select(Search.kind).where(Search.id == job.search_id))
+                if s_kind != "blind":
+                    # A blind lot's results would be an oracle on the masked
+                    # answers (same guard as the read paths).
+                    from app.tasks.vectorize import vectorize_task
+
+                    try:
+                        vectorize_task.delay(str(job.project_id), search_id=str(job.search_id))
+                    except Exception:
+                        logger.warning(
+                            "inference: results indexing trigger failed (project=%s search=%s)",
+                            job.project_id,
+                            job.search_id,
+                        )
 
             # E-mail notification (best-effort, never breaks the job).
             mailer = await _make_mailer(session)

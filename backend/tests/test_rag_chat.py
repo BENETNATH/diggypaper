@@ -17,10 +17,12 @@ from app import embeddings as embeddings_mod
 from app.core.security import hash_password
 from app.db.models import (
     Article,
+    ArticlePrediction,
     InferenceJob,
     InferenceJobStatus,
     ModelRegistry,
     ModelShare,
+    PredictionStatus,
     Project,
     ProjectMember,
     ProjectMemberRole,
@@ -825,3 +827,306 @@ async def test_chat_foreign_project_search_id_404(
     assert resp.status_code == 404
     assert "search_not_found" in resp.text
     assert calls == []
+
+
+# ---------------------------------------------------------------------------
+# Mode résultats (spec 2026-11-09-sous-analyse-criteres R5/R6)
+# ---------------------------------------------------------------------------
+
+RESULTS_FIELDS = [{"key": "moteur", "label": "Moteur ?", "type": "boolean"}]
+
+
+async def _results_search(session, project, articles, kind="standard"):
+    """A standard search (frozen lot) + one AUTO_ACCEPTED prediction per article
+    + the results index (vectorize_project, search scope)."""
+    s = Search(
+        project_id=project.id,
+        name="Résultats",
+        question="Q ?",
+        fields=RESULTS_FIELDS,
+        kind=kind,
+        lot_all=False,
+    )
+    session.add(s)
+    await session.flush()
+    for a in articles:
+        session.add(SearchArticle(search_id=s.id, article_id=a.id))
+        session.add(
+            ArticlePrediction(
+                article_id=a.id,
+                search_id=s.id,
+                model_used="m",
+                decision_json={"moteur": True},
+                confidence_score=0.92,
+                field_confidences={"moteur": 0.92},
+                status=PredictionStatus.AUTO_ACCEPTED,
+            )
+        )
+    await session.commit()
+    await vectorize_project(session, project.id, search_id=s.id)
+    return s
+
+
+async def _articles_of(session, project) -> list[Article]:
+    return list(
+        (
+            await session.execute(
+                select(Article).where(Article.project_id == project.id).order_by(Article.id)
+            )
+        ).scalars()
+    )
+
+
+def test_build_results_context_triple_block():
+    """The results context = rendered responses (NOT citable) + the lot stats
+    (compact JSON, verbatim) + the numbered corpus passages [n] (citable)."""
+    from app.rag_chat import build_results_context
+
+    responses = [
+        {
+            "article": {"id": "a1", "title": "A"},
+            "section_title": None,
+            "excerpt": "Moteur ? : Oui (92 %)",
+            "score": 0.9,
+        },
+    ]
+    stats = {"n_results": 2, "status": {"AUTO_ACCEPTED": 2}, "fields": {}}
+    sections = [
+        {
+            "article": {"id": "a2", "title": "B"},
+            "section_title": "Methods",
+            "excerpt": "cryolésion",
+            "score": 0.8,
+        },
+    ]
+    block, included = build_results_context(responses, stats, sections, budget_chars=500)
+    assert "Moteur ? : Oui (92 %)" in block
+    assert '"n_results":2' in block
+    assert "[1]" in block and "cryolésion" in block
+    # The citations payload maps to the CORPUS passages only.
+    assert [s["n"] for s in included] == [1]
+    assert included[0]["section_title"] == "Methods"
+
+
+def test_build_results_context_budget_drops_least_relevant_responses():
+    from app.rag_chat import build_results_context
+
+    responses = [
+        {
+            "article": {"id": f"a{i}", "title": f"T{i}"},
+            "excerpt": "x" * 60,
+            "score": 1.0 - i * 0.1,
+        }
+        for i in range(5)
+    ]
+    stats = {"n_results": 5}
+    block, included = build_results_context(responses, stats, [], budget_chars=200)
+    assert "T0" in block  # the most relevant response is kept
+    assert "T4" not in block  # the least relevant one never makes it in
+    assert included == []  # no corpus passage → nothing citable
+
+
+def test_build_results_context_empty_responses():
+    from app.rag_chat import build_results_context
+
+    block, included = build_results_context([], {"n_results": 0}, [], budget_chars=500)
+    assert '"n_results":0' in block
+    assert block.strip()
+    assert included == []
+
+
+async def test_chat_results_happy_path(client, session, researcher_user, do_login, monkeypatch):
+    """mode=results: the system prompt is the results one, the context carries
+    the rendered responses + the lot stats + the corpus passages, and the
+    citations point to corpus sections."""
+    from app.i18n import t
+
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project_id = await _chat_project(session, researcher_user)
+    project = await _project(session, project_id)
+    arts = await _articles_of(session, project)
+    lot = await _results_search(session, project, arts)
+    lot_ids = {str(a.id) for a in arts}
+
+    seen = {}
+
+    async def fake_stream(self, model, messages):
+        seen["sys"] = messages[0]["content"]
+        seen["ctx"] = messages[-1]["content"]
+        yield "[1] cryolésion."
+
+    monkeypatch.setattr(OpenAICompatibleService, "chat_stream", fake_stream)
+
+    status, events = await _read_sse(
+        client,
+        project_id,
+        {
+            "question": "Quoi ?",
+            "model": "Kev-4B",
+            "mode": "results",
+            "search_id": str(lot.id),
+        },
+    )
+    assert status == 200
+    assert seen["sys"] == t("en", "chat_system_prompt_results")
+    assert "Moteur ? : Oui (92 %)" in seen["ctx"]  # rendered response
+    assert '"n_results":2' in seen["ctx"]  # lot stats, compact JSON
+    assert "[1]" in seen["ctx"]  # a corpus passage, numbered
+    citations = events["citations"][0]
+    assert citations and all(c["n"] == 1 for c in citations)
+    # Citations resolve to CORPUS articles of the lot (payload contract:
+    # n, article_id, title, excerpt).
+    assert all(c["article_id"] in lot_ids for c in citations)
+    assert all(c["title"] and c["excerpt"] for c in citations)
+
+
+async def test_chat_results_without_search_id_400(client, session, researcher_user, do_login):
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project_id = await _chat_project(session, researcher_user)
+    resp = await client.post(
+        f"/api/v1/projects/{project_id}/chat",
+        json={"question": "Quoi ?", "model": "Kev-4B", "mode": "results"},
+    )
+    assert resp.status_code == 400
+    assert "chat_results_requires_search" in resp.text
+
+
+async def test_chat_results_foreign_search_404_llm_not_called(
+    client, session, researcher_user, do_login, monkeypatch
+):
+    """A results-mode search from another project: 404 (no oracle) and the LLM
+    never runs."""
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project_id = await _chat_project(session, researcher_user)
+
+    foreign = Project(title="Foreign P", created_by=researcher_user.id)
+    session.add(foreign)
+    await session.flush()
+    session.add(
+        ProjectMember(
+            project_id=foreign.id,
+            user_id=researcher_user.id,
+            role_in_project=ProjectMemberRole.LEAD,
+        )
+    )
+    fa = Article(
+        project_id=foreign.id,
+        title="Foreign paper",
+        pmid="78",
+        sections=[{"title": "Methods", "kind": "methods", "text": "nothing to see"}],
+    )
+    session.add(fa)
+    await session.flush()
+    foreign_lot = await _results_search(session, foreign, [fa])
+
+    calls = []
+
+    async def fake_stream(self, model, messages):
+        calls.append(model)
+        yield "[1] x"
+
+    monkeypatch.setattr(OpenAICompatibleService, "chat_stream", fake_stream)
+
+    resp = await client.post(
+        f"/api/v1/projects/{project_id}/chat",
+        json={
+            "question": "Quoi ?",
+            "model": "Kev-4B",
+            "mode": "results",
+            "search_id": str(foreign_lot.id),
+        },
+    )
+    assert resp.status_code == 404
+    assert "search_not_found" in resp.text
+    assert calls == []
+
+
+async def test_chat_results_blind_search_404_llm_not_called(
+    client, session, researcher_user, do_login, monkeypatch
+):
+    """Results-mode chat on a blind search: 404 (the lot's stats and the
+    results index would be an oracle on the masked answers) — the LLM never
+    runs."""
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project_id = await _chat_project(session, researcher_user)
+    project = await _project(session, project_id)
+    blind = await _results_search(
+        session, project, (await _articles_of(session, project))[:2], kind="blind"
+    )
+
+    calls = []
+
+    async def fake_stream(self, model, messages):
+        calls.append(model)
+        yield "[1] x"
+
+    monkeypatch.setattr(OpenAICompatibleService, "chat_stream", fake_stream)
+
+    resp = await client.post(
+        f"/api/v1/projects/{project_id}/chat",
+        json={
+            "question": "Quoi ?",
+            "model": "Kev-4B",
+            "mode": "results",
+            "search_id": str(blind.id),
+        },
+    )
+    assert resp.status_code == 404
+    assert "search_not_found" in resp.text
+    assert calls == []
+
+
+async def test_chat_results_no_results_400(client, session, researcher_user, do_login):
+    """A search whose lot has no prediction: 400 chat_no_results (the panel
+    would not offer the mode — the endpoint stays the source of truth)."""
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project_id = await _chat_project(session, researcher_user)
+    project = await _project(session, project_id)
+    lot = await _lot_search(session, project, [a.id for a in await _articles_of(session, project)])
+    resp = await client.post(
+        f"/api/v1/projects/{project_id}/chat",
+        json={"question": "Quoi ?", "model": "Kev-4B", "mode": "results", "search_id": str(lot.id)},
+    )
+    assert resp.status_code == 400
+    assert "chat_no_results" in resp.text
+
+
+async def test_chat_results_top30_bounded(client, session, researcher_user, do_login, monkeypatch):
+    """A 40-article lot: the context carries the top 30 responses (K fixed,
+    bounded backend-side), never the 40."""
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project_id = await _chat_project(session, researcher_user)
+    project = await _project(session, project_id)
+    for i in range(38):  # 2 (chat project) + 38 = 40
+        session.add(
+            Article(
+                project_id=project.id,
+                title=f"Big {i}",
+                pmid=str(200 + i),
+                sections=[{"title": "Methods", "kind": "methods", "text": f"method text {i}"}],
+            )
+        )
+    await session.commit()
+    lot = await _results_search(session, project, await _articles_of(session, project))
+    await vectorize_project(session, project.id)  # corpus (40 articles)
+
+    seen = {}
+
+    async def fake_stream(self, model, messages):
+        seen["ctx"] = messages[-1]["content"]
+        yield "ok"
+
+    monkeypatch.setattr(OpenAICompatibleService, "chat_stream", fake_stream)
+
+    status, _ = await _read_sse(
+        client,
+        project_id,
+        {
+            "question": "moteur",
+            "model": "Kev-4B",
+            "mode": "results",
+            "search_id": str(lot.id),
+        },
+    )
+    assert status == 200
+    assert seen["ctx"].count("Oui (92 %)") == 30

@@ -14,11 +14,21 @@ jest.mock("@/lib/api", () => ({
   getVectorizeProgress: jest.fn(),
   triggerVectorize: jest.fn(),
   streamChat: jest.fn(),
+  getResultsIndex: jest.fn(),
+  triggerResultsIndex: jest.fn(),
 }));
 
 const getVectorizeProgress = api.getVectorizeProgress as jest.Mock;
 const triggerVectorize = api.triggerVectorize as jest.Mock;
 const streamChat = api.streamChat as jest.Mock;
+const getResultsIndex = api.getResultsIndex as jest.Mock;
+const triggerResultsIndex = api.triggerResultsIndex as jest.Mock;
+
+beforeEach(() => {
+  streamChat.mockReset();
+  getResultsIndex.mockReset();
+  triggerResultsIndex.mockReset();
+});
 
 /** A progress payload with a given ``indexed`` flag and an optional status. */
 const progressOf = (indexed: boolean, status: api.VectorizeProgress["status"] = null) => ({
@@ -285,4 +295,147 @@ test("no searches: no scope selector, existing behavior unchanged", async () => 
     expect.any(Function),
     expect.any(AbortSignal)
   );
+});
+
+// ---------------------------------------------------------------------------
+// Mode résultats + mention « non exhaustif » (spec 2026-11-09-sous-analyse-criteres R5/R6)
+// ---------------------------------------------------------------------------
+
+const RESULTS_STATES: Record<string, api.ResultsIndexState> = {
+  ready: { status: "ready", done: 1234, total: 1234 },
+  indexing: { status: "indexing", done: 608, total: 1234 },
+  failed: { status: "failed", done: 100, total: 1234 },
+  not_started: { status: "not_started", done: 0, total: 0 },
+  empty: { status: "empty", done: 0, total: 0 },
+};
+
+test("R6: the disclosure is permanent, mode-aware, and the tooltip is keyboard-accessible", async () => {
+  mockStream({ tokens: ["ok "] });
+  renderPanelWithSearches();
+  const disclosure = screen.getByTestId("chat-disclosure");
+  expect(disclosure.textContent).toContain("disclosureCorpus");
+  // switch to results mode → the disclosure is mode-aware
+  fireEvent.click(screen.getByTestId("chat-mode-results"));
+  expect(screen.getByTestId("chat-disclosure").textContent).toContain("disclosureResults");
+  // the ⓘ points to a live element with the tooltip content (aria-describedby)
+  const info = screen.getByTestId("chat-info");
+  const srId = info.getAttribute("aria-describedby");
+  expect(srId).toBeTruthy();
+  expect(document.getElementById(srId!)?.textContent).toContain("disclosureTooltip");
+  expect(info).toHaveAttribute("tabindex", "0");
+});
+
+test("results mode sends mode + search_id in the request body", async () => {
+  mockStream({ tokens: ["ok "] });
+  getResultsIndex.mockResolvedValue(RESULTS_STATES.ready);
+  renderPanelWithSearches();
+  fireEvent.click(screen.getByTestId("chat-mode-results"));
+  expect(screen.getByTestId("chat-scope")).toHaveValue("s1");
+  // wait until the results index resolves to "ready" (input enables), so the
+  // send() guard sees resultsReady=true deterministically.
+  await waitFor(() => expect((screen.getByTestId("chat-input") as HTMLInputElement).disabled).toBe(false));
+  await submit("Quoi ?");
+  expect(streamChat).toHaveBeenCalledWith(
+    "p1",
+    { question: "Quoi ?", model: "Kev-4B", history: [], mode: "results", search_id: "s1" },
+    expect.any(Function),
+    expect.any(Function),
+    expect.any(Function),
+    expect.any(Function),
+    expect.any(AbortSignal)
+  );
+});
+
+test("corpus mode stays byte-identical: no mode key, corpus scope select intact", async () => {
+  mockStream({ tokens: ["ok "] });
+  renderPanelWithSearches();
+  await submit("Quoi ?");
+  expect(streamChat).toHaveBeenCalledWith(
+    "p1",
+    { question: "Quoi ?", model: "Kev-4B", history: [] },
+    expect.any(Function),
+    expect.any(Function),
+    expect.any(Function),
+    expect.any(Function),
+    expect.any(AbortSignal)
+  );
+  const scope = screen.getByTestId("chat-scope");
+  expect(scope).toHaveValue("corpus");
+  expect(screen.getByText("scopeCorpus")).toBeInTheDocument();
+});
+
+test("results mode, index in flight: explicit state, input disabled, no send", async () => {
+  mockStream({ tokens: ["ok "] });
+  getResultsIndex.mockResolvedValue(RESULTS_STATES.indexing);
+  renderPanelWithSearches();
+  fireEvent.click(screen.getByTestId("chat-mode-results"));
+  const indexing = await screen.findByTestId("results-indexing");
+  expect(indexing.textContent).toContain("resultsIndexing");
+  expect(indexing.textContent).toContain("resultsIndexingProgress");
+  expect((screen.getByTestId("chat-input") as HTMLInputElement).disabled).toBe(true);
+  await submit("Quoi ?");
+  expect(streamChat).not.toHaveBeenCalled();
+});
+
+test("results mode, failed: the lead retries (POST), the member sees no retry button", async () => {
+  mockStream({ tokens: ["ok "] });
+  getResultsIndex.mockResolvedValue(RESULTS_STATES.failed);
+  triggerResultsIndex.mockResolvedValue(undefined);
+  render(
+    <ChatRagPanel projectId="p1" models={MODELS as never} isLead searches={SEARCHES} />
+  );
+  fireEvent.click(screen.getByTestId("chat-mode-results"));
+  await screen.findByTestId("results-not-ready");
+  const retry = screen.getByTestId("results-index-button");
+  fireEvent.click(retry);
+  await waitFor(() => expect(triggerResultsIndex).toHaveBeenCalledWith("p1", "s1"));
+  expect((screen.getByTestId("chat-input") as HTMLInputElement).disabled).toBe(true);
+});
+
+test("results mode, failed, member: no retry button (the state stays explicit)", async () => {
+  mockStream({ tokens: ["ok "] });
+  getResultsIndex.mockResolvedValue(RESULTS_STATES.failed);
+  renderPanelWithSearches();
+  fireEvent.click(screen.getByTestId("chat-mode-results"));
+  await screen.findByTestId("results-not-ready");
+  expect(screen.queryByTestId("results-index-button")).toBeNull();
+});
+
+test("results mode, empty lot: explicit message, input disabled", async () => {
+  mockStream({ tokens: ["ok "] });
+  getResultsIndex.mockResolvedValue(RESULTS_STATES.empty);
+  renderPanelWithSearches();
+  fireEvent.click(screen.getByTestId("chat-mode-results"));
+  await screen.findByTestId("results-empty");
+  expect((screen.getByTestId("chat-input") as HTMLInputElement).disabled).toBe(true);
+});
+
+test("results mode, ready: the state block disappears and the chat works", async () => {
+  mockStream({ tokens: ["ok "] });
+  getResultsIndex.mockResolvedValue(RESULTS_STATES.ready);
+  renderPanelWithSearches();
+  fireEvent.click(screen.getByTestId("chat-mode-results"));
+  await waitFor(() =>
+    expect((screen.getByTestId("chat-input") as HTMLInputElement).disabled).toBe(false)
+  );
+  expect(screen.queryByTestId("results-indexing")).toBeNull();
+  await submit("Quoi ?");
+  expect(streamChat).toHaveBeenCalled();
+});
+
+test("the CTA request switches the panel to the results mode of that search", () => {
+  mockStream({ tokens: ["ok "] });
+  getResultsIndex.mockResolvedValue(RESULTS_STATES.ready);
+  render(
+    <ChatRagPanel
+      projectId="p1"
+      models={MODELS as never}
+      isLead={false}
+      searches={SEARCHES}
+      resultsRequest={{ searchId: "s1", nonce: 1 }}
+    />
+  );
+  expect(screen.getByTestId("chat-mode-results")).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getByTestId("chat-scope")).toHaveValue("s1");
+  expect(screen.getByTestId("chat-disclosure").textContent).toContain("disclosureResults");
 });

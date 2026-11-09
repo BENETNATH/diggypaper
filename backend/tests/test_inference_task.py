@@ -1634,3 +1634,140 @@ async def test_non_ollama_prefilter_never_rejecting_still_fills_job_snapshot_ver
     assert job.model_info["prefilter"]["version"] == "small-echo"
     assert job.model_info["main"]["version"] is None
     assert (await _pred_tuple(session))[2] is None  # the (stage 2) prediction: no echo
+
+
+# --- Results indexing trigger (spec 2026-11-09-sous-analyse-criteres R4) ------
+
+
+async def test_run_inference_triggers_results_indexing(engine, session, fake_redis, monkeypatch):
+    """On completion, the search's results are indexed automatically (same
+    pattern as the corpus: vectorize_task.delay with the search scope)."""
+    import app.tasks.vectorize as vectorize_mod
+    from app.db.models import Search, SearchArticle
+
+    project = Project(title="P", created_by=None, status=ProjectStatus.FROZEN)
+    session.add(project)
+    await session.commit()
+    prompt = PromptTemplate(
+        project_id=project.id,
+        version_number="v1.0",
+        system_prompt="SYS",
+        user_prompt_schema="Article Text:\n{methods_text}",
+    )
+    session.add(prompt)
+    session.add(ModelRegistry(name="Kev-4B", model_identifier="kef/kev-4b"))
+    search = Search(
+        project_id=project.id,
+        name="A",
+        lot_all=False,
+        fields=[{"key": "k", "label": "K", "type": "boolean"}],
+    )
+    session.add(search)
+    await session.flush()
+    for i in range(2):
+        a = Article(project_id=project.id, pmid=str(100 + i), title=f"A{i}", methods_text=f"M{i}.")
+        session.add(a)
+        await session.flush()
+        session.add(SearchArticle(search_id=search.id, article_id=a.id))
+    job = InferenceJob(
+        project_id=project.id,
+        prompt_template_id=prompt.id,
+        model_used="Kev-4B",
+        search_id=search.id,
+        status=InferenceJobStatus.PENDING,
+    )
+    session.add(job)
+    await session.commit()
+
+    calls = []
+
+    def fake_delay(project_id, search_id=None):
+        calls.append((project_id, search_id))
+
+    monkeypatch.setattr(vectorize_mod.vectorize_task, "delay", fake_delay)
+    result = await _run_inference(
+        str(job.id), session_factory=_factory(engine), inference=FakeInference(), redis=fake_redis
+    )
+    assert result["processed"] == 2
+    assert calls == [(str(project.id), str(search.id))]
+
+
+async def test_run_inference_blind_search_no_results_indexing_trigger(
+    engine, session, fake_redis, monkeypatch
+):
+    """A blind lot's results would be an oracle on the masked answers: no
+    results indexing trigger on completion (same guard as the read paths)."""
+    import app.tasks.vectorize as vectorize_mod
+    from app.db.models import Search, SearchArticle
+
+    project = Project(title="P", created_by=None, status=ProjectStatus.FROZEN)
+    session.add(project)
+    await session.commit()
+    prompt = PromptTemplate(
+        project_id=project.id,
+        version_number="v1.0",
+        system_prompt="SYS",
+        user_prompt_schema="Article Text:\n{methods_text}",
+    )
+    session.add(prompt)
+    session.add(ModelRegistry(name="Kev-4B", model_identifier="kef/kev-4b"))
+    search = Search(
+        project_id=project.id,
+        name="A",
+        lot_all=False,
+        kind="blind",
+        fields=[{"key": "k", "label": "K", "type": "boolean"}],
+    )
+    session.add(search)
+    await session.flush()
+    for i in range(2):
+        a = Article(project_id=project.id, pmid=str(100 + i), title=f"A{i}", methods_text=f"M{i}.")
+        session.add(a)
+        await session.flush()
+        session.add(SearchArticle(search_id=search.id, article_id=a.id))
+    job = InferenceJob(
+        project_id=project.id,
+        prompt_template_id=prompt.id,
+        model_used="Kev-4B",
+        search_id=search.id,
+        status=InferenceJobStatus.PENDING,
+    )
+    session.add(job)
+    await session.commit()
+
+    calls = []
+
+    def fake_delay(project_id, search_id=None):
+        calls.append((project_id, search_id))
+
+    monkeypatch.setattr(vectorize_mod.vectorize_task, "delay", fake_delay)
+    result = await _run_inference(
+        str(job.id), session_factory=_factory(engine), inference=FakeInference(), redis=fake_redis
+    )
+    assert result["processed"] == 2
+    assert calls == []
+
+
+async def test_run_inference_without_search_no_results_indexing(
+    engine, session, fake_redis, monkeypatch
+):
+    """job.search_id NULL (legacy): no results index — the corpus convention
+    (search_id NULL) must never be triggered from a job."""
+    import app.tasks.vectorize as vectorize_mod
+
+    project, prompt = await _project_prompt(session)
+    session.add(ModelRegistry(name="Kev-4B", model_identifier="kef/kev-4b"))
+    await _seed(session, project, prompt, ModelRegistry, n_articles=1)
+    job = await _job(session, project, prompt, "Kev-4B")
+    assert job.search_id is None
+
+    calls = []
+    monkeypatch.setattr(
+        vectorize_mod.vectorize_task,
+        "delay",
+        lambda *a, **kw: calls.append((a, kw)),
+    )
+    await _run_inference(
+        str(job.id), session_factory=_factory(engine), inference=FakeInference(), redis=fake_redis
+    )
+    assert calls == []

@@ -7,15 +7,18 @@ import {
   streamChat,
   ApiError,
   ChatCitation,
+  getResultsIndex,
   ModelInfo,
+  ResultsIndexState,
   SearchInfo,
+  triggerResultsIndex,
 } from "@/lib/api";
 import { useSearchId } from "@/lib/useSearch";
 import { withSearch } from "@/lib/search";
 import { useVectorizeProgress } from "@/hooks/useVectorizeProgress";
 import { IndexProgress } from "@/components/IndexProgress";
 import { Button } from "@/components/ui/Button";
-import { ErrorBanner } from "@/components/ui/Feedback";
+import { ErrorBanner, Skeleton } from "@/components/ui/Feedback";
 
 type Props = {
   projectId: string;
@@ -25,6 +28,8 @@ type Props = {
   isLead: boolean;
   /** Standard searches the member can scope the chat to (empty → no selector). */
   searches?: SearchInfo[];
+  /** CTA « Chatter sur les résultats »: switch to the results mode of that search. */
+  resultsRequest?: { searchId: string; nonce: number } | null;
 };
 
 type Exchange =
@@ -39,6 +44,8 @@ type Current = {
 };
 
 const HISTORY_MAX = 12; // user/assistant messages sent with the request (≤ 6 pairs)
+const RESULTS_TOP_K = 30; // backend-fixed (spec 2026-11-09-sous-analyse-criteres R5)
+const RESULTS_POLL_MS = 3000;
 
 /** Renders `[n]` citation markers of a streamed answer as highlighted marks. */
 function renderCited(text: string) {
@@ -86,17 +93,22 @@ function CitationsList({
 }
 
 /**
- * Chat on the corpus (spec 2026-11-07-chat-rag §5): a question over the
- * vectorized corpus, streamed (SSE), with `[n]` citations resolved to the
- * cited sections. No persistence (RGPD): the history lives in this
- * component's state only.
+ * Chat on the corpus or on an analysis's results (spec 2026-11-07-chat-rag §5,
+ * spec 2026-11-09-sous-analyse-criteres R5/R6). Two modes:
+ * - corpus: the current behavior, byte-identical;
+ * - results: the triple context (top 30 results + whole-lot stats + corpus
+ *   passages for the citations), gated on the results index state.
+ * A permanent, mode-aware disclosure (R6) under the mode selector, with a
+ * keyboard-accessible tooltip (aria-describedby). No persistence (RGPD).
  */
-export function ChatRagPanel({ projectId, models, isLead, searches = [] }: Props) {
+export function ChatRagPanel({ projectId, models, isLead, searches = [], resultsRequest }: Props) {
   const t = useTranslations("chatRag");
   const searchId = useSearchId(projectId);
   const defaultModel = models.find((m) => m.backend_type === "OLLAMA") ?? models[0];
   const [model, setModel] = useState("");
   const effectiveModel = model || defaultModel?.name || "";
+  // Mode: "corpus" (whole project) or "results" (the triple context of a search).
+  const [mode, setMode] = useState<"corpus" | "results">("corpus");
   // Chat scope: "corpus" (whole project) or the id of one standard search.
   const [scope, setScope] = useState<string>("corpus");
   const [question, setQuestion] = useState("");
@@ -106,11 +118,74 @@ export function ChatRagPanel({ projectId, models, isLead, searches = [] }: Props
   const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  // Results index of the scoped search (distinct scope from the corpus index).
+  const [resultsIndex, setResultsIndex] = useState<ResultsIndexState | null>(null);
+  const [indexingResults, setIndexingResults] = useState(false);
+
+  const resultsSearchId = mode === "results" && scope !== "corpus" ? scope : null;
+  const scopeSearch = searches.find((s) => s.id === scope);
 
   // Live corpus-index state + trigger (one cheap status read, not a probe
   // semantic search); the hook polls while a run is in flight.
   const { progress, indexing, index } = useVectorizeProgress(projectId);
   const indexed = progress?.indexed;
+
+  // Results-index state: one read per (mode, scope); polled while a run is in
+  // flight (auto trigger at the analysis completion, or the retry button).
+  // The reset is in the render phase (React's « adjust state when props
+  // change » pattern — no synchronous setState inside the effect).
+  const [prevResultsSearchId, setPrevResultsSearchId] = useState(resultsSearchId);
+  if (prevResultsSearchId !== resultsSearchId) {
+    setPrevResultsSearchId(resultsSearchId);
+    setResultsIndex(null);
+  }
+  useEffect(() => {
+    if (!resultsSearchId) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const tick = async () => {
+      let keep = false;
+      try {
+        const st = await getResultsIndex(projectId, resultsSearchId);
+        if (cancelled) return;
+        setResultsIndex(st);
+        if (indexingResults && st.status !== "indexing") setIndexingResults(false);
+        keep = st.status === "indexing" || indexingResults;
+      } catch {
+        if (!cancelled) setResultsIndex(null);
+        keep = indexingResults;
+      }
+      if (!cancelled && keep) timer = setTimeout(tick, RESULTS_POLL_MS);
+    };
+    void tick();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [projectId, resultsSearchId, indexingResults]);
+
+  // CTA « Chatter sur les résultats » (nonce: the same search may be requested
+  // twice). Event-like prop: handled in the render phase (React's « adjust
+  // state when props change » pattern) — the stream abort stays in the effect
+  // (a side effect, not part of the render).
+  const reqNonce = resultsRequest?.nonce;
+  // undefined (not the current nonce): a request already present at mount is
+  // processed on the first render.
+  const [prevNonce, setPrevNonce] = useState<number | undefined>(undefined);
+  if (prevNonce !== reqNonce) {
+    setPrevNonce(reqNonce);
+    if (resultsRequest) {
+      setMode("results");
+      setScope(resultsRequest.searchId);
+      setHistory([]);
+      setCurrent(null);
+      setError(null);
+      setBusy(false);
+    }
+  }
+  useEffect(() => {
+    abortRef.current?.abort();
+  }, [reqNonce]);
 
   // Elapsed-time ticker while the answer streams (latence assumée).
   useEffect(() => {
@@ -134,8 +209,18 @@ export function ChatRagPanel({ projectId, models, isLead, searches = [] }: Props
     );
   }
 
+  function clearConversation() {
+    abortRef.current?.abort();
+    setHistory([]);
+    setCurrent(null);
+    setError(null);
+    setBusy(false);
+  }
+
   async function send() {
     const q = question.trim();
+    // R5: no message can be sent while the results index is not ready.
+    if (mode === "results" && !resultsReady) return;
     if (!q || busy || !effectiveModel) return;
     setBusy(true);
     setElapsed(0);
@@ -147,9 +232,11 @@ export function ChatRagPanel({ projectId, models, isLead, searches = [] }: Props
     // The API history is role/content only (citations are display-only).
     const sent = history.slice(-HISTORY_MAX).map((m) => ({ role: m.role, content: m.content }));
     const body =
-      scope === "corpus"
-        ? { question: q, model: effectiveModel, history: sent }
-        : { question: q, model: effectiveModel, history: sent, search_id: scope };
+      mode === "results"
+        ? { question: q, model: effectiveModel, history: sent, mode: "results" as const, search_id: scope }
+        : scope === "corpus"
+          ? { question: q, model: effectiveModel, history: sent }
+          : { question: q, model: effectiveModel, history: sent, search_id: scope };
     try {
       await streamChat(
         projectId,
@@ -188,22 +275,40 @@ export function ChatRagPanel({ projectId, models, isLead, searches = [] }: Props
     }
   }
 
-  function clearConversation() {
-    abortRef.current?.abort();
-    setHistory([]);
-    setCurrent(null);
-    setError(null);
-    setBusy(false);
+  // A mode or scope change switches the server-side context: a mixed history
+  // would carry citations from the other scope, so the conversation restarts.
+  function changeMode(next: "corpus" | "results") {
+    if (next === mode) return;
+    setMode(next);
+    if (next === "results" && (scope === "corpus" || !searches.some((s) => s.id === scope)))
+      setScope(searches[0].id);
+    clearConversation();
   }
 
-  // A scope change switches the server-side context: a mixed history would
-  // carry citations from the other scope, so the conversation restarts.
   function changeScope(next: string) {
     setScope(next);
     clearConversation();
   }
 
-  const canSend = Boolean(effectiveModel) && question.trim() !== "" && !busy && indexed !== false;
+  async function retryResultsIndex() {
+    if (!resultsSearchId) return;
+    setIndexingResults(true);
+    setError(null);
+    try {
+      await triggerResultsIndex(projectId, resultsSearchId);
+    } catch (e) {
+      setIndexingResults(false);
+      setError(e instanceof ApiError ? e.detail : t("error"));
+    }
+  }
+
+  const resultsReady = resultsSearchId !== null && resultsIndex?.status === "ready";
+  const canSend =
+    Boolean(effectiveModel) &&
+    question.trim() !== "" &&
+    !busy &&
+    indexed !== false &&
+    (mode !== "results" || resultsReady);
 
   return (
     <div data-testid="chat-rag-panel" className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-3">
@@ -227,6 +332,27 @@ export function ChatRagPanel({ projectId, models, isLead, searches = [] }: Props
         </select>
         {searches.length > 0 && (
           <>
+            <div role="group" aria-label={t("mode")} className="inline-flex overflow-hidden rounded-lg border border-border">
+              {(["corpus", "results"] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  aria-pressed={mode === m}
+                  disabled={busy}
+                  onClick={() => changeMode(m)}
+                  data-testid={m === "corpus" ? "chat-mode-corpus" : "chat-mode-results"}
+                  className={`px-3 py-1 text-sm focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-focus ${
+                    mode === m ? "bg-primary font-medium text-primary-foreground" : "bg-surface text-muted"
+                  }`}
+                >
+                  {m === "corpus"
+                    ? t("modeCorpus")
+                    : scopeSearch && mode === "results"
+                      ? t("modeResultsOf", { name: scopeSearch.name })
+                      : t("modeResults")}
+                </button>
+              ))}
+            </div>
             <label
               className="text-xs font-medium uppercase tracking-wide text-muted"
               htmlFor="chat-rag-scope"
@@ -241,12 +367,26 @@ export function ChatRagPanel({ projectId, models, isLead, searches = [] }: Props
               disabled={busy}
               className="rounded-lg border border-border bg-surface px-2 py-1 text-sm text-foreground focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-focus"
             >
-              <option value="corpus">{t("scopeCorpus")}</option>
-              {searches.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {t("scopeSearch")} · {s.name}
-                </option>
-              ))}
+              {mode === "corpus" ? (
+                <>
+                  <option value="corpus">{t("scopeCorpus")}</option>
+                  {/* Corpus scope: the default search is already covered by « Tout le corpus ». */}
+                  {searches
+                    .filter((s) => !s.is_default)
+                    .map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {t("scopeSearch")} · {s.name}
+                      </option>
+                    ))}
+                </>
+              ) : (
+                /* Results mode: any standard analysis (including the default). */
+                searches.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {t("scopeResultsOf", { name: s.name })}
+                  </option>
+                ))
+              )}
             </select>
           </>
         )}
@@ -257,6 +397,38 @@ export function ChatRagPanel({ projectId, models, isLead, searches = [] }: Props
         )}
       </div>
 
+      {/* R6: the scope is never left to a tooltip — a permanent, mode-aware
+          line, plus a keyboard-accessible info (aria-describedby). */}
+      <div
+        data-testid="chat-disclosure"
+        className="flex items-center gap-2 rounded-lg bg-surface-muted px-3 py-2 text-xs text-foreground"
+      >
+        <span>
+          {mode === "results" && scopeSearch
+            ? t("disclosureResults", { k: RESULTS_TOP_K, name: scopeSearch.name, n: scopeSearch.predicted })
+            : t("disclosureCorpus")}
+        </span>
+        <span
+          tabIndex={0}
+          role="button"
+          aria-label={t("tooltipLabel")}
+          aria-describedby="chat-rag-tooltip-sr"
+          data-testid="chat-info"
+          className="group relative ml-auto flex h-[22px] w-[22px] flex-none items-center justify-center rounded-full border border-border bg-surface text-xs font-bold text-muted focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-focus"
+        >
+          i
+          <span
+            role="tooltip"
+            className="pointer-events-none absolute right-full top-1/2 z-10 mr-2 hidden w-[340px] -translate-y-1/2 rounded-lg bg-foreground p-3 text-left font-normal text-background shadow group-hover:block group-focus-within:block"
+          >
+            {t("disclosureTooltip", { k: RESULTS_TOP_K })}
+          </span>
+        </span>
+        <span id="chat-rag-tooltip-sr" className="sr-only">
+          {t("disclosureTooltip", { k: RESULTS_TOP_K })}
+        </span>
+      </div>
+
       {progress !== null && !busy && (
         <IndexProgress
           progress={progress}
@@ -264,6 +436,47 @@ export function ChatRagPanel({ projectId, models, isLead, searches = [] }: Props
           indexing={indexing}
           onIndex={() => void index()}
         />
+      )}
+
+      {/* Results index state (R5): no message can be sent until it is ready. */}
+      {mode === "results" && resultsSearchId && (
+        resultsIndex === null ? (
+          <Skeleton rows={1} />
+        ) : resultsIndex.status === "indexing" ? (
+          <div data-testid="results-indexing" className="rounded-lg border border-dashed border-border bg-surface-muted p-3 text-center">
+            <p className="text-sm font-medium text-foreground">{t("resultsIndexing")}</p>
+            <div className="mx-auto my-2 h-1.5 max-w-md overflow-hidden rounded-full bg-border">
+              <div
+                className="h-full rounded-full bg-primary"
+                style={{ width: resultsIndex.total ? `${Math.round((100 * resultsIndex.done) / resultsIndex.total)}%` : "0%" }}
+              />
+            </div>
+            <p className="text-xs text-muted">
+              {t("resultsIndexingProgress", { done: resultsIndex.done, total: resultsIndex.total })}
+            </p>
+          </div>
+        ) : resultsIndex.status === "ready" ? null : resultsIndex.status === "empty" ? (
+          <p data-testid="results-empty" className="text-sm text-muted">
+            {t("resultsEmpty")}
+          </p>
+        ) : (
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <span data-testid="results-not-ready" className={resultsIndex.status === "failed" ? "text-danger" : "text-muted"}>
+              {resultsIndex.status === "failed" ? t("resultsIndexFailed") : t("resultsNotIndexed")}
+            </span>
+            {isLead && (
+              <Button
+                variant="secondary"
+                size="sm"
+                data-testid="results-index-button"
+                onClick={() => void retryResultsIndex()}
+                disabled={indexingResults}
+              >
+                {t("resultsIndexButton")}
+              </Button>
+            )}
+          </div>
+        )
       )}
 
       {error && <ErrorBanner message={error} />}
@@ -334,7 +547,7 @@ export function ChatRagPanel({ projectId, models, isLead, searches = [] }: Props
           placeholder={t("placeholder")}
           aria-label={t("placeholder")}
           data-testid="chat-input"
-          disabled={busy || indexed === false}
+          disabled={busy || indexed === false || (mode === "results" && !resultsReady)}
           className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder:text-muted focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-focus"
         />
         <Button type="submit" size="sm" disabled={!canSend}>

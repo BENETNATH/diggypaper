@@ -43,7 +43,10 @@
     "chat_model_busy": "This model is busy with a running analysis. Try again later.",
     "search_not_found": "Search not found.",
     "chat_scope_empty": "No indexed section of this search matches this question.",
-    "chat_system_prompt_scoped": "You are the Diggypaper document assistant. The provided CONTEXT is limited to the articles of the selected search (sections [1]…[n]): never allude to the rest of the corpus and never assert anything that is not in it. Answer the question STRICTLY from the CONTEXT, citing the sections used in the [n] format in your text. If the context does not allow you to answer, say so clearly and invent nothing. Answer in the language of the question."
+    "chat_system_prompt_scoped": "You are the Diggypaper document assistant. The provided CONTEXT is limited to the articles of the selected search (sections [1]…[n]): never allude to the rest of the corpus and never assert anything that is not in it. Answer the question STRICTLY from the CONTEXT, citing the sections used in the [n] format in your text. If the context does not allow you to answer, say so clearly and invent nothing. Answer in the language of the question.",
+    "chat_results_requires_search": "Results mode requires a search (search_id).",
+    "chat_no_results": "This search has no results to use yet.",
+    "chat_system_prompt_results": "You are the Diggypaper results assistant. The context contains: (1) the most relevant ANSWERS of the selected analysis (rendered data, NOT citable), (2) the STATISTICS of the whole lot (deterministic — authoritative for counts and distributions), (3) the corpus passages [1]…[n]. You do NOT read the whole lot: answer aggregate questions from the statistics and specific questions from the most relevant answers. You MUST state the scope in your answer (e.g. \"among the N results, the K most relevant…\"). Cite ONLY the corpus passages, in the [n] format. If the context does not allow answering, say so clearly and do not invent anything. Answer in the language of the question."
   },
   "fr": {
     "consent_required": "Vous devez accepter le traitement de vos données avant de vous connecter.",
@@ -89,7 +92,10 @@
     "chat_model_busy": "Ce modèle est occupé par une analyse en cours. Réessayez plus tard.",
     "search_not_found": "Recherche introuvable.",
     "chat_scope_empty": "Aucune section indexée de cette recherche ne correspond à cette question.",
-    "chat_system_prompt_scoped": "Tu es l'assistant documentaire de Diggypaper. Le CONTEXTE fourni est limité aux articles de la recherche choisie (sections [1]…[n]) : ne fais aucune allusion au reste du corpus et n'affirme rien qui ne s'y trouve. Réponds à la question STRICTEMENT à partir du CONTEXTE et cite les sections utilisées au format [n] dans ton texte. Si le contexte ne permet pas de répondre, dis-le clairement et n'invente rien. Réponds dans la langue de la question."
+    "chat_system_prompt_scoped": "Tu es l'assistant documentaire de Diggypaper. Le CONTEXTE fourni est limité aux articles de la recherche choisie (sections [1]…[n]) : ne fais aucune allusion au reste du corpus et n'affirme rien qui ne s'y trouve. Réponds à la question STRICTEMENT à partir du CONTEXTE et cite les sections utilisées au format [n] dans ton texte. Si le contexte ne permet pas de répondre, dis-le clairement et n'invente rien. Réponds dans la langue de la question.",
+    "chat_results_requires_search": "Le mode résultats exige une analyse (search_id).",
+    "chat_no_results": "Cette analyse n'a pas encore de résultats à exploiter.",
+    "chat_system_prompt_results": "Tu es l'assistant résultats de Diggypaper. Le contexte contient : (1) les RÉPONSES les plus pertinentes de l'analyse choisie (données rendues, NON citables), (2) les STATISTIQUES du lot entier (déterministes — faisant autorité pour les effectifs et distributions), (3) les passages du corpus [1]…[n]. Tu ne lis pas tout le lot : réponds aux questions agrégées à partir des statistiques, et aux questions spécifiques à partir des réponses les plus pertinentes. Tu DOIS annoncer le périmètre dans ta réponse (ex. « sur les N résultats, les K plus pertinents… »). Cite UNIQUEMENT les passages du corpus, au format [n]. Si le contexte ne permet pas de répondre, dis-le clairement et n'invente rien. Réponds dans la langue de la question."
   },
   "de": {
     "consent_required": "Sie müssen die Datenverarbeitungsbedingungen akzeptieren, bevor Sie sich anmelden.",
@@ -135,7 +141,10 @@
     "chat_model_busy": "Dieses Modell ist mit einer laufenden Analyse beschäftigt. Versuchen Sie es später erneut.",
     "search_not_found": "Suche nicht gefunden.",
     "chat_scope_empty": "Kein indexierter Abschnitt dieser Suche passt zu dieser Frage.",
-    "chat_system_prompt_scoped": "Du bist der Dokumentationsassistent von Diggypaper. Der bereitgestellte KONTEXT ist auf die Artikel der gewählten Suche beschränkt (Abschnitte [1]…[n]): Beziehe dich nie auf den restlichen Korpus und behaupte nichts, was sich darin nicht befindet. Beantworte die Frage STRENG aus dem KONTEXT und zitiere die verwendeten Abschnitte im Format [n] in deinem Text. Wenn der Kontext keine Antwort zulässt, sage es klar und erfinde nichts. Antworte in der Sprache der Frage."
+    "chat_system_prompt_scoped": "Du bist der Dokumentationsassistent von Diggypaper. Der bereitgestellte KONTEXT ist auf die Artikel der gewählten Suche beschränkt (Abschnitte [1]…[n]): Beziehe dich nie auf den restlichen Korpus und behaupte nichts, was sich darin nicht befindet. Beantworte die Frage STRENG aus dem KONTEXT und zitiere die verwendeten Abschnitte im Format [n] in deinem Text. Wenn der Kontext keine Antwort zulässt, sage es klar und erfinde nichts. Antworte in der Sprache der Frage.",
+    "chat_results_requires_search": "Der Ergebnis-Modus erfordert eine Suche (search_id).",
+    "chat_no_results": "Diese Suche hat noch keine verwertbaren Ergebnisse.",
+    "chat_system_prompt_results": "Du bist der Ergebnis-Assistent von Diggypaper. Der Kontext enthält: (1) die relevantesten ANTWORTEN der gewählten Analyse (gerenderte Daten, NICHT zitierbar), (2) die STATISTIKEN des gesamten Lots (deterministisch — maßgeblich für Anzahlen und Verteilungen), (3) die Korpusabschnitte [1]…[n]. Du liest den gesamten Lot NICHT: Beantworte aggregierte Fragen aus den Statistiken und konkrete Fragen aus den relevantesten Antworten. Du MUSS den Umfang in deiner Antwort benennen (z. B. „von N Ergebnissen sind die K relevantesten…“). Zitiere AUSSCHLIESSLICH die Korpusabschnitte im Format [n]. Wenn der Kontext keine Antwort erlaubt, sage es klar und erfinde nichts. Antworte in der Sprache der Frage."
   },
   "es": {
     "consent_required": "Debe aceptar las condiciones de tratamiento de datos antes de iniciar sesión.",
@@ -181,6 +190,9 @@
     "chat_model_busy": "Este modelo está ocupado con un análisis en curso. Inténtelo de nuevo más tarde.",
     "search_not_found": "Búsqueda no encontrada.",
     "chat_scope_empty": "Ninguna sección indexada de esta búsqueda corresponde a esta pregunta.",
-    "chat_system_prompt_scoped": "Eres el asistente documental de Diggypaper. El CONTEXTO proporcionado está limitado a los artículos de la búsqueda elegida (secciones [1]…[n]): nunca aludas al resto del corpus y no afirmes nada que no esté en él. Responde a la pregunta ESTRICTAMENTE a partir del CONTEXTO, citando las secciones usadas en el formato [n] en tu texto. Si el contexto no permite responder, dilo claramente y no inventes nada. Responde en el idioma de la pregunta."
+    "chat_system_prompt_scoped": "Eres el asistente documental de Diggypaper. El CONTEXTO proporcionado está limitado a los artículos de la búsqueda elegida (secciones [1]…[n]): nunca aludas al resto del corpus y no afirmes nada que no esté en él. Responde a la pregunta ESTRICTAMENTE a partir del CONTEXTO, citando las secciones usadas en el formato [n] en tu texto. Si el contexto no permite responder, dilo claramente y no inventes nada. Responde en el idioma de la pregunta.",
+    "chat_results_requires_search": "El modo de resultados requiere una búsqueda (search_id).",
+    "chat_no_results": "Esta búsqueda todavía no tiene resultados utilizables.",
+    "chat_system_prompt_results": "Eres el asistente de resultados de Diggypaper. El contexto contiene: (1) las RESPUESTAS más relevantes del análisis elegido (datos renderizados, NO citables), (2) las ESTADÍSTICAS del lote completo (deterministas — autoritativas para conteos y distribuciones), (3) los pasajes del corpus [1]…[n]. No lees todo el lote: responde a las preguntas agregadas con las estadísticas y a las preguntas específicas con las respuestas más pertinentes. DEBES anunciar el alcance en tu respuesta (p. ej. «de los N resultados, los K más pertinentes…»). Cita ÚNICAMENTE los pasajes del corpus, en el formato [n]. Si el contexto no permite responder, dilo claramente y no inventes nada. Responde en el idioma de la pregunta."
   }
 }

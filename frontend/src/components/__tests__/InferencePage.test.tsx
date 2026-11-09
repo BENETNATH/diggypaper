@@ -49,6 +49,10 @@ jest.mock("@/lib/api", () => ({
   previewSelection: jest.fn(),
   createSearch: jest.fn(),
   triggerInference: jest.fn(),
+  criteriaCount: jest.fn(),
+  criteriaArticles: jest.fn(),
+  getResultsIndex: jest.fn(),
+  triggerResultsIndex: jest.fn(),
 }));
 
 const mockUseAuth = useAuth as unknown as jest.Mock;
@@ -319,10 +323,12 @@ describe("inference page — « à lancer » section, aria-live, polish", () => 
     expect(screen.getByText(/\+ panelCreate/)).toBeInTheDocument();
   });
 
-  it("completed job: the « aller à la relecture » action is offered", async () => {
+  it("completed job: the CTA banner offers the review action", async () => {
     mount({ user: { role: "RESEARCHER" }, roleInProject: "LEAD", searches: [touched], job: completedJob });
     await panelOpen();
-    expect(await screen.findByText("annotateReview")).toBeInTheDocument();
+    // the CTA banner (spec 2026-11-09 R3) replaced the old button row; the
+    // « aller à la relecture » action is now its ctaReview item (needs_review=3).
+    expect(await screen.findByText(/ctaReview/)).toBeInTheDocument();
   });
 
   it("the avancement card wrapper carries aria-live=polite", async () => {
@@ -441,5 +447,51 @@ describe("inference page — concordance moved to benchmarks (2026-11-08)", () =
     // "corpus" is the panel's whole-corpus option; s1 (default, lot_all) is
     // out — its scope is the corpus itself.
     expect(options).toEqual(["corpus", "s2"]);
+  });
+});
+
+// spec 2026-11-09-sous-analyse-criteres R2/R3: the criteria block in the
+// creation form + the CTA banner at the end of a completed analysis.
+describe("inference page — criteria block + CTA banner (spec 2026-11-09)", () => {
+  const criteriaCount = api.criteriaCount as jest.Mock;
+  const getResultsIndex = api.getResultsIndex as jest.Mock;
+  const analysed = { ...search, id: "sB", is_default: false, name: "B", predicted: 5, lot_size: 10 };
+
+  beforeEach(() => {
+    // the CTA « chatter » button scrolls the chat panel into view (jsdom: not implemented)
+    (window.HTMLElement.prototype as unknown as { scrollIntoView: jest.Mock }).scrollIntoView = jest.fn();
+  });
+
+  it("the criteria block appears only when the source analysis has been analysed", async () => {
+    criteriaCount.mockResolvedValue(3);
+    // default untouched search + an analysed one: the panel is collapsed (a search launched)
+    mount({ user: { role: "RESEARCHER" }, roleInProject: "LEAD", searches: [search, analysed] });
+    await panelOpen();
+    fireEvent.click(screen.getByText(/\+ panelCreate/));
+    await screen.findByText("selFrom");
+    expect(screen.queryByTestId("criteria-block")).not.toBeInTheDocument();
+    // pick the analysed search B as the source → the criteria block shows
+    const fromSel = screen.getByText("selFrom").closest("label")!.querySelector("select")!;
+    fireEvent.change(fromSel, { target: { value: "sB" } });
+    await screen.findByTestId("criteria-block");
+    // the live counter settles on the server's number
+    await waitFor(() => expect(screen.getByTestId("crit-count")).toHaveTextContent("critCount"));
+  });
+
+  it("the CTA banner is offered at the end of a completed analysis", async () => {
+    mount({ user: { role: "RESEARCHER" }, roleInProject: "LEAD", searches: [{ ...search, predicted: 2 }], job: completedJob });
+    await panelOpen();
+    expect(await screen.findByTestId("cta-banner")).toBeInTheDocument();
+  });
+
+  it("ctaChat switches the chat panel to the results mode of the analysis", async () => {
+    getResultsIndex.mockResolvedValue({ status: "ready", done: 10, total: 10 });
+    mount({ user: { role: "RESEARCHER" }, roleInProject: "LEAD", searches: [{ ...search, predicted: 2 }], job: completedJob });
+    await panelOpen();
+    await screen.findByTestId("cta-banner");
+    // initially the panel is in corpus mode
+    expect(screen.getByTestId("chat-mode-corpus")).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(screen.getByRole("button", { name: "ctaChat" }));
+    await waitFor(() => expect(screen.getByTestId("chat-mode-results")).toHaveAttribute("aria-pressed", "true"));
   });
 });

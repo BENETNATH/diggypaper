@@ -20,6 +20,8 @@ import {
   triggerInference,
   rerunSearch,
   updateProject,
+  criteriaArticles,
+  Criteria,
   InferenceJob,
   ModelInfo,
   SchemaField,
@@ -30,6 +32,8 @@ import {
 import { useApiError } from "@/lib/errorMsg";
 import { MAX_GOLD_EXAMPLES } from "@/lib/benchmark";
 import { ExportMenu } from "@/components/ExportMenu";
+import { CriteriaBlock, criteriaActive } from "@/components/CriteriaBlock";
+import { CtaBanner } from "@/components/CtaBanner";
 import { RequireAuth } from "@/components/RequireAuth";
 import { QuestionEditor } from "@/components/QuestionEditor";
 import { TriageThresholds, type TriagePolicyValue } from "@/app/projects/[id]/inference/TriageThresholds";
@@ -184,6 +188,12 @@ function AnalyseContent() {
   const [count, setCount] = useState<number | null>(null);
   const [creating, setCreating] = useState(false);
   const [chain, setChain] = useState(false);
+  // Criteria on the source analysis's results (spec 2026-11-09-sous-analyse-criteres §4).
+  const [criteria, setCriteria] = useState<Criteria>({});
+  const [critCount, setCritCount] = useState<number | null>(null);
+  // CTA « Chatter sur les résultats »: request the results mode of the chat panel.
+  const [chatRequest, setChatRequest] = useState<{ searchId: string; nonce: number } | null>(null);
+  const chatRef = useRef<HTMLDivElement>(null);
 
   const [job, setJob] = useState<InferenceJob | null>(null);
   const [busy, setBusy] = useState<InferenceJob | null>(null); // the project's in-progress analysis (all searches)
@@ -204,6 +214,16 @@ function AnalyseContent() {
   const [exampleN, setExampleN] = useState(5);
   const [validate, setValidate] = useState(false);
   const progressRef = useRef<HTMLDivElement>(null);
+
+  // Changing the source analysis restarts the criteria (their answers are
+  // specific to that search's results).
+  const fromId = selection.from_search_id;
+  const [prevFromId, setPrevFromId] = useState<string | undefined>(fromId);
+  if (prevFromId !== fromId) {
+    setPrevFromId(fromId);
+    setCriteria({});
+    setCritCount(null);
+  }
 
   const active = job?.status === "PENDING" || job?.status === "RUNNING";
   const label = (m: ModelInfo) =>
@@ -347,6 +367,10 @@ function AnalyseContent() {
     ...(validate ? { validate_with_gold: true } : {}),
   });
 
+  // The criteria block only exists on an analysed source search (its results).
+  const critOrigin = fromId ? (searches ?? []).find((s) => s.id === fromId) : undefined;
+  const showCriteria = !!critOrigin && (critOrigin.predicted ?? 0) > 0;
+
   async function handleStop() {
     if (!window.confirm(t("stopConfirm"))) return;
     setSubmitting(true);
@@ -427,7 +451,14 @@ function AnalyseContent() {
     setCreating(true);
     setError(null);
     try {
-      const sel = cleanSelection(selection);
+      const sel0 = cleanSelection(selection);
+      // Criteria on the results active: the lot B = the criteria's effective lot
+      // (POST criteria-articles), ANDed with the selector's other filters (ids).
+      const crit = fromId && criteriaActive(criteria);
+      const sel = crit
+        ? { ...sel0, ids: (await criteriaArticles(projectId, fromId, criteria)) }
+        : sel0;
+      if (launch && crit && critCount === 0) return; // nothing kept: no launch (the button is disabled too)
       const schedule = {
         model: stage2 || stage1,
         ...(stage2 && stage1 && stage2 !== stage1 ? { prefilter_model: stage1 } : {}),
@@ -568,6 +599,16 @@ function AnalyseContent() {
                   <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={t("scopeDefaultName")} />
                 </Field>
                 <ArticleSelector projectId={projectId} searches={searches ?? []} value={selection} onChange={setSelection} onCount={setCount} />
+                {showCriteria && critOrigin && (
+                  <CriteriaBlock
+                    projectId={projectId}
+                    search={critOrigin}
+                    value={criteria}
+                    onChange={setCriteria}
+                    newName={name}
+                    onCount={setCritCount}
+                  />
+                )}
               </div>
               <QuestionEditor question={q?.question ?? ""} fields={q?.fields ?? []} sections={q?.sections ?? ["methods"]} onChange={setQ} />
               {promptId && (
@@ -643,7 +684,7 @@ function AnalyseContent() {
                       <Button
                         type="submit"
                         loading={creating}
-                        disabled={!stage2 && !stage1 || !q || q.fields.length === 0 || q.sections.length === 0 || (!chain && count === 0)}
+                        disabled={!stage2 && !stage1 || !q || q.fields.length === 0 || q.sections.length === 0 || (!chain && count === 0) || (!chain && showCriteria && criteriaActive(criteria) && critCount === 0)}
                       >
                         {chain ? t("createScheduled") : t("run")}
                       </Button>
@@ -776,18 +817,25 @@ function AnalyseContent() {
                 <span className="text-xs text-muted">{t("resumeHint", { n: num(r.done) })}</span>
               </div>
             )}
-            {job?.status === "COMPLETED" && (
-              <div className="mt-4 flex flex-wrap gap-2">
-                <Link href={withSearch(`/projects/${projectId}/articles`, searchId)}>
-                  <Button variant="secondary">{t("seeResults")}</Button>
-                </Link>
+            {job?.status === "COMPLETED" && !active && current && (
+              <CtaBanner
+                projectId={projectId}
+                searchId={current.id}
+                nResults={num(r.processed ?? r.done)}
+                nReview={num(r.needs_review)}
+                derived={searches?.find((s) => s.parent?.id === current.id) ?? null}
+                onNewAnalysis={() => {
+                  setSelection({ from_search_id: current.id });
+                  setCriteria({});
+                  setPanelOpen(true);
+                }}
+                onChat={() => {
+                  setChatRequest((p) => ({ searchId: current.id, nonce: (p?.nonce ?? 0) + 1 }));
+                  chatRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+                }}
+              >
                 <ExportMenu projectId={projectId} />
-                {num(r.needs_review) > 0 && (
-                  <Link href={withSearch(`/projects/${projectId}/annotate?queue=review`, searchId)}>
-                    <Button>{t("annotateReview")}</Button>
-                  </Link>
-                )}
-              </div>
+              </CtaBanner>
             )}
             {isLead && current && (current.predicted ?? 0) + (current.reviewed ?? 0) > 0 && !active && !workersBusy && (
               <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -833,14 +881,17 @@ function AnalyseContent() {
 
       {/* Corpus chat (spec 2026-11-07-chat-rag §5): visible to members —
           it questions the whole project corpus, or the lot of one search. */}
-      <Card title={t("chatTitle")}>
-        <ChatRagPanel
-          projectId={projectId}
-          models={models}
-          isLead={isLead}
-          searches={(searches ?? []).filter((s) => s.kind === "standard" && !s.is_default)}
-        />
-      </Card>
+      <div ref={chatRef} className="scroll-mt-4">
+        <Card title={t("chatTitle")}>
+          <ChatRagPanel
+            projectId={projectId}
+            models={models}
+            isLead={isLead}
+            searches={(searches ?? []).filter((s) => s.kind === "standard")}
+            resultsRequest={chatRequest}
+          />
+        </Card>
+      </div>
 
       {/* Gold standard & benchmark: how the references feed the analysis, with links. */}
       <Card title={t("goldSectionTitle")}>

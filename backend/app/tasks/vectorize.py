@@ -13,6 +13,7 @@ import asyncio
 import hashlib
 import logging
 import uuid
+from collections import defaultdict
 from datetime import UTC, datetime
 
 from sqlalchemy import select, text
@@ -20,7 +21,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import embeddings
 from app.celery_app import celery_app
-from app.db.models import Article, SectionEmbedding, VectorizeProgress
+from app.db.models import Article, ArticlePrediction, Search, SectionEmbedding, VectorizeProgress
+from app.result_text import render_response
+from app.searches import in_search, lot_condition
 from app.settings.service import get_setting
 from app.tasks import _make_session_factory, _session_factory_override
 
@@ -82,13 +85,21 @@ async def vectorize_project(
     project_id: uuid.UUID,
     article_ids: list[str] | None = None,
     model_name: str | None = None,
+    search_id: uuid.UUID | None = None,
 ) -> dict:
     """(Re)vectorize the project's sections. Returns ``{"vectorized": n,
     "articles": m}``. Idempotent on unchanged content + model.
 
     ``article_ids`` (string UUIDs) targets a subset — the incremental hooks
     (import / OCR / full-text) send only the new ones.
+
+    ``search_id`` (spec 2026-11-09-sous-analyse-criteres R4): the RESULTS
+    scope — one row per (article, search) carrying the rendered answers.
+    NULL = corpus (behavior unchanged; the per-article scan below is scoped
+    so a corpus run never touches the result rows).
     """
+    if search_id is not None:
+        return await _vectorize_results(db, project_id, search_id, model_name)
     if model_name is None:
         model_name = await get_setting(db, "embedding_model")
     emb = embeddings.get_embedder(model_name)  # None → the cached/first-load model
@@ -111,7 +122,10 @@ async def vectorize_project(
         existing_by_idx: dict[int, list[SectionEmbedding]] = {}
         for e in (
             await db.execute(
-                select(SectionEmbedding).where(SectionEmbedding.article_id == article.id)
+                select(SectionEmbedding).where(
+                    SectionEmbedding.article_id == article.id,
+                    SectionEmbedding.search_id.is_(None),  # corpus rows only
+                )
             )
         ).scalars():
             existing_by_idx.setdefault(e.section_index, []).append(e)
@@ -201,9 +215,139 @@ async def vectorize_project(
     return {"vectorized": vectorized, "articles": len(articles)}
 
 
+async def _vectorize_results(
+    db: AsyncSession, project_id: uuid.UUID, search_id: uuid.UUID, model_name: str | None = None
+) -> dict:
+    """RESULTS scope (R4): one row per (article, search) on the rendered answers
+    of the LATEST prediction of the search's lot. Idempotent on
+    (content_hash, embedding_model); an article whose answers vanished (or
+    became unrenderable — e.g. a new ERROR run) loses its row. Shares the
+    project's single ``vectorize_progress`` row (no search_id column — the
+    results-index endpoint derives the state from the row + the row count).
+    """
+    search = await db.get(Search, search_id)
+    if search is None or search.project_id != project_id:
+        raise LookupError(f"search {search_id} not found (project {project_id})")
+    if model_name is None:
+        model_name = await get_setting(db, "embedding_model")
+    emb = embeddings.get_embedder(model_name)
+    model_name = emb.name
+
+    rows = (await db.execute(select(Article).where(lot_condition(search)))).scalars().all()
+    articles = list(rows)
+    existing_by_art: dict[uuid.UUID, list[SectionEmbedding]] = defaultdict(list)
+    for e in (
+        await db.execute(select(SectionEmbedding).where(SectionEmbedding.search_id == search.id))
+    ).scalars():
+        existing_by_art[e.article_id].append(e)
+
+    pending: list[tuple[Article, str, str]] = []  # (article, text, hash)
+    for article in articles:
+        pred = (
+            (
+                await db.execute(
+                    select(ArticlePrediction)
+                    .where(
+                        ArticlePrediction.article_id == article.id,
+                        in_search(ArticlePrediction.search_id, search),
+                    )
+                    .order_by(
+                        ArticlePrediction.created_at.desc().nulls_last(),
+                        ArticlePrediction.id.desc(),
+                    )
+                    .limit(1)
+                )
+            )
+            .scalars()
+            .first()
+        )
+        rendered = (
+            render_response(pred.decision_json, pred.field_confidences, search.fields)
+            if pred is not None
+            else None
+        )
+        rows = existing_by_art.pop(article.id, [])
+        if rendered is None:  # no answers (ERROR / empty decision): drop the row
+            for row in rows:
+                await db.delete(row)
+            continue
+        digest = hashlib.sha256(rendered.encode("utf-8")).hexdigest()
+        if (
+            len(rows) == 1
+            and rows[0].content_hash == digest
+            and rows[0].embedding_model == model_name
+        ):
+            continue
+        for row in rows:
+            await db.delete(row)
+        pending.append((article, rendered, digest))
+
+    now = datetime.now(UTC)
+    await _set_progress(
+        db,
+        project_id,
+        status="RUNNING",
+        total=len(pending),
+        done=0,
+        model=model_name,
+        started_at=now,
+        finished_at=None,
+    )
+    await db.commit()
+
+    vectorized = 0
+    try:
+        if pending:
+            dialect = db.bind.dialect.name if db.bind is not None else "sqlite"
+            insert = _upsert_dialect(dialect)
+            for start in range(0, len(pending), _EMBED_BATCH):
+                part = pending[start : start + _EMBED_BATCH]
+                vectors = emb.embed_batch([text for _, text, _ in part])
+                for (article, _, digest), vec in zip(part, vectors, strict=True):
+                    # 3-column conflict target (article, section_index, search_id):
+                    # per-search rows have no partial index of their own.
+                    stmt = insert(SectionEmbedding).values(
+                        id=uuid.uuid4(),
+                        article_id=article.id,
+                        section_index=0,
+                        section_title=None,
+                        content_hash=digest,
+                        embedding=vec,
+                        embedding_model=model_name,
+                        search_id=search.id,
+                    )
+                    stmt = stmt.on_conflict_do_update(
+                        index_elements=["article_id", "section_index", "search_id"],
+                        set_={
+                            "section_title": None,
+                            "content_hash": digest,
+                            "embedding": vec,
+                            "embedding_model": model_name,
+                        },
+                    )
+                    await db.execute(stmt)
+                    vectorized += 1
+                await _set_progress(db, project_id, done=vectorized)
+                await db.commit()
+        await _set_progress(db, project_id, status="DONE", done=vectorized, finished_at=now)
+        await db.commit()
+    except Exception:
+        try:
+            await db.rollback()
+            await _set_progress(db, project_id, status="ERROR", done=vectorized, finished_at=now)
+            await db.commit()
+        finally:
+            raise
+    return {"vectorized": vectorized, "articles": len(articles)}
+
+
 @celery_app.task(name="diggypaper.vectorize")
-def vectorize_task(project_id: str, article_ids: list[str] | None = None) -> dict:
-    """Worker entry point (hooks + "Indexer le corpus" button)."""
+def vectorize_task(
+    project_id: str, article_ids: list[str] | None = None, search_id: str | None = None
+) -> dict:
+    """Worker entry point (hooks + "Indexer le corpus" button).
+
+    ``search_id``: the results scope (R4) — triggered on inference completion."""
 
     async def _run() -> dict:
         engine = None
@@ -212,7 +356,12 @@ def vectorize_task(project_id: str, article_ids: list[str] | None = None) -> dic
             engine, sf = _make_session_factory()
         try:
             async with sf() as session:
-                return await vectorize_project(session, uuid.UUID(project_id), article_ids)
+                return await vectorize_project(
+                    session,
+                    uuid.UUID(project_id),
+                    article_ids,
+                    search_id=uuid.UUID(search_id) if search_id else None,
+                )
         finally:
             if engine is not None:
                 await engine.dispose()

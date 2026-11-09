@@ -4,6 +4,7 @@ Several searches per project, on the same batch or on a batch derived from anoth
 ("the articles where search 1 answered yes"). Read: member. Write: LEAD.
 """
 
+import json
 import random
 import uuid
 from typing import Annotated, Literal
@@ -14,12 +15,14 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db
+from app.api.v1.auth import _rate_limit_dependency
 from app.api.v1.projects import (
     STATUS_PATTERN,
     _require_lead_or_admin,
     _require_project_member,
     article_filter,
 )
+from app.api.v1.semantic_search import VECTORIZE_RATE_LIMIT
 from app.db.models import (
     Article,
     ArticlePrediction,
@@ -30,9 +33,12 @@ from app.db.models import (
     Project,
     Search,
     SearchArticle,
+    SectionEmbedding,
     User,
+    VectorizeProgress,
 )
 from app.model_access import usable_models
+from app.result_filter import article_ids_by_criteria, count_by_criteria
 from app.scheduler import selection_dict, start_ready
 from app.schema import check_fields
 from app.searches import (
@@ -417,6 +423,92 @@ async def get_search_detail(
 ) -> dict:
     project = await _require_project_member(db, project_id, user)
     return await _full_payload(db, await get_search(db, project, search_id))
+
+
+@router.get("/{project_id}/searches/{search_id}/criteria-count")
+async def criteria_count(
+    project_id: uuid.UUID,
+    search_id: uuid.UUID,
+    db: DbDep,
+    user: UserDep,
+    criteria: str | None = None,
+) -> dict:
+    """How many lot articles answer to the criteria (the live counter, R1).
+    ``criteria`` = JSON object (empty/absent = the whole lot)."""
+    await _require_project_member(db, project_id, user)
+    crit: dict = {}
+    if criteria:
+        try:
+            crit = json.loads(criteria)
+            assert isinstance(crit, dict)
+        except (ValueError, AssertionError):
+            raise HTTPException(status_code=422, detail="criteria must be a JSON object") from None
+    return {"count": await count_by_criteria(db, project_id, search_id, crit)}
+
+
+@router.post("/{project_id}/searches/{search_id}/criteria-articles")
+async def criteria_articles(
+    project_id: uuid.UUID, search_id: uuid.UUID, criteria: dict, db: DbDep, user: UserDep
+) -> dict:
+    """The effective lot of the criteria (used when creating the derived search, R2)."""
+    await _require_project_member(db, project_id, user)
+    ids = await article_ids_by_criteria(db, project_id, search_id, criteria)
+    return {"article_ids": [str(i) for i in ids]}
+
+
+@router.get("/{project_id}/searches/{search_id}/results-index")
+async def results_index(
+    project_id: uuid.UUID, search_id: uuid.UUID, db: DbDep, user: UserDep
+) -> dict:
+    """State of the results index (R4/R5): ready | indexing | failed |
+    not_started | empty + the progress figures. The project's single
+    ``vectorize_progress`` row is shared with the corpus scope — a corpus run
+    in flight reads as ``indexing`` (visible trade-off, no composite key)."""
+    project = await _require_project_member(db, project_id, user)
+    s = await get_search(db, project, search_id)
+    if s.kind == "blind":
+        # The results index would be an oracle on the masked answers (404,
+        # never a hint — same guard as the results-mode chat).
+        raise HTTPException(status_code=404, detail="search not found")
+    n = (
+        await db.execute(
+            select(func.count())
+            .select_from(SectionEmbedding)
+            .where(SectionEmbedding.search_id == s.id)
+        )
+    ).scalar_one()
+    prog = await db.scalar(
+        select(VectorizeProgress).where(VectorizeProgress.project_id == s.project_id)
+    )
+    if prog is not None and prog.status == "RUNNING":
+        return {"status": "indexing", "done": prog.done, "total": prog.total}
+    if n > 0:
+        return {"status": "ready", "done": n, "total": n}
+    if prog is not None and prog.status == "ERROR":
+        return {"status": "failed", "done": prog.done, "total": prog.total}
+    if prog is not None and prog.status == "DONE":
+        return {"status": "empty", "done": 0, "total": prog.total}
+    return {"status": "not_started", "done": 0, "total": 0}
+
+
+@router.post(
+    "/{project_id}/searches/{search_id}/results-index",
+    dependencies=[Depends(_rate_limit_dependency("vectorize", VECTORIZE_RATE_LIMIT))],
+)
+async def index_results(
+    project_id: uuid.UUID, search_id: uuid.UUID, db: DbDep, user: UserDep
+) -> dict:
+    """Re-triggers the results indexing pass (retry on failure — lead only)."""
+    project = await _require_project_member(db, project_id, user)
+    await _require_lead_or_admin(db, project_id, user)
+    s = await get_search(db, project, search_id)
+    if s.kind == "blind":
+        # Indexing a blind lot would be an oracle on the masked answers.
+        raise HTTPException(status_code=404, detail="search not found")
+    from app.tasks.vectorize import vectorize_task
+
+    vectorize_task.delay(str(project_id), search_id=str(s.id))
+    return {"status": "started"}
 
 
 @router.patch("/{project_id}/searches/{search_id}")

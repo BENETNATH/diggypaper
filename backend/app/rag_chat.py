@@ -7,6 +7,7 @@ pre-excerpted) — the same retrieval the RAG endpoint uses.
 
 from __future__ import annotations
 
+import json
 import re
 
 #: Top-K of the RAG injected into the prompt (spec §1).
@@ -17,6 +18,12 @@ HISTORY_MAX_PAIRS = 6
 DEFAULT_CONTEXT_BUDGET = 6000
 #: Max length of a single history message (defensive — the client bounds it).
 HISTORY_MSG_MAX = 4000
+
+#: Results mode (spec 2026-11-09-sous-analyse-criteres R5): the top answers
+#: injected (K fixed — no context window in the model registry) and the corpus
+#: passages kept for the citations (k reduced).
+RESULTS_TOP_K = 30
+RESULTS_CORPUS_K = 6
 
 _CITATION_RE = re.compile(r"\[(\d+)\]")
 
@@ -47,6 +54,41 @@ def build_context(
             continue
         block = block + f"\n\n{entry}" if block else entry
         included.append({**section, "n": n})
+    return block, included
+
+
+def build_results_context(
+    responses: list[dict],
+    stats: dict,
+    sections: list[dict],
+    budget_chars: int = DEFAULT_CONTEXT_BUDGET,
+) -> tuple[str, list[dict]]:
+    """The results-mode context (R5): the rendered answers (NOT citable — they
+    are data, not corpus passages), the whole-lot statistics verbatim (compact
+    JSON), and the numbered corpus passages ``[n]`` (the only citable items).
+
+    The responses eat the budget left by the corpus block: when it is tight,
+    the LEAST relevant ones (end of the retrieval ranking) are dropped whole.
+    Returns ``(block, included)`` — ``included`` = the corpus passages, for
+    the citations payload (same contract as ``build_context``).
+    """
+    corpus_block, included = build_context(sections, budget_chars)
+    stats_json = json.dumps(stats, ensure_ascii=False, separators=(",", ":"))
+    remaining = budget_chars - len(corpus_block) - len(stats_json) - 60
+    lines: list[str] = []
+    for r in responses:
+        article = r.get("article") or {}
+        line = f"- {article.get('title') or ''} : {r.get('excerpt') or ''}".rstrip()
+        if not line:
+            continue
+        if lines and len("\n".join(lines)) + len(line) + 1 > remaining:
+            break
+        lines.append(line)
+    block = (
+        f"RÉPONSES ({len(lines)}):\n"
+        + "\n".join(lines)
+        + f"\n\nSTATISTIQUES (lot entier):\n{stats_json}\n\nCORPUS:\n{corpus_block}"
+    )
     return block, included
 
 

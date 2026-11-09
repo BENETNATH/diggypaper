@@ -1641,6 +1641,62 @@ export const previewSelection = async (projectId: string, selection: Selection):
     })
   ).count;
 
+// --- Criteria on a search's results (spec 2026-11-09-sous-analyse-criteres §1)
+
+/** AND of up to 3 families on the latest prediction per article of the lot. */
+export interface Criteria {
+  response?: { field: string; op: "=" | "!=" | "contains"; value: string };
+  confidence?: [number, number];
+  status?: string[];
+}
+export const CRITERIA_STATUSES = [
+  "AUTO_ACCEPTED",
+  "AUTO_REJECTED",
+  "NEEDS_HUMAN_REVIEW",
+  "ERROR",
+] as const;
+
+/** How many lot articles answer to the criteria (the live counter). */
+export const criteriaCount = async (
+  projectId: string,
+  searchId: string,
+  criteria: Criteria
+): Promise<number> =>
+  (
+    await request<{ count: number }>(
+      `/projects/${projectId}/searches/${searchId}/criteria-count?criteria=${encodeURIComponent(
+        JSON.stringify(criteria)
+      )}`
+    )
+  ).count;
+
+/** The effective lot of the criteria (frozen when the derived search is created). */
+export const criteriaArticles = async (
+  projectId: string,
+  searchId: string,
+  criteria: Criteria
+): Promise<string[]> =>
+  (
+    await request<{ article_ids: string[] }>(
+      `/projects/${projectId}/searches/${searchId}/criteria-articles`,
+      { method: "POST", body: JSON.stringify(criteria) }
+    )
+  ).article_ids;
+
+// --- Results index + results-mode chat (spec 2026-11-09-sous-analyse-criteres §4)
+
+/** State of the results index of a search (distinct scope from the corpus index). */
+export interface ResultsIndexState {
+  status: "ready" | "indexing" | "failed" | "not_started" | "empty";
+  done: number;
+  total: number;
+}
+export const getResultsIndex = (projectId: string, searchId: string): Promise<ResultsIndexState> =>
+  request(`/projects/${projectId}/searches/${searchId}/results-index`);
+/** Re-triggers the results indexing pass (retry — lead only). */
+export const triggerResultsIndex = (projectId: string, searchId: string): Promise<void> =>
+  request(`/projects/${projectId}/searches/${searchId}/results-index`, { method: "POST" });
+
 export interface SearchCreate {
   name?: string; // vide : AAMMJJ-n
   question?: string;
@@ -1801,6 +1857,8 @@ export async function streamChat(
     history?: { role: "user" | "assistant"; content: string }[];
     /** Optional scope: limit the context to the articles of this search. */
     search_id?: string;
+    /** "results" = the triple context of the search's results (requires search_id). */
+    mode?: "corpus" | "results";
   },
   onToken?: (chunk: string) => void,
   onCitations?: (citations: ChatCitation[]) => void,
