@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { Article, SchemaField } from "@/lib/api";
 import { AnswerCell, STATUS_DOT } from "@/components/ResultRow";
+import { deriveHumanFieldState } from "@/lib/resultCells";
 import { biblioLine } from "@/components/Certainty";
 
 /**
@@ -14,6 +15,7 @@ import { biblioLine } from "@/components/Certainty";
 export function ResultsTable({
   articles,
   fields,
+  accept,
   hrefFor,
   canDelete = false,
   selected,
@@ -22,6 +24,8 @@ export function ResultsTable({
 }: {
   articles: Article[];
   fields: SchemaField[];
+  /** Project accept threshold (colored cells, R3). */
+  accept?: number | null;
   hrefFor: (a: Article) => string;
   canDelete?: boolean;
   selected?: Set<string>;
@@ -87,7 +91,20 @@ export function ResultsTable({
               const ans = a.answers?.find((r) => r.key === f.key);
               return (
                 <td key={f.key} className="px-2 py-2">
-                  {ans ? <AnswerCell r={ans} /> : <span className="text-xs text-muted">—</span>}
+                  {ans ? (
+                    <AnswerCell
+                      r={ans}
+                      accept={accept}
+                      badgeOn={f.badge === true}
+                      conf={a.field_confidences?.[f.key] ?? null}
+                      humanState={deriveHumanFieldState(a.model_json, a.human?.decision_json, f.key)}
+                      annotator={a.human?.annotator ?? null}
+                      modelValue={a.model_json?.[f.key]}
+                      rowError={a.prediction_status === "ERROR"}
+                    />
+                  ) : (
+                    <span className="text-xs text-muted">—</span>
+                  )}
                 </td>
               );
             })}
@@ -109,6 +126,26 @@ export function ResultsTable({
         ))}
       </tbody>
       </table>
+      {fields.some((f) => f.badge) && (
+        <div className="flex flex-wrap gap-x-4 gap-y-1 px-3 py-2 text-[11px] text-muted">
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-3 w-3 rounded bg-cell-good" aria-hidden />
+            {t("legendGood")}
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-3 w-3 rounded bg-cell-warn" aria-hidden />
+            {t("legendWarn")}
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-3 w-3 rounded border border-border bg-surface-muted/40" aria-hidden />
+            {t("legendNeutral")}
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-3 w-3 rounded bg-surface-muted" aria-hidden />
+            {t("legendError")}
+          </span>
+        </div>
+      )}
     </div>
   );
 }

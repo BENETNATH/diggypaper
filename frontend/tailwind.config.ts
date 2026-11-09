@@ -35,6 +35,8 @@ const config: Config = {
         success: "var(--success)",
         warning: "var(--warning)",
         focus: "var(--focus)",
+        "cell-good": "var(--cell-good)",
+        "cell-warn": "var(--cell-warn)",
       },
       fontFamily: {
         sans: ["var(--font-geist-sans)", "ui-sans-serif", "system-ui", "sans-serif"],

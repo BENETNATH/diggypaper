@@ -20,8 +20,12 @@ from app.db.models import Article, GoldArticle, Project, Search, SearchArticle
 
 
 def definition_hash(question: str | None, fields: list[dict] | None) -> str:
-    """Fingerprint of the definition (question + items): same expected answers, same reference."""
-    blob = json.dumps([(question or "").strip(), fields], sort_keys=True, ensure_ascii=False)
+    """Fingerprint of the definition (question + items): same expected answers, same reference.
+
+    ``badge`` (display opt-in, spec 2026-11-09-triage-seuils R3) is excluded:
+    toggling it must not change the hash (locked question, gold sharing)."""
+    norm = [{k: v for k, v in f.items() if k != "badge"} for f in (fields or [])]
+    blob = json.dumps([(question or "").strip(), norm], sort_keys=True, ensure_ascii=False)
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:32]
 
 

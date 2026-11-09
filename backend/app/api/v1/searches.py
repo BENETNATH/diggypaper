@@ -120,7 +120,7 @@ async def select_articles(db: AsyncSession, project: Project, sel: Selection) ->
     ):  # otherwise these criteria would be an oracle on the masked answers
         raise HTTPException(status_code=422, detail="criteria unavailable on a blind search")
     answers = json.dumps(sel.answers) if sel.answers else None
-    where, _ps, pconf, _pd, annotated = article_filter(src, sel.status, answers, sel.q)
+    where, _ps, pconf, _pd, _fc, annotated = article_filter(src, sel.status, answers, sel.q)
     on_results = any(
         v is not None
         for v in (
@@ -179,7 +179,7 @@ async def _stats(db: AsyncSession, s: Search) -> dict:
     breakdown: dict = {}
     to_review = 0
     if s.kind != "blind":  # blind: no distribution of the AI answers
-        _where, pstatus, _c, _d, annotated = article_filter(s, None, None)
+        _where, pstatus, _c, _d, _fc, annotated = article_filter(s, None, None)
         rows = await db.execute(
             select(pstatus, func.count())
             .select_from(Article)

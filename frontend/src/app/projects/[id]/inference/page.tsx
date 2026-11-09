@@ -19,6 +19,7 @@ import {
   listModels,
   triggerInference,
   rerunSearch,
+  updateProject,
   InferenceJob,
   ModelInfo,
   SchemaField,
@@ -31,6 +32,7 @@ import { MAX_GOLD_EXAMPLES } from "@/lib/benchmark";
 import { ExportMenu } from "@/components/ExportMenu";
 import { RequireAuth } from "@/components/RequireAuth";
 import { QuestionEditor } from "@/components/QuestionEditor";
+import { TriageThresholds, type TriagePolicyValue } from "@/app/projects/[id]/inference/TriageThresholds";
 import { ArticleSelector } from "@/components/ArticleSelector";
 import { Button } from "@/components/ui/Button";
 import { Checkbox, Field, Input, Select } from "@/components/ui/Field";
@@ -162,6 +164,8 @@ function AnalyseContent() {
   const locale = useLocale();
   const { user } = useAuth();
   const [isLead, setIsLead] = useState(false);
+  // Project triage thresholds (spec 2026-11-09 R1); no policy = defaults 0.85/0.15.
+  const [triage, setTriage] = useState<TriagePolicyValue>({ accept: 0.85, reject: 0.15 });
   const projectId = useParams<{ id: string }>().id;
   const searchId = useSearchId(projectId);
   const { searches, current } = useSearches(projectId, searchId);
@@ -243,6 +247,7 @@ function AnalyseContent() {
           fields: set ? (p.fields ?? []) : [],
           sections: p.text_sections ?? ["methods"],
         });
+        setTriage({ accept: p.triage_policy?.accept ?? 0.85, reject: p.triage_policy?.reject ?? 0.15 });
         setIsLead(isProjectLead(p, user));
       })
       .catch(() => {});
@@ -251,6 +256,18 @@ function AnalyseContent() {
   useEffect(() => {
     listModels(projectId).then(setModels).catch(() => {});
   }, [projectId]);
+
+  // Project-level triage thresholds (R1): applied to the project, not the search.
+  const patchTriage = (next: TriagePolicyValue) => {
+    const prev = triage;
+    setTriage(next);
+    updateProject(projectId, { triage_policy: next })
+      .then(() => setNotice(t("thresholdsSaved")))
+      .catch((e) => {
+        setTriage(prev);
+        setError(errText(e));
+      });
+  };
 
   // The panel opens by default only when there is no search yet (fresh project) or when asked.
   const none = !!searches && searches.every(isUntouched);
@@ -521,6 +538,14 @@ function AnalyseContent() {
       {error && <ErrorBanner message={error} />}
       {notice && (
         <p className="rounded-lg border border-primary/40 bg-primary/5 p-3 text-sm text-foreground">{notice}</p>
+      )}
+
+      {isLead && (
+        // Project triage thresholds (spec 2026-11-09 R1): presets only, no retroactivity.
+        <Card title={t("thresholdsTitle")}>
+          <TriageThresholds value={triage} onChange={patchTriage} />
+          <p className="mt-2 text-xs text-muted">{t("thresholdsHint")}</p>
+        </Card>
       )}
 
       {isLead ? (

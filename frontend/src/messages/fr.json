@@ -458,7 +458,15 @@
     "originCitation": "par citation (liée à {n})",
     "sourceFile": "fichier importé",
     "sourceNotRecorded": "source non enregistrée",
-    "emptyFiltered": "Aucun article ne correspond à ces filtres."
+    "emptyFiltered": "Aucun article ne correspond à ces filtres.",
+    "cellValidated": "Validé par {name}",
+    "cellCorrected": "Corrigée par {name}",
+    "cellUnread": "Non relue",
+    "cellAi": "IA {pct} %",
+    "legendGood": "conf ≥ seuil",
+    "legendWarn": "conf < seuil",
+    "legendNeutral": "neutre",
+    "legendError": "erreur"
   },
   "gold": {
     "title": "Gold standard",
@@ -769,7 +777,13 @@
     "questionsTitle": "Questions posées à chaque article",
     "rerunWithModel": "Re-run avec un modèle différent",
     "rerunLaunch": "Lancer le re-run",
-    "chatTitle": "Interroger le corpus"
+    "chatTitle": "Interroger le corpus",
+    "thresholdsTitle": "Seuils de triage",
+    "thresholdsHint": "Appliqué aux nouvelles prédictions. Pour reclasser les résultats existants : relancer l'analyse.",
+    "thresholdsAccept": "Auto-validé si confiance >",
+    "thresholdsReject": "Auto-rejeté si confiance <",
+    "thresholdsDisabled": "désactivé",
+    "thresholdsSaved": "Seuils enregistrés."
   },
   "settings": {
     "title": "Paramètres système",
@@ -1019,7 +1033,9 @@
     "questionHint": "Posée au début du prompt de chaque article : elle oriente ce que le modèle cherche. Laissez vide : le modèle répond uniquement à la liste des questions ci-dessous.",
     "moveUp": "Monter",
     "moveDown": "Descendre",
-    "duplicate": "Dupliquer"
+    "duplicate": "Dupliquer",
+    "badgeLabel": "Cellule colorée",
+    "badgeHint": "Fond coloré de la cellule de réponse selon la confiance IA (seuils du projet)."
   },
   "profile": {
     "title": "Mon profil",

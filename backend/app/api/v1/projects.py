@@ -49,7 +49,7 @@ from app.hal import HalError
 from app.openalex import OpenAlexError
 from app.pubmed import NCBIError, _esearch_max
 from app.refimport import dedupe, parse_references
-from app.schema import check_fields, project_fields
+from app.schema import check_fields, normalize_triage_policy, project_fields
 from app.searches import default_search, definition_hash, get_search, in_search, lot_condition
 from app.settings.service import get_setting
 from app.sources import DateBounds
@@ -103,6 +103,8 @@ class ProjectUpdate(BaseModel):
     question: str | None = Field(default=None, max_length=2000)
     fields: list[dict] | None = None
     read_windows: int | None = Field(default=None, ge=1, le=32)
+    # Per-project triage presets (spec 2026-11-09-triage-seuils R1); project-level.
+    triage_policy: dict | None = None
 
     @field_validator("text_sections")
     @classmethod
@@ -113,6 +115,11 @@ class ProjectUpdate(BaseModel):
     @classmethod
     def _check_fields(cls, v: list[dict] | None) -> list[dict] | None:
         return None if v is None else check_fields(v)
+
+    @field_validator("triage_policy")
+    @classmethod
+    def _check_triage_policy(cls, v: dict | None) -> dict | None:
+        return None if v is None else normalize_triage_policy(v)
 
 
 class ImportRequest(BaseModel):
@@ -174,6 +181,17 @@ def review_payload(ann: HumanAnnotation | None, user: User | None) -> dict | Non
         "by": (user.full_name or user.email) if user else None,
         "at": ann.created_at.isoformat() if ann.created_at else None,
         "status": (ann.decision_json or {}).get("review_status"),
+    }
+
+
+def human_payload(ann: HumanAnnotation | None, user: User | None) -> dict | None:
+    """Latest re-read for the AI+human per-field coupling (spec R4): who, and the
+    answers of that re-read (compared client-side against the model's)."""
+    if ann is None:
+        return None
+    return {
+        "annotator": (user.full_name or user.email) if user else None,
+        "decision_json": ann.decision_json,
     }
 
 
@@ -262,6 +280,7 @@ def _project_payload(
         "question": src.question,
         "read_windows": src.read_windows,
         "fields": project_fields(src),
+        "triage_policy": project.triage_policy,  # project-level (R1)
         "custom_schema": src.fields is not None,
         "question_set": src.question is not None or src.fields is not None,
         "search_id": str(search.id) if search else None,
@@ -440,6 +459,8 @@ async def update_project(
             t.fields = payload.fields
         if payload.read_windows is not None:
             t.read_windows = payload.read_windows
+    if payload.triage_policy is not None:
+        project.triage_policy = payload.triage_policy  # project-level, R1
     scope.definition_hash = definition_hash(scope.question, scope.fields)
     await db.commit()
     return _project_payload(project, search=scope)
@@ -725,7 +746,7 @@ def article_filter(
     """Conditions of the article list of a search (AI status + answers) and the
     associated sub-queries: only the results and re-reads of THIS search count.
 
-    -> (where, pstatus, pconf, pdec, annotated). Shared by the list and the exports.
+    -> (where, pstatus, pconf, pdec, pfc, annotated). Shared by the list and the exports.
     """
 
     def latest(col):
@@ -743,6 +764,7 @@ def article_filter(
     pstatus = latest(ArticlePrediction.status)
     pconf = latest(ArticlePrediction.confidence_score)
     pdec = latest(ArticlePrediction.decision_json)
+    pfc = latest(ArticlePrediction.field_confidences)
     hdec = (  # latest human review: its answers take precedence over the model's
         select(HumanAnnotation.decision_json)
         .where(
@@ -774,7 +796,7 @@ def article_filter(
             where.append(false())
         elif status == "TO_REVIEW":
             where.append(~annotated)
-        return where, pstatus, pconf, pdec, annotated
+        return where, pstatus, pconf, pdec, pfc, annotated
     if status == "NONE":
         where.append(pstatus.is_(None))
     elif status == "TO_REVIEW":  # to review: uncertain AND not yet annotated
@@ -782,7 +804,7 @@ def article_filter(
     elif status:
         where.append(pstatus == status)
     where += _answer_filters(search, answers, pdec, hdec)
-    return where, pstatus, pconf, pdec, annotated
+    return where, pstatus, pconf, pdec, pfc, annotated
 
 
 @router.get("/{project_id}/articles")
@@ -809,7 +831,9 @@ async def list_articles(
     project = await _require_project_member(db, project_id, user)
     scope = await get_search(db, project, search)
 
-    where, pstatus, pconf, pdec, annotated = article_filter(scope, status, answers, q, fulltext)
+    where, pstatus, pconf, pdec, pfc, annotated = article_filter(
+        scope, status, answers, q, fulltext
+    )
     total = (await db.execute(select(func.count()).select_from(Article).where(*where))).scalar_one()
     order = {
         "date_desc": [Article.pub_date.desc().nulls_last()],
@@ -825,6 +849,7 @@ async def list_articles(
                 pconf.label("pconf"),
                 annotated.label("ann"),
                 pdec.label("pdec"),
+                pfc.label("pfc"),
             )
             .where(*where)
             .order_by(*order)
@@ -870,6 +895,7 @@ async def list_articles(
     def visible(a) -> bool:  # AI / others' data showable for this article?
         return mine is None or a.id in mine
 
+    field_keys = [f["key"] for f in project_fields(scope)]
     return {
         "items": [
             {
@@ -894,10 +920,15 @@ async def list_articles(
                     else None
                 ),
                 "answers": _answers(scope, dec, _human(reviews, a.id)) if visible(a) else [],
+                # per-field data (spec 2026-11-09-triage-seuils R3/R4): confidences of
+                # the last prediction + the model's own answers + the latest re-read
+                "field_confidences": fc if visible(a) else None,
+                "model_json": ({k: (dec or {}).get(k) for k in field_keys} if visible(a) else None),
+                "human": human_payload(*reviews.get(a.id, (None, None))) if visible(a) else None,
                 "annotated": bool(ann),
                 "review": review_payload(*reviews.get(a.id, (None, None))) if visible(a) else None,
             }
-            for a, st, conf, ann, dec in rows
+            for a, st, conf, ann, dec, fc in rows
         ],
         "total": total,
         "page": page,

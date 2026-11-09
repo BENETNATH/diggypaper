@@ -458,7 +458,15 @@
     "originCitation": "via citation (linked to {n})",
     "sourceFile": "imported file",
     "sourceNotRecorded": "source not recorded",
-    "emptyFiltered": "No article matches these filters."
+    "emptyFiltered": "No article matches these filters.",
+    "cellValidated": "Validated by {name}",
+    "cellCorrected": "Corrected by {name}",
+    "cellUnread": "Not re-read",
+    "cellAi": "AI {pct} %",
+    "legendGood": "conf ≥ threshold",
+    "legendWarn": "conf < threshold",
+    "legendNeutral": "neutral",
+    "legendError": "error"
   },
   "gold": {
     "title": "Gold standard",
@@ -769,7 +777,13 @@
     "questionsTitle": "Questions asked to each article",
     "rerunWithModel": "Re-run with a different model",
     "rerunLaunch": "Launch re-run",
-    "chatTitle": "Ask the corpus"
+    "chatTitle": "Ask the corpus",
+    "thresholdsTitle": "Triage thresholds",
+    "thresholdsHint": "Applied to new predictions. To reclassify existing results: re-run the analysis.",
+    "thresholdsAccept": "Auto-accepted if confidence >",
+    "thresholdsReject": "Auto-rejected if confidence <",
+    "thresholdsDisabled": "disabled",
+    "thresholdsSaved": "Thresholds saved."
   },
   "settings": {
     "title": "System settings",
@@ -1019,7 +1033,9 @@
     "questionHint": "Put at the start of each article's prompt: it guides what the model looks for. Leave empty: the model only answers the items below.",
     "moveUp": "Move up",
     "moveDown": "Move down",
-    "duplicate": "Duplicate"
+    "duplicate": "Duplicate",
+    "badgeLabel": "Colored cell",
+    "badgeHint": "Answer cell background colored by the AI confidence (project thresholds)."
   },
   "profile": {
     "title": "My profile",

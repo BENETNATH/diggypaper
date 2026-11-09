@@ -24,6 +24,7 @@ from app.api.v1.projects import (
     _require_lead_or_admin,
     _require_project_member,
     biblio_payload,
+    human_payload,
     latest_reviews,
     review_payload,
 )
@@ -94,6 +95,7 @@ def _prediction_payload(p: ArticlePrediction) -> dict:
         "decision_json": p.decision_json,
         "confidence_score": p.confidence_score,
         "evidence_quotes": p.evidence_quotes,
+        "field_confidences": p.field_confidences,  # spec 2026-11-09-triage-seuils §2
         "status": p.status,
         "created_at": p.created_at.isoformat() if p.created_at else None,
     }
@@ -358,7 +360,28 @@ async def get_prediction(
     )
     if prediction is None:
         return None
-    return _prediction_payload(prediction)
+    # latest re-read for the AI+human per-field coupling (spec R4): blind → her own only
+    reviewer = user.id if scope.kind == "blind" else None
+    own = [HumanAnnotation.user_id == reviewer] if reviewer else []
+    ann_row = (
+        await db.execute(
+            select(HumanAnnotation, User)
+            .join(User, User.id == HumanAnnotation.user_id, isouter=True)
+            .where(
+                HumanAnnotation.article_id == article.id,
+                in_search(HumanAnnotation.search_id, scope),
+                *own,
+            )
+            .order_by(
+                HumanAnnotation.created_at.desc().nulls_last(),
+                HumanAnnotation.id.desc(),
+            )
+            .limit(1)
+        )
+    ).first()
+    payload = _prediction_payload(prediction)
+    payload["human"] = human_payload(*ann_row) if ann_row else None
+    return payload
 
 
 @router.get("/{project_id}/articles/{article_id}/annotation")

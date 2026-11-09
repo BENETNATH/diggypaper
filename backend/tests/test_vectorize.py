@@ -8,7 +8,7 @@ JSON variant there); the pipeline logic is exercised for real.
 import re
 
 import pytest
-from sqlalchemy import select, update
+from sqlalchemy import select, text, update
 
 from app import embeddings as embeddings_mod
 from app.db.models import Article, Project, SectionEmbedding
@@ -137,8 +137,11 @@ async def test_upsert_conflict_updates_existing_row(session, rag_project):
         embedding=[0.9],
         embedding_model="fake-bow-v2",
     )
+    # corpus row: the conflict target is the partial unique index on
+    # (article_id, section_index) WHERE search_id IS NULL
     stmt = stmt.on_conflict_do_update(
         index_elements=["article_id", "section_index"],
+        index_where=text("search_id IS NULL"),
         set_={
             "section_title": "New",
             "content_hash": "b" * 64,

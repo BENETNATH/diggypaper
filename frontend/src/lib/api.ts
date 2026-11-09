@@ -32,6 +32,8 @@ export interface SchemaField {
   /** Ranking criterion for the benchmark's models / prompts (a single item) and its metric. */
   primary?: boolean;
   metric?: RankMetric;
+  /** Colored result cell for this question (opt-in at creation, spec 2026-11-09 R3). */
+  badge?: boolean;
 }
 
 export interface Project {
@@ -45,6 +47,8 @@ export interface Project {
   text_sections?: string[];
   question?: string;
   fields?: SchemaField[];
+  /** Project triage presets (null = default 0.85/0.15; null value = family disabled). */
+  triage_policy?: { accept: number | null; reject: number | null } | null;
   custom_schema?: boolean;
   question_set?: boolean;
   created_at: string | null;
@@ -80,6 +84,12 @@ export interface Article {
   answers?: { key: string; label: string; value: unknown; confidence: number | null; source?: "human" | "model" }[];
   prediction_status?: "AUTO_ACCEPTED" | "AUTO_REJECTED" | "NEEDS_HUMAN_REVIEW" | "ERROR" | null;
   confidence?: number | null;
+  /** Per-field confidences of the last prediction (null: old predictions). */
+  field_confidences?: Record<string, number> | null;
+  /** The model's own answers (field keys), for the per-field AI+human coupling. */
+  model_json?: Record<string, unknown> | null;
+  /** Latest human re-read (who + its answers); null = not re-read. */
+  human?: { annotator: string | null; decision_json: Record<string, unknown> | null } | null;
   annotated?: boolean;
   review?: Review | null;
   original_language: string | null;
@@ -109,6 +119,10 @@ export interface ArticlePrediction {
   decision_json: Record<string, unknown> | null;
   confidence_score: number | null;
   evidence_quotes: string[] | null;
+  /** Per-field confidences (null: old predictions, spec 2026-11-09 §2). */
+  field_confidences?: Record<string, number> | null;
+  /** Latest human re-read for the per-field AI+human coupling (R4). */
+  human?: { annotator: string | null; decision_json: Record<string, unknown> | null } | null;
   status: "AUTO_ACCEPTED" | "AUTO_REJECTED" | "NEEDS_HUMAN_REVIEW" | "ERROR";
   created_at: string | null;
 }
@@ -761,6 +775,8 @@ export async function updateProject(
     text_sections?: string[];
     question?: string;
     fields?: SchemaField[];
+    /** Project-level triage presets (no searchId; spec 2026-11-09 R1). */
+    triage_policy?: { accept: number | null; reject: number | null } | null;
   },
   searchId?: string
 ): Promise<Project> {

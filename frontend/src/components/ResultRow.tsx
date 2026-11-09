@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { Article } from "@/lib/api";
+import { Article, SchemaField } from "@/lib/api";
 import { ArticleLinks, biblioLine } from "@/components/Certainty";
+import { cellIcon, cellTone, deriveHumanFieldState, initials } from "@/lib/resultCells";
 import { sourceLabel } from "@/lib/source";
 
 export const STATUS_DOT: Record<string, string> = {
@@ -30,31 +31,95 @@ function CertaintyDot({ value }: { value: number | null | undefined }) {
 
 type Answer = NonNullable<Article["answers"]>[number];
 
+/** Background of the colored cell (spec 2026-11-09-triage-seuils R3, mockup 04). */
+const CELL_TONE_BG: Record<ReturnType<typeof cellTone>, string> = {
+  good: "bg-cell-good",
+  warn: "bg-cell-warn",
+  error: "bg-surface-muted",
+  neutral: "bg-surface-muted/40",
+};
+
 /**
  * An answer in a fixed-size box: the item (one line) and the answer (at most two lines)
  * are truncated, the certainty pill stays always visible; on hover (or keyboard), a
  * card shows the item, the full answer and its origin.
+ *
+ * Colored background (R3, opt-in per question) + corner human-review icon with
+ * tooltip (R4); the pill is kept as the non-colored channel (WCAG 1.4.1, R5).
  */
-export function AnswerCell({ r }: { r: Answer }) {
+export function AnswerCell({
+  r,
+  accept,
+  badgeOn = false,
+  conf = null,
+  humanState = "none",
+  annotator = null,
+  modelValue,
+  rowError = false,
+}: {
+  r: Answer;
+  /** Project accept threshold (null = family disabled). */
+  accept?: number | null;
+  /** "badge" option of the question (colored cell). */
+  badgeOn?: boolean;
+  /** Per-field confidence of the last prediction (null: old predictions, R2). */
+  conf?: number | null;
+  /** Human review state of this field (derived, R4). */
+  humanState?: "validated" | "corrected" | "none";
+  /** Last annotator, for the tooltip initials. */
+  annotator?: string | null;
+  /** The model's own answer for the field (empty-cell check). */
+  modelValue?: unknown;
+  rowError?: boolean;
+}) {
   const t = useTranslations("articles");
   const yes = r.value === true;
   const no = r.value === false;
   const shown = typeof r.value === "boolean" ? (yes ? `✓ ${t("yes")}` : `✗ ${t("no")}`) : pretty(r.value);
   const muted = no || r.value === "UNSPECIFIED" || shown === "";
   const pct = r.confidence != null ? Math.round(r.confidence * 100) : null;
+  const tone = cellTone({
+    rowError,
+    badgeOn,
+    fieldConfidence: conf,
+    answerPresent: r.value != null,
+    accept,
+  });
+  const icon = cellIcon({ rowError, modelValue, humanState });
+  const iconTitle =
+    icon === "validated"
+      ? t("cellValidated", { name: initials(annotator) }) +
+        (conf != null ? ` · ${t("cellAi", { pct: Math.round(conf * 100) })}` : "")
+      : icon === "corrected"
+        ? t("cellCorrected", { name: initials(annotator) }) +
+          (conf != null ? ` — ${t("cellAi", { pct: Math.round(conf * 100) })}` : "")
+        : t("cellUnread");
   // Not focusable: the row link is the only focus stop; the tooltip opens on the link's focus (group/row).
   return (
     <div className="group/cell relative">
-      <div className="h-[3.4rem] overflow-hidden rounded-md border border-border/70 bg-surface-muted/40 px-2.5 py-1.5">
+      <div className={`h-[3.4rem] overflow-hidden rounded-md border border-border/70 px-2.5 py-1.5 ${CELL_TONE_BG[tone]}`}>
         <div className="flex items-center justify-between gap-2">
           <span className="truncate text-[11px] text-muted">{r.label}</span>
-          {r.source === "human" ? (
-            <span title={t("humanAnswer")} className="shrink-0 text-xs text-primary">
-              ✎
-            </span>
-          ) : (
-            <CertaintyDot value={r.confidence} />
-          )}
+          <span className="flex shrink-0 items-center gap-1.5">
+            {icon !== "none" && (
+              <span
+                title={iconTitle}
+                aria-label={iconTitle}
+                className={`text-xs ${
+                  icon === "validated" ? "text-success" : icon === "corrected" ? "text-warning" : "text-muted"
+                }`}
+              >
+                {icon === "validated" ? "✓" : icon === "corrected" ? "!" : "·"}
+              </span>
+            )}
+            {r.source === "human" ? (
+              <span title={t("humanAnswer")} className="text-xs text-primary">
+                ✎
+              </span>
+            ) : (
+              <CertaintyDot value={r.confidence} />
+            )}
+          </span>
         </div>
         <p className={`mt-0.5 line-clamp-2 break-words text-xs leading-snug ${muted ? "text-muted" : "text-foreground"}`}>
           {shown || "—"}
@@ -92,6 +157,8 @@ export function AnswerCell({ r }: { r: Answer }) {
 export function ResultRow({
   a,
   href,
+  fields,
+  accept,
   canDelete = false,
   selected,
   onToggleSelect,
@@ -99,6 +166,10 @@ export function ResultRow({
 }: {
   a: Article;
   href: string;
+  /** The search's fields (badge option per question, R3). */
+  fields?: SchemaField[];
+  /** Project accept threshold (R3). */
+  accept?: number | null;
   canDelete?: boolean;
   selected?: Set<string>;
   onToggleSelect?: (id: string) => void;
@@ -118,6 +189,8 @@ export function ResultRow({
   const answers = a.answers ?? [];
   const reviewed = a.annotated;
   const isSelected = selected?.has(a.id) ?? false;
+  const rowError = a.prediction_status === "ERROR";
+  const badgeOf = (key: string) => fields?.find((f) => f.key === key)?.badge === true;
   return (
     <li className="group">
       <div className="flex items-start gap-2.5">
@@ -144,7 +217,17 @@ export function ResultRow({
               {answers.length > 0 && (
                 <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
                   {answers.map((r) => (
-                    <AnswerCell key={r.key} r={r} />
+                    <AnswerCell
+                      key={r.key}
+                      r={r}
+                      accept={accept}
+                      badgeOn={badgeOf(r.key)}
+                      conf={a.field_confidences?.[r.key] ?? null}
+                      humanState={deriveHumanFieldState(a.model_json, a.human?.decision_json, r.key)}
+                      annotator={a.human?.annotator ?? null}
+                      modelValue={a.model_json?.[r.key]}
+                      rowError={rowError}
+                    />
                   ))}
                 </div>
               )}

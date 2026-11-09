@@ -65,6 +65,7 @@ function ResultsContent() {
   const [filter, setFilter] = useState<Filter>("ALL");
   const [sort, setSort] = useState<Sort>("added");
   const [fields, setFields] = useState<SchemaField[]>([]);
+  const [accept, setAccept] = useState<number | null>(0.85); // project accept threshold (R3)
   const [pdfOpen, setPdfOpen] = useState(false);
   const [prismaOpen, setPrismaOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -108,6 +109,7 @@ function ResultsContent() {
     getProject(projectId, searchId)
       .then((p) => {
         setFields(p.fields ?? []);
+        setAccept(p.triage_policy?.accept ?? 0.85);
         setIsLead(isProjectLead(p, user));
       })
       .catch(() => setFields([]))
@@ -475,6 +477,7 @@ function ResultsContent() {
           <ResultsTable
             articles={articles}
             fields={fields}
+            accept={accept}
             hrefFor={(a) => withSearch(`/projects/${projectId}/annotate?article=${a.id}&queue=${queue}`, searchId)}
             canDelete={isLead}
             selected={selected}
@@ -489,6 +492,8 @@ function ResultsContent() {
               <ResultRow
                 key={a.id}
                 a={a}
+                fields={fields}
+                accept={accept}
                 href={withSearch(`/projects/${projectId}/annotate?article=${a.id}&queue=${queue}`, searchId)}
                 canDelete={isLead}
                 selected={selected}

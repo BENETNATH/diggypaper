@@ -66,3 +66,114 @@ describe("ResultsTable — one column per question (R3)", () => {
     expect(wrapper?.className).toContain("overflow-x-auto");
   });
 });
+
+// spec 2026-11-09-triage-seuils-fonds-champs R3/R4 — colored cell + corner human icon
+describe("ResultsTable — colored cells and human icons (R3/R4)", () => {
+  const BADGED: SchemaField[] = [{ key: "design", label: "Design in vivo ?", type: "boolean", badge: true }];
+
+  const article = (patch: Partial<Article>): Article =>
+    ({
+      ...ARTICLE,
+      field_confidences: { design: 0.9 },
+      model_json: { design: true },
+      human: null,
+      ...patch,
+    } as Article);
+
+  it("conf ≥ accept threshold with the badge on → green cell + legend", () => {
+    const { container } = render(
+      <ResultsTable articles={[article({})]} fields={BADGED} accept={0.85} hrefFor={() => "/x"} />
+    );
+    expect(container.querySelector("td .bg-cell-good")).toBeInTheDocument();
+    expect(container.querySelector("td .bg-cell-warn")).toBeNull();
+    expect(screen.getByText("legendGood")).toBeInTheDocument();
+    expect(screen.getByText("legendError")).toBeInTheDocument();
+  });
+
+  it("conf below the threshold (answer present) → amber cell", () => {
+    const { container } = render(
+      <ResultsTable
+        articles={[article({ field_confidences: { design: 0.4 } })]}
+        fields={BADGED}
+        accept={0.85}
+        hrefFor={() => "/x"}
+      />
+    );
+    expect(container.querySelector("td .bg-cell-warn")).toBeInTheDocument();
+    expect(container.querySelector("td .bg-cell-good")).toBeNull();
+  });
+
+  it("badge off → neutral cell, no legend", () => {
+    const { container } = render(
+      <ResultsTable
+        articles={[article({})]}
+        fields={[{ key: "design", label: "Design in vivo ?", type: "boolean" }]}
+        accept={0.85}
+        hrefFor={() => "/x"}
+      />
+    );
+    expect(container.querySelector("td .bg-cell-good")).toBeNull();
+    expect(container.querySelector("td .bg-cell-warn")).toBeNull();
+    expect(screen.queryByText("legendGood")).toBeNull();
+  });
+
+  it("no field confidence (old predictions) → neutral (R2)", () => {
+    const { container } = render(
+      <ResultsTable
+        articles={[article({ field_confidences: null })]}
+        fields={BADGED}
+        accept={0.85}
+        hrefFor={() => "/x"}
+      />
+    );
+    expect(container.querySelector("td .bg-cell-good")).toBeNull();
+    expect(container.querySelector("td .bg-cell-warn")).toBeNull();
+  });
+
+  it("row in error → grey cell, no icon", () => {
+    const a = article({
+      prediction_status: "ERROR",
+      human: { annotator: "Benoît Petit", decision_json: { design: true } },
+    });
+    const { container } = render(
+      <ResultsTable articles={[a]} fields={BADGED} accept={0.85} hrefFor={() => "/x"} />
+    );
+    expect(container.querySelector("td .bg-surface-muted")).toBeInTheDocument();
+    // no human-review icon on an error row (the certainty dot tooltip is not a cell icon)
+    for (const sel of ["[title^='cellValidated']", "[title^='cellCorrected']", "[title='cellUnread']"]) {
+      expect(container.querySelector(`td ${sel}`)).toBeNull();
+    }
+  });
+
+  it("human validated the field → ✓ icon with initials + AI confidence tooltip", () => {
+    const a = article({
+      human: { annotator: "Benoît Petit", decision_json: { design: true } },
+    });
+    const { container } = render(
+      <ResultsTable articles={[a]} fields={BADGED} accept={0.85} hrefFor={() => "/x"} />
+    );
+    const icon = container.querySelector("td [title^='cellValidated:BP']");
+    expect(icon?.textContent).toBe("✓");
+    expect(container.querySelector("td .text-success")).toBeInTheDocument();
+  });
+
+  it("human corrected the field → ! icon with « Corrigée » tooltip", () => {
+    const a = article({
+      human: { annotator: "C. Martin", decision_json: { design: false } },
+    });
+    const { container } = render(
+      <ResultsTable articles={[a]} fields={BADGED} accept={0.85} hrefFor={() => "/x"} />
+    );
+    const icon = container.querySelector("td [title^='cellCorrected:CM']");
+    expect(icon?.textContent).toBe("!");
+    expect(container.querySelector("td .text-warning")).toBeInTheDocument();
+  });
+
+  it("model answered, not re-read → · (non relue)", () => {
+    const { container } = render(
+      <ResultsTable articles={[article({})]} fields={BADGED} accept={0.85} hrefFor={() => "/x"} />
+    );
+    const icon = container.querySelector("td [title='cellUnread']");
+    expect(icon?.textContent).toBe("·");
+  });
+});

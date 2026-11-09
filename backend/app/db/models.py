@@ -219,6 +219,9 @@ class Project(Base):
     # warning (cf. app.maintenance).
     kept_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     retention_warned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Triage thresholds (spec 2026-11-09-triage-seuils-fonds-champs R1):
+    # {"accept": 0.7|0.85|0.9|null, "reject": 0.1|0.15|0.25|null}; NULL = default 0.85/0.15.
+    triage_policy: Mapped[dict | None] = mapped_column(JSONB)
 
     creator: Mapped["User | None"] = relationship(back_populates="created_projects")
     members: Mapped[list["ProjectMember"]] = relationship(
@@ -725,6 +728,9 @@ class ArticlePrediction(Base):
     decision_json: Mapped[dict | None] = mapped_column(JSONB)
     confidence_score: Mapped[float | None] = mapped_column(Float)
     evidence_quotes: Mapped[list[str] | None] = mapped_column(JSONB)
+    # Per-field confidences {field_key: float} (spec 2026-11-09-triage-seuils
+    # §2); NULL = old predictions (R2, no retroactivity).
+    field_confidences: Mapped[dict | None] = mapped_column(JSONB)
     # Search that produced it; NULL = the project's default search (old data).
     search_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("searches.id", ondelete="CASCADE"), index=True
@@ -992,10 +998,22 @@ class SectionEmbedding(Base):
     __tablename__ = "section_embeddings"
     __table_args__ = (
         Index("ix_section_embeddings_article_id", "article_id"),
-        # One vector per (article, section): the DB guard that makes
-        # vectorize_project concurrency-safe (a raced run must not create
-        # duplicate rows the RRF search would then double-count).
-        UniqueConstraint("article_id", "section_index", name="uq_section_embeddings_article_idx"),
+        # One vector per (article, section, analysis) (spec 2026-11-09-sous-analyse-
+        # criteres, migration 0042 cumulative). Corpus rows (search_id NULL) are
+        # guarded by the partial index below: NULLs are not equal in the 3-column
+        # unique index, and the partial index keeps the vectorize concurrency guard
+        # for the corpus on both PostgreSQL and SQLite.
+        UniqueConstraint(
+            "article_id", "section_index", "search_id", name="uq_section_embeddings_article_idx"
+        ),
+        Index(
+            "uq_section_embeddings_corpus",
+            "article_id",
+            "section_index",
+            unique=True,
+            postgresql_where=text("search_id IS NULL"),
+            sqlite_where=text("search_id IS NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, **_uuid_pk())
@@ -1009,6 +1027,11 @@ class SectionEmbedding(Base):
         Vector(EMBEDDING_DIM).with_variant(JSON(), "sqlite")
     )
     embedding_model: Mapped[str] = mapped_column(String, nullable=False)
+    # Analysis owning this vector (spec 2026-11-09-sous-analyse-criteres);
+    # NULL = corpus embedding (convention unchanged).
+    search_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("searches.id", ondelete="CASCADE"), index=True
+    )
     created_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

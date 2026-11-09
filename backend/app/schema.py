@@ -64,9 +64,43 @@ def check_fields(fields: list[dict]) -> list[dict]:
             item["metric"] = (
                 metric if metric in ("accuracy", "recall", "precision", "f1") else "recall"
             )
+        if f.get("badge") is True:
+            # colored result cell opt-in (spec 2026-11-09-triage-seuils-fonds-champs R3)
+            item["badge"] = True
         out.append(item)
     if sum(1 for i in out if i.get("primary")) > 1:
         raise ValueError("only one field can be the primary criterion")
+    return out
+
+
+#: Triage presets (spec 2026-11-09-triage-seuils-fonds-champs R1) — v1: no free values.
+TRIAGE_ACCEPT_PRESETS = (0.7, 0.85, 0.9)
+TRIAGE_REJECT_PRESETS = (0.1, 0.15, 0.25)
+
+
+def normalize_triage_policy(policy: dict | None) -> dict | None:
+    """Normalize a project triage policy; raises ValueError.
+
+    ``None`` → ``None`` (no policy: default 0.85/0.15). A dict must hold only
+    the preset values or ``null`` (family disabled); a missing key counts as a
+    disabled family. Returns the canonical two-key dict.
+    """
+    if policy is None:
+        return None
+    if not isinstance(policy, dict):
+        raise ValueError("triage_policy must be an object")
+    out = {}
+    for key, presets in (("accept", TRIAGE_ACCEPT_PRESETS), ("reject", TRIAGE_REJECT_PRESETS)):
+        v = policy.get(key)
+        if v is None:
+            out[key] = None
+            continue
+        if isinstance(v, bool) or not isinstance(v, (int, float)):
+            raise ValueError(f"triage_policy.{key}: preset or null expected")
+        v = float(v)
+        if v not in presets:
+            raise ValueError(f"triage_policy.{key}: must be one of {presets} or null")
+        out[key] = v
     return out
 
 

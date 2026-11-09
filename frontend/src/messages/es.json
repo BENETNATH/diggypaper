@@ -458,7 +458,15 @@
     "originCitation": "por cita (vinculada a {n})",
     "sourceFile": "archivo importado",
     "sourceNotRecorded": "fuente no registrada",
-    "emptyFiltered": "Ningún artículo coincide con estos filtros."
+    "emptyFiltered": "Ningún artículo coincide con estos filtros.",
+    "cellValidated": "Validado por {name}",
+    "cellCorrected": "Corregido por {name}",
+    "cellUnread": "Sin releer",
+    "cellAi": "IA {pct} %",
+    "legendGood": "conf ≥ umbral",
+    "legendWarn": "conf < umbral",
+    "legendNeutral": "neutro",
+    "legendError": "error"
   },
   "gold": {
     "title": "Gold standard",
@@ -769,7 +777,13 @@
     "questionsTitle": "Preguntas hechas a cada artículo",
     "rerunWithModel": "Repetir con un modelo distinto",
     "rerunLaunch": "Lanzar la repetición",
-    "chatTitle": "Consultar el corpus"
+    "chatTitle": "Consultar el corpus",
+    "thresholdsTitle": "Umbrales de clasificación",
+    "thresholdsHint": "Se aplica a las nuevas predicciones. Para reclasificar los resultados existentes: volver a lanzar el análisis.",
+    "thresholdsAccept": "Auto-aceptado si la confianza >",
+    "thresholdsReject": "Auto-rechazado si la confianza <",
+    "thresholdsDisabled": "desactivado",
+    "thresholdsSaved": "Umbrales guardados."
   },
   "settings": {
     "title": "Ajustes del sistema",
@@ -1019,7 +1033,9 @@
     "questionHint": "Se coloca al inicio del prompt de cada artículo: orienta lo que el modelo busca. Dejar vacío: el modelo responde solo a los campos de abajo.",
     "moveUp": "Subir",
     "moveDown": "Bajar",
-    "duplicate": "Duplicar"
+    "duplicate": "Duplicar",
+    "badgeLabel": "Celda de color",
+    "badgeHint": "Fondo de la celda de respuesta coloreado según la confianza de la IA (umbrales del proyecto)."
   },
   "profile": {
     "title": "Mi perfil",

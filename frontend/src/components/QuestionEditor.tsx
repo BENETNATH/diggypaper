@@ -184,6 +184,18 @@ export function QuestionEditor({
                   {t("remove")}
                 </Button>
               </div>
+              <div className="flex flex-wrap items-center gap-3 text-sm sm:col-span-3">
+                <label className="flex items-center gap-2 text-foreground">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 rounded border-border text-primary focus:ring-2 focus:ring-focus/40"
+                    checked={!!f.badge}
+                    onChange={() => patchField(i, { badge: !f.badge })}
+                  />
+                  {t("badgeLabel")}
+                </label>
+                <span className="basis-full text-xs text-muted">{t("badgeHint")}</span>
+              </div>
               {f.type !== "text" && (
                 <div className="flex flex-wrap items-center gap-3 text-sm sm:col-span-3">
                   <label className="flex items-center gap-2 text-foreground">

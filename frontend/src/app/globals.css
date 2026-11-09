@@ -51,6 +51,10 @@
   --highlight-bg: oklch(0.965 0.1 92);
   --highlight-fg: oklch(0.41 0.1 46);
 
+  /* Cellules de résultats colorées (spec 2026-11-09-triage-seuils R3) — alphas validés en maquette 04 */
+  --cell-good: oklch(0.50 0.16 155 / 0.13);
+  --cell-warn: oklch(0.55 0.15 75 / 0.15);
+
   /* Focus (WCAG 2.4.11 : ≥ 2px, contraste ≥ 3:1) */
   --focus: oklch(0.55 0.19 258);
 
@@ -83,6 +87,9 @@
     --highlight-bg: oklch(0.38 0.09 88);
     --highlight-fg: oklch(0.9 0.06 95);
     --focus: oklch(0.7 0.19 258);
+    /* Cellules de résultats colorées — alphas dark validés en maquette 04 */
+    --cell-good: oklch(0.70 0.15 155 / 0.16);
+    --cell-warn: oklch(0.75 0.15 75 / 0.18);
   }
 }
 

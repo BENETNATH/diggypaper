@@ -15,7 +15,7 @@ import logging
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import embeddings
@@ -44,11 +44,17 @@ async def _set_progress(db: AsyncSession, project_id: uuid.UUID, **fields) -> No
         setattr(row, key, value)
 
 
+#: Conflict target of the corpus upsert: the partial unique index that guards
+#: corpus rows (search_id IS NULL). Per-search rows (spec 2026-11-09-sous-analyse)
+#: live under the 3-column ``uq_section_embeddings_article_idx`` instead.
+_UPSERT_CONFLICT_WHERE = text("search_id IS NULL")
+
+
 def _upsert_dialect(dialect_name: str):
     """The dialect-specific INSERT for the upsert of pass 2.
 
     PostgreSQL and SQLite both support ``ON CONFLICT DO UPDATE`` on the
-    ``uq_section_embeddings_article_idx`` unique constraint; the insert
+    ``uq_section_embeddings_corpus`` partial unique index; the insert
     constructors are dialect-specific in SQLAlchemy."""
     from sqlalchemy.dialects.postgresql import insert as pg_insert
     from sqlalchemy.dialects.sqlite import insert as sqlite_insert
@@ -109,7 +115,7 @@ async def vectorize_project(
             )
         ).scalars():
             existing_by_idx.setdefault(e.section_index, []).append(e)
-        for idx, title, text in units:
+        for idx, title, body in units:
             digest = live[idx]
             rows = existing_by_idx.get(idx, [])
             # Idempotent skip: exactly one row, same text, same model.
@@ -124,7 +130,7 @@ async def vectorize_project(
             # exactly one (convergence).
             for row in rows:
                 await db.delete(row)
-            pending.append((article, idx, title, text, digest))
+            pending.append((article, idx, title, body, digest))
         for idx, rows in existing_by_idx.items():
             if idx not in live:
                 for row in rows:  # section vanished (deleted / replaced text)
@@ -170,6 +176,7 @@ async def vectorize_project(
                     )
                     stmt = stmt.on_conflict_do_update(
                         index_elements=["article_id", "section_index"],
+                        index_where=_UPSERT_CONFLICT_WHERE,
                         set_={
                             "section_title": title,
                             "content_hash": digest,

@@ -43,6 +43,8 @@ from app.db.models import (
     PromptStatus,
     PromptTemplate,
     PromptType,
+    Search,
+    SectionEmbedding,
     SettingScope,
     SystemSettings,
     User,
@@ -173,6 +175,7 @@ def test_projects_columns():
         "created_at",
         "kept_at",
         "retention_warned_at",
+        "triage_policy",  # spec 2026-11-09-triage-seuils-fonds-champs R1
     }
     assert c["id"].primary_key
     assert isinstance(c["id"].type, Uuid)
@@ -186,6 +189,9 @@ def test_projects_columns():
     assert c["default_language"].server_default.arg == "en"
     assert isinstance(c["created_at"].type, DateTime)
     assert c["created_at"].server_default is not None
+    # NULL = projet sans politique (défaut 0.85/0.15)
+    assert c["triage_policy"].nullable
+    assert isinstance(c["triage_policy"].type, JSON)
 
 
 # --- project_members ---
@@ -523,6 +529,8 @@ def test_article_predictions_columns():
         "model_version",
         # re-run & comparison (spec 2026-11-07): the job that produced it
         "inference_job_id",
+        # confiance par champ (spec 2026-11-09-triage-seuils-fonds-champs §2)
+        "field_confidences",
     }
     assert c["id"].primary_key
     for col in ("model_identifier", "model_version"):
@@ -545,6 +553,46 @@ def test_article_predictions_columns():
     assert c["inference_job_id"].nullable  # NULL = legacy / outside a job
     assert fk(c["inference_job_id"]).column is InferenceJob.__table__.c.id
     assert fk(c["inference_job_id"]).ondelete == "SET NULL"
+    # NULL = prédictions anciennes (R2, pas de rétroactivité)
+    assert c["field_confidences"].nullable
+    assert isinstance(c["field_confidences"].type, JSON)
+
+
+# --- section_embeddings ---
+
+
+def test_section_embeddings_columns():
+    c = SectionEmbedding.__table__.columns
+    assert set(c.keys()) == {
+        "id",
+        "article_id",
+        "section_index",
+        "section_title",
+        "content_hash",
+        "embedding",
+        "embedding_model",
+        "search_id",  # spec 2026-11-09-sous-analyse-criteres (migration 0042 cumulée)
+        "created_at",
+    }
+    assert c["id"].primary_key
+    assert isinstance(c["search_id"].type, Uuid)
+    assert c["search_id"].nullable  # NULL = corpus (convention inchangée)
+    assert fk(c["search_id"]).column is Search.__table__.c.id
+    assert fk(c["search_id"]).ondelete == "CASCADE"
+    # unique étendu : corpus (search_id NULL) et sous-analyses coexistent
+    unique_sets = {
+        frozenset(con.columns.keys())
+        for con in SectionEmbedding.__table__.constraints
+        if isinstance(con, UniqueConstraint)
+    }
+    assert frozenset(("article_id", "section_index", "search_id")) in unique_sets
+    # garde du corpus : unique partiel (article_id, section_index) WHERE search_id IS NULL
+    corpus = [
+        i for i in SectionEmbedding.__table__.indexes if i.name == "uq_section_embeddings_corpus"
+    ]
+    assert len(corpus) == 1
+    assert corpus[0].unique
+    assert frozenset(c.name for c in corpus[0].columns) == {"article_id", "section_index"}
 
 
 # --- human_annotations ---
@@ -1054,3 +1102,155 @@ def test_migration_0029_adds_traceability_columns(monkeypatch):
         ("article_predictions", "model_version"),
         ("inference_jobs", "model_info"),
     ]
+
+
+def test_migration_0042_triage_policy_field_confidences(monkeypatch):
+    """0042 (after 0041): projects.triage_policy + article_predictions.field_confidences
+    + section_embeddings.search_id (spec sous-analyse cumulée).
+
+    L'unique de 0039 est un INDEX unique nommé ``uq_section_embeddings_article_idx``
+    sur Postgres (create_index) mais une CONTRAINTE de table sur les bases créées
+    depuis la métadonnée (SQLite) : upgrade/downgrade doivent passer par le bon
+    objet selon le dialecte.
+    """
+    import importlib.util
+    from pathlib import Path
+
+    versions = Path(__file__).resolve().parents[1] / "alembic" / "versions"
+    found = sorted(versions.glob("0042_*.py"))
+    assert len(found) == 1, "migration 0042 attendue"
+    spec = importlib.util.spec_from_file_location("migration_0042", found[0])
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    assert mod.revision == "0042" and mod.down_revision == "0041"
+
+    def run(dialect_name):
+        calls = []
+
+        class _Dialect:
+            name = dialect_name
+
+        class _Bind:
+            dialect = _Dialect()
+
+        class Op:
+            def get_bind(self):
+                return _Bind()
+
+            def add_column(self, table, column):
+                calls.append(("add_column", table, column.name))
+
+            def drop_column(self, table, name):
+                calls.append(("drop_column", table, name))
+
+            def create_index(self, index_name, table_name, columns, **kw):
+                calls.append(
+                    (
+                        "create_index",
+                        index_name,
+                        tuple(columns),
+                        kw.get("unique", False),
+                        str(kw.get("sqlite_where", "")),
+                    )
+                )
+
+            def drop_index(self, index_name, table_name=None):
+                calls.append(("drop_index", index_name, table_name))
+
+            def create_foreign_key(
+                self, constraint, table, referenced_table, local_cols, remote_cols, ondelete=None
+            ):
+                calls.append(
+                    ("create_foreign_key", table, referenced_table, tuple(local_cols), ondelete)
+                )
+
+            def drop_constraint(self, constraint_name, table_name, type_=None):
+                calls.append(("drop_constraint", constraint_name, table_name, type_))
+
+            def create_unique_constraint(self, constraint_name, table_name, columns):
+                calls.append(("create_unique_constraint", table_name, tuple(columns)))
+
+        monkeypatch.setattr(mod, "op", Op())
+        mod.upgrade()
+        upgrade_calls = list(calls)
+        calls.clear()
+        mod.downgrade()
+        return upgrade_calls, list(calls)
+
+    UPGRADE_COMMON = [
+        ("add_column", "projects", "triage_policy"),
+        ("add_column", "article_predictions", "field_confidences"),
+        ("add_column", "section_embeddings", "search_id"),
+        ("create_index", "ix_section_embeddings_search_id", ("search_id",), False, ""),
+        ("create_foreign_key", "section_embeddings", "searches", ("search_id",), "CASCADE"),
+    ]
+    # garde du corpus (search_id NULL) — NULLs non égaux dans l'unique 3 colonnes
+    CORPUS = (
+        "create_index",
+        "uq_section_embeddings_corpus",
+        ("article_id", "section_index"),
+        True,
+        "search_id IS NULL",
+    )
+    DOWNGRADE_TAIL = [
+        ("drop_constraint", "fk_section_embeddings_search_id", "section_embeddings", "foreignkey"),
+        ("drop_index", "ix_section_embeddings_search_id", "section_embeddings"),
+        ("drop_column", "section_embeddings", "search_id"),
+        ("drop_column", "article_predictions", "field_confidences"),
+        ("drop_column", "projects", "triage_policy"),
+    ]
+
+    # Postgres : l'unique de 0039 est un index unique
+    up, down = run("postgresql")
+    assert up == UPGRADE_COMMON + [
+        ("drop_index", "uq_section_embeddings_article_idx", "section_embeddings"),
+        (
+            "create_index",
+            "uq_section_embeddings_article_idx",
+            ("article_id", "section_index", "search_id"),
+            True,
+            "",
+        ),
+        CORPUS,
+    ]
+    assert (
+        down
+        == [
+            ("drop_index", "uq_section_embeddings_corpus", "section_embeddings"),
+            ("drop_index", "uq_section_embeddings_article_idx", "section_embeddings"),
+            (
+                "create_index",
+                "uq_section_embeddings_article_idx",
+                ("article_id", "section_index"),
+                True,
+                "",
+            ),
+        ]
+        + DOWNGRADE_TAIL
+    )
+
+    # SQLite (base depuis la métadonnée) : l'unique est une contrainte de table
+    up, down = run("sqlite")
+    assert up == UPGRADE_COMMON + [
+        ("drop_constraint", "uq_section_embeddings_article_idx", "section_embeddings", "unique"),
+        (
+            "create_unique_constraint",
+            "section_embeddings",
+            ("article_id", "section_index", "search_id"),
+        ),
+        CORPUS,
+    ]
+    assert (
+        down
+        == [
+            ("drop_index", "uq_section_embeddings_corpus", "section_embeddings"),
+            (
+                "drop_constraint",
+                "uq_section_embeddings_article_idx",
+                "section_embeddings",
+                "unique",
+            ),
+            ("create_unique_constraint", "section_embeddings", ("article_id", "section_index")),
+        ]
+        + DOWNGRADE_TAIL
+    )

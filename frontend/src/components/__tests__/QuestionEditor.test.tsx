@@ -60,6 +60,17 @@ describe("QuestionEditor — orientation (spec 2026-11-06-ux-refonte-v4 R1)", ()
     expect(next.fields.map((f) => f.key)).toEqual(["b", "a"]);
   });
 
+  // spec 2026-11-09-triage-seuils R3 — colored cell opt-in per question (default off)
+  it("each question has a « badge » toggle, off by default, persisted in the field", () => {
+    const onChange = jest.fn();
+    render(<QuestionEditor question="q?" fields={FIELDS} sections={["methods"]} onChange={onChange} />);
+    const box = screen.getByRole("checkbox", { name: "badgeLabel" });
+    expect(box).not.toBeChecked();
+    box.click();
+    const next = onChange.mock.calls.at(-1)?.[0] as { fields: { badge?: boolean }[] };
+    expect(next.fields[0].badge).toBe(true);
+  });
+
   it("duplicate copies the item after itself (new key)", () => {
     const onChange = jest.fn();
     render(

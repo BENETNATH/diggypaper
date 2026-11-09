@@ -110,21 +110,43 @@ def _make_session_factory():
 REJECTED = PredictionStatus.AUTO_REJECTED
 
 
-def _triage(confidence_score) -> PredictionStatus:
+def _triage(confidence_score, policy=None) -> PredictionStatus:
     """Automatic triage according to the confidence score (spec MODULE 4).
 
-    - ``> 0.85`` → ``AUTO_ACCEPTED``
-    - ``< 0.15`` → ``AUTO_REJECTED``
+    - ``> accept`` → ``AUTO_ACCEPTED`` (default 0.85)
+    - ``< reject`` → ``AUTO_REJECTED`` (default 0.15)
     - else (bounds included, missing or non-numeric score) → ``NEEDS_HUMAN_REVIEW``
+
+    ``policy`` = the project's normalized ``triage_policy`` (spec
+    2026-11-09-triage-seuils-fonds-champs R1): ``{"accept": v|None, "reject":
+    v|None}`` — ``None`` value = family disabled; ``policy=None`` = defaults.
+    Inequalities stay strict (0.85 exact → needs review).
     """
+    p = policy if isinstance(policy, dict) else {}
+    accept = p.get("accept", _AUTO_ACCEPT_THRESHOLD)
+    reject = p.get("reject", _AUTO_REJECT_THRESHOLD)
     confidence_score = metrics.confidence(confidence_score)
     if confidence_score is None:
         return PredictionStatus.NEEDS_HUMAN_REVIEW
-    if confidence_score > _AUTO_ACCEPT_THRESHOLD:
+    if accept is not None and confidence_score > accept:
         return PredictionStatus.AUTO_ACCEPTED
-    if confidence_score < _AUTO_REJECT_THRESHOLD:
+    if reject is not None and confidence_score < reject:
         return PredictionStatus.AUTO_REJECTED
     return PredictionStatus.NEEDS_HUMAN_REVIEW
+
+
+def _field_confidences(prediction: dict | None) -> dict[str, float] | None:
+    """Per-field confidences from the model response (spec 2026-11-09-triage-seuils
+    §2): floats clamped to [0, 1]; absent or invalid fields dropped; empty → None."""
+    fc = (prediction or {}).get("field_confidence")
+    if not isinstance(fc, dict):
+        return None
+    out = {}
+    for k, v in fc.items():
+        if isinstance(v, bool) or not isinstance(v, (int, float)):
+            continue
+        out[str(k)] = min(1.0, max(0.0, float(v)))
+    return out or None
 
 
 @celery_app.task(name="diggypaper.inference", bind=True)
@@ -416,6 +438,7 @@ async def _do_inference(
     search = await get_search(session, base_project, job.search_id)
     # question, items and text parts: those of the search (the project for the rest)
     project = ScopedProject(base_project, search)
+    triage_policy = base_project.triage_policy  # R2: applies to these predictions only
 
     articles = (
         (
@@ -579,7 +602,10 @@ async def _do_inference(
                     if code != "invalid_json" and not code.startswith("provider_error_"):
                         raise
                     p1 = None  # stage 1 unreadable: the article goes to stage 2
-                if p1 is not None and _triage(p1.get("confidence_score")) == REJECTED:
+                if (
+                    p1 is not None
+                    and _triage(p1.get("confidence_score"), triage_policy) == REJECTED
+                ):
                     prediction, model_name, stage = p1, pre.name, "prefilter"
                     prefiltered += 1
             if prediction is None:
@@ -611,7 +637,7 @@ async def _do_inference(
             await _progress(session, job, processed, len(articles), invalid, counts())
             continue
         confidence = metrics.confidence(prediction.get("confidence_score"))
-        status = _triage(confidence)
+        status = _triage(confidence, triage_policy)
         if status == PredictionStatus.AUTO_ACCEPTED:
             auto_accepted += 1
         elif status == PredictionStatus.AUTO_REJECTED:
@@ -636,6 +662,7 @@ async def _do_inference(
                 decision_json=prediction,
                 confidence_score=confidence,
                 evidence_quotes=prediction.get("evidence_quotes"),
+                field_confidences=_field_confidences(prediction),
                 status=status,
             )
         )
