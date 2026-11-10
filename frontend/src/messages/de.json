@@ -58,7 +58,8 @@
     "models": "Modelle",
     "profile": "Profil",
     "users": "Benutzer",
-    "admin": "Admin"
+    "admin": "Admin",
+    "language": "Sprache"
   },
   "landing": {
     "appName": "Diggypaper",
@@ -253,7 +254,8 @@
     "chainCount": "{n, plural, one {1 Analyse} other {# Analysen}}",
     "pillNew": "Neu",
     "outsideChainHint": "Blindtest-Stichproben und Feinabstimmungen: spezifische Analysen, außerhalb der Standardkette.",
-    "watches": "Beobachtung"
+    "watches": "Beobachtung",
+    "onbTitle": "Einrichtungs-Schritte"
   },
   "import": {
     "title": "Korpus-Import",
@@ -469,7 +471,8 @@
     "legendGood": "Konf ≥ Schwelle",
     "legendWarn": "Konf < Schwelle",
     "legendNeutral": "neutral",
-    "legendError": "Fehler"
+    "legendError": "Fehler",
+    "exportBib": "BibTeX (.bib)"
   },
   "gold": {
     "title": "Goldstandard",
@@ -624,7 +627,9 @@
     "errors": "Fehler",
     "concordance": "Kongruenzen",
     "concordanceIntro": "Ad-hoc-Vergleich der KI-Analysen und Einigkeit der Relektüren, pro Suche.",
-    "concordanceSearch": "Suche"
+    "concordanceSearch": "Suche",
+    "removeVote": "Abstimmung zurückziehen",
+    "voteFor": "Diese Antwort bevorzugen"
   },
   "watches": {
     "title": "Korpus-Beobachtung",
@@ -808,7 +813,9 @@
     "ctaReview": "Die {n} unsicheren überprüfen",
     "ctaChat": "Über die Ergebnisse chatten",
     "ctaSeeAll": "Alle Ergebnisse ansehen",
-    "ctaSeeDerived": "„{name}“ ansehen · {n} Artikel"
+    "ctaSeeDerived": "„{name}“ ansehen · {n} Artikel",
+    "critConfidenceMin": "Minimale Konfidenz",
+    "critConfidenceMax": "Maximale Konfidenz"
   },
   "settings": {
     "title": "Systemeinstellungen",
@@ -910,7 +917,8 @@
     "sourceFile": "Quellendatei",
     "sourceNotRecorded": "Quelle nicht erfasst",
     "noModelAnswer": "Keine Modellantwort für diese Suche.",
-    "notAnswered": "Nicht beantwortet"
+    "notAnswered": "Nicht beantwortet",
+    "confirmModel": "Modellantwort bestätigen"
   },
   "models": {
     "title": "Modelle",
@@ -1021,7 +1029,12 @@
     "extAdded": "Modell hinzugefügt",
     "shareClose": "Freigabe schließen",
     "shareProjectLabel": "Projekt:",
-    "shareUserLabel": "Benutzer:"
+    "shareUserLabel": "Benutzer:",
+    "hfPlaceholder": "qwen, gemma, llama…",
+    "extNamePlaceholder": "GPT-4o",
+    "extModelPlaceholder": "gpt-4o-mini",
+    "extUrlPlaceholder": "https://api.openai.com/v1",
+    "pulling": "wird heruntergeladen…"
   },
   "question": {
     "suggestion": "Beispiel",
@@ -1107,7 +1120,8 @@
     "language": "Sprache der eingeladenen Person",
     "languageHelp": "Die gewählte Sprache gilt für die Einladungs-E-Mail und die Oberfläche (später in der Navigationsleiste änderbar).",
     "membersEmptyTitle": "Keine Mitglieder",
-    "membersEmptyHint": "Laden Sie Mitglieder ein, um das Projekt zu teilen."
+    "membersEmptyHint": "Laden Sie Mitglieder ein, um das Projekt zu teilen.",
+    "emailPlaceholder": "kollege@lab.de"
   },
   "adminUsers": {
     "title": "Benutzer",
@@ -1299,7 +1313,9 @@
     "excluded": "{n} Artikel ausgeschlossen (nur in einer der zwei Analysen)",
     "noCommon": "Kein gemeinsamer Artikel zwischen den zwei Analysen.",
     "sameJob": "Zwei verschiedene Analysen wählen.",
-    "pickJobs": "Zwei Analysen zum Vergleich wählen."
+    "pickJobs": "Zwei Analysen zum Vergleich wählen.",
+    "agree": "Übereinstimmung",
+    "disagree": "Uneinigkeit"
   },
   "agreement": {
     "title": "Prüfung / Übereinstimmung",
@@ -1351,7 +1367,8 @@
     "resultsIndexButton": "Ergebnisse indexieren",
     "resultsIndexFailed": "Die Indexierung der Ergebnisse ist fehlgeschlagen.",
     "resultsNotIndexed": "Die Ergebnisse wurden noch nicht indexiert.",
-    "resultsEmpty": "Kein Ergebnis zu indexieren in dieser Analyse."
+    "resultsEmpty": "Kein Ergebnis zu indexieren in dieser Analyse.",
+    "answerDone": "Antwort abgeschlossen"
   },
   "index": {
     "title": "Indizierung läuft",

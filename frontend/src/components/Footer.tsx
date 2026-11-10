@@ -11,7 +11,7 @@ const REPO = "https://github.com/BENETNATH/diggypaper";
 async function getVersion(): Promise<string | null> {
   const origin = process.env.API_ORIGIN ?? "http://localhost:8000";
   try {
-    const res = await fetch(`${origin}/api/v1/version`, { cache: "no-store" });
+    const res = await fetch(`${origin}/api/v1/version`, { next: { revalidate: 60 } });
     if (!res.ok) return null;
     const data = (await res.json()) as { version?: string };
     return data.version ?? null;
@@ -27,7 +27,7 @@ async function getVersion(): Promise<string | null> {
 async function getCiState(): Promise<string | null> {
   const origin = process.env.API_ORIGIN ?? "http://localhost:8000";
   try {
-    const res = await fetch(`${origin}/api/v1/ci-status`, { cache: "no-store" });
+    const res = await fetch(`${origin}/api/v1/ci-status`, { next: { revalidate: 60 } });
     if (!res.ok) return null;
     const data = (await res.json()) as { state?: string };
     return data.state ?? null;

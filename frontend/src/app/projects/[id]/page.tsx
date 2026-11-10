@@ -137,7 +137,7 @@ function SearchRow({
                 its border only — no « active » badge, no « Initiale » badge */}
             {untouched && <Badge color="gray">{ts("badgeToLaunch")}</Badge>}
             {s.kind !== "standard" && <Badge color="gray">{t(`kind_${s.kind}`)}</Badge>}
-            {running && <Badge color="yellow">{t("running")}</Badge>}
+            {running && <Badge color="blue">{t("running")}</Badge>}
             {s.schedule_state === "waiting" && <Badge color="gray">{t("scheduled")}</Badge>}
             {s.schedule_state === "failed" && <Badge color="red">{t("scheduleFailed")}</Badge>}
           </div>
@@ -445,8 +445,8 @@ function ProjectDashboard() {
                               active
                                 ? "bg-surface text-primary ring-2 ring-primary"
                                 : s.predicted > 0 || s.reviewed > 0
-                                  ? "bg-success text-white"
-                                  : "bg-muted text-white"
+                                  ? "bg-success text-primary-foreground"
+                                  : "bg-surface-muted text-muted-foreground"
                             }`}
                           >
                             {letter}

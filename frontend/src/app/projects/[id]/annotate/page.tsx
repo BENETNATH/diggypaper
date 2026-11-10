@@ -11,9 +11,11 @@ import { ModelRef } from "@/components/ModelRef";
 import { EvidenceHighlighter } from "@/components/EvidenceHighlighter";
 import { SwipeableCard } from "@/components/SwipeableCard";
 import { Button } from "@/components/ui/Button";
+import { Modal } from "@/components/ui/Modal";
 import { addQuote } from "@/lib/highlight";
 import { articlesStoreKey, withSearch } from "@/lib/search";
 import { useSearchId, useSearches } from "@/lib/useSearch";
+import { useApiError } from "@/lib/errorMsg";
 import {
   Article,
   ArticlePrediction,
@@ -54,6 +56,7 @@ export default function AnnotatePage() {
   const queueMode = searchParams.get("queue") ?? "review";
   const searchId = useSearchId(projectId);
   const { searches, current } = useSearches(projectId, searchId);
+  const apiError = useApiError();
   // Blind search: we re-review without seeing the model's answer (unbiased gold).
   const isBlind = current?.kind === "blind";
 
@@ -120,10 +123,10 @@ export default function AnnotatePage() {
         }
       })
       .catch((e) => {
-        setError(e.message);
+        setError(apiError(e));
         setLoading(false);
       });
-  }, [projectId, articleId, router, queueMode, searchId]);
+  }, [projectId, articleId, router, queueMode, searchId, apiError]);
 
   // Spinner while the article loads (reset when the article or search changes).
   const loadKey = `${projectId}:${articleId}:${searchId}`;
@@ -150,9 +153,13 @@ export default function AnnotatePage() {
         setGoldNote(null);
         setFocus(null);
       })
-      .catch((e) => setError(e.message))
+      .catch((e) => setError(apiError(e)))
       .finally(() => setLoading(false));
-  }, [projectId, articleId, searchId]);
+  }, [projectId, articleId, searchId, apiError]);
+
+  // caveman-review 2026-11-10: submit-in-flight guard — a double-click (or a second
+  // confirmation while the first is in flight) must not double-submit.
+  const [confirming, setConfirming] = useState(false);
 
   // Swipe: right = confirm the model's answer as-is;
   // left = disagreement, we switch to the form to correct.
@@ -161,6 +168,9 @@ export default function AnnotatePage() {
       setTab("annotation");
       return;
     }
+    // caveman-review 2026-11-10: already submitting — ignore the double-click.
+    if (confirming) return;
+    setConfirming(true);
     try {
       const r = await submitAnnotation(projectId, articleId, {
         ...prediction.decision_json,
@@ -170,9 +180,11 @@ export default function AnnotatePage() {
       setReview({ ...r, decision_json: prediction.decision_json, notes: null });
       setStatus("accepted");
     } catch (e) {
-      setError((e as Error).message);
+      setError(apiError(e));
+    } finally {
+      setConfirming(false);
     }
-  }, [projectId, articleId, prediction, searchId, isBlind]);
+  }, [projectId, articleId, prediction, searchId, isBlind, confirming, apiError]);
 
   // Starts from the re-review's excerpts, otherwise from the model's (nothing in blind mode
   // before re-review). Re-seeded when the seed changes; the user can then add/remove quotes.
@@ -192,6 +204,8 @@ export default function AnnotatePage() {
 
   const [pdfBusy, setPdfBusy] = useState(false);
   const [pdfError, setPdfError] = useState<string | null>(null);
+  // audit 2026-11-10 P3-14: the "this PDF does not match" decision uses the Modal (was window.confirm).
+  const [mismatchFile, setMismatchFile] = useState<File | null>(null);
   const handlePdf = useCallback(
     async (file: File | undefined) => {
       if (!file) return;
@@ -203,17 +217,31 @@ export default function AnnotatePage() {
         } catch (e) {
           // The PDF does not look like this article: we let the user decide.
           if (!(e instanceof Error && e.message === "pdf_mismatch")) throw e;
-          if (!window.confirm(t("pdfMismatch"))) return;
-          setArticle(await uploadArticlePdf(projectId, articleId, file, true, searchId));
+          setMismatchFile(file);
         }
       } catch (e) {
-        setPdfError((e as Error).message);
+        setPdfError(apiError(e));
       } finally {
         setPdfBusy(false);
       }
     },
-    [projectId, articleId, searchId, t]
+    [projectId, articleId, searchId, apiError]
   );
+
+  const confirmMismatch = useCallback(async () => {
+    const file = mismatchFile;
+    if (!file) return;
+    setMismatchFile(null);
+    setPdfBusy(true);
+    setPdfError(null);
+    try {
+      setArticle(await uploadArticlePdf(projectId, articleId, file, true, searchId));
+    } catch (e) {
+      setPdfError(apiError(e));
+    } finally {
+      setPdfBusy(false);
+    }
+  }, [mismatchFile, projectId, articleId, searchId, apiError]);
 
   const [searching, setSearching] = useState(false);
   const [searchNote, setSearchNote] = useState<string | null>(null);
@@ -226,11 +254,11 @@ export default function AnnotatePage() {
       setArticle(r.article);
       setSearchNote(r.found ? t("searchFound", { source: r.source ?? "" }) : t("searchNone"));
     } catch (e) {
-      setPdfError((e as Error).message);
+      setPdfError(apiError(e));
     } finally {
       setSearching(false);
     }
-  }, [projectId, articleId, searchId, t]);
+  }, [projectId, articleId, searchId, t, apiError]);
 
   const handleSwipeRight = useCallback(() => {
     void confirmPrediction();
@@ -250,10 +278,10 @@ export default function AnnotatePage() {
         // In blind mode, the model's answer is revealed only once the re-review is saved.
         if (isBlind) setPrediction(await getPrediction(projectId, articleId, searchId).catch(() => null));
       } catch (e) {
-        setError((e as Error).message);
+        setError(apiError(e));
       }
     },
-    [projectId, articleId, searchId, isBlind]
+    [projectId, articleId, searchId, isBlind, apiError]
   );
 
   const addToGold = useCallback(async () => {
@@ -263,11 +291,11 @@ export default function AnnotatePage() {
       const r = await goldFromReviews(projectId, { articleIds: [articleId], refresh: true }, searchId);
       setGoldNote(r.added ? t("goldAdded") : r.updated ? t("goldUpdated") : t("goldSkipped"));
     } catch (e) {
-      setGoldNote((e as Error).message);
+      setGoldNote(apiError(e));
     } finally {
       setGoldBusy(false);
     }
-  }, [projectId, articleId, searchId, t]);
+  }, [projectId, articleId, searchId, t, apiError]);
 
   if (loading || searches === null) return <div className="p-4">{tc("loading")}</div>;
   if (error) return <div className="p-4 text-danger">{error}</div>;
@@ -492,6 +520,21 @@ export default function AnnotatePage() {
           <h2 className="mb-2 text-sm font-medium text-muted">
             {t("annotation")}
           </h2>
+          {/* audit 2026-11-10 P1-1: keyboard/SR equivalent of the right-swipe
+              (accept the model answer as-is). Hidden in blind mode before
+              re-review, where the model answer is not shown. */}
+          {shownPrediction?.decision_json && (
+            <div className="mb-3">
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => void confirmPrediction()}
+                disabled={confirming}
+              >
+                {t("confirmModel")}
+              </Button>
+            </div>
+          )}
           {review && (
             <p className="mb-3 rounded border border-success/40 bg-success/10 p-2 text-xs text-foreground">
               ✓{" "}
@@ -532,6 +575,7 @@ export default function AnnotatePage() {
       <nav className="flex border-t md:hidden">
         <button
           onClick={() => setTab("document")}
+          aria-current={tab === "document" ? "page" : undefined}
           className={`flex-1 py-3 text-sm ${
             tab === "document" ? "font-semibold text-primary" : "text-muted"
           }`}
@@ -540,6 +584,7 @@ export default function AnnotatePage() {
         </button>
         <button
           onClick={() => setTab("annotation")}
+          aria-current={tab === "annotation" ? "page" : undefined}
           className={`flex-1 py-3 text-sm ${
             tab === "annotation" ? "font-semibold text-primary" : "text-muted"
           }`}
@@ -547,6 +592,22 @@ export default function AnnotatePage() {
           {t("annotation")}
         </button>
       </nav>
+
+      {mismatchFile && (
+        <Modal title={t("replacePdf")} onClose={() => setMismatchFile(null)}>
+          <div className="flex flex-col gap-4">
+            <p className="text-sm text-muted">{t("pdfMismatch")}</p>
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" size="sm" onClick={() => setMismatchFile(null)}>
+                {tc("cancel")}
+              </Button>
+              <Button variant="danger" size="sm" onClick={() => void confirmMismatch()}>
+                {t("replacePdf")}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

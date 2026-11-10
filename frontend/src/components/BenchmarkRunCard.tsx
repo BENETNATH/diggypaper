@@ -244,20 +244,20 @@ export function BenchmarkRunCard({
                 <table className="w-full min-w-[40rem] text-sm">
                   <thead>
                     <tr className="border-b border-border text-xs text-muted">
-                      <th className="px-2 py-1 text-left font-normal">#</th>
-                      <th className="px-2 py-1 text-left font-normal">{t("model")}</th>
-                      <th className="px-2 py-1 text-left font-normal">{t("variant")}</th>
-                      {hasGold && <th className={th}>{t("primary")}</th>}
-                      {hasGold && <th className={th}>{t("recall")}</th>}
-                      {hasGold && <th className={th}>{t("precision")}</th>}
-                      {hasGold && <th className={th}>{t("f1")}</th>}
-                      {hasGold && <th className={th}>{t("accuracy")}</th>}
-                      {withAgreement && <th className={th}>{t("agreement")}</th>}
-                      {votes && votes.total > 0 && <th className={th}>{t("votes")}</th>}
-                      <th className={th}>{t("time")}</th>
-                      <th className={th}>{t("nScored")}</th>
-                      {withErrors && <th className={th}>{t("errors")}</th>}
-                      <th className="px-2 py-1" />
+                      <th scope="col" className="px-2 py-1 text-left font-normal">#</th>
+                      <th scope="col" className="px-2 py-1 text-left font-normal">{t("model")}</th>
+                      <th scope="col" className="px-2 py-1 text-left font-normal">{t("variant")}</th>
+                      {hasGold && <th scope="col" className={th}>{t("primary")}</th>}
+                      {hasGold && <th scope="col" className={th}>{t("recall")}</th>}
+                      {hasGold && <th scope="col" className={th}>{t("precision")}</th>}
+                      {hasGold && <th scope="col" className={th}>{t("f1")}</th>}
+                      {hasGold && <th scope="col" className={th}>{t("accuracy")}</th>}
+                      {withAgreement && <th scope="col" className={th}>{t("agreement")}</th>}
+                      {votes && votes.total > 0 && <th scope="col" className={th}>{t("votes")}</th>}
+                      <th scope="col" className={th}>{t("time")}</th>
+                      <th scope="col" className={th}>{t("nScored")}</th>
+                      {withErrors && <th scope="col" className={th}>{t("errors")}</th>}
+                      <th scope="col" className="px-2 py-1" />
                     </tr>
                   </thead>
                   <tbody>

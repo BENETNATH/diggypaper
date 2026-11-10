@@ -29,6 +29,7 @@ import {
   Selection,
 } from "@/lib/api";
 import { useApiError } from "@/lib/errorMsg";
+import { smoothScrollIntoView } from "@/lib/motion";
 import { MAX_GOLD_EXAMPLES } from "@/lib/benchmark";
 import { ExportMenu } from "@/components/ExportMenu";
 import { CriteriaBlock, criteriaActive } from "@/components/CriteriaBlock";
@@ -97,7 +98,7 @@ export function AnalysisRow({
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-medium text-foreground">{s.name}</span>
-          {toLaunch && <Badge color="blue">{t("badgeToLaunch")}</Badge>}
+          {toLaunch && <Badge color="gray">{t("badgeToLaunch")}</Badge>}
           {s.is_default && <Badge color="blue">{tp("badgeInitial")}</Badge>}
           {s.kind !== "standard" && <Badge color="gray" title={t(`kindHint_${s.kind}`)}>{t(`kind_${s.kind}`)}</Badge>}
           {s.schedule_state === "waiting" && <Badge color="gray">{t("scheduledBadge")}</Badge>}
@@ -523,11 +524,8 @@ function AnalyseContent() {
         search_id: created.id,
       });
       await load();
-      const smooth =
-        typeof window.matchMedia === "function" &&
-        !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
       setTimeout(
-        () => progressRef.current?.scrollIntoView({ behavior: smooth ? "smooth" : "auto", block: "start" }),
+        () => smoothScrollIntoView(progressRef.current),
         100
       );
     } catch (err) {
@@ -651,7 +649,7 @@ function AnalyseContent() {
                   <div className="grid gap-3 md:grid-cols-2">
                     <div className="flex flex-col gap-2">
                       <p className="text-sm font-semibold text-foreground">{t("stage1")}</p>
-                      <Select value={stage1} onChange={(e) => setStage1(e.target.value)}>
+                      <Select value={stage1} onChange={(e) => setStage1(e.target.value)} aria-label={t("stage1")}>
                         <option value="">{t("noPrefilter")}</option>
                         {models.map((m) => (
                           <option key={m.id} value={m.name}>
@@ -663,7 +661,7 @@ function AnalyseContent() {
                     </div>
                     <div className="flex flex-col gap-2">
                       <p className="text-sm font-semibold text-foreground">{t("stage2")}</p>
-                      <Select value={stage2} onChange={(e) => setStage2(e.target.value)}>
+                      <Select value={stage2} onChange={(e) => setStage2(e.target.value)} aria-label={t("stage2")}>
                         {stage1 && <option value="">{t("noStage2")}</option>}
                         {models.map((m) => (
                           <option key={m.id} value={m.name}>
@@ -860,7 +858,7 @@ function AnalyseContent() {
                 onChat={() => {
                   setChatRequest((p) => ({ searchId: current.id, nonce: (p?.nonce ?? 0) + 1 }));
                   setChatOpen(true);
-                  chatRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+                  smoothScrollIntoView(chatRef.current);
                 }}
               >
                 <ExportMenu projectId={projectId} />

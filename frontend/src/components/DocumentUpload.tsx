@@ -205,7 +205,7 @@ export function DocumentUpload({
     <div className="flex flex-col gap-2">
       {/* Drop zone */}
       <div
-        className={`rounded-lg border-2 border-dashed p-4 text-center text-sm transition-colors ${
+        className={`rounded-lg border-2 border-dashed p-4 text-center text-sm transition-colors duration-fast ease-out ${
           dragOver ? "border-primary bg-primary/10" : "border-border"
         }`}
         onDragOver={(e) => {
@@ -245,7 +245,7 @@ export function DocumentUpload({
           <span>{totalUploaded}/{totalAll}</span>
           <div className="h-1 flex-1 rounded-full bg-border">
             <div
-              className="h-1 rounded-full bg-primary transition-all"
+              className="h-1 rounded-full bg-primary transition-all duration-fast ease-out"
               style={{ width: `${totalAll > 0 ? (totalUploaded / totalAll) * 100 : 0}%` }}
             />
           </div>
@@ -268,7 +268,7 @@ export function DocumentUpload({
                 {f.state === "uploading" && <span className="text-primary">{t("uploadProgress", { n: f.progress })}</span>}
                 {f.state === "done" && (
                   <>
-                    <span className="text-green-600">{t("uploadCreated")}</span>
+                    <span className="text-success">{t("uploadCreated")}</span>
                     {f.needsOcr && (
                       <button
                         type="button"
@@ -283,17 +283,17 @@ export function DocumentUpload({
                 {f.state === "duplicate" && <span className="text-muted">{t("uploadDuplicate")}</span>}
                 {f.state === "error" && (
                   <>
-                    <span className="text-red-600">{t("uploadError")}</span>
+                    <span className="text-danger">{t("uploadError")}</span>
                     <button type="button" onClick={() => retryFile(f)} className="text-primary hover:underline">
                       {t("uploadRetry")}
                     </button>
                   </>
                 )}
                 {f.state === "ocrRunning" && <span className="text-primary">{t("ocrRunning")}</span>}
-                {f.state === "ocrDone" && <span className="text-green-600">{t("ocrDone")}</span>}
+                {f.state === "ocrDone" && <span className="text-success">{t("ocrDone")}</span>}
                 {f.state === "ocrError" && (
                   <>
-                    <span className="text-red-600">{f.error === "ocr_empty" ? t("ocrEmpty") : t("ocrFailed")}</span>
+                    <span className="text-danger">{f.error === "ocr_empty" ? t("ocrEmpty") : t("ocrFailed")}</span>
                     <button
                       type="button"
                       onClick={() => void runOcrOne(f)}

@@ -92,7 +92,7 @@ function TeamContent() {
         <Card title={t("inviteTitle")}>
           <form onSubmit={handleInvite} className="grid gap-3 sm:grid-cols-[1fr_auto_auto_auto] sm:items-end">
             <Field label={t("email")}>
-              <Input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="collegue@labo.fr" />
+              <Input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder={t("emailPlaceholder")} />
             </Field>
             <Field label={t("role")}>
               <Select value={role} onChange={(e) => setRole(e.target.value as Member["role"])}>

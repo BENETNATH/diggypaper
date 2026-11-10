@@ -97,13 +97,17 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
   const hookSearchId = useSearchId(id);
   const mounted = useHasMounted();
   const searchId = mounted ? hookSearchId : undefined;
-  // The searches change (creation, rename, deletion, analyses): we re-read on every page.
-  const { searches } = useSearches(id, searchId, pathname);
+  // The searches change (creation, rename, deletion, analyses) → the pages dispatch
+  // `diggy:searches`, which the hook listens to. No per-page refetch (audit 2026-11-10 P1-7):
+  // the list is per-project, so a tab switch does not re-fetch it.
+  const { searches } = useSearches(id, searchId);
 
-  // Reload on every page change: the status evolves (import → corpus frozen).
+  // The project is per-project, not per-page: the status transitions are tracked by the
+  // import polling (setProject) and the `diggy:project` events, so a tab switch does not
+  // re-fetch it (audit 2026-11-10 P1-7).
   useEffect(() => {
     getProject(id).then(setProject).catch(() => setProject(null));
-  }, [id, pathname]);
+  }, [id]);
 
   // The Import page pushes the project's updated state (status PROCESSING → FROZEN) without changing the URL.
   useEffect(() => {

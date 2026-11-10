@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
+import { useApiError } from "@/lib/errorMsg";
 import { useAuth } from "@/lib/auth";
 import { ApiError } from "@/lib/api";
 import { readLocaleCookie, writeLocaleCookie } from "@/components/LanguageSwitcher";
@@ -14,6 +15,7 @@ import { ErrorBanner } from "@/components/ui/Feedback";
 
 export default function RegisterPage() {
   const t = useTranslations("auth");
+  const apiError = useApiError();
   const { register } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -56,7 +58,7 @@ export default function RegisterPage() {
       } else if (err instanceof ApiError && err.status === 409) {
         setError(t("userExists"));
       } else {
-        setError(err instanceof Error ? err.message : t("unknownError"));
+        setError(err instanceof Error ? apiError(err) : t("unknownError"));
       }
     } finally {
       setLoading(false);

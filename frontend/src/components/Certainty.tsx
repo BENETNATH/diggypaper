@@ -9,8 +9,13 @@ export function Certainty({ value, className = "" }: { value: number | null | un
   const pct = Math.round(value * 100);
   const tone = pct >= 85 ? "bg-success/15 text-success" : pct >= 60 ? "bg-warning/15 text-warning" : "bg-danger/15 text-danger";
   return (
-    <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${tone} ${className}`} title={t("certaintyHelp")}>
+    <span
+      className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${tone} ${className}`}
+      title={t("certaintyHelp")}
+    >
       {pct} %
+      {/* audit 2026-11-10 P3-12: the help is in the accessible name (title-only was unreachable). */}
+      <span className="sr-only"> {t("certaintyHelp")}</span>
     </span>
   );
 }

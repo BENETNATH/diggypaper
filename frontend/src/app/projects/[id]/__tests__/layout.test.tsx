@@ -153,6 +153,29 @@ describe("project layout (spec clarte-1)", () => {
   });
 });
 
+// audit 2026-11-10 P1-7 — the project + search list are per-project, not per-page:
+// switching tabs must not re-fetch them (only the banner effects keep watching).
+describe("project layout (audit 2026-11-10 P1-7: no refetch on tab switch)", () => {
+  it("switching tabs does not re-fetch the project nor the searches", async () => {
+    mockState.pathname = "/projects/p1";
+    getOverview.mockResolvedValue({ articles: 0, fulltext: 0, analysed: 0, reviewed: 0, gold: 0, searches: [] });
+    listWatches.mockResolvedValue([]);
+    const { rerender } = mount();
+    await screen.findByRole("button", { name: /Alpha/ });
+    await act(async () => {}); // flush the initial fetches
+    const projectCalls = getProject.mock.calls.length;
+    const searchCalls = listSearches.mock.calls.length;
+
+    // navigate to another tab (the layout is persistent: a re-render, not a remount)
+    mockState.pathname = "/projects/p1/inference";
+    rerender(<ProjectLayout><div>child</div></ProjectLayout>);
+    await act(async () => {});
+
+    expect(getProject.mock.calls.length).toBe(projectCalls);
+    expect(listSearches.mock.calls.length).toBe(searchCalls);
+  });
+});
+
 // spec 2026-11-09-clarte-2 — R1 2 groupes + compteurs, R2 Équipe dans le ⋯, R3 plus de blocage
 describe("project layout (spec clarte-2)", () => {
   const fullOverview = (over: Partial<ProjectOverview> = {}): ProjectOverview => ({

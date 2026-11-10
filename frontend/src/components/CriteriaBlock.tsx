@@ -188,7 +188,7 @@ export function CriteriaBlock({
         <div className="flex flex-wrap items-center gap-2">
           <span className="w-16 text-xs text-muted">{t("critConfidence")}</span>
           <input
-            aria-label={t("critConfidence")}
+            aria-label={t("critConfidenceMin")}
             type="number"
             min={0}
             max={1}
@@ -208,7 +208,7 @@ export function CriteriaBlock({
           />
           <span className="text-muted">—</span>
           <input
-            aria-label={t("critConfidence")}
+            aria-label={t("critConfidenceMax")}
             type="number"
             min={0}
             max={1}
@@ -243,7 +243,7 @@ export function CriteriaBlock({
                     status: on ? (value.status ?? []).filter((x) => x !== s) : [...(value.status ?? []), s],
                   })
                 }
-                className={`rounded-full px-3 py-1 text-xs transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-focus ${
+                className={`rounded-full px-3 py-1 text-xs transition-colors duration-fast ease-out focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-focus ${
                   on ? "bg-primary text-primary-foreground" : "bg-surface text-muted"
                 }`}
               >

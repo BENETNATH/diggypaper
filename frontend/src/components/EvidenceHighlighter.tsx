@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { cleanQuote, highlightSegments } from "@/lib/highlight";
 
@@ -150,7 +150,9 @@ export function EvidenceHighlighter({
     };
   }, [onAdd]);
 
-  const segments = highlightSegments(text, quotes);
+  // audit 2026-11-10 P1-8: the segments are recomputed on every parent render over the
+  // whole fulltext — memo them on their inputs (the selection/focus re-renders are cheap).
+  const segments = useMemo(() => highlightSegments(text, quotes), [text, quotes]);
   return (
     <div ref={box} className="whitespace-pre-wrap leading-relaxed">
       {segments.map((seg, i) =>
@@ -173,7 +175,7 @@ export function EvidenceHighlighter({
             setPick(null);
           }}
           style={{ position: "fixed", left: pick.x, top: pick.y }}
-          className="z-50 flex h-8 w-8 items-center justify-center rounded-full bg-primary text-lg font-bold leading-none text-white shadow-lg hover:opacity-90"
+          className="z-50 flex h-8 w-8 items-center justify-center rounded-full bg-primary text-lg font-bold leading-none text-primary-foreground shadow-lg hover:opacity-90"
           title={t("addSelection")}
           aria-label={t("addSelection")}
         >

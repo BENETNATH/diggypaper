@@ -43,7 +43,11 @@ function ActiveJobsList({ jobs, projectId }: { jobs: ActiveProjectJob[]; project
       <ul className="mt-2 flex flex-col gap-1.5">
         {jobs.map((j) => (
           <li key={j.id} className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm text-foreground">
-            <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-primary" aria-hidden />
+            {/* audit 2026-11-10 P3-5: same « in progress » mark as GlobalJobsIndicator (ping). */}
+            <span className="relative flex h-2 w-2 shrink-0" aria-hidden>
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-60" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
+            </span>
             <span className="font-medium">{j.kind === "fulltext" ? tj("kind_fulltext") : t(j.kind)}</span>
             {j.detail && (
               <code className="max-w-full truncate text-xs text-muted" title={j.detail}>

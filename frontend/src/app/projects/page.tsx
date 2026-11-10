@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useAuth } from "@/lib/auth";
 import { listProjects, createProject, importCrate, Project } from "@/lib/api";
+import { useApiError } from "@/lib/errorMsg";
 import { RequireAuth } from "@/components/RequireAuth";
 import { GlobalJobsIndicator } from "@/components/GlobalJobsIndicator";
 import { Button } from "@/components/ui/Button";
@@ -15,6 +16,7 @@ import { Skeleton, ErrorBanner, EmptyState } from "@/components/ui/Feedback";
 
 function ProjectsContent() {
   const t = useTranslations("projects");
+  const apiError = useApiError();
   const router = useRouter();
   const { user } = useAuth();
   const canCreate = user?.can_create_projects ?? false;
@@ -33,8 +35,8 @@ function ProjectsContent() {
         setProjects(projects);
         setError(null);
       })
-      .catch((e) => setError(e instanceof Error ? e.message : "error"));
-  }, []);
+      .catch((e) => setError(apiError(e)));
+  }, [apiError]);
 
   useEffect(() => {
     load();
@@ -52,7 +54,7 @@ function ProjectsContent() {
       });
       router.push(`/projects/${project.id}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "error");
+      setError(apiError(err));
       setCreating(false);
     }
   }
@@ -65,7 +67,7 @@ function ProjectsContent() {
       const r = await importCrate(file);
       router.push(`/projects/${r.project_id}/import`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "error");
+      setError(apiError(err));
       setImporting(false);
     }
   }
@@ -149,7 +151,7 @@ function ProjectsContent() {
         <div className="grid gap-4 sm:grid-cols-2">
           {projects.map((p) => (
             <Link key={p.id} href={`/projects/${p.id}`} className="block">
-              <Card className="transition-shadow hover:shadow-md">
+              <Card className="transition-shadow duration-fast ease-out hover:shadow-md">
                 <div className="flex items-start justify-between gap-2">
                   <div>
                     <h3 className="font-semibold text-foreground">{p.title}</h3>

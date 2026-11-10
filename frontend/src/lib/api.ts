@@ -445,7 +445,36 @@ export function errorDetail(body: unknown): string | undefined {
   return String(raw);
 }
 
+// audit 2026-11-10 P2-10: identical GETs fired at the same time (layout + page on the
+// same navigation, overlapping polls) share the in-flight request. GETs only: POSTs
+// and the like keep their own call.
+const inflightGet = new Map<string, Promise<unknown>>();
+// caveman-review 2026-11-10: a GET that never settles (network hang on a poll) must not
+// pin its key forever — after this timeout the entry is dropped, so later identical
+// callers get a fresh request instead of the never-resolving promise.
+export const DEDUP_SETTLE_TIMEOUT_MS = 60_000;
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  // caveman-review 2026-11-10: a caller with an AbortSignal opts out of the shared
+  // request — its abort (and any differing body) cannot be represented in the key.
+  if ((options?.method ?? "GET") === "GET" && !options?.signal) {
+    // shortcut: key is path + headers, not the whole options — a future GET that varies by
+    // body would dedupe onto the wrong caller; add it to the key when needed.
+    const key = path + JSON.stringify(options?.headers ?? {});
+    const hit = inflightGet.get(key);
+    if (hit) return hit as Promise<T>;
+    const settleTimer = setTimeout(() => inflightGet.delete(key), DEDUP_SETTLE_TIMEOUT_MS);
+    const pending = doRequest<T>(path, options).finally(() => {
+      clearTimeout(settleTimer);
+      inflightGet.delete(key);
+    });
+    inflightGet.set(key, pending);
+    return pending;
+  }
+  return doRequest<T>(path, options);
+}
+
+async function doRequest<T>(path: string, options?: RequestInit): Promise<T> {
   const resp = await fetch(`${API_BASE}${path}`, {
     credentials: "include",
     headers: { "Content-Type": "application/json", ...(options?.headers ?? {}) },
