@@ -28,10 +28,12 @@ import { AgreementPanel } from "@/components/AgreementPanel";
 import { RequireAuth } from "@/components/RequireAuth";
 import { Button } from "@/components/ui/Button";
 import { Skeleton, ErrorBanner, EmptyState } from "@/components/ui/Feedback";
+import { Modal } from "@/components/ui/Modal";
 
 function BenchmarksContent() {
   const t = useTranslations("benchmarks");
   const tp = useTranslations("project");
+  const tc = useTranslations("common");
   const toError = useApiError();
   const { user } = useAuth();
   const projectId = useParams<{ id: string }>().id;
@@ -74,25 +76,28 @@ function BenchmarksContent() {
     return () => clearInterval(id);
   }, [hasActive, load]);
 
+  // spec clarte-3 R8: stop + delete confirm through the Modal (was window.confirm).
+  const [confirm, setConfirm] = useState<{ kind: "stop" | "delete"; runId: string } | null>(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
   async function handleStop(runId: string) {
-    if (!window.confirm(t("stopConfirm"))) return;
-    setError(null);
-    try {
-      await cancelBenchmark(projectId, runId);
-      await load();
-    } catch (err) {
-      setError(toError(err));
-    }
+    setConfirm({ kind: "stop", runId });
   }
-
   async function handleDelete(runId: string) {
-    if (!window.confirm(t("deleteConfirm"))) return;
+    setConfirm({ kind: "delete", runId });
+  }
+  async function confirmAction() {
+    if (!confirm) return;
+    setConfirmBusy(true);
     setError(null);
     try {
-      await deleteBenchmark(projectId, runId);
+      if (confirm.kind === "stop") await cancelBenchmark(projectId, confirm.runId);
+      else await deleteBenchmark(projectId, confirm.runId);
+      setConfirm(null);
       await load();
     } catch (err) {
       setError(toError(err));
+    } finally {
+      setConfirmBusy(false);
     }
   }
 
@@ -256,6 +261,21 @@ function BenchmarksContent() {
             </>
           )}
         </section>
+      )}
+      {confirm && (
+        <Modal title={confirm.kind === "stop" ? t("stop") : t("delete")} onClose={() => setConfirm(null)}>
+          <div className="flex flex-col gap-4">
+            <p className="text-sm text-muted">{confirm.kind === "stop" ? t("stopConfirm") : t("deleteConfirm")}</p>
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" size="sm" onClick={() => setConfirm(null)}>
+                {tc("cancel")}
+              </Button>
+              <Button variant="danger" size="sm" loading={confirmBusy} onClick={() => void confirmAction()}>
+                {confirm.kind === "stop" ? t("stop") : t("delete")}
+              </Button>
+            </div>
+          </div>
+        </Modal>
       )}
     </div>
   );

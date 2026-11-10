@@ -6,7 +6,9 @@ import { useParams, usePathname, useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { cancelInference, deleteProject, getOverview, getProject, getInference, listJobs, listWatches, ImportJob, InferenceJob, Project, ProjectOverview } from "@/lib/api";
 import { Menu, MenuItem, MenuSeparator } from "@/components/ui/Menu";
-import { ProgressBar } from "@/components/ui/Feedback";
+import { ProgressBar, Toast } from "@/components/ui/Feedback";
+import { Button } from "@/components/ui/Button";
+import { Modal } from "@/components/ui/Modal";
 import { JobProgress } from "@/components/JobProgress";
 import { SearchPills } from "@/components/SearchPills";
 import { orderChain } from "@/lib/chain";
@@ -83,6 +85,7 @@ function StepTab({
 /** Persistent project navigation: breadcrumb + step tabs. */
 export default function ProjectLayout({ children }: { children: ReactNode }) {
   const t = useTranslations("project");
+  const tc = useTranslations("common");
   const { user } = useAuth();
   const id = useParams<{ id: string }>().id;
   const pathname = usePathname();
@@ -191,8 +194,18 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
       clearInterval(timer);
     };
   }, [id, pathname, analysing]);
+  // spec clarte-3 R8: stop + delete confirm through the design-system Modal (was window.confirm/alert).
+  const [stopOpen, setStopOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteFailed, setDeleteFailed] = useState(false);
+  // deleteFailed → the Toast auto-dismisses after a few seconds.
+  useEffect(() => {
+    if (!deleteFailed) return;
+    const timer = setTimeout(() => setDeleteFailed(false), 5000);
+    return () => clearTimeout(timer);
+  }, [deleteFailed]);
   async function stopAnalysis() {
-    if (!window.confirm(t("stopConfirm"))) return;
     try {
       await cancelInference(id);
       setInf(await getInference(id, undefined, true));
@@ -201,12 +214,14 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
     }
   }
   async function handleDelete() {
-    if (!window.confirm(t("deleteConfirm"))) return;
+    setDeleteBusy(true);
     try {
       await deleteProject(id);
       router.push("/projects");
     } catch {
-      window.alert(t("deleteFailed"));
+      setDeleteFailed(true);
+    } finally {
+      setDeleteBusy(false);
     }
   }
   const ir = inf?.result ?? {};
@@ -308,7 +323,7 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
                   {isLead && (
                     <button
                       type="button"
-                      onClick={() => void stopAnalysis()}
+                      onClick={() => setStopOpen(true)}
                       className="rounded-md border border-danger/40 px-2 py-0.5 text-danger hover:bg-danger/10"
                       title={t("stopTitle")}
                     >
@@ -327,7 +342,7 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
               {isLead && (
                 <>
                   <MenuSeparator />
-                  <MenuItem onClick={() => void handleDelete()}>
+                  <MenuItem onClick={() => setDeleteOpen(true)}>
                     <span className="text-danger">{t("deleteProject")}</span>
                   </MenuItem>
                 </>
@@ -424,6 +439,41 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
       )}
 
       {children}
+
+      {deleteFailed && <Toast message={t("deleteFailed")} onDismiss={() => setDeleteFailed(false)} />}
+      {stopOpen && (
+        <Modal title={t("stopShort")} onClose={() => setStopOpen(false)}>
+          <div className="flex flex-col gap-4">
+            <p className="text-sm text-muted">{t("stopConfirm")}</p>
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" size="sm" onClick={() => setStopOpen(false)}>
+                {tc("cancel")}
+              </Button>
+              <Button variant="danger" size="sm" onClick={() => {
+                setStopOpen(false);
+                void stopAnalysis();
+              }}>
+                {t("stopShort")}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+      {deleteOpen && (
+        <Modal title={t("deleteProject")} onClose={() => setDeleteOpen(false)}>
+          <div className="flex flex-col gap-4">
+            <p className="text-sm text-muted">{t("deleteConfirm")}</p>
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" size="sm" onClick={() => setDeleteOpen(false)}>
+                {tc("cancel")}
+              </Button>
+              <Button variant="danger" size="sm" loading={deleteBusy} onClick={() => void handleDelete()}>
+                {tc("delete")}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { Suspense } from "react";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import * as navModule from "next/navigation";
 import InferencePage from "@/app/projects/[id]/inference/page";
 import * as api from "@/lib/api";
@@ -49,6 +49,7 @@ jest.mock("@/lib/api", () => ({
   previewSelection: jest.fn(),
   createSearch: jest.fn(),
   triggerInference: jest.fn(),
+  cancelInference: jest.fn(),
   criteriaCount: jest.fn(),
   criteriaArticles: jest.fn(),
   getResultsIndex: jest.fn(),
@@ -179,10 +180,6 @@ describe("inference page — chaining (spec 2026-11-02-legacy-questions §4)", (
 });
 
 describe("inference page — delete a search (spec §5 + §6)", () => {
-  beforeEach(() => {
-    window.confirm = jest.fn(() => true);
-  });
-
   // a touched search (predicted > 0) is shown in the list → its AnalysisRow
   const touched = { ...search, predicted: 2 };
 
@@ -204,11 +201,12 @@ describe("inference page — delete a search (spec §5 + §6)", () => {
     expect(screen.queryByText("delete")).not.toBeInTheDocument();
   });
 
-  it("confirm → deleteSearch is called and the list is refreshed", async () => {
+  it("confirm → deleteSearch is called and the list is refreshed (Modal, spec clarte-3 R8)", async () => {
     deleteSearch.mockResolvedValue(undefined);
     mount({ user: { role: "RESEARCHER" }, roleInProject: "LEAD", searches: [touched] });
     await panelOpen();
     fireEvent.click(await screen.findByText("delete"));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "delete" }));
     await waitFor(() => expect(deleteSearch).toHaveBeenCalledWith("p1", "s1"));
     await waitFor(() => expect(listSearches.mock.calls.length).toBeGreaterThanOrEqual(2)); // refresh
   });
@@ -218,6 +216,7 @@ describe("inference page — delete a search (spec §5 + §6)", () => {
     mount({ user: { role: "RESEARCHER" }, roleInProject: "LEAD", searches: [touched] });
     await panelOpen();
     fireEvent.click(await screen.findByText("delete"));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "delete" }));
     await screen.findByText("errors.leadRequired"); // the existing error channel
     expect(screen.getByText("S1")).toBeInTheDocument(); // the row is intact
   });
@@ -240,6 +239,41 @@ describe("inference page — delete a search (spec §5 + §6)", () => {
       timeout: 2000,
     });
     sessionStorage.removeItem("diggy:search:p1");
+  });
+});
+
+describe("inference page — spec clarte-3 (one page, one intention)", () => {
+  it("the triage thresholds no longer live here (R1: moved to the overview)", async () => {
+    mount({ user: { role: "RESEARCHER" }, roleInProject: "LEAD" });
+    await panelOpen();
+    expect(screen.queryByText("thresholdsHint")).not.toBeInTheDocument();
+    expect(screen.queryByText("thresholdsAccept")).not.toBeInTheDocument();
+  });
+
+  it("the gold/benchmark card is gone (R4)", async () => {
+    mount({ user: { role: "RESEARCHER" }, roleInProject: "LEAD" });
+    await panelOpen();
+    expect(screen.queryByText("goldSectionTitle")).not.toBeInTheDocument();
+  });
+
+  it("the chat is a disclosure, collapsed by default (R3)", async () => {
+    mount({ user: { role: "RESEARCHER" }, roleInProject: "LEAD" });
+    await panelOpen();
+    const details = screen.getByText("chatTitle").closest("details");
+    expect(details).toBeTruthy();
+    expect(details).not.toHaveAttribute("open");
+  });
+
+  it("stop: confirmed through the Modal, never window.confirm (R8)", async () => {
+    const confirmSpy = jest.spyOn(window, "confirm").mockImplementation(() => true);
+    (api.cancelInference as jest.Mock).mockResolvedValue(undefined);
+    mount({ user: { role: "RESEARCHER" }, roleInProject: "LEAD", job: runningJob });
+    await panelOpen();
+    fireEvent.click(await screen.findByText("■ stop"));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "stop" }));
+    await waitFor(() => expect(api.cancelInference).toHaveBeenCalledWith("p1"));
+    expect(confirmSpy).not.toHaveBeenCalled();
+    confirmSpy.mockRestore();
   });
 });
 

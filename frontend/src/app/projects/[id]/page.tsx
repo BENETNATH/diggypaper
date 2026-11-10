@@ -14,6 +14,7 @@ import {
   listJobs,
   keepProject,
   listModels,
+  updateProject,
   Project,
   ProjectOverview,
   SearchInfo,
@@ -28,6 +29,7 @@ import { IndexProgress } from "@/components/IndexProgress";
 import { RequireAuth } from "@/components/RequireAuth";
 import { ModelRef } from "@/components/ModelRef";
 import { Badge } from "@/components/ui/Card";
+import { TriageThresholds, type TriagePolicyValue } from "@/app/projects/[id]/inference/TriageThresholds";
 import { Button } from "@/components/ui/Button";
 import { Spinner, ErrorBanner } from "@/components/ui/Feedback";
 
@@ -243,6 +245,7 @@ function SearchRow({
 function ProjectDashboard() {
   const t = useTranslations("project");
   const tAct = useTranslations("activity");
+  const tInf = useTranslations("inference");
   const projectId = useParams<{ id: string }>().id;
   const { user } = useAuth();
   const locale = useLocale();
@@ -252,6 +255,8 @@ function ProjectDashboard() {
   const [jobs, setJobs] = useState<ImportJob[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [modelCount, setModelCount] = useState<number | null>(null);
+  // spec clarte-3 R1: triage thresholds live on the overview (lead only); no policy = defaults 0.85/0.15.
+  const [triage, setTriage] = useState<TriagePolicyValue>({ accept: 0.85, reject: 0.15 });
 
   // Live corpus-index state + trigger (cheap status read, not a probe) — the
   // overview is where the index progress is most visible (« indexation visible »).
@@ -263,6 +268,7 @@ function ProjectDashboard() {
         setProject(p);
         setOverview(o);
         setJobs(js);
+        setTriage({ accept: p.triage_policy?.accept ?? 0.85, reject: p.triage_policy?.reject ?? 0.15 });
         setError(null);
       })
       .catch((e) => setError(e instanceof Error ? e.message : "error"));
@@ -275,6 +281,17 @@ function ProjectDashboard() {
       .then((m) => setModelCount(m.length))
       .catch(() => setModelCount(null));
   }, [load, projectId]);
+
+  // Optimistic patch of the triage thresholds (project-level); rolled back on failure
+  // with a visible error (audit I-1: the old Analyse page surfaced the failure).
+  const patchTriage = (next: TriagePolicyValue) => {
+    const prev = triage;
+    setTriage(next);
+    updateProject(projectId, { triage_policy: next }).catch(() => {
+      setTriage(prev);
+      setError(tInf("triageSaveFailed"));
+    });
+  };
 
   const searchId = useSearchId(projectId);
 
@@ -364,6 +381,15 @@ function ProjectDashboard() {
         </section>
       )}
 
+      {/* spec clarte-3 R1: triage thresholds — project settings, lead only (moved out of Analyse). */}
+      {isLead && !empty && (
+        <section className="flex flex-col gap-2 rounded-lg bg-surface shadow-sm p-3">
+          <h2 className="text-base font-semibold text-foreground">{t("settingsTitle")}</h2>
+          <p className="text-xs text-muted">{tInf("thresholdsHint")}</p>
+          <TriageThresholds value={triage} onChange={patchTriage} />
+        </section>
+      )}
+
       {/* Corpus index status + live progress (« indexation visible ») */}
       {!empty && progress !== null && (
         <section className="rounded-lg bg-surface shadow-sm p-3">
@@ -394,7 +420,7 @@ function ProjectDashboard() {
               <span>{t("noSearchYet", { n: overview.articles })}</span>
               {isLead && (
                 <Link href={`/projects/${projectId}/inference?new=1`}>
-                  <Button>{t("runAnalysis")} →</Button>
+                  <Button>{t("runAnalysis")}</Button>
                 </Link>
               )}
             </div>
@@ -470,36 +496,19 @@ function ProjectDashboard() {
       {/* spec v4: empty project → the 4-step onboarding (KPIs, analyses and accordions stay hidden) */}
       {empty && <OnboardingSteps projectId={projectId} modelCount={modelCount} isLead={isLead} />}
 
-      {/* spec v4 R6: gold & benchmarks — optional tooling, outside the chain */}
+      {/* spec clarte-3 R5: optional tooling — a compact reminder, no cards
+          (surfaces policy: semantic tokens only, bg-surface-muted, no border, no violet). */}
       {overview.articles > 0 && (
-        <section className="flex flex-col gap-3">
-          <h2 className="text-sm font-bold uppercase tracking-wide text-violet-700">{t("optionalTooling")}</h2>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="flex items-center justify-between gap-3 rounded-xl bg-violet-50 p-3">
-              <span>
-                <span className="block font-semibold text-violet-800">{t("goldCard")}</span>
-                <span className="block text-sm text-muted">{t("goldCardState", { n: overview.gold })}</span>
-              </span>
-              <Link
-                href={`/projects/${projectId}/gold`}
-                className="rounded-lg border border-violet-300 bg-white px-3 py-1.5 text-sm font-medium text-violet-700 transition-colors hover:bg-violet-100"
-              >
-                {t("openTooling")}
-              </Link>
-            </div>
-            <div className="flex items-center justify-between gap-3 rounded-xl bg-violet-50 p-3">
-              <span>
-                <span className="block font-semibold text-violet-800">{t("benchCard")}</span>
-                <span className="block text-sm text-muted">{t("benchCardState", { n: benchCount })}</span>
-              </span>
-              <Link
-                href={`/projects/${projectId}/benchmarks`}
-                className="rounded-lg border border-violet-300 bg-white px-3 py-1.5 text-sm font-medium text-violet-700 transition-colors hover:bg-violet-100"
-              >
-                {t("openTooling")}
-              </Link>
-            </div>
-          </div>
+        <section className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-surface-muted p-3">
+          <h2 className="text-sm font-semibold text-foreground">{t("optionalToolingIntro")}</h2>
+          <span className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+            <Link href={`/projects/${projectId}/gold`} className="text-primary hover:underline">
+              {t("openGold", { n: overview.gold })}
+            </Link>
+            <Link href={`/projects/${projectId}/benchmarks`} className="text-primary hover:underline">
+              {t("openBench", { n: benchCount })}
+            </Link>
+          </span>
         </section>
       )}
 

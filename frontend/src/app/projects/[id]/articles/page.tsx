@@ -77,8 +77,6 @@ function ResultsContent() {
   const [fulltext, setFulltext] = useState<boolean | undefined>(undefined); // full text (true) / abstract only (false)
   const [ready, setReady] = useState(false);
   const [isLead, setIsLead] = useState(false);
-  // spec clarte-2 R3: corpus size — the Import CTA in the empty state (0 = nothing to show)
-  const [articleCount, setArticleCount] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [deleteConfirm, setDeleteConfirm] = useState<{ ids: string[] } | null>(null);
@@ -114,7 +112,6 @@ function ResultsContent() {
         setFields(p.fields ?? []);
         setAccept(p.triage_policy?.accept ?? 0.85);
         setIsLead(isProjectLead(p, user));
-        setArticleCount(p.article_count ?? null);
       })
       .catch(() => setFields([]))
       .finally(() => setReady(true));
@@ -468,15 +465,16 @@ function ResultsContent() {
           title={t("empty")}
           hint={filtersActive ? t("emptyFiltered") : t("emptyHint")}
           action={
-            // spec clarte-2 R3: empty corpus → the lead's useful action is to import
-            isLead && articleCount === 0 ? (
-              <Link href={`/projects/${projectId}/import`}>
-                <Button variant="secondary" size="sm">{tp("importCta")}</Button>
-              </Link>
-            ) : filtersActive ? (
+            // spec clarte-3 R6: an empty lot → the lead always gets the Import CTA;
+            // active filters keep their own reset button on priority.
+            filtersActive ? (
               <Button variant="secondary" size="sm" onClick={resetAllFilters}>
                 {t("resetFilters")}
               </Button>
+            ) : isLead ? (
+              <Link href={`/projects/${projectId}/import`}>
+                <Button variant="secondary" size="sm">{tp("importCta")}</Button>
+              </Link>
             ) : undefined
           }
         />

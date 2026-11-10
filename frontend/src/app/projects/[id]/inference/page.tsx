@@ -19,7 +19,6 @@ import {
   listModels,
   triggerInference,
   rerunSearch,
-  updateProject,
   criteriaArticles,
   Criteria,
   InferenceJob,
@@ -36,9 +35,9 @@ import { CriteriaBlock, criteriaActive } from "@/components/CriteriaBlock";
 import { CtaBanner } from "@/components/CtaBanner";
 import { RequireAuth } from "@/components/RequireAuth";
 import { QuestionEditor } from "@/components/QuestionEditor";
-import { TriageThresholds, type TriagePolicyValue } from "@/app/projects/[id]/inference/TriageThresholds";
 import { ArticleSelector } from "@/components/ArticleSelector";
 import { Button } from "@/components/ui/Button";
+import { Modal } from "@/components/ui/Modal";
 import { Checkbox, Field, Input, Select } from "@/components/ui/Field";
 import { ValidationView } from "@/components/ValidationView";
 import { Card, Badge, statusColor } from "@/components/ui/Card";
@@ -90,7 +89,10 @@ export function AnalysisRow({
   const t = useTranslations("searches");
   const tj = useTranslations("jobs");
   const tp = useTranslations("project");
+  const tc = useTranslations("common");
+  const [deleteOpen, setDeleteOpen] = useState(false);
   return (
+    <>
     <li className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-lg bg-surface shadow-sm p-3">
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
@@ -144,18 +146,35 @@ export function AnalysisRow({
           </Link>
         )}
         {isLead && onDelete && (
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => {
-              if (window.confirm(t("deleteConfirm", { name: s.name }))) onDelete();
-            }}
-          >
+          <Button size="sm" variant="ghost" onClick={() => setDeleteOpen(true)}>
             {t("delete")}
           </Button>
         )}
       </div>
     </li>
+    {deleteOpen && (
+      <Modal title={t("delete")} onClose={() => setDeleteOpen(false)}>
+        <div className="flex flex-col gap-4">
+          <p className="text-sm text-muted">{t("deleteConfirm", { name: s.name })}</p>
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" size="sm" onClick={() => setDeleteOpen(false)}>
+              {tc("cancel")}
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              onClick={() => {
+                setDeleteOpen(false);
+                onDelete?.();
+              }}
+            >
+              {tc("delete")}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+    )}
+    </>
   );
 }
 
@@ -165,14 +184,13 @@ function AnalyseContent() {
   const tLead = useTranslations("searches");
   const tj = useTranslations("jobs");
   const tp = useTranslations("project");
+  const tc = useTranslations("common");
   const errText = useApiError();
   const locale = useLocale();
   const { user } = useAuth();
   const [isLead, setIsLead] = useState(false);
   // spec clarte-2 R3: corpus size — the Import CTA in the empty state (0 = nothing to analyse)
   const [articleCount, setArticleCount] = useState<number | null>(null);
-  // Project triage thresholds (spec 2026-11-09 R1); no policy = defaults 0.85/0.15.
-  const [triage, setTriage] = useState<TriagePolicyValue>({ accept: 0.85, reject: 0.15 });
   const projectId = useParams<{ id: string }>().id;
   const searchId = useSearchId(projectId);
   const { searches, current } = useSearches(projectId, searchId);
@@ -196,17 +214,20 @@ function AnalyseContent() {
   const [critCount, setCritCount] = useState<number | null>(null);
   // CTA « Chatter sur les résultats »: request the results mode of the chat panel.
   const [chatRequest, setChatRequest] = useState<{ searchId: string; nonce: number } | null>(null);
-  const chatRef = useRef<HTMLDivElement>(null);
+  // spec clarte-3 R3: the chat is a disclosure, collapsed by default (one page, one intention).
+  const [chatOpen, setChatOpen] = useState(false);
+  const chatRef = useRef<HTMLDetailsElement>(null);
 
   const [job, setJob] = useState<InferenceJob | null>(null);
   const [busy, setBusy] = useState<InferenceJob | null>(null); // the project's in-progress analysis (all searches)
-  const [notice, setNotice] = useState<string | null>(null);
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [q, setQ] = useState<{ question: string; fields: SchemaField[]; sections: string[] } | null>(null);
   const [stage1, setStage1] = useState("");
   const [stage2, setStage2] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  // spec clarte-3 R8: the stop action confirms through the design-system Modal (was window.confirm).
+  const [stopOpen, setStopOpen] = useState(false);
   // Re-run with another model (spec 2026-11-07 §4): the chosen model + the panel's open state.
   const [rerunModel, setRerunModel] = useState("");
   const [promptId, setPromptId] = useState<string | null>(wantedPrompt);
@@ -256,7 +277,6 @@ function AnalyseContent() {
     setPrevSearchKey(searchKey);
     setJob(null);
     setQ(null);
-    setNotice(null);
   }
 
   // Changing the search reloads its question, its items and its analysis state.
@@ -270,7 +290,6 @@ function AnalyseContent() {
           fields: set ? (p.fields ?? []) : [],
           sections: p.text_sections ?? ["methods"],
         });
-        setTriage({ accept: p.triage_policy?.accept ?? 0.85, reject: p.triage_policy?.reject ?? 0.15 });
         setIsLead(isProjectLead(p, user));
         setArticleCount(p.article_count ?? null);
       })
@@ -280,18 +299,6 @@ function AnalyseContent() {
   useEffect(() => {
     listModels(projectId).then(setModels).catch(() => {});
   }, [projectId]);
-
-  // Project-level triage thresholds (R1): applied to the project, not the search.
-  const patchTriage = (next: TriagePolicyValue) => {
-    const prev = triage;
-    setTriage(next);
-    updateProject(projectId, { triage_policy: next })
-      .then(() => setNotice(t("thresholdsSaved")))
-      .catch((e) => {
-        setTriage(prev);
-        setError(errText(e));
-      });
-  };
 
   // The panel opens by default only when there is no search yet (fresh project) or when asked.
   const none = !!searches && searches.every(isUntouched);
@@ -375,8 +382,11 @@ function AnalyseContent() {
   const critOrigin = fromId ? (searches ?? []).find((s) => s.id === fromId) : undefined;
   const showCriteria = !!critOrigin && (critOrigin.predicted ?? 0) > 0;
 
-  async function handleStop() {
-    if (!window.confirm(t("stopConfirm"))) return;
+  function handleStop() {
+    setStopOpen(true);
+  }
+  async function confirmStop() {
+    setStopOpen(false);
     setSubmitting(true);
     setError(null);
     try {
@@ -595,17 +605,6 @@ function AnalyseContent() {
       </div>
 
       {error && <ErrorBanner message={error} />}
-      {notice && (
-        <p className="rounded-lg bg-primary/5 p-3 text-sm text-foreground">{notice}</p>
-      )}
-
-      {isLead && (
-        // Project triage thresholds (spec 2026-11-09 R1): presets only, no retroactivity.
-        <Card title={t("thresholdsTitle")}>
-          <TriageThresholds value={triage} onChange={patchTriage} />
-          <p className="mt-2 text-xs text-muted">{t("thresholdsHint")}</p>
-        </Card>
-      )}
 
       {isLead ? (
         <Card
@@ -841,7 +840,7 @@ function AnalyseContent() {
             {job?.status === "FAILED" && (
               <div className="mt-3 flex flex-col items-start gap-1">
                 <Button loading={submitting} onClick={handleStop}>
-                  ↻ {t("resume")}
+                  {t("resume")}
                 </Button>
                 <span className="text-xs text-muted">{t("resumeHint", { n: num(r.done) })}</span>
               </div>
@@ -860,6 +859,7 @@ function AnalyseContent() {
                 }}
                 onChat={() => {
                   setChatRequest((p) => ({ searchId: current.id, nonce: (p?.nonce ?? 0) + 1 }));
+                  setChatOpen(true);
                   chatRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
                 }}
               >
@@ -869,7 +869,7 @@ function AnalyseContent() {
             {isLead && current && (current.predicted ?? 0) + (current.reviewed ?? 0) > 0 && !active && !workersBusy && (
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <Button variant="ghost" loading={submitting} onClick={() => void handleRerun()}>
-                  ↻ {t("relaunch")}
+                  {t("relaunch")}
                 </Button>
                 {models.length > 1 && (
                   <span className="flex items-center gap-1.5">
@@ -909,9 +909,18 @@ function AnalyseContent() {
           page (spec 2026-11-08 — single home for the concordances). */}
 
       {/* Corpus chat (spec 2026-11-07-chat-rag §5): visible to members —
-          it questions the whole project corpus, or the lot of one search. */}
-      <div ref={chatRef} className="scroll-mt-4">
-        <Card title={t("chatTitle")}>
+          it questions the whole project corpus, or the lot of one search.
+          Disclosure collapsed by default (spec clarte-3 R3): the page keeps one intention. */}
+      <details
+        ref={chatRef}
+        className="scroll-mt-4 rounded-xl bg-surface p-4 shadow-sm"
+        open={chatOpen}
+        onToggle={(e) => setChatOpen(e.currentTarget.open)}
+      >
+        <summary className="cursor-pointer select-none text-base font-semibold text-foreground">
+          {t("chatTitle")}
+        </summary>
+        <div className="mt-3">
           <ChatRagPanel
             projectId={projectId}
             models={models}
@@ -919,26 +928,11 @@ function AnalyseContent() {
             searches={(searches ?? []).filter((s) => s.kind === "standard")}
             resultsRequest={chatRequest}
           />
-        </Card>
-      </div>
-
-      {/* Gold standard & benchmark: how the references feed the analysis, with links. */}
-      <Card title={t("goldSectionTitle")}>
-        <div className="grid gap-4 md:grid-cols-2">
-          <div>
-            <p className="text-sm text-foreground">{t("goldExplained")}</p>
-            <Link href={`/projects/${projectId}/gold`} className="mt-2 inline-block text-sm font-medium text-primary hover:underline">
-              {t("goldLink")} →
-            </Link>
-          </div>
-          <div>
-            <p className="text-sm text-foreground">{t("benchmarkExplained")}</p>
-            <Link href={`/projects/${projectId}/benchmarks`} className="mt-2 inline-block text-sm font-medium text-primary hover:underline">
-              {t("benchmarkLink")} →
-            </Link>
-          </div>
         </div>
-      </Card>
+      </details>
+
+      {/* Gold standard & benchmark: no more card here (spec clarte-3 R4) — the
+          compact reminder lives on the overview, and the pages are in the nav. */}
 
       {/* The never-launched analyses first, then the analyses performed, each with a link. */}
       {searches && searches.length > 0 ? (
@@ -1002,6 +996,23 @@ function AnalyseContent() {
         )
       ) : (
         <Skeleton rows={3} />
+      )}
+
+      {/* spec clarte-3 R8: stopping the analysis confirms through the Modal (was window.confirm). */}
+      {stopOpen && (
+        <Modal title={t("stop")} onClose={() => setStopOpen(false)}>
+          <div className="flex flex-col gap-4">
+            <p className="text-sm text-muted">{t("stopConfirm")}</p>
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" size="sm" onClick={() => setStopOpen(false)}>
+                {tc("cancel")}
+              </Button>
+              <Button variant="danger" size="sm" loading={submitting} onClick={() => void confirmStop()}>
+                {t("stop")}
+              </Button>
+            </div>
+          </div>
+        </Modal>
       )}
     </div>
   );

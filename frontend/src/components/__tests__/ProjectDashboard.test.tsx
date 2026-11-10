@@ -1,5 +1,5 @@
 import { Suspense } from "react";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import ProjectPage from "@/app/projects/[id]/page";
 import * as api from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -41,6 +41,7 @@ jest.mock("@/lib/api", () => ({
   getOverview: jest.fn(),
   listJobs: jest.fn(),
   listModels: jest.fn(),
+  updateProject: jest.fn(),
 }));
 
 const mockUseAuth = useAuth as unknown as jest.Mock;
@@ -48,6 +49,7 @@ const getProject = api.getProject as jest.Mock;
 const getOverview = api.getOverview as jest.Mock;
 const listJobs = api.listJobs as jest.Mock;
 const listModels = api.listModels as jest.Mock;
+const updateProject = api.updateProject as jest.Mock;
 
 const project = {
   id: "p1",
@@ -311,19 +313,43 @@ describe("project dashboard — spec v4 R6: chaîne + outillage optionnel", () =
     expect(await screen.findByText("issue des 5 incertains de « A » ↓")).toBeInTheDocument();
   });
 
-  it("« Outillage optionnel · hors chaîne »: gold + benchmarks cards with their state", async () => {
+  it("« Outillage optionnel »: compact 2-link reminder, no cards (spec clarte-3 R5)", async () => {
     mount6([mk({ id: "a", name: "A", is_default: true })]);
-    await screen.findByRole("heading", { name: /Chaîne d'analyses/ });
-    expect(screen.getByText("Outillage optionnel · hors chaîne")).toBeInTheDocument();
-    const [goldLink, benchLink] = screen.getAllByRole("link", { name: "Ouvrir" });
+    const heading = await screen.findByRole("heading", {
+      name: "Outillage optionnel — mesurer et comparer les modèles",
+    });
+    // surfaces policy: bg-surface-muted container, no border, no violet
+    const section = heading.closest("section");
+    expect(section?.className).toContain("bg-surface-muted");
+    expect(section?.className).not.toContain("border");
+    expect(section?.className).not.toContain("violet");
+    const goldLink = screen.getByRole("link", { name: "Ouvrir le gold standard (0 réf.)" });
     expect(goldLink).toHaveAttribute("href", "/projects/p1/gold");
-    // « Gold » now appears twice (KPI label + tooling card): target the card
-    expect(
-      screen.getAllByText("Gold").some((el) => el.className.includes("text-violet-800"))
-    ).toBe(true);
-    expect(screen.getByText("0 références")).toBeInTheDocument();
+    const benchLink = screen.getByRole("link", { name: "Ouvrir les benchmarks (0 tirages)" });
     expect(benchLink).toHaveAttribute("href", "/projects/p1/benchmarks");
-    expect(screen.getByText("Benchmarks")).toBeInTheDocument();
+  });
+
+  it("« Réglages » (lead only): the triage thresholds live on the overview (spec clarte-3 R1)", async () => {
+    mount6([mk({ id: "a", name: "A", is_default: true })]);
+    expect(await screen.findByRole("heading", { name: "Réglages" })).toBeInTheDocument();
+    expect(
+      screen.getByText("Appliqué aux nouvelles prédictions. Pour reclasser les résultats existants : relancer l'analyse.")
+    ).toBeInTheDocument();
+  });
+
+  it("« Réglages »: a failed threshold save rolls back the value and shows the error (audit I-1)", async () => {
+    mount6([mk({ id: "a", name: "A", is_default: true })]);
+    const accept = (await screen.findByLabelText("Auto-validé si confiance >")) as HTMLSelectElement;
+    expect(accept).toHaveValue("0.85");
+    updateProject.mockRejectedValueOnce(new Error("500"));
+    await fireEvent.change(accept, { target: { value: "0.7" } });
+    // optimistic update applied, then the failure is visible (error banner replaces the page)
+    await screen.findByText("L'enregistrement des seuils a échoué. Veuillez réessayer.");
+    expect(updateProject).toHaveBeenCalledWith("p1", { triage_policy: { accept: 0.7, reject: 0.15 } });
+    // retry re-loads the page: the value is rolled back to the server value (0.85)
+    fireEvent.click(screen.getByText("Réessayer"));
+    await screen.findByRole("heading", { name: "Réglages" });
+    expect(screen.getByLabelText("Auto-validé si confiance >")).toHaveValue("0.85");
   });
 
   it("empty project: onboarding stepper shown, KPIs and accordions hidden", async () => {
@@ -343,7 +369,9 @@ describe("project dashboard — spec v4 R6: chaîne + outillage optionnel", () =
     expect(screen.getByText("Résultats & relecture")).toBeInTheDocument();
     expect(screen.getByText("après l'import")).toBeInTheDocument();
     expect(screen.queryByText("Articles importés")).not.toBeInTheDocument();
-    expect(screen.queryByText("Outillage optionnel · hors chaîne")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Outillage optionnel — mesurer et comparer les modèles")
+    ).not.toBeInTheDocument();
   });
 
   it("onboarding step 3 warns when no model is available", async () => {
@@ -365,8 +393,10 @@ describe("project dashboard — spec v4 R6: chaîne + outillage optionnel", () =
     const a = mk({ id: "a", name: "A", is_default: true });
     const blind = mk({ id: "bl", name: "Ebloui", kind: "blind", breakdown: {} });
     mount6([a, blind]);
-    await screen.findByRole("heading", { name: /d'analyses 1/ });
-    expect(screen.getByText("Analyses hors chaîne")).toBeInTheDocument();
+    await screen.findByRole("heading", { name: /Chaîne d'analyses/ });
+    // spec clarte-3: the chain counter says "1 analyse" (singular)
+    expect(screen.getByText("1 analyse")).toBeInTheDocument();
+    expect(screen.getByText("Analyses spécifiques")).toBeInTheDocument();
     expect(screen.getByText("Ebloui")).toBeInTheDocument();
   });
 
@@ -375,7 +405,7 @@ describe("project dashboard — spec v4 R6: chaîne + outillage optionnel", () =
     const blind = mk({ id: "bl", name: "Ebloui", kind: "blind", breakdown: {} });
     const tuning = mk({ id: "tu", name: "Tuning", kind: "tuning", breakdown: {}, predicted: 0 });
     mount6([a, blind, tuning]);
-    expect(await screen.findByText("Analyses hors chaîne")).toBeInTheDocument();
+    expect(await screen.findByText("Analyses spécifiques")).toBeInTheDocument();
     expect(
       screen.getByText("Échantillons à l'aveugle et mises au point : des analyses spécifiques, hors de la chaîne standard.")
     ).toBeInTheDocument();

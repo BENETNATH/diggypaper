@@ -48,4 +48,31 @@ describe("i18n key parity (4 locales)", () => {
       expect((m.nav as Record<string, unknown>).admin).toBeTruthy();
     }
   });
+
+  // spec 2026-11-09-clarte-3: the gold/bench card + its keys are gone from the 4 locales;
+  // the compact reminder + the overview « Réglages » section exist everywhere
+  it("spec clarte-3: 11 card keys absent, settingsTitle/optionalToolingIntro/openGold/openBench present, in the 4 locales", () => {
+    const all = [fr, en, de, es];
+    for (const m of all) {
+      const p = m.project as Record<string, unknown>;
+      const i = m.inference as Record<string, unknown>;
+      for (const gone of [
+        "optionalTooling",
+        "goldCard",
+        "goldCardState",
+        "benchCard",
+        "benchCardState",
+        "openTooling",
+      ]) {
+        expect(p[gone]).toBeUndefined();
+      }
+      for (const gone of ["goldSectionTitle", "goldExplained", "goldLink", "benchmarkExplained", "benchmarkLink"]) {
+        expect(i[gone]).toBeUndefined();
+      }
+      for (const k of ["settingsTitle", "optionalToolingIntro", "openGold", "openBench"]) {
+        expect(p[k]).toBeTruthy();
+      }
+      expect(i["triageSaveFailed"]).toBeTruthy(); // audit I-1: the failed save is surfaced
+    }
+  });
 });

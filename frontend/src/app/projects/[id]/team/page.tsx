@@ -11,9 +11,11 @@ import { Button } from "@/components/ui/Button";
 import { Field, Input, Select } from "@/components/ui/Field";
 import { Card, Badge } from "@/components/ui/Card";
 import { EmptyState, ErrorBanner, Skeleton } from "@/components/ui/Feedback";
+import { Modal } from "@/components/ui/Modal";
 
 function TeamContent() {
   const t = useTranslations("team");
+  const tc = useTranslations("common");
   const toError = useApiError();
   const projectId = useParams<{ id: string }>().id;
   const { user } = useAuth();
@@ -25,6 +27,9 @@ function TeamContent() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ text: string; link?: string | null } | null>(null);
+  // spec clarte-3 R8: removing a member confirms through the Modal (was window.confirm).
+  const [removeTarget, setRemoveTarget] = useState<Member | null>(null);
+  const [removing, setRemoving] = useState(false);
 
   const load = useCallback(() => {
     return listMembers(projectId)
@@ -57,14 +62,21 @@ function TeamContent() {
     }
   }
 
-  async function handleRemove(m: Member) {
-    if (!window.confirm(t("removeConfirm", { email: m.email }))) return;
+  function handleRemove(m: Member) {
+    setRemoveTarget(m);
+  }
+  async function confirmRemove() {
+    if (!removeTarget) return;
+    setRemoving(true);
     setError(null);
     try {
-      await removeMember(projectId, m.user_id);
+      await removeMember(projectId, removeTarget.user_id);
+      setRemoveTarget(null);
       await load();
     } catch (err) {
       setError(toError(err));
+    } finally {
+      setRemoving(false);
     }
   }
 
@@ -138,6 +150,22 @@ function TeamContent() {
         </ul>
         )}
       </Card>
+
+      {removeTarget && (
+        <Modal title={t("remove")} onClose={() => setRemoveTarget(null)}>
+          <div className="flex flex-col gap-4">
+            <p className="text-sm text-muted">{t("removeConfirm", { email: removeTarget.email })}</p>
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" size="sm" onClick={() => setRemoveTarget(null)}>
+                {tc("cancel")}
+              </Button>
+              <Button variant="danger" size="sm" loading={removing} onClick={() => void confirmRemove()}>
+                {t("remove")}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

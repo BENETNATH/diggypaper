@@ -23,6 +23,7 @@ import { ModelSharing } from "@/components/ModelSharing";
 import { useAuth } from "@/lib/auth";
 import { HfSearch } from "@/components/HfSearch";
 import { Button } from "@/components/ui/Button";
+import { Modal } from "@/components/ui/Modal";
 import { Field, Input } from "@/components/ui/Field";
 import { Card, Badge } from "@/components/ui/Card";
 import { modelErrorMessage } from "@/lib/modelError";
@@ -32,7 +33,10 @@ type Pull = PullState & { name?: string };
 
 function ModelsContent() {
   const t = useTranslations("models");
+  const tc = useTranslations("common");
   const isAdmin = useAuth().user?.role === "ADMIN";
+  // spec clarte-3 R8: deleting a model confirms through the Modal (was window.confirm).
+  const [deleteTarget, setDeleteTarget] = useState<ModelInfo | null>(null);
   const [sharing, setSharing] = useState<string | null>(null);
   const [models, setModels] = useState<ModelInfo[] | null>(null);
   const [detected, setDetected] = useState<OllamaModel[]>([]);
@@ -262,14 +266,7 @@ function ModelsContent() {
                     >
                       {sharing === m.id ? t("shareClose") : t("share")}
                     </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => {
-                        if (window.confirm(t("deleteConfirm", { name: m.name })))
-                          void run(() => deleteModel(m.id));
-                      }}
-                    >
+                    <Button size="sm" variant="ghost" onClick={() => setDeleteTarget(m)}>
                       {t("delete")}
                     </Button>
                   </div>
@@ -439,6 +436,29 @@ function ModelsContent() {
           </div>
         </section>
       </Card>
+
+      {deleteTarget && (
+        <Modal title={t("delete")} onClose={() => setDeleteTarget(null)}>
+          <div className="flex flex-col gap-4">
+            <p className="text-sm text-muted">{t("deleteConfirm", { name: deleteTarget.name })}</p>
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" size="sm" onClick={() => setDeleteTarget(null)}>
+                {tc("cancel")}
+              </Button>
+              <Button
+                variant="danger"
+                size="sm"
+                onClick={() => {
+                  setDeleteTarget(null);
+                  void run(() => deleteModel(deleteTarget.id));
+                }}
+              >
+                {t("delete")}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

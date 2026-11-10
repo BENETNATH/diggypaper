@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import ProjectLayout from "@/app/projects/[id]/layout";
 import * as api from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -244,5 +244,59 @@ describe("project layout (spec clarte-2)", () => {
     expect(nav?.querySelector(".opacity-50")).toBeNull();
     expect(nav?.querySelector(".cursor-not-allowed")).toBeNull();
     expect(screen.getByRole("link", { name: /inference/ })).toHaveAttribute("aria-current", "page");
+  });
+});
+
+// spec 2026-11-09-clarte-3 — R8: the critical confirms go through the design-system Modal
+describe("project layout (spec clarte-3 R8: critical confirms in Modal)", () => {
+  const noCounters = { articles: 0, fulltext: 0, analysed: 0, reviewed: 0, gold: 0, searches: [] };
+
+  const deleteProject = api.deleteProject as jest.Mock;
+  const cancelInference = api.cancelInference as jest.Mock;
+
+  it("delete project: the ⋯ menu item opens the Modal; confirm calls deleteProject", async () => {
+    mockState.pathname = "/projects/p1";
+    getOverview.mockResolvedValue(noCounters);
+    listWatches.mockResolvedValue([]);
+    deleteProject.mockResolvedValue(undefined);
+    mount();
+    fireEvent.click(await screen.findByRole("button", { name: "menuActions" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /deleteProject/ }));
+    const dialog = screen.getByRole("dialog");
+    expect(dialog).toHaveAttribute("aria-label", "deleteProject");
+    expect(within(dialog).getByText("deleteConfirm")).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "delete" }));
+    await waitFor(() => expect(deleteProject).toHaveBeenCalledWith("p1"));
+  });
+
+  it("delete failure: no window.alert — the error is a Toast", async () => {
+    const alertSpy = jest.spyOn(window, "alert").mockImplementation(() => undefined);
+    mockState.pathname = "/projects/p1";
+    getOverview.mockResolvedValue(noCounters);
+    listWatches.mockResolvedValue([]);
+    deleteProject.mockRejectedValue(new Error("nope"));
+    mount();
+    fireEvent.click(await screen.findByRole("button", { name: "menuActions" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /deleteProject/ }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "delete" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("deleteFailed");
+    expect(alertSpy).not.toHaveBeenCalled();
+    alertSpy.mockRestore();
+  });
+
+  it("stop analysis: the banner stop opens the Modal; confirm cancels (no window.confirm)", async () => {
+    const confirmSpy = jest.spyOn(window, "confirm").mockImplementation(() => true);
+    mockState.pathname = "/projects/p1/articles";
+    getOverview.mockResolvedValue(noCounters);
+    listWatches.mockResolvedValue([]);
+    cancelInference.mockResolvedValue(undefined);
+    mount();
+    fireEvent.click(await screen.findByText("■ stopShort"));
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText("stopConfirm")).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "stopShort" }));
+    await waitFor(() => expect(cancelInference).toHaveBeenCalledWith("p1"));
+    expect(confirmSpy).not.toHaveBeenCalled();
+    confirmSpy.mockRestore();
   });
 });

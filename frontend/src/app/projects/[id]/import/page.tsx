@@ -28,6 +28,7 @@ import { Button } from "@/components/ui/Button";
 import { Field, Input } from "@/components/ui/Field";
 import { Card, Badge, statusColor } from "@/components/ui/Card";
 import { ErrorBanner, ProgressBar } from "@/components/ui/Feedback";
+import { Modal } from "@/components/ui/Modal";
 
 const num = (v: unknown): number => (typeof v === "number" ? v : 0);
 
@@ -160,6 +161,7 @@ function JobProgress({ job, onRetry }: { job: ImportJob; onRetry?: (job: ImportJ
 
 function ImportContent() {
   const t = useTranslations("import");
+  const tc = useTranslations("common");
   const toError = useApiError();
   const params = useParams<{ id: string }>();
   const projectId = params.id;
@@ -176,6 +178,8 @@ function ImportContent() {
   const [checking, setChecking] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [watching, setWatching] = useState(false); // active tracking (import launched or running)
+  // spec clarte-3 R8: a >1000-result import confirms through the Modal (was window.confirm).
+  const [bigOpen, setBigOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [jobsBefore, setJobsBefore] = useState(0);
 
@@ -277,8 +281,15 @@ function ImportContent() {
     }
   }
 
-  async function handleImport() {
-    if (volume !== null && volume > 1000 && !window.confirm(t("confirmBig", { n: volume }))) return;
+  function handleImport() {
+    if (volume !== null && volume > 1000) {
+      setBigOpen(true);
+      return;
+    }
+    void doImport();
+  }
+  async function doImport() {
+    setBigOpen(false);
     setSubmitting(true);
     setError(null);
     try {
@@ -479,6 +490,24 @@ function ImportContent() {
             ))}
           </ul>
         </Card>
+      )}
+
+      {bigOpen && (
+        <Modal title={t("import")} onClose={() => setBigOpen(false)}>
+          <div className="flex flex-col gap-4">
+            <p className="text-sm text-muted">
+              {t("confirmBig", { n: (volume ?? 0).toLocaleString() })}
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" size="sm" onClick={() => setBigOpen(false)}>
+                {tc("cancel")}
+              </Button>
+              <Button variant="danger" size="sm" loading={submitting} onClick={() => void doImport()}>
+                {hasCorpus ? t("importMore") : t("import")}
+              </Button>
+            </div>
+          </div>
+        </Modal>
       )}
     </div>
   );
