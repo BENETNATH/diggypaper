@@ -33,6 +33,8 @@ def is_rate_limited(key: str, limit: int, now: float | None = None) -> bool:
     now = time.monotonic() if now is None else now
     bucket = _buckets[key]
     _purge(bucket, now)
+    if not bucket:
+        _buckets.pop(key, None)  # free empty buckets (nothing to rate-limit)
     return len(bucket) >= limit
 
 
@@ -41,7 +43,10 @@ def record(key: str, now: float | None = None) -> None:
     now = time.monotonic() if now is None else now
     bucket = _buckets[key]
     _purge(bucket, now)
-    bucket.append(now)
+    if bucket:
+        bucket.append(now)
+    else:
+        _buckets[key] = deque([now])  # recreate (purged entries freed)
 
 
 def reset() -> None:

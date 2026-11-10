@@ -211,7 +211,8 @@ async def chat(
             yield _sse("error", {"detail": "provider_error"})
             return
         text = "".join(parts)
-        cited = extract_citations(text, len(included))
+        max_n = max((s["n"] for s in included), default=0)
+        cited = extract_citations(text, max_n)
         if cited:
             yield _sse("citations", [c for c in citations if c["n"] in cited])
         yield _sse("done", {"full_text": text, "model": payload.model, "n_citations": len(cited)})

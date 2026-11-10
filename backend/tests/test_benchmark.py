@@ -1,5 +1,7 @@
 """Tests for the benchmark task (app/tasks/benchmark.py) — 100% offline."""
 
+import asyncio
+
 import pytest
 from conftest import LEGACY_FIELDS
 from sqlalchemy import select
@@ -50,7 +52,7 @@ async def _seed(session: AsyncSession, project, prompt, model, gold_gt):
     await session.commit()
 
 
-async def test_run_benchmark_completes(engine, session):
+async def test_run_benchmark_completes(engine, session, fake_redis):
     project = Project(title="P", created_by=None)
     session.add(project)
     await session.commit()
@@ -79,7 +81,9 @@ async def test_run_benchmark_completes(engine, session):
 
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     fake = FakeInference(gt)
-    result = await _run_benchmark(str(run.id), session_factory=factory, inference=fake)
+    result = await _run_benchmark(
+        str(run.id), session_factory=factory, inference=fake, redis=fake_redis
+    )
 
     assert result["models"] == 1
     assert result["articles"] == 1
@@ -91,8 +95,96 @@ async def test_run_benchmark_completes(engine, session):
     assert run.status == BenchmarkStatus.COMPLETED
 
 
+async def test_benchmark_waits_on_locked_local_model(engine, session, fake_redis):
+    """A local model already locked (by another job, e.g. an inference) → the
+    benchmark raises ModelBusy (requeued) instead of contending on the model."""
+    from app.inference import model_lock_key
+    from app.tasks import benchmark as bench
+
+    project = Project(title="P", created_by=None)
+    session.add(project)
+    await session.commit()
+    prompt = PromptTemplate(project_id=project.id, version_number="v1.0", system_prompt="SYS")
+    session.add(prompt)
+    await session.commit()
+    session.add(ModelRegistry(name="Kev-4B", model_identifier="kef/kev-4b"))
+    await session.commit()
+    await _seed(session, project, prompt, None, _gt())
+    run = BenchmarkRun(
+        project_id=project.id,
+        prompt_template_id=prompt.id,
+        models_tested=["Kev-4B"],
+        status=BenchmarkStatus.PENDING,
+    )
+    session.add(run)
+    await session.commit()
+
+    key = model_lock_key("OLLAMA", "kef/kev-4b")
+    await fake_redis.set(key, "other-worker-token", nx=True, ex=300)
+
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    with pytest.raises(bench.ModelBusy):
+        await _run_benchmark(str(run.id), session_factory=factory, redis=fake_redis)
+
+    # The requeued run must stay PENDING: a RUNNING status would hit the
+    # redelivery guard forever and the run would never execute (audit sécu
+    # 2026-11-10, finding 1 — RUNNING was flipped before the lock acquisition).
+    await session.refresh(run)
+    assert run.status == BenchmarkStatus.PENDING
+
+
+async def test_benchmark_busy_retries_exhausted_fails_run(engine, session, monkeypatch):
+    """Wrapper: ModelBusy with retries exhausted → run marked FAILED (same guard as
+    inference_task). Without it the run stays PENDING forever — Celery gives up
+    requeuing and nothing else touches the status (caveman-review 2026-11-10)."""
+    from celery.exceptions import MaxRetriesExceededError
+
+    from app.tasks import benchmark as bench
+    from app.tasks.benchmark import benchmark_task
+
+    async def _busy(*args, **kwargs):
+        raise bench.ModelBusy("bench:lock:OLLAMA:x")
+
+    monkeypatch.setattr(bench, "_run_benchmark", _busy)
+    monkeypatch.setattr(
+        bench,
+        "_session_factory_override",
+        async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False),
+    )
+    project = Project(title="P", created_by=None)
+    session.add(project)
+    await session.commit()
+    prompt = PromptTemplate(project_id=project.id, version_number="v1.0", system_prompt="SYS")
+    session.add(prompt)
+    await session.commit()
+    run = BenchmarkRun(
+        project_id=project.id,
+        prompt_template_id=prompt.id,
+        models_tested=["Kev-4B"],
+        status=BenchmarkStatus.PENDING,
+    )
+    session.add(run)
+    await session.commit()
+    task = benchmark_task._get_current_object()
+
+    def _invoke():
+        task.push_request(retries=bench._MODEL_BUSY_MAX_RETRIES, called_directly=False)
+        try:
+            benchmark_task(str(run.id))
+        finally:
+            task.pop_request()
+
+    # asyncio.run (in the wrapper) is impossible from a running event loop
+    with pytest.raises(MaxRetriesExceededError):
+        await asyncio.to_thread(_invoke)
+    await session.refresh(run)
+    assert run.status == BenchmarkStatus.FAILED
+
+
 @pytest.mark.parametrize(("raw", "stored"), [("high", None), ("0.9", 0.9), (85, None)])
-async def test_run_benchmark_non_numeric_confidence_completes(engine, session, raw, stored):
+async def test_run_benchmark_non_numeric_confidence_completes(
+    engine, session, raw, stored, fake_redis
+):
     """textual / out-of-[0, 1] confidence_score: the run finishes, Float column = None / float."""
     project = Project(title="P", created_by=None)
     session.add(project)
@@ -119,7 +211,10 @@ async def test_run_benchmark_non_numeric_confidence_completes(engine, session, r
     await session.commit()
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     await _run_benchmark(
-        str(run.id), session_factory=factory, inference=FakeInference(_gt(conf=raw))
+        str(run.id),
+        session_factory=factory,
+        inference=FakeInference(_gt(conf=raw)),
+        redis=fake_redis,
     )
     await session.refresh(run)
     assert run.status == BenchmarkStatus.COMPLETED
@@ -127,7 +222,7 @@ async def test_run_benchmark_non_numeric_confidence_completes(engine, session, r
     assert pred.confidence_score == stored
 
 
-async def test_run_benchmark_no_gold_raises(engine, session):
+async def test_run_benchmark_no_gold_raises(engine, session, fake_redis):
     project = Project(title="P", created_by=None)
     session.add(project)
     await session.commit()
@@ -148,10 +243,17 @@ async def test_run_benchmark_no_gold_raises(engine, session):
     await session.commit()
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     with pytest.raises(LookupError):
-        await _run_benchmark(str(run.id), session_factory=factory, inference=FakeInference(_gt()))
+        await _run_benchmark(
+            str(run.id),
+            session_factory=factory,
+            inference=FakeInference(_gt()),
+            redis=fake_redis,
+        )
 
 
-async def test_run_benchmark_inference_failure_marks_failed(engine, session, monkeypatch):
+async def test_run_benchmark_inference_failure_marks_failed(
+    engine, session, monkeypatch, fake_redis
+):
     """make_inference_service fails → run FAILED (not stuck in RUNNING)."""
     import app.tasks.benchmark as bench
 
@@ -181,7 +283,7 @@ async def test_run_benchmark_inference_failure_marks_failed(engine, session, mon
 
     monkeypatch.setattr(bench, "make_inference_service", _fail_inference)
     with pytest.raises(RuntimeError):
-        await _run_benchmark(str(run.id), session_factory=factory)
+        await _run_benchmark(str(run.id), session_factory=factory, redis=fake_redis)
     await session.refresh(run)
     assert run.status == BenchmarkStatus.FAILED
 
@@ -198,7 +300,7 @@ class RecordingInference(FakeInference):
         return await super().infer(model, system_prompt, user_prompt)
 
 
-async def test_benchmark_provider_error_recorded_not_fatal(engine, session):
+async def test_benchmark_provider_error_recorded_not_fatal(engine, session, fake_redis):
     """Provider error echoed in the content (HTTP 200): the run completes and the
     prediction stores the error, not the error JSON as a decision."""
     from app.inference import InferenceError
@@ -238,7 +340,7 @@ async def test_benchmark_provider_error_recorded_not_fatal(engine, session):
                 raise InferenceError("provider_error_404")
             return _gt()
 
-    await _run_benchmark(str(run.id), session_factory=factory, inference=Flaky())
+    await _run_benchmark(str(run.id), session_factory=factory, inference=Flaky(), redis=fake_redis)
     await session.refresh(run)
     assert run.status == BenchmarkStatus.COMPLETED
     row = (
@@ -258,7 +360,7 @@ async def test_benchmark_provider_error_recorded_not_fatal(engine, session):
     assert res.details["errors"] == 1
 
 
-async def test_benchmark_retry_errors(engine, session):
+async def test_benchmark_retry_errors(engine, session, fake_redis):
     """Retry of the failed predictions only: the error is recomputed in place, the
     run stays COMPLETED and the results (error count) are recomputed."""
     from app.inference import InferenceError
@@ -299,7 +401,7 @@ async def test_benchmark_retry_errors(engine, session):
                 raise InferenceError("provider_error_404")
             return _gt()
 
-    await _run_benchmark(str(run.id), session_factory=factory, inference=Flaky())
+    await _run_benchmark(str(run.id), session_factory=factory, inference=Flaky(), redis=fake_redis)
 
     fixed = FakeInference(_gt())
     out = await _retry_benchmark_errors(str(run.id), session_factory=factory, inference=fixed)
@@ -323,7 +425,7 @@ async def test_benchmark_retry_errors(engine, session):
     assert res.details["errors"] == 0
 
 
-async def test_benchmark_retry_errors_persistent_failure(engine, session):
+async def test_benchmark_retry_errors_persistent_failure(engine, session, fake_redis):
     """The provider keeps failing: the prediction keeps the new error code, the run
     stays COMPLETED, the error count stays >= 1."""
     from app.inference import InferenceError
@@ -361,7 +463,9 @@ async def test_benchmark_retry_errors_persistent_failure(engine, session):
         async def infer(self, m, system, user):
             raise InferenceError("provider_error_FAILED_PRECONDITION")
 
-    await _run_benchmark(str(run.id), session_factory=factory, inference=AlwaysBroken())
+    await _run_benchmark(
+        str(run.id), session_factory=factory, inference=AlwaysBroken(), redis=fake_redis
+    )
     out = await _retry_benchmark_errors(
         str(run.id), session_factory=factory, inference=AlwaysBroken()
     )
@@ -398,7 +502,7 @@ async def _project_with_articles(session, n=4, fields=None):
     return project, prompt, arts
 
 
-async def test_benchmark_variants_store_predictions_and_agreement(engine, session):
+async def test_benchmark_variants_store_predictions_and_agreement(engine, session, fake_redis):
     project, prompt, arts = await _project_with_articles(session, 3, fields=LEGACY_FIELDS)
     run = BenchmarkRun(
         project_id=project.id,
@@ -414,7 +518,9 @@ async def test_benchmark_variants_store_predictions_and_agreement(engine, sessio
     await session.commit()
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     fake = RecordingInference(_gt())
-    res = await _run_benchmark(str(run.id), session_factory=factory, inference=fake)
+    res = await _run_benchmark(
+        str(run.id), session_factory=factory, inference=fake, redis=fake_redis
+    )
     assert res["variants"] == 2 and fake.calls == 6  # 3 articles × 2 variantes
     systems = fake.systems
     assert any("Be strict." in s for s in systems) and any("Be free." in s for s in systems)
@@ -433,7 +539,9 @@ async def test_benchmark_variants_store_predictions_and_agreement(engine, sessio
     assert all(r.details["agreement"] == 1.0 for r in results)
 
 
-async def test_benchmark_gold_examples_in_prompt_and_excluded_from_scoring(engine, session):
+async def test_benchmark_gold_examples_in_prompt_and_excluded_from_scoring(
+    engine, session, fake_redis
+):
     project, prompt, arts = await _project_with_articles(session, 4)
     for a in arts:  # les 4 articles sont au gold ; 2 serviront d'exemples (hors validation)
         session.add(GoldArticle(project_id=project.id, article_id=a.id, ground_truth_json=_gt()))
@@ -448,7 +556,9 @@ async def test_benchmark_gold_examples_in_prompt_and_excluded_from_scoring(engin
     await session.commit()
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     fake = RecordingInference(_gt())
-    res = await _run_benchmark(str(run.id), session_factory=factory, inference=fake)
+    res = await _run_benchmark(
+        str(run.id), session_factory=factory, inference=fake, redis=fake_redis
+    )
     assert all("verified answers" in s for s in fake.systems)  # exemples dans le prompt
     from app.db.models import BenchmarkResult
 
@@ -475,7 +585,7 @@ def test_benchmark_imports_without_resource(monkeypatch):
         importlib.reload(benchmark)  # restaure le comportement natif de la plateforme
 
 
-async def test_benchmark_uses_structured_schema(engine, session):
+async def test_benchmark_uses_structured_schema(engine, session, fake_redis):
     """2026-11-03: the benchmark wraps each variant's question in the project's
     field schema (structured JSON, like the complete analysis) instead of a bare
     free-form prompt — so the responses have a constant, comparable format."""
@@ -493,7 +603,7 @@ async def test_benchmark_uses_structured_schema(engine, session):
     await session.commit()
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     fake = RecordingInference(_gt())
-    await _run_benchmark(str(run.id), session_factory=factory, inference=fake)
+    await _run_benchmark(str(run.id), session_factory=factory, inference=fake, redis=fake_redis)
     (system,) = fake.systems
     # the variant's question is embedded
     assert "Describe the forced swim test protocol" in system

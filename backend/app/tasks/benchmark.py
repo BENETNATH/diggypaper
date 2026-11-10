@@ -11,6 +11,7 @@ otherwise their agreement is measured. Prompt variants concern generative models
 
 import asyncio
 import logging
+import os
 import threading
 import time
 import uuid
@@ -46,10 +47,22 @@ from app.inference import (
     OpenAICompatibleService,
     infer_with,
     make_inference_service,
+    model_lock_key,
     unload_ollama,
 )
 from app.schema import build_system_prompt, project_fields
 from app.searches import ScopedProject, get_search, gold_condition, lot_condition
+
+# The per-model lock is shared with inference (same key, so a benchmark and an
+# inference job never run the same local model concurrently).
+from app.tasks.inference import (
+    _MODEL_BUSY_MAX_RETRIES,
+    _MODEL_BUSY_RETRY_SECONDS,
+    ModelBusy,
+    _lock_ttl,
+    _release_lock,
+    _renew_locks,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -74,9 +87,13 @@ def _make_session_factory():
     return engine, async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
-@celery_app.task(name="diggypaper.benchmark")
-def benchmark_task(benchmark_run_id: str) -> dict:
-    """Sync Celery wrapper: runs the async core in a dedicated thread (C1/C2)."""
+@celery_app.task(name="diggypaper.benchmark", bind=True)
+def benchmark_task(self, benchmark_run_id: str) -> dict:
+    """Sync Celery wrapper: runs the async core in a dedicated thread (C1/C2).
+
+    ``ModelBusy`` (local model locked by another job): requeue with a countdown,
+    like ``inference_task`` (a benchmark must not contend on a locked model).
+    """
     result: dict = {}
     error: BaseException | None = None
 
@@ -91,8 +108,42 @@ def benchmark_task(benchmark_run_id: str) -> dict:
     thread.start()
     thread.join()
     if error is not None:
+        if isinstance(error, ModelBusy):
+            if self.request.retries >= _MODEL_BUSY_MAX_RETRIES:
+                # Retries exhausted: mark the run FAILED so it doesn't stay
+                # PENDING forever — Celery stops requeuing and nothing else
+                # touches the status (same guard as inference_task,
+                # caveman-review 2026-11-10).
+                asyncio.run(_mark_benchmark_busy_failed(benchmark_run_id))
+            raise self.retry(
+                countdown=_MODEL_BUSY_RETRY_SECONDS, max_retries=_MODEL_BUSY_MAX_RETRIES
+            )
         raise error
     return result
+
+
+async def _mark_benchmark_busy_failed(benchmark_run_id: str) -> None:
+    """Retries exhausted: run FAILED (same pattern as ``_record_failure``)."""
+    factory = _session_factory_override
+    engine = None
+    if factory is None:
+        engine, factory = _make_session_factory()
+    try:
+        try:
+            run_uuid = uuid.UUID(benchmark_run_id)
+        except (TypeError, ValueError):
+            return
+        async with factory() as session:
+            run = await session.get(BenchmarkRun, run_uuid)
+            if run is None:
+                return
+            run.status = BenchmarkStatus.FAILED
+            await session.commit()
+    except Exception:  # noqa: BLE001
+        logger.exception("benchmark: marking FAILED (model busy, retries exhausted) failed")
+    finally:
+        if engine is not None:
+            await engine.dispose()
 
 
 async def _run_benchmark(
@@ -100,11 +151,13 @@ async def _run_benchmark(
     session_factory=None,
     http=None,
     inference: OpenAICompatibleService | None = None,
+    redis=None,
 ) -> dict:
     """Async core of the benchmark.
 
     - ``session_factory`` injectable (tests); else engine per run (C2).
     - ``inference`` injectable (tests); else ``make_inference_service``.
+    - ``redis`` injectable (tests); else a client from ``REDIS_URL`` (model lock).
     - Sequential per model, then per gold article.
     - Returns ``{"models", "articles", "results"}``.
     """
@@ -125,18 +178,77 @@ async def _run_benchmark(
             run = await session.get(BenchmarkRun, run_uuid)
             if run is None:
                 raise LookupError(f"benchmark run not found: {benchmark_run_id}")
-            if run.status in (BenchmarkStatus.FAILED, BenchmarkStatus.COMPLETED):
+            if run.status in (
+                BenchmarkStatus.FAILED,
+                BenchmarkStatus.COMPLETED,
+                BenchmarkStatus.RUNNING,
+            ):
                 return {}  # stopped before starting, or redelivered
-            run.status = BenchmarkStatus.RUNNING
-            await session.commit()
 
+            locks: list[tuple[str, str]] = []  # (key, token) per local model
+            redis_client = None
+            own_redis = False
+            ttl = 0
             try:
+                found = {
+                    m.name: m
+                    for m in (
+                        await session.execute(
+                            select(ModelRegistry).where(
+                                ModelRegistry.name.in_(run.models_tested or [])
+                            )
+                        )
+                    ).scalars()
+                }
+                # Acquire the local models (shared key with inference): all-or-nothing;
+                # OPENAI_API models are remote, no lock.
+                keys = sorted(
+                    {
+                        model_lock_key(m.backend_type, m.model_identifier)
+                        for m in found.values()
+                        if m.backend_type != "OPENAI_API"
+                    }
+                )
+                if keys:
+                    if redis is None:
+                        from redis import asyncio as redis_asyncio
+
+                        redis_client = redis_asyncio.from_url(
+                            os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+                        )
+                        own_redis = True
+                    else:
+                        redis_client = redis
+                    ttl = await _lock_ttl(session)
+                    for key in keys:
+                        token = uuid.uuid4().hex
+                        acquired = await redis_client.set(key, token, nx=True, ex=ttl)
+                        if not acquired:
+                            raise ModelBusy(key)
+                        locks.append((key, token))
+                # All local models locked (or none to lock) → the run starts. The
+                # RUNNING flip comes AFTER the acquisition so a ModelBusy redelivery
+                # keeps the run PENDING — flipped earlier, the redelivery guard above
+                # would drop it forever (audit sécu 2026-11-10, finding 1).
+                run.status = BenchmarkStatus.RUNNING
+                await session.commit()
+
+                async def heartbeat() -> None:
+                    await _renew_locks(redis_client, locks, ttl)
+
                 if inference is None:
                     inference = await make_inference_service(session, http=client)
-                return await _do_benchmark(session, run, inference)
+                return await _do_benchmark(session, run, inference, heartbeat)
+            except ModelBusy:
+                raise
             except Exception as exc:
                 await _record_failure(session, run, exc)
                 raise
+            finally:
+                for key, token in locks:
+                    await _release_lock(redis_client, key, token)
+                if redis_client is not None and own_redis:
+                    await redis_client.aclose()
     finally:
         if engine is not None:
             await engine.dispose()
@@ -418,7 +530,10 @@ async def _prompts(session: AsyncSession, run: BenchmarkRun) -> list[tuple[str, 
 
 
 async def _do_benchmark(
-    session: AsyncSession, run: BenchmarkRun, inference: OpenAICompatibleService
+    session: AsyncSession,
+    run: BenchmarkRun,
+    inference: OpenAICompatibleService,
+    heartbeat=None,
 ) -> dict:
     """Benchmark body: each (model, variant) answers each article of the lot."""
     base_project = await session.get(Project, run.project_id)
@@ -482,6 +597,8 @@ async def _do_benchmark(
             for article in lot:
                 if await _cancelled(session, run):
                     return {"cancelled": True, "models": len(results_payload)}
+                if heartbeat is not None:
+                    await heartbeat()  # keep the model locks alive during a long run
                 start = time.monotonic()
                 error = None
                 try:

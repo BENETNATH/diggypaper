@@ -57,6 +57,10 @@ async def test_anonymize_removes_pii_and_preserves_annotations(
     assert ann.decision_json == {"use_ai_behavior": True, "confidence_score": 0.9}
     assert ann.notes == "inclusion"
 
+    # The anonymized user is no longer a member of any project.
+    memberships = (await session.execute(select(ProjectMember))).scalars().all()
+    assert memberships == []
+
 
 async def test_anonymize_makes_login_impossible(client, researcher_user, do_login):
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)

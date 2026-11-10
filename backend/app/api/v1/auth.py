@@ -293,12 +293,26 @@ async def change_password(
     request: Request,
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> None:
+) -> Response:
     if not await asyncio.to_thread(verify_password, payload.current_password, user.hashed_password):
         raise HTTPException(status_code=403, detail=t(request.state.lang, "invalid_credentials"))
     user.hashed_password = await asyncio.to_thread(hash_password, payload.new_password)
     user.token_version = (user.token_version or 0) + 1  # cuts the other sessions
     await db.commit()
+    # The token_version bump revoked this session's cookie too; re-issue a fresh
+    # one so the acting user is not silently logged out.
+    settings = get_settings()
+    response = Response(status_code=204)
+    response.set_cookie(
+        key=ACCESS_TOKEN_COOKIE,
+        value=create_access_token(user),
+        max_age=settings.access_token_expire_minutes * 60,
+        httponly=True,
+        secure=settings.cookie_secure,
+        samesite="strict",
+        path="/",
+    )
+    return response
 
 
 def _token_digest(token: str) -> str:
