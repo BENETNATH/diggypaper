@@ -33,9 +33,23 @@ import { Spinner, ErrorBanner } from "@/components/ui/Feedback";
 
 const pct = (n: number, d: number): number => (d > 0 ? Math.round((n / d) * 100) : 0);
 
-function Kpi({ label, value, sub, title }: { label: string; value: ReactNode; sub?: ReactNode; title?: string }) {
+/**
+ * spec clarte-1 R5: label + value + sub obligatoire. `highlight` = primary border
+ * on the single actionable KPI (« À relire » > 0) — a pointer, not a state color.
+ */
+function Kpi({
+  label,
+  value,
+  sub,
+  highlight = false,
+}: {
+  label: string;
+  value: ReactNode;
+  sub: ReactNode;
+  highlight?: boolean;
+}) {
   return (
-    <div className="rounded-lg bg-surface shadow-sm px-3 py-2.5" title={title}>
+    <div className={`rounded-lg bg-surface shadow-sm px-3 py-2.5 ${highlight ? "border border-primary" : ""}`}>
       <div className="text-xs text-muted">{label}</div>
       <div className="mt-0.5 text-xl font-semibold tabular-nums text-foreground">{value}</div>
       {sub && <div className="text-xs text-muted">{sub}</div>}
@@ -117,15 +131,17 @@ function SearchRow({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="font-semibold text-foreground">{s.name}</h3>
-            {untouched && <Badge color="blue">{ts("badgeToLaunch")}</Badge>}
-            {s.is_default && <Badge color="blue">{t("badgeInitial")}</Badge>}
-            {active && <Badge color="green">{t("activeTag")}</Badge>}
+            {/* spec clarte-1 R2: one state = one badge; R3: the active card is pointed by
+                its border only — no « active » badge, no « Initiale » badge */}
+            {untouched && <Badge color="gray">{ts("badgeToLaunch")}</Badge>}
             {s.kind !== "standard" && <Badge color="gray">{t(`kind_${s.kind}`)}</Badge>}
             {running && <Badge color="yellow">{t("running")}</Badge>}
             {s.schedule_state === "waiting" && <Badge color="gray">{t("scheduled")}</Badge>}
             {s.schedule_state === "failed" && <Badge color="red">{t("scheduleFailed")}</Badge>}
           </div>
-          {s.question ? (
+          {/* spec clarte-1 R2: before the first run the useful info is the lot,
+              not « aucune question posée » (orientation is optional) */}
+          {!untouched && (s.question ? (
             <p className="mt-0.5 line-clamp-2 text-sm text-muted" title={s.question}>
               {s.question}
             </p>
@@ -141,7 +157,7 @@ function SearchRow({
             </p>
           ) : (
             <p className="mt-0.5 line-clamp-2 text-sm text-muted">{ts("noQuestion")}</p>
-          )}
+          ))}
           {s.kind !== "standard" && (
             <p className="mt-1 text-xs text-muted">{ts(`kindHint_${s.kind}`)}</p>
           )}
@@ -167,9 +183,9 @@ function SearchRow({
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
           {untouched ? (
-            // never launched: one action — select the analysis and open the pre-filled panel
+            // never launched: one state, one action (spec clarte-1 R2)
             <Link href={`/projects/${projectId}/inference?search=${s.id}&new=1`}>
-              <Button size="sm">{ts("launch")} →</Button>
+              <Button size="sm">{ts("launch")}</Button>
             </Link>
           ) : (
             <>
@@ -196,24 +212,28 @@ function SearchRow({
       </div>
 
       <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
+        {/* spec clarte-1 R2: the 0 % lines are masked until the first run —
+            the lot is the useful info before launching */}
         {blind ? (
           <p className="text-xs text-muted">{t("blindHint", { done: s.reviewed, total: s.lot_size })}</p>
         ) : s.predicted > 0 ? (
           <LotBar s={s} />
         ) : (
-          <p className="text-xs text-muted">{t("notAnalysedYet")}</p>
+          <p className="text-xs text-muted">{t("toLaunchLotLine", { n: s.lot_size })}</p>
         )}
         <div className="flex gap-4 text-sm tabular-nums">
-          {!blind && (
+          {!blind && s.predicted > 0 && (
             <span>
               <strong className="text-foreground">{analysedPct} %</strong>{" "}
               <span className="text-xs text-muted">{t("analysedShort")} {t("ofLot", { n: s.predicted, d: s.lot_size })}</span>
             </span>
           )}
-          <span>
-            <strong className="text-foreground">{reviewedPct} %</strong>{" "}
-            <span className="text-xs text-muted">{t("reviewedShort")} {t("ofLot", { n: s.reviewed, d: s.lot_size })}</span>
-          </span>
+          {!blind && s.predicted > 0 && (
+            <span>
+              <strong className="text-foreground">{reviewedPct} %</strong>{" "}
+              <span className="text-xs text-muted">{t("reviewedShort")} {t("ofLot", { n: s.reviewed, d: s.lot_size })}</span>
+            </span>
+          )}
         </div>
       </div>
     </div>
@@ -310,29 +330,37 @@ function ProjectDashboard() {
         </div>
       )}
 
-      {/* Global counts: distinct articles, across all searches */}
+      {/* Global counts: distinct articles, across all searches.
+          spec clarte-1 R5: the aggregate scope is a permanent micro-line (no tooltip),
+          « — » before the first run, « À relire » highlighted only when actionable */}
       {!empty && (
-        <section className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-          <Kpi label={t("kpiArticles")} value={overview.articles.toLocaleString()} />
-          <Kpi
-            label={t("kpiFulltext")}
-            value={`${pct(overview.fulltext, overview.articles)} %`}
-            sub={t("outOf", { n: overview.fulltext })}
-          />
-          <Kpi
-            label={t("kpiAnalysed")}
-            value={`${pct(overview.analysed, overview.articles)} %`}
-            sub={t("outOf", { n: overview.analysed })}
-            title={t("kpiScopeAll")}
-          />
-          <Kpi
-            label={t("kpiReviewed")}
-            value={`${pct(overview.reviewed, overview.articles)} %`}
-            sub={t("outOf", { n: overview.reviewed })}
-            title={t("kpiScopeAll")}
-          />
-          <Kpi label={t("kpiToReview")} value={toReviewTotal.toLocaleString()} title={t("kpiScopeAll")} />
-          <Kpi label={t("kpiGold")} value={overview.gold.toLocaleString()} />
+        <section className="flex flex-col gap-1.5">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+            <Kpi label={t("kpiArticles")} value={overview.articles.toLocaleString()} sub={t("outOf", { n: overview.articles })} />
+            <Kpi
+              label={t("kpiFulltext")}
+              value={`${pct(overview.fulltext, overview.articles)} %`}
+              sub={t("outOf", { n: overview.fulltext })}
+            />
+            <Kpi
+              label={t("kpiAnalysed")}
+              value={overview.analysed === 0 ? "—" : `${pct(overview.analysed, overview.articles)} %`}
+              sub={overview.analysed === 0 ? null : t("outOf", { n: overview.analysed })}
+            />
+            <Kpi
+              label={t("kpiReviewed")}
+              value={overview.reviewed === 0 ? "—" : `${pct(overview.reviewed, overview.articles)} %`}
+              sub={overview.reviewed === 0 ? null : t("outOf", { n: overview.reviewed })}
+            />
+            <Kpi
+              label={t("kpiToReview")}
+              value={toReviewTotal.toLocaleString()}
+              sub={toReviewTotal > 0 ? t("outOf", { n: toReviewTotal }) : t("kpiToReviewZero")}
+              highlight={toReviewTotal > 0}
+            />
+            <Kpi label={t("kpiGold")} value={overview.gold.toLocaleString()} sub={t("kpiGoldSub")} />
+          </div>
+          <p className="text-xs text-muted">{t("kpiScopeLine")}</p>
         </section>
       )}
 
@@ -380,17 +408,19 @@ function ProjectDashboard() {
                     const depth = depths.get(s.id) ?? 0;
                     const parent = s.parent && chain[i - 1]?.id === s.parent.id ? s.parent : undefined;
                     const active = s.id === searchId;
-                    const untouched = isUntouched(s);
                     return (
                       <li key={s.id} className="flex gap-3" style={{ marginLeft: `${depth * 1.5}rem` }}>
                         <div className="flex flex-col items-center" aria-hidden>
+                          {/* spec clarte-1 R3: green = results (predicted > 0 || reviewed > 0,
+                              same state as the pill dot), neutral = not started,
+                              primary ring = selection (pointer, not a state) */}
                           <span
-                            className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white ${
+                            className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
                               active
-                                ? "bg-primary ring-2 ring-primary/30"
-                                : untouched
-                                  ? "bg-muted"
-                                  : "bg-success"
+                                ? "bg-surface text-primary ring-2 ring-primary"
+                                : s.predicted > 0 || s.reviewed > 0
+                                  ? "bg-success text-white"
+                                  : "bg-muted text-white"
                             }`}
                           >
                             {letter}

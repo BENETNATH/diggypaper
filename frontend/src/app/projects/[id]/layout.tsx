@@ -9,10 +9,11 @@ import { Menu, MenuItem } from "@/components/ui/Menu";
 import { ProgressBar } from "@/components/ui/Feedback";
 import { JobProgress } from "@/components/JobProgress";
 import { SearchPills } from "@/components/SearchPills";
+import { orderChain } from "@/lib/chain";
 import { isProjectLead } from "@/lib/role";
 import { withSearch } from "@/lib/search";
 import { useAuth } from "@/lib/auth";
-import { storeSearchId, useSearchId, useSearches, useSelectSearch } from "@/lib/useSearch";
+import { storeSearchId, useSearchId, useSearches } from "@/lib/useSearch";
 import { useHasMounted } from "@/lib/useHasMounted";
 
 const STEPS = [
@@ -41,8 +42,7 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
   const mounted = useHasMounted();
   const searchId = mounted ? hookSearchId : undefined;
   // The searches change (creation, rename, deletion, analyses): we re-read on every page.
-  const { searches, current } = useSearches(id, searchId, pathname);
-  const selectSearch = useSelectSearch(id);
+  const { searches } = useSearches(id, searchId, pathname);
 
   // Reload on every page change: the status evolves (import → corpus frozen).
   useEffect(() => {
@@ -165,6 +165,9 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
   const done = typeof r.done === "number" ? r.done : 0;
 
   const base = `/projects/${id}`;
+  // Pill order: standards first (chain order), then off-chain (spec clarte-1 R1).
+  const standard = (searches ?? []).filter((s) => s.kind === "standard");
+  const pillOrder = orderChain(standard).concat((searches ?? []).filter((s) => s.kind !== "standard"));
   const hasCorpus = (project?.article_count ?? 0) > 0;
   const isLead = isProjectLead(project, user);
   const isAnnotate = pathname.startsWith(`${base}/annotate`);
@@ -185,7 +188,8 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
           )}
         </nav>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-          {analysing && (
+          {/* spec clarte-1 R4: on the overview the ActiveJobsBanner panel replaces these banners */}
+          {analysing && pathname !== base && (
             <JobProgress
               inline
               title={t("analysisBannerTitle")}
@@ -227,7 +231,7 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
         </div>
       </div>
 
-      {importing && (
+      {importing && pathname !== base && (
         <div className="rounded-lg bg-primary/5 p-3">
           <ProgressBar
             value={total > 0 ? (done / total) * 100 : null}
@@ -244,7 +248,7 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
         </div>
       )}
 
-      {ft && (
+      {ft && pathname !== base && (
         <div className="rounded-lg bg-primary/5 p-3">
           <ProgressBar
             value={ftotal > 0 ? (fdone / ftotal) * 100 : null}
@@ -258,29 +262,6 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
               </Link>
             )}
           </p>
-        </div>
-      )}
-
-      {searches && searches.length > 0 && (
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-          <label className="flex items-center gap-2 text-muted">
-            {t("searchLabel")}
-            <select
-              value={current?.id ?? ""}
-              onChange={(e) => selectSearch(e.target.value)}
-              className="max-w-[16rem] rounded border border-border bg-surface p-1 text-sm text-foreground"
-            >
-              {searches.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                  {s.kind !== "standard" ? ` (${t(`kind_${s.kind}`)})` : ""} — {t("lotSize", { n: s.lot_size })}
-                </option>
-              ))}
-            </select>
-          </label>
-          <Link href={withSearch(`${base}/inference`, searchId)} className="ml-3 text-primary hover:underline">
-            {t("allSearches")} →
-          </Link>
         </div>
       )}
 
@@ -325,10 +306,10 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
         })}
       </nav>
 
-      {/* spec v4 R6: one pill per standard analysis — the blue one is the active analysis */}
+      {/* spec clarte-1 R1: the pill row is the single analysis selector (all analyses) */}
       {searches && (
         <SearchPills
-          searches={searches.filter((s) => s.kind === "standard")}
+          searches={pillOrder}
           activeId={searchId}
           ariaLabel={t("chainPillsAria")}
           label={t("searchesTitle")}

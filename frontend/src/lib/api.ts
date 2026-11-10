@@ -713,14 +713,14 @@ export async function listJobs(projectId: string): Promise<ImportJob[]> {
 
 // --- Activity & traceability (spec 2026-11-03-activite-tracabilite) ---------
 
-/** One in-progress job of the project (import / analysis / benchmark). */
+/** One in-progress job of the project (import / fulltext / analysis / benchmark). */
 export interface ActiveProjectJob {
-  kind: "import" | "analysis" | "benchmark";
+  kind: "import" | "fulltext" | "analysis" | "benchmark";
   id: string;
   status: "PENDING" | "RUNNING";
-  /** import: the query — analysis / benchmark: the search name (or null). */
+  /** import / fulltext: the query — analysis / benchmark: the search name (or null). */
   detail: string | null;
-  /** benchmark progress (or null). */
+  /** import / fulltext / analysis / benchmark progress (or null). */
   progress: { done: number; total: number; model?: string; variant?: string } | null;
   /** benchmark: the models tested; analysis: [model_used]. */
   models: string[] | null;

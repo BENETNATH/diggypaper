@@ -23,4 +23,15 @@ describe("i18n key parity (4 locales)", () => {
       expect({ [loc]: { missing, extra } }).toEqual({ [loc]: { missing: [], extra: [] } });
     }
   });
+
+  // spec 2026-11-09-clarte-1: copy pins — removed keys gone everywhere, added keys present everywhere
+  it("spec clarte-1: searchLabel/allSearches/activeTag absent, kpiScopeLine present, in the 4 locales", () => {
+    const all = [fr, en, de, es];
+    for (const m of all) {
+      for (const gone of ["searchLabel", "allSearches", "activeTag"]) {
+        expect((m.project as Record<string, unknown>)[gone]).toBeUndefined();
+      }
+      expect((m.project as Record<string, unknown>).kpiScopeLine).toBeTruthy();
+    }
+  });
 });

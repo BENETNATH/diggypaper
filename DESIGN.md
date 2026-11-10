@@ -34,6 +34,33 @@ claim is a false positive; do not "fix" it based on unverified ratios. Never int
 color classes (`text-emerald-500`, `bg-white`, …): they bypass the tokens and break the
 dark theme.
 
+## États & couleurs (spec 2026-11-09-clarte-1, M2 validée)
+
+One state = one color, one usage per state. The single source of the state
+colors is `statusColor` (`ui/Card.tsx`) — pills, circles, badges and KPIs
+consume it; no raw hex, no ad-hoc mapping.
+
+| État | Couleur | Usage unique (surfaces couvertes) |
+|---|---|---|
+| non commencé | neutre (`bg-surface-muted` / `text-muted`) | cercle nœud, point de pastille, badge « À lancer » |
+| en cours | bleu pulse | jobs PENDING/RUNNING (badge `statusColor` existant, point pulse), bannières |
+| terminé / analysée | vert | cercle de chaîne `predicted > 0`, point de pastille « done », KPI |
+| validé (auto) | vert + ✓ | décisions articles (`LotBar`, lignes ✓/?/✗) — distingué de « terminée » par le ✓, jamais par une autre teinte |
+| à relire / incertain | jaune | NEEDS_HUMAN_REVIEW, DRAFT · KPI « À relire » > 0 (bordure primaire) |
+| écarté / échec | rouge | AUTO_REJECTED, ERROR, FAILED |
+| **sélection active** | **anneau/bordure primaire + texte (pas de couleur de fond d'état)** | pastille active, carte active, cercle actif, onglet courant — la sélection est un pointeur, pas un état du cycle de vie |
+
+Concrete consequences (do not reintroduce the reverse):
+
+- The active analysis card / pill / circle is pointed by `border-primary` /
+  `ring-2 ring-primary` + primary text only — **no** green « active » badge
+  (the key `project.activeTag` was removed).
+- The chain circle is neutral for untouched analyses, `bg-success` only when
+  `predicted > 0`, and `bg-surface ring-2 ring-primary` + `text-primary` when
+  the analysis is the selection.
+- KPI « À relire » gets its primary border (the only actionable KPI) only when
+  the value is > 0 — a 0 does not alert.
+
 ## House components
 
 - **`Card`** (`ui/Card.tsx`) — `rounded-xl border bg-surface p-4`, optional `<h2>` title.

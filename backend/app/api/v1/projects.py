@@ -1011,14 +1011,16 @@ async def active_project_jobs(project_id: uuid.UUID, db: DbDep, user: UserDep) -
         .all()
     )
     for j in imports:
+        r = j.result_json or {}
         jobs.append(
             {
-                "kind": "import",
+                # fulltext is an ImportJob: label it separately (spec clarte-1 R4)
+                "kind": "fulltext" if j.kind == "fulltext" else "import",
                 "id": str(j.id),
                 "status": j.status,
                 "detail": j.query,
                 "search_id": None,
-                "progress": None,
+                "progress": {"done": r.get("done", 0), "total": r.get("total", 0)},
                 "models": None,
                 "started_at": j.created_at.isoformat() if j.created_at else None,
             }
@@ -1036,6 +1038,7 @@ async def active_project_jobs(project_id: uuid.UUID, db: DbDep, user: UserDep) -
         .all()
     )
     for j in analyses:
+        r = j.result_json or {}
         jobs.append(
             {
                 "kind": "analysis",
@@ -1043,7 +1046,7 @@ async def active_project_jobs(project_id: uuid.UUID, db: DbDep, user: UserDep) -
                 "status": j.status,
                 "detail": search_names.get(j.search_id) if j.search_id else None,
                 "search_id": str(j.search_id) if j.search_id else None,
-                "progress": None,
+                "progress": {"done": r.get("done", 0), "total": r.get("total", 0)},
                 "models": [j.model_used] if j.model_used else None,
                 "started_at": j.created_at.isoformat() if j.created_at else None,
             }

@@ -5,9 +5,11 @@ import { useTranslations } from "next-intl";
 import type { SearchInfo } from "@/lib/api";
 
 /**
- * Barre de pastilles : les analyses standards (la chaîne), dans l'ordre A, B, C…
- * Le point coloré dit si l'analyse a des résultats (vert) ou non (gris) ;
- * la pastille bleue est l'analyse active ; cliquer recentre l'application sur
+ * Barre de pastilles : toutes les analyses du projet — standards d'abord (ordre
+ * de la chaîne A, B, C…), puis hors chaîne avec badge de type. C'est l'unique
+ * sélecteur d'analyse (spec clarte-1 R1) : le point coloré dit si l'analyse a
+ * des résultats (vert) ou non (neutre) ; la pastille active (bordure primaire,
+ * `aria-pressed`) est le seul pointeur ; cliquer recentre l'application sur
  * elle. « + Nouvelle » (pointillés) crée une analyse (spec v4).
  */
 export function SearchPills({
@@ -18,7 +20,7 @@ export function SearchPills({
   label,
   newHref,
 }: {
-  /** Les analyses standards, dans l'ordre de la chaîne. */
+  /** Toutes les analyses, standards d'abord (ordre de la chaîne), puis hors chaîne. */
   searches: SearchInfo[];
   activeId?: string;
   onPick: (searchId: string) => void;
@@ -58,6 +60,9 @@ export function SearchPills({
               aria-hidden
             />
             {letter} · {s.name}
+            {s.kind !== "standard" && (
+              <span className="text-xs font-normal text-muted">{t(`kind_${s.kind}`)}</span>
+            )}
           </button>
         );
       })}

@@ -16,9 +16,15 @@ jest.mock("next-intl", () => {
     useTranslations: (ns: string) => (key: string, params?: Record<string, unknown>) => {
       const t = (fr[ns] ?? {})[key];
       if (t == null) return key;
-      return String(t).replace(/\{(\w+)\}/g, (m: string, k: string) =>
-        String((params ?? {})[k] ?? m)
+      // minimal ICU: {n, plural, one {…} other {…}} picks one/other, # → n
+      const s = String(t).replace(
+        /\{(\w+), plural, one \{([^}]*)\} other \{([^}]*)\}\}/g,
+        (_m: string, name: string, one: string, other: string) => {
+          const n = Number((params ?? {})[name] ?? 0);
+          return (n === 1 ? one : other).replace(/#/g, String(n));
+        }
       );
+      return s.replace(/\{(\w+)\}/g, (m: string, k: string) => String((params ?? {})[k] ?? m));
     },
   };
 });
@@ -158,21 +164,99 @@ describe("project dashboard — to-launch + KPI scope", () => {
     expect(await screen.findByRole("heading", { name: /d'analyses 1/ })).toBeInTheDocument();
   });
 
-  it("untouched card: badge « À lancer » + single CTA « Lancer → », no Résultats/Relire/Relancer", async () => {
+  it("spec clarte-1 R2: untouched node = 1 badge + 1 action « Lancer » (no arrow), no 0 %, lot line instead", async () => {
     mountWithSearches([untouched]);
     await screen.findByRole("heading", { name: /d'analyses 1/ });
+    // the single badge (neutral, not « Initiale ») and the single action
     expect(screen.getByText("À lancer")).toBeInTheDocument();
-    const cta = screen.getByRole("button", { name: "Lancer →" });
+    expect(screen.queryByText("Initiale")).not.toBeInTheDocument();
+    const cta = screen.getByRole("button", { name: "Lancer" });
     expect(cta.closest("a")).toHaveAttribute("href", "/projects/p1/inference?search=s2&new=1");
+    expect(cta.textContent).not.toContain("→");
+    // the 0 % lines are masked until the first run: the lot line instead
+    expect(screen.queryByText("0 %")).not.toBeInTheDocument();
+    expect(screen.getByText("Pas encore analysée — 5 articles dans le lot.")).toBeInTheDocument();
+    expect(screen.queryByText("Aucune question posée")).not.toBeInTheDocument();
     expect(screen.queryByText("Résultats")).not.toBeInTheDocument();
     expect(screen.queryByText("Relancer")).not.toBeInTheDocument();
     expect(screen.queryByText("Analyser")).not.toBeInTheDocument();
   });
 
-  it("KPI tooltip kpiScopeAll on the 3 aggregated KPIs", async () => {
+  it("spec clarte-1 R2: launched node shows the percentages again", async () => {
+    const launched: api.SearchInfo = { ...untouched, is_default: false, predicted: 5, last_job: { status: "COMPLETED", model: "K" } };
+    mountWithSearches([launched]);
+    await screen.findByRole("heading", { name: /d'analyses 1/ });
+    // card percentages back (5/5 analysed, 0/5 reviewed)
+    expect(screen.getByText("analysés (5/5 du lot)")).toBeInTheDocument();
+    expect(screen.getByText("relus (0/5 du lot)")).toBeInTheDocument();
+    expect(screen.queryByText("Pas encore analysée")).not.toBeInTheDocument();
+  });
+
+  it("spec clarte-1 R5: permanent scope micro-line (no tooltip), « — » before the first run, « À relire » not highlighted at 0", async () => {
     mountWithSearches([untouched]);
     await screen.findByRole("heading", { name: /d'analyses 1/ });
-    expect(screen.getAllByTitle("sur toutes les analyses du projet")).toHaveLength(3);
+    // the scope is a visible line, not a tooltip-only info
+    expect(screen.getByText("Analysés, Relus et À relire sont calculés sur toutes les analyses du projet · Articles et Texte intégral sur le corpus.")).toBeInTheDocument();
+    expect(screen.queryAllByTitle("sur toutes les analyses du projet")).toHaveLength(0);
+    // before any run: « — » instead of « 0 % » for Analysés / Relus
+    expect(screen.queryByText("0 %")).not.toBeInTheDocument();
+    expect(screen.getAllByText("—")).toHaveLength(2);
+    // « À relire » = 0: no primary highlight, sub « rien à relire »
+    const toReview = screen.getByText("À relire").parentElement;
+    expect(toReview).not.toHaveClass("border-primary");
+    expect(screen.getByText("rien à relire")).toBeInTheDocument();
+  });
+
+  it("spec clarte-1 R5: « À relire » highlighted (primary border) only when > 0, with its sub", async () => {
+    mountWithSearches([{ ...untouched, to_review: 4 }]);
+    await screen.findByRole("heading", { name: /d'analyses 1/ });
+    const toReview = screen.getByText("À relire").parentElement;
+    expect(toReview).toHaveClass("border-primary");
+    expect(toReview).toHaveTextContent("4 articles");
+    // every KPI with its sub (Articles / Texte intégral = « 5 articles » here)
+    expect(screen.getAllByText("5 articles").length).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByText("rien à relire")).not.toBeInTheDocument();
+  });
+
+  it("spec clarte-1 R3: active card = primary border only (no green « active » badge); active circle = ring primary + primary letter", async () => {
+    const a: api.SearchInfo = { ...untouched, is_default: true, predicted: 10, lot_size: 10, last_job: { status: "COMPLETED", model: "K" } };
+    sessionStorage.setItem("diggy:search:p1", a.id);
+    try {
+      mountWithSearches([a]);
+      await screen.findByRole("heading", { name: /d'analyses 1/ });
+      // the green badge « active » is gone: the border-2 border-primary card is the pointer
+      expect(screen.queryByText(/activeTag/)).not.toBeInTheDocument();
+      const circle = screen.getByText("A", { selector: "span" });
+      expect(circle).toHaveClass("ring-primary");
+      expect(circle).toHaveClass("text-primary");
+      expect(circle).not.toHaveClass("bg-success");
+    } finally {
+      sessionStorage.removeItem("diggy:search:p1");
+    }
+  });
+
+  it("spec clarte-1 R3: chain circle is green only with results — neutral for a never-run analysis (consistent with the pill dot)", async () => {
+    // b: never run (0 predicted, 0 reviewed, non-default) → neutral, NOT green
+    const b: api.SearchInfo = { ...untouched, id: "b", name: "B", is_default: false };
+    // c: run (predicted > 0) → green
+    const c: api.SearchInfo = {
+      ...untouched,
+      id: "c",
+      name: "C",
+      is_default: false,
+      predicted: 3,
+      last_job: { status: "COMPLETED", model: "K" },
+      breakdown: { AUTO_ACCEPTED: 3 },
+    };
+    mountWithSearches([b, c]);
+    await screen.findByRole("heading", { name: /d'analyses 2/ });
+    // circle letters are positional: A = b (never run), B = c (run)
+    const circleA = screen.getByText("A", { selector: "span" });
+    expect(circleA).not.toHaveClass("bg-success");
+    expect(circleA).toHaveClass("bg-muted");
+    const circleB = screen.getByText("B", { selector: "span" });
+    expect(circleB).toHaveClass("bg-success");
+    expect(circleB).not.toHaveClass("bg-muted");
   });
 });
 
@@ -233,7 +317,10 @@ describe("project dashboard — spec v4 R6: chaîne + outillage optionnel", () =
     expect(screen.getByText("Outillage optionnel · hors chaîne")).toBeInTheDocument();
     const [goldLink, benchLink] = screen.getAllByRole("link", { name: "Ouvrir" });
     expect(goldLink).toHaveAttribute("href", "/projects/p1/gold");
-    expect(screen.getByText("Gold")).toBeInTheDocument();
+    // « Gold » now appears twice (KPI label + tooling card): target the card
+    expect(
+      screen.getAllByText("Gold").some((el) => el.className.includes("text-violet-800"))
+    ).toBe(true);
     expect(screen.getByText("0 références")).toBeInTheDocument();
     expect(benchLink).toHaveAttribute("href", "/projects/p1/benchmarks");
     expect(screen.getByText("Benchmarks")).toBeInTheDocument();
@@ -327,7 +414,10 @@ describe("copy pins (FR values)", () => {
     for (const m of Object.values(all)) expect(m.common.versionNotRecordedHelp).toBeTruthy();
   });
 
-  it("project.searchLabel = « Analyse : »", () => {
-    expect(all.fr.project.searchLabel).toBe("Analyse :");
+  it("spec clarte-1: kpiGold rewritten to « Gold » in the 4 locales, kpiScopeLine present in the 4", () => {
+    for (const m of Object.values(all)) {
+      expect(m.project.kpiGold).toBe("Gold");
+      expect(m.project.kpiScopeLine).toBeTruthy();
+    }
   });
 });

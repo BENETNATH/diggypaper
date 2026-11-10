@@ -70,4 +70,48 @@ describe("ActiveJobsBanner (§1)", () => {
     expect(screen.getByText("3/10")).toBeInTheDocument();
     expect(screen.getByText("m1, m2")).toBeInTheDocument();
   });
+
+  it("spec clarte-1 R4: fulltext job labelled kind_fulltext, mini progress bar per row, « Ouvrir » to the import page", async () => {
+    getActiveProjectJobs.mockResolvedValue({
+      jobs: [
+        {
+          kind: "fulltext",
+          id: "j4",
+          status: "RUNNING",
+          detail: null,
+          progress: { done: 212, total: 334 },
+          models: null,
+          search_id: null,
+          started_at: null,
+        },
+        {
+          kind: "analysis",
+          id: "j5",
+          status: "RUNNING",
+          detail: null,
+          progress: { done: 6, total: 33 },
+          models: null,
+          search_id: "s1",
+          started_at: null,
+        },
+      ],
+    });
+    render(<ActiveJobsBanner projectId="p1" />);
+
+    expect(await screen.findByTestId("active-jobs")).toBeInTheDocument();
+    // « Texte intégral » (jobs.kind_fulltext), not the wrong « import » label
+    expect(screen.getByText("kind_fulltext")).toBeInTheDocument();
+    const bars = screen.getAllByRole("progressbar");
+    expect(bars).toHaveLength(2);
+    expect(bars[0]).toHaveAttribute("aria-valuenow", "212");
+    expect(bars[0]).toHaveAttribute("aria-valuemax", "334");
+    expect(bars[1]).toHaveAttribute("aria-valuenow", "6");
+    expect(screen.getByText("212/334")).toBeInTheDocument();
+    expect(screen.getByText("6/33")).toBeInTheDocument();
+    const opens = screen.getAllByRole("link", { name: "open" });
+    expect(opens.map((a) => a.getAttribute("href"))).toEqual([
+      "/projects/p1/import",
+      "/projects/p1/inference?search=s1",
+    ]);
+  });
 });

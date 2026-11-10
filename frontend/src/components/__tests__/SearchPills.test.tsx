@@ -75,6 +75,27 @@ describe("SearchPills", () => {
     expect(dotGrey).toHaveClass("bg-muted");
   });
 
+  it("spec clarte-1 R1: all analyses in the row — standards first, off-chain with their kind badge", () => {
+    render(
+      <SearchPills
+        searches={[mk("a", "A"), mk("b", "Blind", "blind"), mk("c", "Tuning", "tuning")]}
+        activeId="a"
+        onPick={jest.fn()}
+        ariaLabel="Analyse active"
+      />
+    );
+    const blind = screen.getByRole("button", { name: /Blind/ });
+    const tuning = screen.getByRole("button", { name: /Tuning/ });
+    expect(blind).toHaveAttribute("aria-pressed", "false");
+    expect(blind).toHaveTextContent("kind_blind");
+    expect(tuning).toHaveTextContent("kind_tuning");
+    // standards first, then off-chain
+    const texts = screen.getAllByRole("button").map((b) => b.textContent);
+    expect(texts[0]).toContain("A");
+    expect(texts[1]).toContain("Blind");
+    expect(texts[2]).toContain("Tuning");
+  });
+
   it("renders nothing when there is no standard analysis", () => {
     const { container } = render(
       <SearchPills searches={[]} activeId={undefined} onPick={jest.fn()} ariaLabel="Analyse active" />

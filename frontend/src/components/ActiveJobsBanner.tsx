@@ -44,15 +44,30 @@ function ActiveJobsList({ jobs, projectId }: { jobs: ActiveProjectJob[]; project
         {jobs.map((j) => (
           <li key={j.id} className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm text-foreground">
             <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-primary" aria-hidden />
-            <span className="font-medium">{t(j.kind)}</span>
+            <span className="font-medium">{j.kind === "fulltext" ? tj("kind_fulltext") : t(j.kind)}</span>
             {j.detail && (
               <code className="max-w-full truncate text-xs text-muted" title={j.detail}>
                 {j.detail}
               </code>
             )}
+            {/* spec clarte-1 R4: mini progress bar done/total per row */}
             {j.progress && j.progress.total > 0 && (
-              <span className="text-xs tabular-nums text-muted">
-                {j.progress.done}/{j.progress.total}
+              <span className="flex items-center gap-1.5">
+                <span
+                  role="progressbar"
+                  aria-valuenow={j.progress.done}
+                  aria-valuemin={0}
+                  aria-valuemax={j.progress.total}
+                  className="h-1.5 w-16 overflow-hidden rounded-full bg-surface-muted"
+                >
+                  <span
+                    className="block h-full rounded-full bg-primary"
+                    style={{ width: `${Math.min(100, (j.progress.done / j.progress.total) * 100)}%` }}
+                  />
+                </span>
+                <span className="text-xs tabular-nums text-muted">
+                  {j.progress.done}/{j.progress.total}
+                </span>
               </span>
             )}
             {j.models && j.models.length > 0 && (
@@ -62,6 +77,14 @@ function ActiveJobsList({ jobs, projectId }: { jobs: ActiveProjectJob[]; project
               · {tj(`status_${j.status}`)}
               {j.started_at && <> · {new Date(j.started_at).toLocaleString(locale)}</>}
             </span>
+            {(j.kind === "import" || j.kind === "fulltext") && (
+              <Link
+                href={`/projects/${projectId}/import`}
+                className="text-xs text-primary hover:underline"
+              >
+                {t("open")}
+              </Link>
+            )}
             {j.kind === "analysis" && (
               <Link
                 href={`/projects/${projectId}/inference${j.search_id ? `?search=${j.search_id}` : ""}`}

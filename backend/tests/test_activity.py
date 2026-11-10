@@ -133,6 +133,91 @@ async def test_project_active_jobs_member(client, session, researcher_user, do_l
     assert all(j["status"] in ("PENDING", "RUNNING") for j in data["jobs"])
 
 
+async def test_active_jobs_fulltext_kind_and_progress(client, session, researcher_user, do_login):
+    """spec clarte-1 R4 (a): a running fulltext import returns kind 'fulltext' (not the
+    wrong 'import' label) + progress from result_json; plain imports get progress too."""
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project_id = await _member_project(client, session, researcher_user)
+    project = await session.get(Project, uuid.UUID(project_id))
+    ft = ImportJob(
+        project_id=project.id,
+        kind="fulltext",
+        query="fulltext",
+        status=ImportJobStatus.RUNNING,
+        result_json={"done": 4, "total": 10},
+        created_by=researcher_user.id,
+    )
+    imp = ImportJob(
+        project_id=project.id,
+        query="rat AND diabetes",
+        status=ImportJobStatus.PENDING,
+        result_json={"done": 2, "total": 7},
+        created_by=researcher_user.id,
+    )
+    session.add_all([ft, imp])
+    await session.commit()
+
+    resp = await client.get(f"/api/v1/projects/{project_id}/jobs/active")
+    assert resp.status_code == 200
+    by_kind = {j["kind"]: j for j in resp.json()["jobs"]}
+    assert by_kind["fulltext"]["id"] == str(ft.id)
+    assert by_kind["fulltext"]["progress"] == {"done": 4, "total": 10}
+    assert by_kind["import"]["progress"] == {"done": 2, "total": 7}
+
+
+async def test_active_jobs_analysis_progress_benchmark_unchanged(
+    client, session, researcher_user, do_login
+):
+    """spec clarte-1 R4 (b)+(c): a RUNNING analysis returns progress from its result_json;
+    benchmarks stay unchanged (progress + models)."""
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project_id = await _member_project(client, session, researcher_user)
+    ids = await _seed_jobs(session, project_id, researcher_user)
+    analysis = await session.get(InferenceJob, ids["analysis"])
+    assert analysis is not None
+    analysis.result_json = {"done": 6, "total": 33}
+    await session.commit()
+
+    resp = await client.get(f"/api/v1/projects/{project_id}/jobs/active")
+    assert resp.status_code == 200
+    by_kind = {j["kind"]: j for j in resp.json()["jobs"]}
+    assert by_kind["analysis"]["progress"] == {"done": 6, "total": 33}
+    assert by_kind["benchmark"]["progress"] == {"done": 3, "total": 10}
+    assert by_kind["benchmark"]["models"] == ["qwen3:8b", "gemma3:4b"]
+
+
+async def test_active_jobs_without_result_zero_progress(client, session, researcher_user, do_login):
+    """spec clarte-1 R4 (d): an active job without result_json → progress {done: 0, total: 0}."""
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project_id = await _member_project(client, session, researcher_user)
+    project = await session.get(Project, uuid.UUID(project_id))
+    session.add(
+        ImportJob(
+            project_id=project.id,
+            query="q",
+            status=ImportJobStatus.RUNNING,
+            created_by=researcher_user.id,
+        )
+    )
+    await session.commit()
+
+    resp = await client.get(f"/api/v1/projects/{project_id}/jobs/active")
+    jobs = resp.json()["jobs"]
+    assert len(jobs) == 1
+    assert jobs[0]["kind"] == "import"
+    assert jobs[0]["progress"] == {"done": 0, "total": 0}
+
+
+async def test_active_jobs_none_active_empty(client, session, researcher_user, do_login):
+    """spec clarte-1 R4 (e): no active job → jobs [] (no crash)."""
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project_id = await _member_project(client, session, researcher_user)
+
+    resp = await client.get(f"/api/v1/projects/{project_id}/jobs/active")
+    assert resp.status_code == 200
+    assert resp.json() == {"jobs": []}
+
+
 async def test_project_active_jobs_non_member_403(client, session, researcher_user, do_login):
     """A non-member gets 403 (no job information leaks)."""
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
