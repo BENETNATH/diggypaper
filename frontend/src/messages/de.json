@@ -57,7 +57,8 @@
     "login": "Anmelden",
     "models": "Modelle",
     "profile": "Profil",
-    "users": "Benutzer"
+    "users": "Benutzer",
+    "admin": "Admin"
   },
   "landing": {
     "appName": "Diggypaper",
@@ -142,9 +143,13 @@
     "howStep3": "Ergebnisse prüfen: sichere Fälle werden automatisch übernommen oder verworfen, nur unsichere prüfen. Gold und Benchmark sind optional; eine Analyse kann so geplant werden, dass sie startet, wenn eine andere fertig ist.",
     "question": "Frage",
     "questionHint": "Frage an die Artikel und Antwortfelder festlegen.",
-    "needsCorpus": "Verfügbar, sobald der Korpus Artikel enthält.",
     "overview": "Übersicht",
-    "optionalTitle": "Optional: Modelle messen und vergleichen",
+    "measureLegend": "Messung & Beobachtung — optional",
+    "counterRefs": "{n} Referenzen",
+    "counterDraws": "{n} Läufe",
+    "counterActive": "{n} aktiv",
+    "importCta": "Importieren",
+    "noCorpus": "Ohne Artikel ist keine Analyse möglich",
     "importBanner": "Import läuft: {done} / {total} Artikel",
     "importBannerStart": "Import läuft: Vorbereitung…",
     "importBannerHint": "Sie können diese Seite verlassen: Der Import läuft im Hintergrund weiter.",

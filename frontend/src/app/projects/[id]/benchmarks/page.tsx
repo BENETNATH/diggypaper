@@ -1,9 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import {
+  getProject,
   listBenchmarks,
   listModels,
   cancelBenchmark,
@@ -12,10 +14,13 @@ import {
   retryBenchmarkErrors,
   BenchmarkRun,
   ModelInfo,
+  Project,
 } from "@/lib/api";
 import { currentSearch } from "@/lib/search";
 import { useSearchId, useSearches } from "@/lib/useSearch";
 import { useApiError } from "@/lib/errorMsg";
+import { useAuth } from "@/lib/auth";
+import { isProjectLead } from "@/lib/role";
 import { BenchmarkForm } from "@/components/BenchmarkForm";
 import { BenchmarkRunCard } from "@/components/BenchmarkRunCard";
 import { ComparisonPanel } from "@/components/ComparisonPanel";
@@ -26,13 +31,17 @@ import { Skeleton, ErrorBanner, EmptyState } from "@/components/ui/Feedback";
 
 function BenchmarksContent() {
   const t = useTranslations("benchmarks");
+  const tp = useTranslations("project");
   const toError = useApiError();
+  const { user } = useAuth();
   const projectId = useParams<{ id: string }>().id;
   const searchId = useSearchId(projectId);
   const { searches, current } = useSearches(projectId, searchId);
   const runParam = useSearchParams().get("run"); // deep-link from the analyses list
 
   const [runs, setRuns] = useState<BenchmarkRun[] | null>(null);
+  // spec clarte-2 R3: the corpus size gates the page-level empty state
+  const [project, setProject] = useState<Project | null>(null);
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -53,6 +62,7 @@ function BenchmarksContent() {
   useEffect(() => {
     load();
     listModels(projectId).then(setModels).catch(() => {});
+    getProject(projectId).then(setProject).catch(() => {});
   }, [load, projectId]);
 
   // Polling only while a run is active (no useless loop).
@@ -115,6 +125,21 @@ function BenchmarksContent() {
 
   if (error && !runs) return <ErrorBanner message={error} onRetry={() => void load()} />;
   if (!runs || !searches) return <Skeleton rows={3} />;
+  // spec clarte-2 R3: no corpus → no benchmark can run; the empty state replaces the tool
+  if (project?.article_count === 0) {
+    return (
+      <EmptyState
+        title={tp("noCorpus")}
+        action={
+          isProjectLead(project, user) ? (
+            <Link href={`/projects/${projectId}/import`}>
+              <Button size="sm">{tp("importCta")}</Button>
+            </Link>
+          ) : undefined
+        }
+      />
+    );
+  }
 
   // Concordance is posed to a standard search (its analyses); the current one
   // wins by default, then the first standard. A stored choice that no longer

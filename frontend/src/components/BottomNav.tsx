@@ -6,18 +6,20 @@ import { useAuth } from "@/lib/auth";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { useTranslations } from "next-intl";
 
-/** Bottom navigation bar (mobile). */
+/**
+ * Bottom navigation bar (mobile). spec clarte-2 R4: ≤ 4 items, no logout (the tap-through
+ * logout lived on the profile page); the « Connexion » link stays for anonymous visitors.
+ */
 export function BottomNav() {
   const t = useTranslations("nav");
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const pathname = usePathname();
 
   const items: { href: string; label: string; show: boolean }[] = [
     { href: "/projects", label: t("projects"), show: true },
-    { href: "/profile", label: t("profile"), show: true },
     { href: "/models", label: t("models"), show: !!user },
-    { href: "/admin/users", label: t("users"), show: user?.role === "ADMIN" },
-    { href: "/settings", label: t("settings"), show: user?.role === "ADMIN" },
+    { href: "/profile", label: t("profile"), show: true },
+    { href: "/admin/users", label: t("admin"), show: user?.role === "ADMIN" },
   ];
 
   return (
@@ -30,6 +32,7 @@ export function BottomNav() {
             <Link
               key={item.href}
               href={item.href}
+              aria-current={active ? "page" : undefined}
               className={`flex-1 whitespace-nowrap px-3 py-3 text-center text-sm ${
                 active ? "font-semibold text-primary" : "text-muted"
               }`}
@@ -41,11 +44,7 @@ export function BottomNav() {
       <div className="flex flex-1 shrink-0 items-center justify-center px-2">
         <LanguageSwitcher />
       </div>
-      {user ? (
-        <button onClick={logout} className="flex-1 whitespace-nowrap px-3 py-3 text-center text-sm text-muted">
-          {t("logout")}
-        </button>
-      ) : (
+      {!user && (
         <Link href="/login" className="flex-1 whitespace-nowrap px-3 py-3 text-center text-sm text-muted">
           {t("login")}
         </Link>

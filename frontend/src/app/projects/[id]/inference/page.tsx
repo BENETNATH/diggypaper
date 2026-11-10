@@ -164,10 +164,13 @@ function AnalyseContent() {
   const tq = useTranslations("question");
   const tLead = useTranslations("searches");
   const tj = useTranslations("jobs");
+  const tp = useTranslations("project");
   const errText = useApiError();
   const locale = useLocale();
   const { user } = useAuth();
   const [isLead, setIsLead] = useState(false);
+  // spec clarte-2 R3: corpus size — the Import CTA in the empty state (0 = nothing to analyse)
+  const [articleCount, setArticleCount] = useState<number | null>(null);
   // Project triage thresholds (spec 2026-11-09 R1); no policy = defaults 0.85/0.15.
   const [triage, setTriage] = useState<TriagePolicyValue>({ accept: 0.85, reject: 0.15 });
   const projectId = useParams<{ id: string }>().id;
@@ -269,6 +272,7 @@ function AnalyseContent() {
         });
         setTriage({ accept: p.triage_policy?.accept ?? 0.85, reject: p.triage_policy?.reject ?? 0.15 });
         setIsLead(isProjectLead(p, user));
+        setArticleCount(p.article_count ?? null);
       })
       .catch(() => {});
   }, [load, projectId, searchId, user]);
@@ -558,6 +562,30 @@ function AnalyseContent() {
       ))}
     </div>
   );
+
+  // spec clarte-2 R3: no corpus → the analysis is impossible; the empty state (with the
+  // Import CTA for a lead) replaces the panel/lists, which would be useless without articles.
+  if (articleCount === 0) {
+    return (
+      <div className="flex flex-col gap-4">
+        <div>
+          <h1 className="text-xl font-bold text-foreground">{t("title")}</h1>
+          <p className="mt-1 text-sm text-muted">{t("intro")}</p>
+        </div>
+        <EmptyState
+          title={tLead("empty")}
+          hint={tLead("emptyHint")}
+          action={
+            isLead ? (
+              <Link href={`/projects/${projectId}/import`}>
+                <Button variant="secondary">{tp("importCta")}</Button>
+              </Link>
+            ) : undefined
+          }
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-4">

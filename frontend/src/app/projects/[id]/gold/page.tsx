@@ -38,6 +38,7 @@ function GoldContent() {
   const t = useTranslations("gold");
   const ts = useTranslations("searches");
   const ta = useTranslations("articles");
+  const tp = useTranslations("project");
   const locale = useLocale();
   const errText = useApiError();
   const router = useRouter();
@@ -50,6 +51,8 @@ function GoldContent() {
   const { user } = useAuth();
   const role = user?.role;
   const [lead, setLead] = useState(false);
+  // spec clarte-2 R3: the corpus size gates the page-level empty state
+  const [articleCount, setArticleCount] = useState<number | null>(null);
   const [fields, setFields] = useState<SchemaField[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -64,6 +67,7 @@ function GoldContent() {
         setFields(p.fields ?? []);
         setLead(isProjectLead(p, { role }));
         setGold(g);
+        setArticleCount(p.article_count ?? null);
         setError(null);
       });
     return read(searchId)
@@ -138,6 +142,21 @@ function GoldContent() {
 
   if (error && !gold) return <ErrorBanner message={error} onRetry={() => void load()} />;
   if (!gold) return <Skeleton rows={3} />;
+  // spec clarte-2 R3: no corpus → no gold can be built; the empty state replaces the tool
+  if (articleCount === 0) {
+    return (
+      <EmptyState
+        title={tp("noCorpus")}
+        action={
+          lead ? (
+            <Link href={`/projects/${projectId}/import`}>
+              <Button size="sm">{tp("importCta")}</Button>
+            </Link>
+          ) : undefined
+        }
+      />
+    );
+  }
 
   const relevant = gold.filter((g) => Number(g.ground_truth_json.confidence_score ?? 0) >= RELEVANT_AT).length;
   const bySource = (pred: (g: GoldArticle) => boolean) => gold.filter(pred).length;

@@ -34,4 +34,18 @@ describe("i18n key parity (4 locales)", () => {
       expect((m.project as Record<string, unknown>).kpiScopeLine).toBeTruthy();
     }
   });
+
+  // spec 2026-11-09-clarte-2: copy pins — the optional tooltip is gone, the group legend +
+  // counters + empty-corpus CTA exist in every locale
+  it("spec clarte-2: optionalTitle absent, measureLegend/counter/importCta/noCorpus/nav.admin present, in the 4 locales", () => {
+    const all = [fr, en, de, es];
+    for (const m of all) {
+      const p = m.project as Record<string, unknown>;
+      expect(p.optionalTitle).toBeUndefined();
+      for (const k of ["measureLegend", "counterRefs", "counterDraws", "counterActive", "importCta", "noCorpus"]) {
+        expect(p[k]).toBeTruthy();
+      }
+      expect((m.nav as Record<string, unknown>).admin).toBeTruthy();
+    }
+  });
 });

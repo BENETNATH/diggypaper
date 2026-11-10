@@ -57,7 +57,8 @@
     "login": "Connexion",
     "models": "Modèles",
     "profile": "Profil",
-    "users": "Utilisateurs"
+    "users": "Utilisateurs",
+    "admin": "Admin"
   },
   "landing": {
     "appName": "Diggypaper",
@@ -142,9 +143,13 @@
     "howStep3": "Consultez les résultats : les cas sûrs sont validés ou écartés automatiquement, relisez seulement les incertains. Gold et benchmark sont facultatifs ; une analyse peut être programmée pour démarrer quand une autre a fini.",
     "question": "Question",
     "questionHint": "Définir la question posée aux articles et les champs de réponse.",
-    "needsCorpus": "Disponible dès que le corpus contient des articles.",
     "overview": "Vue d'ensemble",
-    "optionalTitle": "Optionnel : mesurer et comparer les modèles",
+    "measureLegend": "Mesure & veille — optionnel",
+    "counterRefs": "{n} réf.",
+    "counterDraws": "{n} tirages",
+    "counterActive": "{n} active",
+    "importCta": "Importer",
+    "noCorpus": "Aucune analyse possible sans articles",
     "importBanner": "Import en cours : {done} / {total} articles",
     "importBannerStart": "Import en cours : préparation…",
     "importBannerHint": "Vous pouvez quitter cette page : l'import continue en arrière-plan.",

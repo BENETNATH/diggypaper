@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
+import * as api from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import BenchmarksPage from "@/app/projects/[id]/benchmarks/page";
 
@@ -25,6 +26,7 @@ jest.mock("@/lib/api", () => ({
   ...jest.requireActual("@/lib/api"),
   listBenchmarks: jest.fn().mockResolvedValue([]),
   listModels: jest.fn().mockResolvedValue([]),
+  getProject: jest.fn().mockResolvedValue({ article_count: 10, role_in_project: "LEAD" }),
   cancelBenchmark: jest.fn(),
   deleteBenchmark: jest.fn(),
   rerunBenchmark: jest.fn(),
@@ -47,6 +49,12 @@ jest.mock("@/components/AgreementPanel", () => ({
 }));
 
 const mockUseAuth = useAuth as unknown as jest.Mock;
+
+beforeEach(() => {
+  (api.getProject as jest.Mock)
+    .mockReset()
+    .mockResolvedValue({ article_count: 10, role_in_project: "LEAD" });
+});
 
 const DEFAULT_SEARCHES = {
   searches: [
@@ -89,6 +97,14 @@ test("switching the concordance search changes the scope", async () => {
   // Both panels stay rendered (remounted for the new search).
   expect(screen.getByTestId("bm-comparison")).toBeInTheDocument();
   expect(screen.getByTestId("bm-agreement")).toBeInTheDocument();
+});
+
+// spec 2026-11-09-clarte-2 — R3: no corpus → the page-level empty state
+test("no corpus → the « no analysis without articles » empty state with an Import CTA for a lead", async () => {
+  (api.getProject as jest.Mock).mockResolvedValue({ article_count: 0, role_in_project: "LEAD" });
+  renderPage();
+  expect(await screen.findByText("noCorpus")).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "importCta" })).toHaveAttribute("href", "/projects/p1/import");
 });
 
 test("a deleted concordance search falls back to a live option", async () => {

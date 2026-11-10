@@ -4,8 +4,8 @@ import { ReactNode, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, usePathname, useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { cancelInference, deleteProject, getProject, getInference, listJobs, ImportJob, InferenceJob, Project } from "@/lib/api";
-import { Menu, MenuItem } from "@/components/ui/Menu";
+import { cancelInference, deleteProject, getOverview, getProject, getInference, listJobs, listWatches, ImportJob, InferenceJob, Project, ProjectOverview } from "@/lib/api";
+import { Menu, MenuItem, MenuSeparator } from "@/components/ui/Menu";
 import { ProgressBar } from "@/components/ui/Feedback";
 import { JobProgress } from "@/components/JobProgress";
 import { SearchPills } from "@/components/SearchPills";
@@ -16,16 +16,69 @@ import { useAuth } from "@/lib/auth";
 import { storeSearchId, useSearchId, useSearches } from "@/lib/useSearch";
 import { useHasMounted } from "@/lib/useHasMounted";
 
-const STEPS = [
-  { key: "overview", href: "", needsCorpus: false, leadOnly: false, optional: false },
-  { key: "import", href: "/import", needsCorpus: false, leadOnly: true, optional: false },
-  { key: "inference", href: "/inference", needsCorpus: true, leadOnly: false, optional: false },
-  { key: "articles", href: "/articles", needsCorpus: true, leadOnly: false, optional: false },
-  { key: "team", href: "/team", needsCorpus: false, leadOnly: false, optional: false },
-  { key: "gold", href: "/gold", needsCorpus: true, leadOnly: false, optional: true },
-  { key: "benchmarks", href: "/benchmarks", needsCorpus: true, leadOnly: true, optional: true },
-  { key: "watches", href: "/watches", needsCorpus: false, leadOnly: true, optional: true },
-] as const;
+// spec clarte-2 R1: two explicit groups. `core` = the ordered 4-step path (numbered 1-4,
+// decorative aria-hidden); `measure` = the optional « Mesure & veille » group (counters,
+// visible legend instead of the old italic + tooltip). `needsCorpus` is kept only as
+// information for the pages' EmptyState rendering — never to grey out a tab (R3).
+type Step = { key: string; href: string; needsCorpus: boolean; leadOnly: boolean };
+const STEPS: { core: Step[]; measure: Step[] } = {
+  core: [
+    { key: "overview", href: "", needsCorpus: false, leadOnly: false },
+    { key: "import", href: "/import", needsCorpus: false, leadOnly: true },
+    { key: "inference", href: "/inference", needsCorpus: true, leadOnly: false },
+    { key: "articles", href: "/articles", needsCorpus: true, leadOnly: false },
+  ],
+  measure: [
+    { key: "gold", href: "/gold", needsCorpus: true, leadOnly: false },
+    { key: "benchmarks", href: "/benchmarks", needsCorpus: true, leadOnly: true },
+    { key: "watches", href: "/watches", needsCorpus: false, leadOnly: true },
+  ],
+};
+
+/** One step tab: a decorative number (core group only) + label, or a counter badge (measure group). */
+function StepTab({
+  step,
+  num,
+  count,
+  countKey,
+  href,
+  active,
+}: {
+  step: Step;
+  num?: number;
+  count?: number;
+  countKey?: string;
+  href: string;
+  active: boolean;
+}) {
+  const t = useTranslations("project");
+  return (
+    <Link
+      href={href}
+      className={`flex items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2 text-sm ${
+        active ? "border-primary font-semibold text-primary" : "border-transparent text-muted hover:text-foreground"
+      }`}
+      aria-current={active ? "page" : undefined}
+    >
+      {num !== undefined && (
+        <span
+          aria-hidden
+          className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border text-[10px] font-semibold ${
+            active ? "border-primary/40 text-primary" : "border-border text-muted"
+          }`}
+        >
+          {num}
+        </span>
+      )}
+      {t(step.key)}
+      {count !== undefined && count > 0 && countKey && (
+        <span className="rounded-full bg-surface-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
+          {t(countKey, { n: count })}
+        </span>
+      )}
+    </Link>
+  );
+}
 
 /** Persistent project navigation: breadcrumb + step tabs. */
 export default function ProjectLayout({ children }: { children: ReactNode }) {
@@ -168,9 +221,54 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
   // Pill order: standards first (chain order), then off-chain (spec clarte-1 R1).
   const standard = (searches ?? []).filter((s) => s.kind === "standard");
   const pillOrder = orderChain(standard).concat((searches ?? []).filter((s) => s.kind !== "standard"));
-  const hasCorpus = (project?.article_count ?? 0) > 0;
   const isLead = isProjectLead(project, user);
   const isAnnotate = pathname.startsWith(`${base}/annotate`);
+
+  // spec clarte-2 R1: measure-group counters — gold refs + benchmark draws from the overview,
+  // active watches (lead only). Mount + each diggy:project event; no dedicated polling.
+  const [overview, setOverview] = useState<ProjectOverview | null>(null);
+  const [activeWatches, setActiveWatches] = useState(0);
+  useEffect(() => {
+    let stopped = false;
+    const load = () =>
+      void getOverview(id).then((o) => {
+        if (!stopped) setOverview(o);
+      }).catch(() => {});
+    load();
+    const onProject = (e: Event) => {
+      const p = (e as CustomEvent<Project>).detail;
+      if (p?.id === id) load();
+    };
+    window.addEventListener("diggy:project", onProject);
+    return () => {
+      stopped = true;
+      window.removeEventListener("diggy:project", onProject);
+    };
+  }, [id]);
+  useEffect(() => {
+    if (!isLead) return;
+    let stopped = false;
+    const load = () =>
+      void listWatches(id).then((w) => {
+        if (!stopped) setActiveWatches(w.filter((x) => x.status === "ACTIVE").length);
+      }).catch(() => {});
+    load();
+    const onProject = (e: Event) => {
+      const p = (e as CustomEvent<Project>).detail;
+      if (p?.id === id) load();
+    };
+    window.addEventListener("diggy:project", onProject);
+    return () => {
+      stopped = true;
+      window.removeEventListener("diggy:project", onProject);
+    };
+  }, [id, isLead]);
+  const measureCount: Record<string, number> = {
+    gold: overview?.gold ?? 0,
+    // same client-side calc as the overview page: analyses with a last benchmark
+    benchmarks: (overview?.searches ?? []).filter((s) => s.last_benchmark).length,
+    watches: activeWatches,
+  };
 
   return (
     <div className="flex flex-col gap-4">
@@ -221,11 +319,19 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
               }
             />
           )}
-          {project && isLead && (
+          {/* spec clarte-2 R2: the ⋯ menu is visible to every member — Équipe is
+              out of the step row and lives here; the destructive action stays lead-only */}
+          {project && (
             <Menu label="⋯" ariaLabel={t("menuActions")}>
-              <MenuItem onClick={() => void handleDelete()}>
-                <span className="text-danger">{t("deleteProject")}</span>
-              </MenuItem>
+              <MenuItem href={`${base}/team`}>{t("team")}</MenuItem>
+              {isLead && (
+                <>
+                  <MenuSeparator />
+                  <MenuItem onClick={() => void handleDelete()}>
+                    <span className="text-danger">{t("deleteProject")}</span>
+                  </MenuItem>
+                </>
+              )}
             </Menu>
           )}
         </div>
@@ -265,45 +371,41 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
         </div>
       )}
 
+      {/* spec clarte-2 R1/R3: 4 numbered core steps + separator + visible legend +
+          measure group; every tab is a navigable Link (no blocked render), aria-current kept */}
       <nav
         aria-label="steps"
         className="-mx-4 flex gap-1 overflow-x-auto border-b border-border px-4 md:mx-0 md:px-0"
       >
-        {STEPS.filter((s) => !s.leadOnly || isLead).map((s, i, arr) => {
-          const href = `${base}${s.href}`;
-          const linkHref = withSearch(href, searchId);
-          const active =
-            s.href === ""
-              ? pathname === base
-              : pathname.startsWith(href) || (s.key === "articles" && isAnnotate);
-          const label = (s.key as string) === "overview" ? t("overview") : t(s.key);
-          const blocked = s.needsCorpus && project !== null && !hasCorpus;
-          const cls = `whitespace-nowrap border-b-2 px-3 py-2 text-sm ${
-            s.optional ? "italic " : ""
-          }${
-            active
-              ? "border-primary font-semibold text-primary"
-              : "border-transparent text-muted hover:text-foreground"
-          }`;
-          const sep = s.optional && !arr[i - 1]?.optional;
-          const tab = blocked ? (
-            <span key={s.key} className={`${cls} cursor-not-allowed opacity-50`} title={t("needsCorpus")}>
-              {label}
-            </span>
-          ) : (
-            <Link key={s.key} href={linkHref} className={cls} aria-current={active ? "page" : undefined}>
-              {label}
-            </Link>
-          );
-          return sep ? (
-            <span key={s.key} className="flex items-center">
-              <span className="mx-2 h-5 w-px bg-border" aria-hidden title={t("optionalTitle")} />
-              {tab}
-            </span>
-          ) : (
-            tab
-          );
-        })}
+        {STEPS.core.filter((s) => !s.leadOnly || isLead).map((s, i) => (
+          <StepTab
+            key={s.key}
+            step={s}
+            num={i + 1}
+            href={withSearch(`${base}${s.href}`, searchId)}
+            active={
+              s.href === ""
+                ? pathname === base
+                : pathname.startsWith(`${base}${s.href}`) || (s.key === "articles" && isAnnotate)
+            }
+          />
+        ))}
+        <span className="flex shrink-0 items-center gap-2 whitespace-nowrap">
+          <span aria-hidden className="h-5 w-px bg-border" />
+          <span className="text-xs text-muted-foreground">{t("measureLegend")}</span>
+        </span>
+        {STEPS.measure.filter((s) => !s.leadOnly || isLead).map((s) => (
+          <StepTab
+            key={s.key}
+            step={s}
+            count={measureCount[s.key]}
+            countKey={
+              s.key === "gold" ? "counterRefs" : s.key === "benchmarks" ? "counterDraws" : "counterActive"
+            }
+            href={withSearch(`${base}${s.href}`, searchId)}
+            active={pathname.startsWith(`${base}${s.href}`)}
+          />
+        ))}
       </nav>
 
       {/* spec clarte-1 R1: the pill row is the single analysis selector (all analyses) */}

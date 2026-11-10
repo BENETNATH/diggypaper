@@ -204,3 +204,37 @@ describe("gold page — deleted current search (dead stored id)", () => {
     sessionStorage.removeItem("diggy:search:p1");
   });
 });
+
+// spec 2026-11-09-clarte-2 — R3: no corpus → the page-level empty state
+describe("gold page — spec clarte-2 R3: no corpus", () => {
+  function mountNoCorpus(role_in_project: "LEAD" | "ANNOTATOR") {
+    mockUseAuth.mockReturnValue({ user: { role: "RESEARCHER" }, loading: false });
+    listGold.mockResolvedValue([]);
+    getProject.mockResolvedValue({
+      role_in_project,
+      question_set: true,
+      question: "q?",
+      fields: [],
+      text_sections: ["methods"],
+      article_count: 0,
+    });
+    listSearches.mockResolvedValue([search]);
+    return render(
+      <Suspense fallback={null}>
+        <GoldPage />
+      </Suspense>
+    );
+  }
+
+  it("no articles → the « no analysis without articles » state with the « Importer » CTA for a lead", async () => {
+    mountNoCorpus("LEAD");
+    expect(await screen.findByText("Aucune analyse possible sans articles")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Importer" })).toHaveAttribute("href", "/projects/p1/import");
+  });
+
+  it("no articles → the same message without any CTA for a member", async () => {
+    mountNoCorpus("ANNOTATOR");
+    expect(await screen.findByText("Aucune analyse possible sans articles")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Importer" })).not.toBeInTheDocument();
+  });
+});

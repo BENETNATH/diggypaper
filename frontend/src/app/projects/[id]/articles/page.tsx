@@ -51,6 +51,7 @@ function loadSaved(projectId: string, searchId?: string): { filter?: Filter; sor
 function ResultsContent() {
   const t = useTranslations("articles");
   const tc = useTranslations("common");
+  const tp = useTranslations("project");
   const errText = useApiError(); // raw API error → i18n message
   const { user } = useAuth();
   const locale = useLocale();
@@ -76,6 +77,8 @@ function ResultsContent() {
   const [fulltext, setFulltext] = useState<boolean | undefined>(undefined); // full text (true) / abstract only (false)
   const [ready, setReady] = useState(false);
   const [isLead, setIsLead] = useState(false);
+  // spec clarte-2 R3: corpus size — the Import CTA in the empty state (0 = nothing to show)
+  const [articleCount, setArticleCount] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [deleteConfirm, setDeleteConfirm] = useState<{ ids: string[] } | null>(null);
@@ -111,6 +114,7 @@ function ResultsContent() {
         setFields(p.fields ?? []);
         setAccept(p.triage_policy?.accept ?? 0.85);
         setIsLead(isProjectLead(p, user));
+        setArticleCount(p.article_count ?? null);
       })
       .catch(() => setFields([]))
       .finally(() => setReady(true));
@@ -464,7 +468,12 @@ function ResultsContent() {
           title={t("empty")}
           hint={filtersActive ? t("emptyFiltered") : t("emptyHint")}
           action={
-            filtersActive ? (
+            // spec clarte-2 R3: empty corpus → the lead's useful action is to import
+            isLead && articleCount === 0 ? (
+              <Link href={`/projects/${projectId}/import`}>
+                <Button variant="secondary" size="sm">{tp("importCta")}</Button>
+              </Link>
+            ) : filtersActive ? (
               <Button variant="secondary" size="sm" onClick={resetAllFilters}>
                 {t("resetFilters")}
               </Button>

@@ -1,12 +1,13 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import ProjectLayout from "@/app/projects/[id]/layout";
 import * as api from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import type { SearchInfo } from "@/lib/api";
+import type { ProjectOverview, SearchInfo, Watch } from "@/lib/api";
 
-// i18n keys returned as-is: the tests do not depend on the message files.
+// i18n keys returned as-is (params echoed so counters can be asserted):
+// the tests do not depend on the message files.
 jest.mock("next-intl", () => {
-  const t = (key: string) => key;
+  const t = (key: string, params?: Record<string, unknown>) => (params ? `${key}(${JSON.stringify(params)})` : key);
   return { useLocale: () => "fr", useTranslations: () => t };
 });
 const mockState = { pathname: "/projects/p1" };
@@ -25,6 +26,8 @@ jest.mock("@/lib/api", () => ({
   listSearches: jest.fn(),
   cancelInference: jest.fn(),
   deleteProject: jest.fn(),
+  getOverview: jest.fn().mockResolvedValue({ articles: 0, fulltext: 0, analysed: 0, reviewed: 0, gold: 0, searches: [] }),
+  listWatches: jest.fn().mockResolvedValue([]),
 }));
 
 const mockUseAuth = useAuth as unknown as jest.Mock;
@@ -32,6 +35,8 @@ const getProject = api.getProject as jest.Mock;
 const getInference = api.getInference as jest.Mock;
 const listJobs = api.listJobs as jest.Mock;
 const listSearches = api.listSearches as jest.Mock;
+const getOverview = api.getOverview as jest.Mock;
+const listWatches = api.listWatches as jest.Mock;
 
 const mkSearch = (over: Partial<SearchInfo>): SearchInfo => ({
   id: "s1",
@@ -64,9 +69,9 @@ const project = {
   retention_delete_on: null,
 };
 
-function mount() {
+function mount(projectOverride?: Partial<api.Project>) {
   mockUseAuth.mockReturnValue({ user: { role: "RESEARCHER" }, loading: false });
-  getProject.mockResolvedValue(project);
+  getProject.mockResolvedValue({ ...project, ...projectOverride });
   getInference.mockResolvedValue({ id: "i1", status: "RUNNING", result: null, error: null });
   listJobs.mockResolvedValue([
     {
@@ -145,5 +150,99 @@ describe("project layout (spec clarte-1)", () => {
     expect(await screen.findByText("analysisBannerTitle")).toBeInTheDocument();
     // still no select
     expect(screen.queryByRole("combobox")).toBeNull();
+  });
+});
+
+// spec 2026-11-09-clarte-2 — R1 2 groupes + compteurs, R2 Équipe dans le ⋯, R3 plus de blocage
+describe("project layout (spec clarte-2)", () => {
+  const fullOverview = (over: Partial<ProjectOverview> = {}): ProjectOverview => ({
+    articles: 10,
+    fulltext: 10,
+    analysed: 5,
+    reviewed: 5,
+    gold: 2,
+    searches: [mkSearch({ last_benchmark: { id: "b1", status: "COMPLETED", created_at: null } })],
+    ...over,
+  });
+
+  it("R1: two groups with a visible legend, no italic, aria-current on the active tab, counters shown", async () => {
+    mockState.pathname = "/projects/p1";
+    getOverview.mockResolvedValue(fullOverview());
+    listWatches.mockResolvedValue([
+      { status: "ACTIVE" },
+      { status: "PAUSED" },
+    ] as unknown as Watch[]);
+    const { container } = mount();
+    // the lead-only Import tab appears once the project loads
+    await screen.findByRole("link", { name: /import/ });
+    const nav = container.querySelector('nav[aria-label="steps"]');
+    expect(nav).not.toBeNull();
+    // no italic anywhere (the « optionnel » is no longer carried by a font style)
+    expect(nav?.querySelector(".italic")).toBeNull();
+    // the group legend is visible text, not a tooltip
+    expect(nav?.textContent).toContain("measureLegend");
+    expect(nav?.querySelector("[title]")).toBeNull();
+    // lead: 4 core tabs + 3 measure tabs
+    expect(nav?.querySelectorAll("a")).toHaveLength(7);
+    // the active tab is current
+    expect(screen.getByRole("link", { name: /overview/ })).toHaveAttribute("aria-current", "page");
+    expect(screen.queryByRole("link", { name: /gold/ })).not.toHaveAttribute("aria-current");
+    // counters: 2 gold refs, 1 benchmark draw, 1 active watch (watches arrive after the lead flag settles)
+    await waitFor(() => expect(nav?.textContent).toContain('counterRefs({"n":2})'));
+    expect(nav?.textContent).toContain('counterDraws({"n":1})');
+    await waitFor(() => expect(nav?.textContent).toContain('counterActive({"n":1})'));
+  });
+
+  it("R1: the counters are masked at 0", async () => {
+    mockState.pathname = "/projects/p1";
+    getOverview.mockResolvedValue(fullOverview({ gold: 0, searches: [] }));
+    listWatches.mockResolvedValue([]);
+    const { container } = mount();
+    await screen.findByRole("link", { name: /import/ });
+    const nav = container.querySelector('nav[aria-label="steps"]');
+    expect(nav?.textContent).not.toContain("counterRefs");
+    expect(nav?.textContent).not.toContain("counterDraws");
+    expect(nav?.textContent).not.toContain("counterActive");
+  });
+
+  it("R2: team is out of the row and in the ⋯ menu for a member (no destructive action)", async () => {
+    mockState.pathname = "/projects/p1";
+    getOverview.mockResolvedValue(fullOverview());
+    listWatches.mockResolvedValue([]);
+    const { container } = mount({ role_in_project: "ANNOTATOR" });
+    await screen.findByRole("link", { name: /overview/ });
+    const nav = container.querySelector('nav[aria-label="steps"]');
+    // member: 3 core tabs (import hidden) + gold only in the measure group
+    expect(nav?.querySelectorAll("a")).toHaveLength(4);
+    expect(nav?.querySelector('a[href*="/team"]')).toBeNull();
+    // the ⋯ menu is visible to the member and carries Équipe, not the delete
+    fireEvent.click(await screen.findByRole("button", { name: "menuActions" }));
+    const team = await screen.findByRole("menuitem", { name: /team/ });
+    expect(team).toHaveAttribute("href", "/projects/p1/team");
+    expect(screen.queryByText("deleteProject")).not.toBeInTheDocument();
+  });
+
+  it("R2: the lead menu carries Équipe then the destructive action", async () => {
+    mockState.pathname = "/projects/p1";
+    getOverview.mockResolvedValue(fullOverview());
+    listWatches.mockResolvedValue([]);
+    mount();
+    fireEvent.click(await screen.findByRole("button", { name: "menuActions" }));
+    expect(await screen.findByRole("menuitem", { name: /team/ })).toBeInTheDocument();
+    expect(screen.getByText("deleteProject")).toBeInTheDocument();
+  });
+
+  it("R3: no blocked tab — every step is a navigable link on a corpus-less project", async () => {
+    mockState.pathname = "/projects/p1/inference";
+    getOverview.mockResolvedValue(fullOverview({ articles: 0, gold: 0, searches: [] }));
+    listWatches.mockResolvedValue([]);
+    const { container } = mount({ status: "FROZEN", article_count: 0, role_in_project: "ANNOTATOR" });
+    await screen.findByRole("link", { name: /overview/ });
+    const nav = container.querySelector('nav[aria-label="steps"]');
+    // member: overview + inference + articles + gold — all links, none greyed out
+    expect(nav?.querySelectorAll("a")).toHaveLength(4);
+    expect(nav?.querySelector(".opacity-50")).toBeNull();
+    expect(nav?.querySelector(".cursor-not-allowed")).toBeNull();
+    expect(screen.getByRole("link", { name: /inference/ })).toHaveAttribute("aria-current", "page");
   });
 });

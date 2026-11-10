@@ -123,6 +123,8 @@ function mount(overrides: {
   fields?: api.SchemaField[];
   /** count of the selection preview (default 4) */
   preview?: number;
+  /** corpus size of the mocked project (default 10) */
+  articleCount?: number;
   /** Overrides getInference (e.g. to 404 for a stale selection); default resolves. */
   inference?: (_p: string, s?: string, all?: boolean) => Promise<unknown>;
 }) {
@@ -134,6 +136,7 @@ function mount(overrides: {
     question: overrides.question ?? "q?",
     fields: overrides.fields ?? search.fields,
     text_sections: ["methods"],
+    article_count: overrides.articleCount ?? 10,
   });
   listModels.mockResolvedValue([model]);
   listGold.mockResolvedValue([]);
@@ -493,5 +496,20 @@ describe("inference page — criteria block + CTA banner (spec 2026-11-09)", () 
     expect(screen.getByTestId("chat-mode-corpus")).toHaveAttribute("aria-pressed", "true");
     fireEvent.click(screen.getByRole("button", { name: "ctaChat" }));
     await waitFor(() => expect(screen.getByTestId("chat-mode-results")).toHaveAttribute("aria-pressed", "true"));
+  });
+});
+
+// spec 2026-11-09-clarte-2 — R3: on a corpus-less project the empty state offers the Import CTA
+describe("inference page — spec clarte-2 R3: empty corpus CTA", () => {
+  it("the empty state offers « Import » to a lead on a corpus-less project", async () => {
+    mount({ user: {}, roleInProject: "LEAD", searches: [], articleCount: 0 });
+    expect(await screen.findByText("importCta")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "importCta" })).toHaveAttribute("href", "/projects/p1/import");
+  });
+
+  it("no CTA when the corpus is not empty", async () => {
+    mount({ user: {}, roleInProject: "LEAD", searches: [], articleCount: 10 });
+    await panelOpen();
+    expect(screen.queryByText("importCta")).not.toBeInTheDocument();
   });
 });
