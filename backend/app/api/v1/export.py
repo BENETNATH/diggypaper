@@ -18,7 +18,7 @@ from openpyxl import Workbook
 from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
-from sqlalchemy import func, or_, select
+from sqlalchemy import false, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import crate, prisma, references
@@ -228,7 +228,10 @@ def build_workbook(project, articles, preds, annos, import_jobs, inf_job, user_e
 
 async def _load(db: AsyncSession, project, where=None, search=None, user=None):
     """Articles + last prediction / annotations per article + jobs, those of ``search`` (default:
-    the whole initial search)."""
+    the whole initial search).
+
+    Blind search: per-caller annotation mask — if the requester no longer exists
+    (orphan job), no human annotation is returned."""
     search = search or await default_search(db, project)
     articles = (
         (
@@ -258,15 +261,19 @@ async def _load(db: AsyncSession, project, where=None, search=None, user=None):
             preds[p.article_id] = p  # the most recent wins
         if search.kind == "blind":
             preds = {}  # blind sample: the AI answers do not come out
+            # per-caller mask: only the requester's own reviews leave the project —
+            # and if the requester no longer exists (orphan job, FK SET NULL),
+            # no review leaves the project at all.
+            blind_annos = (HumanAnnotation.user_id == user.id,) if user else (false(),)
+        else:
+            blind_annos = ()
         for h in (
             await db.execute(
                 select(HumanAnnotation)
                 .where(
                     HumanAnnotation.article_id.in_(ids),
                     in_search(HumanAnnotation.search_id, search),
-                    *(HumanAnnotation.user_id == user.id,)
-                    if (search.kind == "blind" and user)
-                    else (),
+                    *blind_annos,
                 )
                 .order_by(HumanAnnotation.created_at.nulls_first(), HumanAnnotation.id)
             )
@@ -509,7 +516,8 @@ async def write_crate(
 
     ``progress(done, total)`` (async, optional) is called every 10 articles.
     ``user`` (the job's requester): in a blind search, only their own reviews
-    leave the project (same per-caller mask as the xlsx route).
+    leave the project (same per-caller mask as the xlsx route); if the requester
+    no longer exists, no review leaves the project (orphan mask).
     """
     search = search or await default_search(db, project)
     articles, preds, annos, import_jobs, inf_job = await _load(

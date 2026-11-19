@@ -112,6 +112,11 @@ async def _run_export(
             scope = await get_search(session, project, job.search_id)
             project = ScopedProject(project, scope)
             user = await session.get(User, job.user_id) if job.user_id else None
+            if job.user_id is None:
+                logger.warning(
+                    "export %s: requester no longer exists — blind reviews are masked",
+                    job.id,
+                )
             job.status, job.result_json = "RUNNING", {"done": 0, "total": 0}
             await session.commit()
             filename = f"{job.id}.zip"

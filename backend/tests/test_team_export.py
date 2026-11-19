@@ -379,6 +379,133 @@ async def test_crate_export_of_blind_search_hides_other_reviewers(
     assert c["screened"] == 1, "blind PRISMA counts must be per-caller"
 
 
+async def test_crate_export_of_blind_search_orphan_masks_all_reviews(
+    client,
+    engine,
+    session,
+    lead_project,
+    researcher_user,
+    mock_mailer,
+    monkeypatch,
+    tmp_path,
+    do_login,
+):
+    """Audit run-4 HIGH export.crate-blind-orphan-leak: requester purged before the job
+    runs (ExportJob.user_id SET NULL) -> the blind mask must hold: no review leaves."""
+    import json
+    import zipfile
+
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+    from app.db.models import ExportJob, ProjectMember, ProjectMemberRole, UserRole
+    from app.tasks import export as texport
+    from app.tasks import inference as tinf
+    from tests.conftest import _make_user
+
+    lead_project.fields = [{"key": "ai", "label": "AI", "type": "boolean"}]
+    session.add(lead_project)
+    await session.commit()
+    a1 = Article(project_id=lead_project.id, pmid="b1", title="one", abstract="abs one")
+    a2 = Article(project_id=lead_project.id, pmid="b2", title="two", abstract="abs two")
+    session.add_all([a1, a2])
+    await session.commit()
+    for a in (a1, a2):
+        session.add(
+            ArticlePrediction(
+                article_id=a.id,
+                model_used="m",
+                decision_json={"ai": True},
+                confidence_score=0.9,
+                status=PredictionStatus.AUTO_ACCEPTED,
+            )
+        )
+    await session.commit()
+    base = f"/api/v1/projects/{lead_project.id}"
+    s = (
+        await client.post(
+            f"{base}/searches",
+            json={"name": "blind", "kind": "blind", "selection": {"sample_n": 2, "seed": 1}},
+        )
+    ).json()
+    # the LEAD re-reads a1; an annotator re-reads a2
+    r = await client.post(
+        f"{base}/articles/{a1.id}/annotation", params={"search": s["id"]}, json={"ai": False}
+    )
+    assert r.status_code == 201, r.text
+    ann = await _make_user(
+        session, "ann-orphan@lab.fr", UserRole.RESEARCHER, "member-pass-123", True
+    )
+    session.add(
+        ProjectMember(
+            project_id=lead_project.id, user_id=ann.id, role_in_project=ProjectMemberRole.ANNOTATOR
+        )
+    )
+    await session.commit()
+    await do_login("ann-orphan@lab.fr", "member-pass-123", consent=True)
+    r = await client.post(
+        f"{base}/articles/{a2.id}/annotation", params={"search": s["id"]}, json={"ai": True}
+    )
+    assert r.status_code == 201, r.text
+
+    # the LEAD starts the crate export of the blind search, then gets removed
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    queued = []
+    monkeypatch.setattr(texport.export_task, "delay", lambda jid: queued.append(jid))
+    monkeypatch.setenv("EXPORT_DIR", str(tmp_path))
+
+    async def fake_mailer(_session):
+        return mock_mailer
+
+    monkeypatch.setattr(tinf, "_make_mailer", fake_mailer)
+    r = await client.post(f"{base}/export/crate", params={"search": s["id"]})
+    assert r.status_code == 202 and r.json()["status"] == "PENDING" and len(queued) == 1
+    job_id = r.json()["id"]
+    # the requester is an invited (non-creator) account: the purge may delete it
+    researcher_user.can_create_projects = False
+    await session.commit()
+    lead2 = await _make_user(
+        session, "lead2-orphan@lab.fr", UserRole.RESEARCHER, "lead2-pass-123", True
+    )
+    session.add(
+        ProjectMember(
+            project_id=lead_project.id, user_id=lead2.id, role_in_project=ProjectMemberRole.LEAD
+        )
+    )
+    await session.commit()
+    await do_login("lead2-orphan@lab.fr", "lead2-pass-123", consent=True)
+    resp = await client.delete(f"{base}/members/{researcher_user.id}")
+    assert resp.status_code == 204, resp.text
+    job = (await session.execute(select(ExportJob))).scalars().one()
+    assert str(job.id) == job_id and job.user_id is None, "orphan job must keep user_id NULL"
+
+    # the real task core, on the shared in-memory engine
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    stats = await texport._run_export(queued[0], session_factory=factory)
+    assert stats["articles"] == 2 and stats["size"] > 0
+    session.expire_all()  # the job was updated by the task session: drop stale state
+    status = (await client.get(f"{base}/export/crate", params={"search": s["id"]})).json()
+    assert status["status"] == "COMPLETED" and status["download"] is True
+
+    # the annotator downloads the zip: no human review leaves the project
+    await do_login("ann-orphan@lab.fr", "member-pass-123", consent=True)
+    resp = await client.get(f"{base}/export/crate/{job_id}/download")
+    assert resp.status_code == 200
+    z = zipfile.ZipFile(io.BytesIO(resp.content))
+    for pmid in ("b1", "b2"):
+        rec = json.loads(z.read(f"articles/pmid-{pmid}/metadata.json"))
+        assert rec["human"] == [], f"human review leaked in the orphaned crate ({pmid})"
+        assert rec["ai"] is None, "blind AI prediction leaked in the orphaned crate"
+    ws = load_workbook(io.BytesIO(z.read("results.xlsx")))["Results"]
+    head = [c.value for c in ws[1]]
+    col = head.index("Reviewed by")
+    assert all(
+        row[0].value is None for row in ws.iter_rows(min_row=2, min_col=col + 1, max_col=col + 1)
+    ), "reviewer identity leaked in results.xlsx"
+    assert b"ann-orphan@lab.fr" not in z.read("extraction.csv")
+    blob = b"".join(z.read(n) for n in z.namelist() if n.endswith((".json", ".csv", ".md")))
+    assert b"ann-orphan@lab.fr" not in blob and b"researcher@lab.fr" not in blob
+
+
 async def test_crate_download_expired_410(client, session, lead_project, monkeypatch, tmp_path):
     from app.db.models import ExportJob
 
