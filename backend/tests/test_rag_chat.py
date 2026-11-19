@@ -4,6 +4,7 @@
 fake embedder for the corpus, mocked LLM transport, monkeypatched stream.
 """
 
+import asyncio
 import json
 import uuid
 from uuid import uuid4
@@ -362,6 +363,85 @@ async def test_chat_stream_openai_malformed_delta_raises():
             pass
 
 
+async def test_chat_stream_char_cap_raises(monkeypatch):
+    """Total char cap: beyond MAX_CHAT_STREAM_CHARS the stream is cut with the
+    sanitized ``stream_limit`` code; the chunks before the cap were delivered."""
+    monkeypatch.setattr("app.inference.MAX_CHAT_STREAM_CHARS", 100)
+    payload = json.dumps({"choices": [{"delta": {"content": "x" * 30}}]})
+    client = httpx.AsyncClient(transport=httpx.MockTransport(lambda req: _sse(*[payload] * 5)))
+    svc = OpenAICompatibleService("http://llm.test/v1", http=client)
+    chunks: list[str] = []
+    with pytest.raises(InferenceError, match="stream_limit"):
+        async for chunk in svc.chat_stream("m", [{"role": "user", "content": "q"}]):
+            chunks.append(chunk)
+    # 3 × 30 = 90 chars delivered; the 4th (total 120 > 100) was cut.
+    assert "".join(chunks) == "x" * 90
+
+
+async def test_chat_stream_duration_cap_raises(monkeypatch):
+    """Total duration cap, independent of the per-read timeout: small chunks,
+    slow drip (inter-chunk far below the per-read 120 s) -> stream_limit."""
+    monkeypatch.setattr("app.inference.MAX_CHAT_STREAM_SECONDS", 0.15)
+
+    class _SlowResponse:
+        status_code = 200
+
+        def __init__(self, lines: list[str], delay: float) -> None:
+            self._lines, self._delay = lines, delay
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc_info):
+            return False
+
+        def aiter_lines(self):
+            async def gen():
+                for i, line in enumerate(self._lines):
+                    if i:
+                        await asyncio.sleep(self._delay)
+                    yield line
+
+            return gen()
+
+    class _SlowClient:
+        def __init__(self, lines: list[str], delay: float) -> None:
+            self._resp = _SlowResponse(lines, delay)
+
+        def stream(self, *args, **kwargs):
+            return self._resp
+
+        async def aclose(self) -> None:
+            pass
+
+    payload = json.dumps({"choices": [{"delta": {"content": "x" * 10}}]})
+    lines = [f"data: {payload}"] * 6
+    svc = OpenAICompatibleService("http://llm.test/v1", http=_SlowClient(lines, 0.1))
+    chunks: list[str] = []
+    with pytest.raises(InferenceError, match="stream_limit"):
+        async for chunk in svc.chat_stream("m", [{"role": "user", "content": "q"}]):
+            chunks.append(chunk)
+    # Two chunks (~0.1 s apart) under the 0.15 s cap; cut before the third.
+    assert "".join(chunks) == "x" * 20
+
+
+async def test_chat_stream_within_cap_ok(monkeypatch):
+    """Under both caps: every chunk is delivered, no error (control)."""
+    monkeypatch.setattr("app.inference.MAX_CHAT_STREAM_CHARS", 100)
+    monkeypatch.setattr("app.inference.MAX_CHAT_STREAM_SECONDS", 600.0)
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda req: _sse(
+                json.dumps({"choices": [{"delta": {"content": "a" * 40}}]}),
+                json.dumps({"choices": [{"delta": {"content": "b" * 40}}]}),
+            )
+        )
+    )
+    svc = OpenAICompatibleService("http://llm.test/v1", http=client)
+    chunks = [c async for c in svc.chat_stream("m", [{"role": "user", "content": "q"}])]
+    assert "".join(chunks) == "a" * 40 + "b" * 40
+
+
 # ---------------------------------------------------------------------------
 # §3 endpoint — POST /projects/{id}/chat (SSE)
 # ---------------------------------------------------------------------------
@@ -482,6 +562,30 @@ async def test_chat_happy_path_sse(client, session, researcher_user, do_login, m
     keys = {c["n"]: c for c in citations}
     assert set(keys) == {1, 2}
     assert all("title" in c and "excerpt" in c and "article_id" in c for c in citations)
+
+
+async def test_chat_stream_limit_sse_error_no_done(
+    client, session, researcher_user, do_login, monkeypatch
+):
+    """Spec 2026-11-19-fix-chat-stream-total-cap: chat_stream cut by a total cap
+    raises stream_limit midstream -> the SSE stream ends with a sanitized
+    error event (the fixed code, no exception text); partial tokens survive,
+    no done event."""
+
+    async def fake_stream(self, model, messages):
+        yield "Partie "
+        yield "livrée avant la coupure."
+        raise InferenceError("stream_limit")
+
+    monkeypatch.setattr(OpenAICompatibleService, "chat_stream", fake_stream)
+
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project_id = await _chat_project(session, researcher_user)
+    status, events = await _read_sse(client, project_id, {"question": "Quoi ?", "model": "Kev-4B"})
+    assert status == 200
+    assert "".join(e["t"] for e in events.get("token", [])) == "Partie livrée avant la coupure."
+    assert events["error"][0]["detail"] == "stream_limit"
+    assert "done" not in events
 
 
 async def test_chat_citations_survive_non_contiguous_included(

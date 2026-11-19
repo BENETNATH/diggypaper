@@ -72,6 +72,14 @@ def _client_for(timeout: float, pinned_ip: str | None) -> httpx.AsyncClient:
 # above any real model listing; it bounds the parse cost of POST /external/list).
 _MODELS_BODY_LIMIT = 2 * 1024 * 1024
 
+# Total bounds on a streamed chat answer (run-4 lead
+# rag-chat.provider-response-unbounded-accumulation): per-read timeouts do not
+# bound the total — a slow drip of small chunks accumulates without limit in
+# the single API container. A legitimate answer is a few KB; the inputs are
+# bounded (question <= 8000, history <= 12x4000).
+MAX_CHAT_STREAM_CHARS = 200_000
+MAX_CHAT_STREAM_SECONDS = 600.0
+
 
 class OpenAICompatibleService:
     """Minimal ``/v1/chat/completions`` client (JSON messages, JSON response)."""
@@ -206,6 +214,8 @@ class OpenAICompatibleService:
         pinned_ip = await self._validated_ip()
         owned = self._http is None
         client = self._http or _client_for(self._timeout, pinned_ip)
+        total_chars = 0
+        start = time.monotonic()
         try:
             try:
                 async with client.stream("POST", url, json=body, headers=headers) as resp:
@@ -213,6 +223,8 @@ class OpenAICompatibleService:
                         await resp.aread()
                         raise InferenceError(f"HTTP {resp.status_code}")
                     async for line in resp.aiter_lines():
+                        if time.monotonic() - start > MAX_CHAT_STREAM_SECONDS:
+                            raise InferenceError("stream_limit")
                         if not line:
                             continue
                         if self._native_ollama:
@@ -222,6 +234,9 @@ class OpenAICompatibleService:
                                 raise InferenceError("invalid_response") from exc
                             chunk = (data.get("message") or {}).get("content")
                             if chunk:
+                                total_chars += len(chunk)
+                                if total_chars > MAX_CHAT_STREAM_CHARS:
+                                    raise InferenceError("stream_limit")
                                 yield chunk
                             if data.get("model"):
                                 self.served_model = clean_meta(data.get("model"))
@@ -245,6 +260,9 @@ class OpenAICompatibleService:
                             ) as exc:
                                 raise InferenceError("invalid_response") from exc
                             if chunk:
+                                total_chars += len(chunk)
+                                if total_chars > MAX_CHAT_STREAM_CHARS:
+                                    raise InferenceError("stream_limit")
                                 yield chunk
             except httpx.TimeoutException as exc:
                 raise InferenceError("timeout") from exc
