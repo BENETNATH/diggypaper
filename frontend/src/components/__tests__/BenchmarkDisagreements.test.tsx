@@ -11,6 +11,9 @@ jest.mock("next/navigation", () => ({ useRouter: () => ({ push: jest.fn() }) }))
 jest.mock("@/lib/api", () => ({
   ...jest.requireActual("@/lib/api"),
   listBenchmarkArticles: jest.fn(),
+  getBenchmarkVotes: jest.fn(),
+  castBenchmarkVote: jest.fn(),
+  removeBenchmarkVote: jest.fn(),
 }));
 
 const grid = (decision: Record<string, unknown>) => ({
@@ -30,6 +33,7 @@ const grid = (decision: Record<string, unknown>) => ({
 
 beforeEach(() => {
   (api.listBenchmarkArticles as jest.Mock).mockReset().mockResolvedValue(grid({}));
+  (api.getBenchmarkVotes as jest.Mock).mockReset().mockResolvedValue({ my_votes: {} });
 });
 
 // Free-form prompts (benchmarks on a « mise au point » lot, no schema fields):
@@ -101,5 +105,24 @@ describe("BenchmarkDisagreements — free-form answers", () => {
     );
     render(<BenchmarkDisagreements projectId="p1" runId="b1" fields={[]} />);
     expect(await screen.findByText(/texte extrait de l'article/)).toBeInTheDocument();
+  });
+});
+
+// audit 2026-11-10 P0-1 : le bouton de vote utilisait var(--color-*, #hex) — variables
+// inexistantes, les fallbacks hex étaient rendus dans les deux thèmes (2.28:1 / 2.05:1).
+describe("BenchmarkDisagreements — vote button on design tokens", () => {
+  it("unvoted: token classes, no hardcoded hex, i18n label", async () => {
+    render(<BenchmarkDisagreements projectId="p1" runId="b1" fields={[]} />);
+    const btn = await screen.findByRole("button", { name: "voteFor" });
+    expect(btn.getAttribute("style") ?? "").not.toContain("#");
+    expect(btn.className).not.toMatch(/#22c55e|#e5e7eb|#9ca3af/);
+  });
+
+  it("voted: bg-success token + i18n label", async () => {
+    (api.getBenchmarkVotes as jest.Mock).mockResolvedValue({ my_votes: { a1: "m1|direct" } });
+    render(<BenchmarkDisagreements projectId="p1" runId="b1" fields={[]} />);
+    const btn = await screen.findByRole("button", { name: "removeVote" });
+    expect(btn.getAttribute("style") ?? "").not.toContain("#");
+    expect(btn.className).toContain("bg-success");
   });
 });

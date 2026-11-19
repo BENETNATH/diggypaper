@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
+import { useApiError } from "@/lib/errorMsg";
 import { useAuth } from "@/lib/auth";
 import { ApiError, getPublicConfig, requestPasswordReset } from "@/lib/api";
 import { readLocaleCookie, writeLocaleCookie } from "@/components/LanguageSwitcher";
@@ -14,6 +15,7 @@ import { ErrorBanner } from "@/components/ui/Feedback";
 
 export default function LoginPage() {
   const t = useTranslations("auth");
+  const apiError = useApiError();
   const { login } = useAuth();
   const router = useRouter();
 
@@ -46,7 +48,7 @@ export default function LoginPage() {
       setForgotOpen(false);
       setForgotSent(true); // generic message: never reveals whether the account exists
     } catch (err) {
-      setForgotError(err instanceof Error ? err.message : t("unknownError"));
+      setForgotError(err instanceof Error ? apiError(err) : t("unknownError"));
     } finally {
       setForgotLoading(false);
     }
@@ -69,7 +71,7 @@ export default function LoginPage() {
       if (err instanceof ApiError && err.status === 403) {
         setError(t("consentRequired"));
       } else {
-        setError(err instanceof Error ? err.message : t("unknownError"));
+        setError(err instanceof Error ? apiError(err) : t("unknownError"));
       }
     } finally {
       setLoading(false);
@@ -114,7 +116,7 @@ export default function LoginPage() {
               checked={consent}
               onChange={(e) => setConsent(e.target.checked)}
             />
-            <p className="-mt-2 text-xs text-muted">{t("consentFirstLogin")}</p>
+            <p className="-mt-2 text-pretty text-xs text-muted">{t("consentFirstLogin")}</p>
             {privacyUrl && (
               <a href={privacyUrl} target="_blank" rel="noopener noreferrer" className="-mt-2 text-xs text-primary hover:underline">
                 {t("privacyPolicy")}

@@ -114,21 +114,27 @@ async def vectorize_project(
     pending: list[
         tuple[Article, int, str | None, str, str]
     ] = []  # (article, idx, title, text, hash)
+    # One query for the whole lot (not one SELECT per article).
+    existing_by_article: dict[str, dict[int, list[SectionEmbedding]]] = {}
+    if articles:
+        emb_rows = (
+            await db.execute(
+                select(SectionEmbedding).where(
+                    SectionEmbedding.article_id.in_([a.id for a in articles]),
+                    SectionEmbedding.search_id.is_(None),  # corpus rows only
+                )
+            )
+        ).scalars()
+        for e in emb_rows:
+            existing_by_article.setdefault(str(e.article_id), {}).setdefault(
+                e.section_index, []
+            ).append(e)
     for article in articles:
         units = _units(article)
         live: dict[int, str] = {
             idx: hashlib.sha256(text.encode("utf-8")).hexdigest() for idx, _, text in units
         }
-        existing_by_idx: dict[int, list[SectionEmbedding]] = {}
-        for e in (
-            await db.execute(
-                select(SectionEmbedding).where(
-                    SectionEmbedding.article_id == article.id,
-                    SectionEmbedding.search_id.is_(None),  # corpus rows only
-                )
-            )
-        ).scalars():
-            existing_by_idx.setdefault(e.section_index, []).append(e)
+        existing_by_idx = existing_by_article.get(str(article.id), {})
         for idx, title, body in units:
             digest = live[idx]
             rows = existing_by_idx.get(idx, [])
@@ -242,25 +248,27 @@ async def _vectorize_results(
         existing_by_art[e.article_id].append(e)
 
     pending: list[tuple[Article, str, str]] = []  # (article, text, hash)
-    for article in articles:
-        pred = (
-            (
-                await db.execute(
-                    select(ArticlePrediction)
-                    .where(
-                        ArticlePrediction.article_id == article.id,
-                        in_search(ArticlePrediction.search_id, search),
-                    )
-                    .order_by(
-                        ArticlePrediction.created_at.desc().nulls_last(),
-                        ArticlePrediction.id.desc(),
-                    )
-                    .limit(1)
+    # One query for the whole lot's latest prediction (not one SELECT per article).
+    latest_pred: dict[uuid.UUID, ArticlePrediction] = {}
+    if articles:
+        preds = (
+            await db.execute(
+                select(ArticlePrediction)
+                .where(
+                    ArticlePrediction.article_id.in_([a.id for a in articles]),
+                    in_search(ArticlePrediction.search_id, search),
+                )
+                .order_by(
+                    ArticlePrediction.article_id,
+                    ArticlePrediction.created_at.desc().nulls_last(),
+                    ArticlePrediction.id.desc(),
                 )
             )
-            .scalars()
-            .first()
-        )
+        ).scalars()
+        for p in preds:
+            latest_pred.setdefault(p.article_id, p)  # first per article = the latest
+    for article in articles:
+        pred = latest_pred.get(article.id)
         rendered = (
             render_response(pred.decision_json, pred.field_confidences, search.fields)
             if pred is not None

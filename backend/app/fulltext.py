@@ -24,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.article_text import classify_title
 from app.db.models import ArticleFile
-from app.model_access import check_public_url
+from app.model_access import check_public_url, pinned_client
 
 logger = logging.getLogger(__name__)
 
@@ -126,11 +126,11 @@ async def _get_json(http: httpx.AsyncClient, url: str, params: dict | None = Non
 
 
 async def _epmc_xml(pmcid: str, http: httpx.AsyncClient) -> list[dict]:
-    from app.pubmed import _extract_sections
+    from app.pubmed import _MAX_XML_BYTES, _extract_sections
 
     try:
         resp = await http.get(f"{EPMC}/{pmcid}/fullTextXML", headers=_UA)
-        if resp.status_code != 200:
+        if resp.status_code != 200 or len(resp.content) > _MAX_XML_BYTES:
             return []
         return _extract_sections(resp.text)
     except Exception:  # noqa: BLE001 - network or malformed XML: next source
@@ -217,27 +217,39 @@ async def _pdf_candidates(
 
 async def _download_pdf(url: str, http: httpx.AsyncClient) -> bytes | None:
     """Open PDF; redirects are followed by hand, each hop must stay public
-    (a URL provided by Unpaywall/OpenAlex must not lead to the internal network)."""
+    (a URL provided by Unpaywall/OpenAlex must not lead to the internal network).
+
+    Each hop is connected through a transport pinned to the IP that
+    ``check_public_url`` validated, so a DNS rebind between the check and the
+    connect cannot reach the internal network (same hardening as the model
+    calls — ``app.model_access.pinned_client``).
+    """
     try:
         for _ in range(MAX_REDIRECTS + 1):
             try:
-                await asyncio.to_thread(check_public_url, url)
+                pinned_ip = await asyncio.to_thread(check_public_url, url)
             except ValueError:
                 return None
-            async with http.stream("GET", url, headers=_UA) as resp:
-                if resp.is_redirect and resp.headers.get("location"):
-                    url = str(resp.url.join(resp.headers["location"]))
-                    continue
-                if resp.status_code != 200:
-                    return None
-                chunks, size = [], 0
-                async for chunk in resp.aiter_bytes():
-                    size += len(chunk)
-                    if size > MAX_PDF_BYTES:
+            client = pinned_client(http.timeout, pinned_ip) if pinned_ip is not None else http
+            owned = client is not http
+            try:
+                async with client.stream("GET", url, headers=_UA) as resp:
+                    if resp.is_redirect and resp.headers.get("location"):
+                        url = str(resp.url.join(resp.headers["location"]))
+                        continue
+                    if resp.status_code != 200:
                         return None
-                    chunks.append(chunk)
-            data = b"".join(chunks)
-            return data if data.startswith(b"%PDF") else None
+                    chunks, size = [], 0
+                    async for chunk in resp.aiter_bytes():
+                        size += len(chunk)
+                        if size > MAX_PDF_BYTES:
+                            return None
+                        chunks.append(chunk)
+                data = b"".join(chunks)
+                return data if data.startswith(b"%PDF") else None
+            finally:
+                if owned:
+                    await client.aclose()
         return None
     except httpx.HTTPError:
         return None

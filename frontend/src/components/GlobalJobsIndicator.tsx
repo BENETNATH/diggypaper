@@ -9,7 +9,9 @@ const POLL_MS = 30000;
 /**
  * §2 — The instance-wide « jobs in progress » indicator (top of the projects
  * list). Counters only — no project information — refreshed every 30 s while
- * the page is open, hidden when count == 0.
+ * the page is open, hidden when count == 0. audit 2026-11-10 P3-4: it keeps polling
+ * (cheap, 30s) so a new job started elsewhere reappears while the page is open — the
+ * render is what stops, not the poll (an endless stop would never re-arm on this page).
  */
 export function GlobalJobsIndicator() {
   const t = useTranslations("activity");
@@ -29,8 +31,9 @@ export function GlobalJobsIndicator() {
   return (
     <p
       data-testid="global-jobs"
-      title={parts.join(" · ")}
-      className="flex items-center gap-2 text-sm text-primary"
+      // audit 2026-11-10 P3-12: the per-kind breakdown is visible (it was title-only,
+      // unreachable by keyboard and touch).
+      className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-primary"
     >
       <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 tabular-nums">
         <span className="relative flex h-2 w-2" aria-hidden>
@@ -40,6 +43,7 @@ export function GlobalJobsIndicator() {
         {data.count}
       </span>
       {t("globalJobsOnInstance")}
+      <span className="text-xs text-muted">{parts.join(" · ")}</span>
     </p>
   );
 }

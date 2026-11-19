@@ -1,4 +1,4 @@
-import { errorDetail, errorKey } from "@/lib/api";
+import { DEDUP_SETTLE_TIMEOUT_MS, errorDetail, errorKey, getProject } from "@/lib/api";
 
 describe("errorDetail", () => {
   it("keeps a string detail", () => {
@@ -37,5 +37,57 @@ describe("errorKey", () => {
 
   it("maps an unknown detail to null (the caller falls back to the raw string)", () => {
     expect(errorKey("something-else")).toBeNull();
+  });
+});
+
+// audit 2026-11-10 P2-10 — identical GETs fired at the same time (layout + page on the
+// same navigation) share the in-flight request instead of each hitting the backend.
+describe("GET request coalescing (audit 2026-11-10 P2-10)", () => {
+  const okJson = (body: unknown) =>
+    jest.fn(async () => ({ ok: true, status: 200, json: async () => body }));
+
+  it("two concurrent identical GETs trigger a single fetch", async () => {
+    const fetchMock = okJson({ id: "p1" }) as unknown as jest.Mock;
+    const original = global.fetch;
+    global.fetch = fetchMock;
+    try {
+      const [a, b] = await Promise.all([getProject("p1"), getProject("p1")]);
+      expect(a).toEqual(b);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    } finally {
+      global.fetch = original;
+    }
+  });
+
+  it("sequential GETs are not coalesced (each re-fetches)", async () => {
+    const fetchMock = okJson({ id: "p1" }) as unknown as jest.Mock;
+    const original = global.fetch;
+    global.fetch = fetchMock;
+    try {
+      await getProject("p1");
+      await getProject("p1");
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    } finally {
+      global.fetch = original;
+    }
+  });
+
+  // caveman-review 2026-11-10: a GET that never settles must not pin the key forever.
+  it("a never-settling GET frees its dedup key after the settle timeout", async () => {
+    jest.useFakeTimers();
+    const original = global.fetch;
+    const hanging = new Promise<Response>(() => {}); // network hang: never settles
+    global.fetch = jest.fn(async () => hanging) as unknown as typeof fetch;
+    try {
+      void getProject("p1"); // in flight, will never settle
+      jest.advanceTimersByTime(DEDUP_SETTLE_TIMEOUT_MS); // settle timeout fires → key dropped
+      const fetchMock2 = okJson({ id: "p1" }) as unknown as jest.Mock;
+      global.fetch = fetchMock2;
+      await getProject("p1"); // a fresh request, NOT the hanging promise
+      expect(fetchMock2).toHaveBeenCalledTimes(1);
+    } finally {
+      jest.useRealTimers();
+      global.fetch = original;
+    }
   });
 });

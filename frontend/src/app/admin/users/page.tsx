@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
+import { useApiError } from "@/lib/errorMsg";
+import { smoothScrollIntoView } from "@/lib/motion";
 import {
   AdminInvitation,
   AdminProject,
@@ -24,6 +26,7 @@ import { ActivityPanel } from "@/components/ActivityPanel";
 import { Button } from "@/components/ui/Button";
 import { Field, Input, Select } from "@/components/ui/Field";
 import { Badge, Card } from "@/components/ui/Card";
+import { Modal } from "@/components/ui/Modal";
 import { ErrorBanner, Skeleton } from "@/components/ui/Feedback";
 
 const LANGS = ["fr", "en", "de", "es"];
@@ -42,6 +45,7 @@ function UserRow({
   onNotice: (text: string) => void;
 }) {
   const t = useTranslations("adminUsers");
+  const apiError = useApiError();
   const [edit, setEdit] = useState(false);
   const [del, setDel] = useState(false);
   const [alsoProjects, setAlsoProjects] = useState(false);
@@ -54,7 +58,7 @@ function UserRow({
       await fn();
       onChange();
     } catch (e) {
-      onError(e instanceof Error ? e.message : "error");
+      onError(apiError(e));
     }
   }
 
@@ -177,7 +181,9 @@ function UserRow({
 
 function AdminContent() {
   const t = useTranslations("adminUsers");
+  const tc = useTranslations("common");
   const tAct = useTranslations("activity");
+  const apiError = useApiError();
   const { user } = useAuth();
   const locale = useLocale();
   const [inviteEmail, setInviteEmail] = useState("");
@@ -187,10 +193,15 @@ function AdminContent() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ text: string; link?: string | null } | null>(null);
   const noticeRef = useRef<HTMLDivElement>(null);
+  // audit 2026-11-10 P3-14: purge + project deletion confirm through the Modal (was window.confirm).
+  const [purgeOpen, setPurgeOpen] = useState(false);
+  const [purging, setPurging] = useState(false);
+  const [projectToDelete, setProjectToDelete] = useState<AdminProject | null>(null);
+  const [projectDeleting, setProjectDeleting] = useState(false);
 
   // Bring the confirmation into view (the invite form is above the pending list).
   useEffect(() => {
-    if (notice) noticeRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    if (notice) smoothScrollIntoView(noticeRef.current, "nearest");
   }, [notice]);
 
   const load = useCallback(() => {
@@ -201,8 +212,8 @@ function AdminContent() {
         setProjects(p);
         setError(null);
       })
-      .catch((e) => setError(e instanceof Error ? e.message : "error"));
-  }, []);
+      .catch((e) => setError(apiError(e)));
+  }, [apiError]);
 
   useEffect(() => {
     void load();
@@ -214,16 +225,43 @@ function AdminContent() {
       const r = await resendInvitation(i.id);
       setNotice({ text: r.email_sent ? t("resent", { email: i.email }) : t("resentNoMail", { email: i.email }), link: r.link });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "error");
+      setError(apiError(e));
     }
   }
 
-  async function act(fn: () => Promise<unknown>) {
+  // Returns true when the action succeeded (the confirm Modal closes on success only).
+  async function act(fn: () => Promise<unknown>): Promise<boolean> {
     try {
       await fn();
       await load();
+      return true;
     } catch (e) {
-      setError(e instanceof Error ? e.message : "error");
+      setError(apiError(e));
+      return false;
+    }
+  }
+
+  async function confirmPurge() {
+    setPurging(true);
+    try {
+      const ok = await act(async () => {
+        const r = await purgeOrphanUsers();
+        setNotice({ text: t("purged", { n: r.deleted }) });
+      });
+      if (ok) setPurgeOpen(false);
+    } finally {
+      setPurging(false);
+    }
+  }
+
+  async function confirmDeleteProject() {
+    if (!projectToDelete) return;
+    setProjectDeleting(true);
+    try {
+      const ok = await act(() => deleteProject(projectToDelete!.id));
+      if (ok) setProjectToDelete(null);
+    } finally {
+      setProjectDeleting(false);
     }
   }
 
@@ -259,17 +297,7 @@ function AdminContent() {
       </Card>
 
       <div className="flex items-center gap-3">
-        <Button
-          size="sm"
-          variant="danger"
-          onClick={() => {
-            if (window.confirm(t("purgeConfirm")))
-              void act(async () => {
-                const r = await purgeOrphanUsers();
-                setNotice({ text: t("purged", { n: r.deleted }) });
-              });
-          }}
-        >
+        <Button size="sm" variant="danger" onClick={() => setPurgeOpen(true)}>
           {t("purgeOrphans")}
         </Button>
         <span className="text-xs text-muted">{t("purgeHint")}</span>
@@ -341,13 +369,7 @@ function AdminContent() {
                   {p.created_by ?? t("noOwner")} · {t("projectCounts", { members: p.members, articles: p.articles })}
                 </p>
               </div>
-              <Button
-                size="sm"
-                variant="danger"
-                onClick={() => {
-                  if (window.confirm(t("projectDeleteConfirm", { title: p.title }))) void act(() => deleteProject(p.id));
-                }}
-              >
+              <Button size="sm" variant="danger" onClick={() => setProjectToDelete(p)}>
                 {t("delete")}
               </Button>
             </li>
@@ -358,6 +380,45 @@ function AdminContent() {
       <Card title={tAct("title")}>
         <ActivityPanel global />
       </Card>
+
+      {purgeOpen && (
+        <Modal title={t("purgeOrphans")} onClose={() => setPurgeOpen(false)}>
+          <div className="flex flex-col gap-4">
+            <p className="text-sm text-muted">{t("purgeConfirm")}</p>
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" size="sm" onClick={() => setPurgeOpen(false)}>
+                {tc("cancel")}
+              </Button>
+              <Button variant="danger" size="sm" loading={purging} onClick={() => void confirmPurge()}>
+                {t("purgeOrphans")}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {projectToDelete && (
+        <Modal title={t("delete")} onClose={() => setProjectToDelete(null)}>
+          <div className="flex flex-col gap-4">
+            <p className="text-sm text-muted">
+              {t("projectDeleteConfirm", { title: projectToDelete.title })}
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" size="sm" onClick={() => setProjectToDelete(null)}>
+                {tc("cancel")}
+              </Button>
+              <Button
+                variant="danger"
+                size="sm"
+                loading={projectDeleting}
+                onClick={() => void confirmDeleteProject()}
+              >
+                {t("delete")}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

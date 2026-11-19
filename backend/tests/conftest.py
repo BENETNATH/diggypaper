@@ -119,6 +119,20 @@ class FakeRedis:
     async def get(self, key):
         return self.store.get(key)
 
+    async def eval(self, script, numkeys, *args):
+        # The renew script: EXPIRE only if the stored token matches (atomic CAS).
+        # Logged as "expire" (that is the operation it performs), so the renew
+        # scheduling contract is unchanged from the old GET→EXPIRE path.
+        # numkeys is enforced (caveman-review 2026-11-10): a wrong value raises
+        # instead of silently passing.
+        keys, rest = args[:numkeys], args[numkeys:]
+        key, token, ttl = keys[0], rest[0], rest[1]
+        if self.store.get(key) == token:
+            self.expire_calls.append((key, int(ttl)))
+            self.events.append("expire")
+            return 1
+        return 0
+
     async def delete(self, key):
         return 1 if self.store.pop(key, None) is not None else 0
 

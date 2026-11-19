@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
@@ -88,11 +88,15 @@ function ResultsContent() {
   // sessionStorage, so it must not run during the server render / hydration).
   const mounted = useHasMounted();
   const storeKey = articlesStoreKey(projectId, searchId);
+  // audit 2026-11-10 P3-8: parse the saved filters once per search, not on every render pass.
+  const saved = useMemo(
+    () => (mounted ? loadSaved(projectId, searchId) : null),
+    [mounted, projectId, searchId]
+  );
   const [prevStoreKey, setPrevStoreKey] = useState<string | null>(null);
-  if (mounted && prevStoreKey !== storeKey) {
+  if (mounted && saved && prevStoreKey !== storeKey) {
     setPrevStoreKey(storeKey);
     setReady(false);
-    const saved = loadSaved(projectId, searchId);
     setFilter(saved.filter ?? "ALL");
     setSort(saved.sort ?? "added");
     setPage(saved.page ?? 1);

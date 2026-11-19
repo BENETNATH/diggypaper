@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import * as api from "@/lib/api";
 import { ComparisonPanel } from "@/components/ComparisonPanel";
 
@@ -142,5 +142,30 @@ describe("ComparisonPanel (§5: the payload is consumed as-is)", () => {
     const { container } = render(<ComparisonPanel projectId="p1" searchId="s1" />);
     await waitFor(() => expect(getSearchJobs).toHaveBeenCalled());
     await waitFor(() => expect(container.firstChild).toBeNull());
+  });
+});
+
+// audit 2026-11-10 P2-12 — the article-by-article table is paginated (50/page, client-side)
+describe("ComparisonPanel — table pagination (audit 2026-11-10 P2-12)", () => {
+  const manyRows = Array.from({ length: 52 }, (_, i) => ({
+    article_id: `a${i + 1}`,
+    title: `Article ${i + 1}`,
+    decision_a: true,
+    decision_b: true,
+    confidence_a: 0.9,
+    confidence_b: 0.8,
+    agree: true,
+  }));
+
+  it("shows the first page only; « next » reaches the rest", async () => {
+    getSearchJobs.mockResolvedValue({ jobs: JOBS });
+    getComparison.mockResolvedValue({ ...PAYLOAD, n: 52, rows: manyRows, disagreements: [] });
+    render(<ComparisonPanel projectId="p1" searchId="s1" />);
+    expect(await screen.findByText("Article 1")).toBeInTheDocument();
+    expect(screen.queryByText("Article 51")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "next" }));
+    expect(await screen.findByText("Article 51")).toBeInTheDocument();
+    expect(screen.queryByText("Article 1")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "next" })).toBeDisabled();
   });
 });

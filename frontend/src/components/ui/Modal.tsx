@@ -3,7 +3,12 @@
 import { ReactNode, useEffect, useRef } from "react";
 import { useTranslations } from "next-intl";
 
-/** Modal window: darkened backdrop, Escape / outside click / button to close, internal scrolling. */
+/** Focusable controls inside the dialog (focus trap, WCAG 2.1.2). */
+const FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+/** Modal window: darkened backdrop, Escape / outside click / button to close, internal scrolling.
+    audit 2026-11-10 P2-1: focus is trapped while open and restored to the trigger on close. */
 export function Modal({
   title,
   onClose,
@@ -19,17 +24,46 @@ export function Modal({
 }) {
   const panel = useRef<HTMLDivElement>(null);
   const t = useTranslations("common");
+  // Latest onClose in a ref (stable keydown listener); updated in an effect —
+  // ref writes during render are forbidden (react-hooks/refs).
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
-    const esc = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    document.addEventListener("keydown", esc);
-    panel.current?.focus();
-    return () => document.removeEventListener("keydown", esc);
-  }, [onClose]);
+    const previous = document.activeElement as HTMLElement | null;
+    const panelEl = panel.current;
+    panelEl?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onCloseRef.current();
+        return;
+      }
+      if (e.key !== "Tab" || !panelEl) return;
+      const focusables = Array.from(panelEl.querySelectorAll<HTMLElement>(FOCUSABLE));
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      const active = document.activeElement;
+      if (e.shiftKey && (active === first || active === panelEl)) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      previous?.focus();
+    };
+  }, []);
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:items-center"
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-overlay p-4 sm:items-center"
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
     >
       <div

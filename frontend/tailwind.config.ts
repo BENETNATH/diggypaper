@@ -35,6 +35,7 @@ const config: Config = {
         success: "var(--success)",
         warning: "var(--warning)",
         focus: "var(--focus)",
+        overlay: "var(--overlay)",
         "cell-good": "var(--cell-good)",
         "cell-warn": "var(--cell-warn)",
       },

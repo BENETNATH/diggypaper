@@ -6,6 +6,7 @@ import { useTranslations } from "next-intl";
 import { listBenchmarkArticles, BenchmarkArticleRow, SchemaField, getBenchmarkVotes, castBenchmarkVote, removeBenchmarkVote, BenchmarkVotes } from "@/lib/api";
 import { relevanceOf, showValue } from "@/lib/benchmark";
 import { withSearch } from "@/lib/search";
+import { useApiError } from "@/lib/errorMsg";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Card";
 import { Checkbox } from "@/components/ui/Field";
@@ -128,6 +129,7 @@ export function BenchmarkDisagreements({
   live?: boolean;
 }) {
   const t = useTranslations("benchmarks");
+  const apiError = useApiError();
   const [onlyDisagree, setOnlyDisagree] = useState(true);
   const [page, setPage] = useState(1);
   const [data, setData] = useState<{ total: number; items: BenchmarkArticleRow[] } | null>(null);
@@ -150,12 +152,12 @@ export function BenchmarkDisagreements({
         if (!stale) setData(r);
       })
       .catch((e) => {
-        if (!stale) setError(e instanceof Error ? e.message : "error");
+        if (!stale) setError(apiError(e));
       });
     return () => {
       stale = true;
     };
-  }, [projectId, runId, live, onlyDisagree, page]);
+  }, [projectId, runId, live, onlyDisagree, page, apiError]);
 
   // Live mode: the run keeps answering, so the current page refreshes by itself.
   useEffect(() => {
@@ -229,7 +231,9 @@ export function BenchmarkDisagreements({
                 <Answers decision={row.gold} fields={fields} />
               </div>
             )}
-            {row.outputs.map((o) => (
+            {row.outputs.map((o) => {
+              const voted = votes?.my_votes[row.article_id] === `${o.model}|${o.variant ?? ""}`;
+              return (
               <div
                 key={`${o.model}\u0000${o.variant ?? ""}`}
                 className="relative rounded-lg bg-surface-muted p-2"
@@ -238,13 +242,10 @@ export function BenchmarkDisagreements({
                   <button
                     type="button"
                     onClick={() => handleVote(row.article_id, o.model, o.variant ?? null)}
-                    className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full text-sm transition-colors"
-                    style={{
-                      backgroundColor: votes?.my_votes[row.article_id] === `${o.model}|${o.variant ?? ""}` ? "var(--color-success, #22c55e)" : "var(--color-surface, #e5e7eb)",
-                      color: votes?.my_votes[row.article_id] === `${o.model}|${o.variant ?? ""}` ? "#fff" : "var(--color-muted, #9ca3af)",
-                      fontWeight: votes?.my_votes[row.article_id] === `${o.model}|${o.variant ?? ""}` ? 700 : 400,
-                    }}
-                    aria-label={votes?.my_votes[row.article_id] === `${o.model}|${o.variant ?? ""}` ? "Retirer le vote" : "Préférer cette réponse"}
+                    className={`absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold transition-colors duration-fast ease-out ${
+                      voted ? "bg-success text-primary-foreground" : "bg-surface text-muted-foreground hover:bg-surface-muted"
+                    }`}
+                    aria-label={voted ? t("removeVote") : t("voteFor")}
                   >
                     ✓
                   </button>
@@ -254,23 +255,24 @@ export function BenchmarkDisagreements({
                   {o.variant ? ` · ${o.variant}` : ""}
                 </p>
                 {o.error ? (
-                  <p className="text-xs text-danger">{o.error}</p>
+                  <p className="text-xs text-danger">{t("modelError")}: {o.error}</p>
                 ) : (
                   <Answers decision={o.decision} gold={row.gold} fields={fields} />
                 )}
               </div>
-            ))}
+              );
+            })}
           </div>
         </article>
       ))}
       {data && data.total > PER_PAGE && (
         <div className="flex items-center justify-between gap-2">
           <Button type="button" variant="secondary" size="sm" disabled={page <= 1} onClick={() => setPage(page - 1)}>
-            ← {t("prev")}
+            {t("prev")}
           </Button>
           <span className="text-xs text-muted">{t("pageOf", { page, pages, total: data.total })}</span>
           <Button type="button" variant="secondary" size="sm" disabled={page >= pages} onClick={() => setPage(page + 1)}>
-            {t("next")} →
+            {t("next")}
           </Button>
         </div>
       )}

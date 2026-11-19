@@ -39,10 +39,13 @@ export function JobProgress({
     setSamples((s) => pushSample(s, Date.now(), last.current));
   }, [done]);
   // Time passes even without new data: we refresh the estimate every 5 s.
+  // audit 2026-11-10 P3-4: the interval stops once the job is done (it was permanent).
+  const finished = total > 0 && done >= total;
   useEffect(() => {
+    if (finished) return;
     const id = setInterval(() => setSamples((s) => pushSample(s, Date.now(), last.current)), 5000);
     return () => clearInterval(id);
-  }, []);
+  }, [finished]);
 
   const known = total > 0;
   const pct = known ? Math.min(100, (done / total) * 100) : null;
@@ -72,12 +75,12 @@ export function JobProgress({
             <div className="h-full w-1/3 animate-pulse rounded-full bg-primary motion-reduce:animate-none" />
           ) : seg ? (
             <>
-              <div className="h-full bg-success transition-all" style={{ width: `${part(seg.accepted)}%` }} />
-              <div className="h-full bg-warning transition-all" style={{ width: `${part(seg.review)}%` }} />
-              <div className="h-full bg-danger transition-all" style={{ width: `${part(seg.rejected)}%` }} />
+              <div className="h-full bg-success transition-all duration-fast ease-out" style={{ width: `${part(seg.accepted)}%` }} />
+              <div className="h-full bg-warning transition-all duration-fast ease-out" style={{ width: `${part(seg.review)}%` }} />
+              <div className="h-full bg-danger transition-all duration-fast ease-out" style={{ width: `${part(seg.rejected)}%` }} />
             </>
           ) : (
-            <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${pct}%` }} />
+            <div className="h-full rounded-full bg-primary transition-all duration-fast ease-out" style={{ width: `${pct}%` }} />
           )}
         </div>
         {action}
@@ -113,12 +116,12 @@ export function JobProgress({
         <div className="h-full w-1/3 animate-pulse rounded-full bg-primary motion-reduce:animate-none" />
       ) : seg ? (
         <>
-          <div className="h-full bg-success transition-all" style={{ width: `${part(seg.accepted)}%` }} />
-          <div className="h-full bg-warning transition-all" style={{ width: `${part(seg.review)}%` }} />
-          <div className="h-full bg-danger transition-all" style={{ width: `${part(seg.rejected)}%` }} />
+          <div className="h-full bg-success transition-all duration-fast ease-out" style={{ width: `${part(seg.accepted)}%` }} />
+          <div className="h-full bg-warning transition-all duration-fast ease-out" style={{ width: `${part(seg.review)}%` }} />
+          <div className="h-full bg-danger transition-all duration-fast ease-out" style={{ width: `${part(seg.rejected)}%` }} />
         </>
       ) : (
-        <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${pct}%` }} />
+        <div className="h-full rounded-full bg-primary transition-all duration-fast ease-out" style={{ width: `${pct}%` }} />
       )}
     </div>
   );

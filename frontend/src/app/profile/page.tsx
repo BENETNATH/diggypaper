@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
+import { useApiError } from "@/lib/errorMsg";
 import { useAuth } from "@/lib/auth";
 import { updateProfile, changePassword, exportMyData, anonymizeMe } from "@/lib/api";
 import { RequireAuth } from "@/components/RequireAuth";
@@ -9,9 +10,12 @@ import { Button } from "@/components/ui/Button";
 import { Field, Input, Select } from "@/components/ui/Field";
 import { Card } from "@/components/ui/Card";
 import { ErrorBanner } from "@/components/ui/Feedback";
+import { Modal } from "@/components/ui/Modal";
 
 function ProfileContent() {
   const t = useTranslations("profile");
+  const tc = useTranslations("common");
+  const apiError = useApiError();
   const { user, refresh, logout } = useAuth();
   const locale = useLocale();
   const [name, setName] = useState("");
@@ -20,6 +24,9 @@ function ProfileContent() {
   const [next, setNext] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // audit 2026-11-10 P3-14: anonymization confirms through the Modal (was window.confirm).
+  const [anonOpen, setAnonOpen] = useState(false);
+  const [anonBusy, setAnonBusy] = useState(false);
 
   // Seed the form from the logged-in user when they (or the displayed locale) change.
   const seedKey = user ? `${user.id}:${locale}` : "";
@@ -39,7 +46,7 @@ function ProfileContent() {
       await fn();
       setMsg(okMsg);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "error");
+      setError(apiError(e));
     }
   }
 
@@ -74,12 +81,21 @@ function ProfileContent() {
     }, t("exported"));
   }
 
-  async function anonymize() {
-    if (!window.confirm(t("anonymizeConfirm"))) return;
-    await run(async () => {
+  function anonymize() {
+    setAnonOpen(true);
+  }
+  async function confirmAnon() {
+    setAnonBusy(true);
+    setError(null);
+    try {
       await anonymizeMe();
       logout();
-    }, "");
+      setAnonOpen(false);
+    } catch (e) {
+      setError(apiError(e));
+    } finally {
+      setAnonBusy(false);
+    }
   }
 
   if (!user) return null;
@@ -94,7 +110,7 @@ function ProfileContent() {
       </div>
 
       {error && <ErrorBanner message={error} />}
-      {msg && <p className="text-sm text-success">✓ {msg}</p>}
+      {msg && <p role="status" className="text-sm text-success">✓ {msg}</p>}
 
       <Card title={t("infoTitle")}>
         <form onSubmit={saveProfile} className="flex flex-col gap-4">
@@ -149,6 +165,22 @@ function ProfileContent() {
           {t("logout")}
         </Button>
       </div>
+
+      {anonOpen && (
+        <Modal title={t("anonymize")} onClose={() => setAnonOpen(false)}>
+          <div className="flex flex-col gap-4">
+            <p className="text-sm text-muted">{t("anonymizeConfirm")}</p>
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" size="sm" onClick={() => setAnonOpen(false)}>
+                {tc("cancel")}
+              </Button>
+              <Button variant="danger" size="sm" loading={anonBusy} onClick={() => void confirmAnon()}>
+                {t("anonymize")}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

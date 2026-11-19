@@ -9,6 +9,7 @@ import {
   getSearchJobs,
   InferenceJob,
 } from "@/lib/api";
+import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Select } from "@/components/ui/Field";
 import { ErrorBanner, Skeleton } from "@/components/ui/Feedback";
@@ -17,6 +18,8 @@ import { withSearch } from "@/lib/search";
 /** The main decision value as text ("—", "true", "oui", "exclude", …). */
 const fmt = (v: unknown): string => (v === null || v === undefined ? "—" : String(v));
 const pct = (v: number | null): string => (v === null ? "—" : `${(v * 100).toFixed(1)}%`);
+// audit 2026-11-10 P2-12: the table is paginated client-side (50/page).
+const COMPARE_PAGE = 50;
 
 /**
  * Comparison of two inference jobs of a search (spec 2026-11-07 §4): two
@@ -33,12 +36,15 @@ export function ComparisonPanel({
   searchId: string;
 }) {
   const t = useTranslations("comparison");
+  const tc = useTranslations("common");
   const [jobs, setJobs] = useState<InferenceJob[] | null>(null);
   const [jobA, setJobA] = useState("");
   const [jobB, setJobB] = useState("");
   const [data, setData] = useState<Comparison | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  // audit 2026-11-10 P2-12: page of the article-by-article table (client-side, 50/page).
+  const [page, setPage] = useState(1);
 
   /** Fetches the comparison of a pair (loading state + errors live here, in handlers). */
   const compare = useCallback(
@@ -46,6 +52,7 @@ export function ComparisonPanel({
       setLoading(true);
       try {
         setData(await getComparison(projectId, searchId, a, b));
+        setPage(1); // a new pair starts on page 1 (audit 2026-11-10 P2-12)
         setError(null);
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
@@ -98,7 +105,7 @@ export function ComparisonPanel({
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <label className="flex items-center gap-1.5 text-xs text-muted">
           A
-          <Select value={jobA} onChange={(e) => pickA(e.target.value)} aria-label="A">
+          <Select value={jobA} onChange={(e) => pickA(e.target.value)}>
             {jobs.map((j) => (
               <option key={j.id} value={j.id}>
                 {j.model_used} · {new Date(j.created_at ?? 0).toLocaleDateString()}
@@ -108,7 +115,7 @@ export function ComparisonPanel({
         </label>
         <label className="flex items-center gap-1.5 text-xs text-muted">
           B
-          <Select value={jobB} onChange={(e) => pickB(e.target.value)} aria-label="B">
+          <Select value={jobB} onChange={(e) => pickB(e.target.value)}>
             {jobs.map((j) => (
               <option key={j.id} value={j.id}>
                 {j.model_used} · {new Date(j.created_at ?? 0).toLocaleDateString()}
@@ -159,15 +166,16 @@ export function ComparisonPanel({
                 <table className="w-full text-left text-sm">
                   <thead className="bg-surface-muted text-xs text-muted">
                     <tr>
-                      <th className="px-3 py-2">{t("colArticle")}</th>
-                      <th className="px-3 py-2">A</th>
-                      <th className="px-3 py-2">B</th>
-                      <th className="px-3 py-2">{t("colConfidence")}</th>
-                      <th className="px-3 py-2">{t("colAgreement")}</th>
+                      <th scope="col" className="px-3 py-2">{t("colArticle")}</th>
+                      <th scope="col" className="px-3 py-2">A</th>
+                      <th scope="col" className="px-3 py-2">B</th>
+                      <th scope="col" className="px-3 py-2">{t("colConfidence")}</th>
+                      <th scope="col" className="px-3 py-2">{t("colAgreement")}</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {data.rows.map((r) => (
+                    {/* audit 2026-11-10 P2-12: client-side slice (50/page). */}
+                    {data.rows.slice((page - 1) * COMPARE_PAGE, page * COMPARE_PAGE).map((r) => (
                       <tr key={r.article_id} className="border-t border-border">
                         <td className="px-3 py-2">
                           <Link
@@ -186,12 +194,37 @@ export function ComparisonPanel({
                           {r.confidence_a === null ? "—" : r.confidence_a.toFixed(2)} /{" "}
                           {r.confidence_b === null ? "—" : r.confidence_b.toFixed(2)}
                         </td>
-                        <td aria-label={r.agree ? "yes" : "no"}>{r.agree ? "✅" : "⚠️"}</td>
+                        <td aria-label={r.agree ? t("agree") : t("disagree")}>
+                          <span aria-hidden>{r.agree ? "✅" : "⚠️"}</span>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
+              {data.rows.length > COMPARE_PAGE && (
+                <div className="mt-2 flex items-center justify-between gap-2">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={page <= 1}
+                    onClick={() => setPage((p) => p - 1)}
+                  >
+                    {tc("previous")}
+                  </Button>
+                  <span className="text-sm text-muted">
+                    {page} / {Math.ceil(data.rows.length / COMPARE_PAGE)}
+                  </span>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={page >= Math.ceil(data.rows.length / COMPARE_PAGE)}
+                    onClick={() => setPage((p) => p + 1)}
+                  >
+                    {tc("next")}
+                  </Button>
+                </div>
+              )}
               {data.n_excluded > 0 && (
                 <p className="mt-2 text-xs text-muted">{t("excluded", { n: data.n_excluded })}</p>
               )}

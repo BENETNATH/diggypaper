@@ -36,6 +36,7 @@ const num = (v: unknown): number => (typeof v === "number" ? v : 0);
 function JobProgress({ job, onRetry }: { job: ImportJob; onRetry?: (job: ImportJob) => void }) {
   const t = useTranslations("import");
   const tj = useTranslations("jobs");
+  const toError = useApiError();
   const projectId = useParams<{ id: string }>().id;
   const r = job.result ?? {};
   const active = job.status === "PENDING" || job.status === "RUNNING";
@@ -145,7 +146,7 @@ function JobProgress({ job, onRetry }: { job: ImportJob; onRetry?: (job: ImportJ
         <p className="text-xs text-muted">{t("refsDuplicates", { n: num(r.duplicates_doi) })}</p>
       )}
       {job.status === "FAILED" && job.error && (
-        <p className="rounded-lg bg-danger/10 p-3 text-sm text-danger">{job.error}</p>
+        <p className="rounded-lg bg-danger/10 p-3 text-sm text-danger">{toError(job.error)}</p>
       )}
       {job.status === "FAILED" && onRetry && job.kind !== "references" && job.kind !== "citations" && job.kind !== "crate" && (
         <div className="flex flex-col items-start gap-1">
@@ -372,7 +373,7 @@ function ImportContent() {
                   aria-pressed={mode === m}
                   onClick={() => setMode(m)}
                   className={`rounded-md px-3 py-1 ${
-                    mode === m ? "bg-primary text-white" : "text-muted hover:text-foreground"
+                    mode === m ? "bg-primary text-primary-foreground" : "text-muted hover:text-foreground"
                   }`}
                 >
                   {t(labelKey)}

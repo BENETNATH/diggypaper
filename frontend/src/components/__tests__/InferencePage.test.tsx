@@ -50,8 +50,6 @@ jest.mock("@/lib/api", () => ({
   createSearch: jest.fn(),
   triggerInference: jest.fn(),
   cancelInference: jest.fn(),
-  criteriaCount: jest.fn(),
-  criteriaArticles: jest.fn(),
   getResultsIndex: jest.fn(),
   triggerResultsIndex: jest.fn(),
 }));
@@ -487,10 +485,9 @@ describe("inference page — concordance moved to benchmarks (2026-11-08)", () =
   });
 });
 
-// spec 2026-11-09-sous-analyse-criteres R2/R3: the criteria block in the
-// creation form + the CTA banner at the end of a completed analysis.
-describe("inference page — criteria block + CTA banner (spec 2026-11-09)", () => {
-  const criteriaCount = api.criteriaCount as jest.Mock;
+// spec 2026-11-12-filtres-creation-export-filtre: ONE filter block in the creation
+// form (the criteria block is gone) + the CTA banner at the end of a completed analysis.
+describe("inference page — one filter block + CTA banner", () => {
   const getResultsIndex = api.getResultsIndex as jest.Mock;
   const analysed = { ...search, id: "sB", is_default: false, name: "B", predicted: 5, lot_size: 10 };
 
@@ -499,20 +496,41 @@ describe("inference page — criteria block + CTA banner (spec 2026-11-09)", () 
     (window.HTMLElement.prototype as unknown as { scrollIntoView: jest.Mock }).scrollIntoView = jest.fn();
   });
 
-  it("the criteria block appears only when the source analysis has been analysed", async () => {
-    criteriaCount.mockResolvedValue(3);
+  it("one filter block: no criteria block, the selector's filters are the only ones", async () => {
     // default untouched search + an analysed one: the panel is collapsed (a search launched)
     mount({ user: { role: "RESEARCHER" }, roleInProject: "LEAD", searches: [search, analysed] });
     await panelOpen();
     fireEvent.click(screen.getByText(/\+ panelCreate/));
     await screen.findByText("selFrom");
     expect(screen.queryByTestId("criteria-block")).not.toBeInTheDocument();
-    // pick the analysed search B as the source → the criteria block shows
+    // pick the analysed search B as the source → the selector's own filters show
     const fromSel = screen.getByText("selFrom").closest("label")!.querySelector("select")!;
     fireEvent.change(fromSel, { target: { value: "sB" } });
-    await screen.findByTestId("criteria-block");
-    // the live counter settles on the server's number
-    await waitFor(() => expect(screen.getByTestId("crit-count")).toHaveTextContent("critCount"));
+    expect(await screen.findByText("selStatus")).toBeInTheDocument();
+    expect(screen.queryByTestId("crit-count")).not.toBeInTheDocument();
+    // one live counter only (the selector's preview), never the criteria' one
+    await waitFor(() => expect(screen.getByText("selected")).toBeInTheDocument(), { timeout: 2000 });
+    expect(screen.queryByText("critCount")).not.toBeInTheDocument();
+  });
+
+  it("the CTA banner offers export filters; the RIS export follows them", async () => {
+    // the completed analysis is the selected one (?search= in the URL)
+    nav.state.searchParam = "s1";
+    mount({ user: { role: "RESEARCHER" }, roleInProject: "LEAD", searches: [{ ...search, predicted: 2 }], job: completedJob });
+    await panelOpen();
+    await screen.findByTestId("cta-banner");
+    // the export filter group: status select + the answer filter of the search's field
+    const box = screen.getByTestId("export-filters");
+    const [statusSel, answerSel] = within(box).getAllByRole("combobox");
+    fireEvent.change(statusSel, { target: { value: "AUTO_ACCEPTED" } });
+    fireEvent.change(answerSel, { target: { value: "true" } });
+    // the export menu notes that the references follow the filters
+    fireEvent.click(await screen.findByRole("button", { name: /exportMenu/ }));
+    expect(await screen.findByText("exportRefsFiltered")).toBeInTheDocument();
+    const ris = screen.getByRole("menuitem", { name: /exportRis/ });
+    expect(ris).toHaveAttribute("href", expect.stringContaining("search=s1"));
+    expect(ris).toHaveAttribute("href", expect.stringContaining("status=AUTO_ACCEPTED"));
+    expect(ris).toHaveAttribute("href", expect.stringContaining("answers="));
   });
 
   it("the CTA banner is offered at the end of a completed analysis", async () => {

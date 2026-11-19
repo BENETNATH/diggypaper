@@ -47,7 +47,7 @@ export function Menu({
         aria-label={ariaLabel}
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
-        className="inline-flex min-h-[32px] items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-1 text-sm font-medium text-foreground transition-colors hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+        className="inline-flex min-h-[32px] items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-1 text-sm font-medium text-foreground transition-colors duration-fast ease-out hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
       >
         {label}
         {busy && <span className="h-2 w-2 animate-pulse rounded-full bg-primary motion-reduce:animate-none" aria-hidden />}

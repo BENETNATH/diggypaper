@@ -18,6 +18,16 @@ export function usePolling<T>(
   const [loading, setLoading] = useState(active);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stopped = useRef(false);
+  // audit 2026-11-10 P3-9: the latest fn/stopWhen live in refs so a re-created closure is
+  // picked up by the running interval without restarting the poll (stale-closure fix).
+  // Updated in an effect — ref writes during render are forbidden (react-hooks/refs);
+  // the first tick is scheduled after commit, so the refs are always fresh when read.
+  const fnRef = useRef(fn);
+  const stopWhenRef = useRef(stopWhen);
+  useEffect(() => {
+    fnRef.current = fn;
+    stopWhenRef.current = stopWhen;
+  }, [fn, stopWhen]);
 
   useEffect(() => {
     if (!active) return;
@@ -26,10 +36,10 @@ export function usePolling<T>(
     async function tick() {
       if (stopped.current) return;
       try {
-        const result = await fn();
+        const result = await fnRef.current();
         setData(result);
         setError(null);
-        if (stopWhen(result)) {
+        if (stopWhenRef.current(result)) {
           stopped.current = true;
           setLoading(false);
           return;
@@ -47,7 +57,6 @@ export function usePolling<T>(
       stopped.current = true;
       if (timer.current) clearTimeout(timer.current);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, intervalMs]);
 
   return { data, error, loading };

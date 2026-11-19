@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import * as api from "@/lib/api";
 import WatchesPage from "../page";
 
@@ -144,11 +144,14 @@ describe("watches page", () => {
     );
   });
 
-  it("deletes a watch after confirmation", async () => {
+  it("deletes a watch after confirmation (design-system Modal, audit 2026-11-10 P3-14)", async () => {
     await renderWith([WATCH]);
     fireEvent.click(screen.getByRole("button", { name: "delete" }));
+    // The confirmation moved to a Modal: the confirm button lives inside the dialog.
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "delete" }));
     await waitFor(() => expect(api.deleteWatch).toHaveBeenCalledWith("p1", "w1"));
-    expect(window.confirm).toHaveBeenCalled();
+    expect(window.confirm).not.toHaveBeenCalled();
   });
 });
 

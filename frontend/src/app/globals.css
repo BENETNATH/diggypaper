@@ -58,6 +58,9 @@
   /* Focus (WCAG 2.4.11 : ≥ 2px, contraste ≥ 3:1) */
   --focus: oklch(0.55 0.19 258);
 
+  /* Fond assombri des modales/overlays (teinte du neutre, jamais de noir pur) */
+  --overlay: oklch(0.2 0.02 260 / 0.4);
+
   /* Motion — frontend-design-pro : cubic-bezier(0.16,1,0.3,1), 100-200ms */
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --duration-fast: 120ms;
@@ -87,6 +90,7 @@
     --highlight-bg: oklch(0.38 0.09 88);
     --highlight-fg: oklch(0.9 0.06 95);
     --focus: oklch(0.7 0.19 258);
+    --overlay: oklch(0.05 0.01 260 / 0.5);
     /* Cellules de résultats colorées — alphas dark validés en maquette 04 */
     --cell-good: oklch(0.70 0.15 155 / 0.16);
     --cell-warn: oklch(0.75 0.15 75 / 0.18);

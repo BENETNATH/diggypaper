@@ -466,6 +466,58 @@ async def test_chat_happy_path_sse(client, session, researcher_user, do_login, m
     assert all("title" in c and "excerpt" in c and "article_id" in c for c in citations)
 
 
+async def test_chat_citations_survive_non_contiguous_included(
+    client, session, researcher_user, do_login, monkeypatch
+):
+    """audit 2026-11-10: a section dropped by the char budget leaves a GAP in the
+    numbering — a citation on the HIGHER n (here [3]) must survive (max_n, not
+    len(included); with len(included) == 2 the [3] citation was dropped)."""
+    from app.api.v1 import rag_chat as rag_chat_endpoint
+
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project_id = await _chat_project(session, researcher_user)
+
+    async def fake_search(db, project_id_, question, limit=None, article_ids=None):
+        # n=2 is excluded by the char budget (entry > DEFAULT_CONTEXT_BUDGET),
+        # so `included` is [1, 3] — non-contiguous.
+        return {
+            "results": [
+                {
+                    "article": {"id": "a1", "title": "A"},
+                    "section_title": "Methods",
+                    "excerpt": "ex1",
+                    "score": 0.9,
+                },
+                {
+                    "article": {"id": "a1", "title": "A"},
+                    "section_title": "Huge",
+                    "excerpt": "x" * 7000,
+                    "score": 0.8,
+                },
+                {
+                    "article": {"id": "a2", "title": "B"},
+                    "section_title": "Results",
+                    "excerpt": "ex3",
+                    "score": 0.7,
+                },
+            ]
+        }
+
+    monkeypatch.setattr(rag_chat_endpoint, "semantic_search", fake_search)
+
+    async def fake_stream(self, model, messages):
+        yield "voir [1] et [3]."
+
+    monkeypatch.setattr(OpenAICompatibleService, "chat_stream", fake_stream)
+
+    status, events = await _read_sse(client, project_id, {"question": "Quoi ?", "model": "Kev-4B"})
+    assert status == 200
+    citations = {c["n"]: c for c in events["citations"][0]}
+    assert set(citations) == {1, 3}  # [3] survives the gap
+    assert citations[3]["title"] == "B"
+    assert events["done"][0]["n_citations"] == 2
+
+
 async def test_chat_happy_path_with_history(
     client, session, researcher_user, do_login, monkeypatch
 ):

@@ -19,19 +19,19 @@ import {
   listModels,
   triggerInference,
   rerunSearch,
-  criteriaArticles,
-  Criteria,
   InferenceJob,
   ModelInfo,
+  PredictionFilter,
   SchemaField,
   SearchInfo,
   Validation,
   Selection,
 } from "@/lib/api";
 import { useApiError } from "@/lib/errorMsg";
+import { smoothScrollIntoView } from "@/lib/motion";
 import { MAX_GOLD_EXAMPLES } from "@/lib/benchmark";
 import { ExportMenu } from "@/components/ExportMenu";
-import { CriteriaBlock, criteriaActive } from "@/components/CriteriaBlock";
+import { AnswerFilters, Answers } from "@/components/AnswerFilters";
 import { CtaBanner } from "@/components/CtaBanner";
 import { RequireAuth } from "@/components/RequireAuth";
 import { QuestionEditor } from "@/components/QuestionEditor";
@@ -97,7 +97,7 @@ export function AnalysisRow({
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-medium text-foreground">{s.name}</span>
-          {toLaunch && <Badge color="blue">{t("badgeToLaunch")}</Badge>}
+          {toLaunch && <Badge color="gray">{t("badgeToLaunch")}</Badge>}
           {s.is_default && <Badge color="blue">{tp("badgeInitial")}</Badge>}
           {s.kind !== "standard" && <Badge color="gray" title={t(`kindHint_${s.kind}`)}>{t(`kind_${s.kind}`)}</Badge>}
           {s.schedule_state === "waiting" && <Badge color="gray">{t("scheduledBadge")}</Badge>}
@@ -183,6 +183,7 @@ function AnalyseContent() {
   const tq = useTranslations("question");
   const tLead = useTranslations("searches");
   const tj = useTranslations("jobs");
+  const ta = useTranslations("articles");
   const tp = useTranslations("project");
   const tc = useTranslations("common");
   const errText = useApiError();
@@ -209,9 +210,10 @@ function AnalyseContent() {
   const [count, setCount] = useState<number | null>(null);
   const [creating, setCreating] = useState(false);
   const [chain, setChain] = useState(false);
-  // Criteria on the source analysis's results (spec 2026-11-09-sous-analyse-criteres §4).
-  const [criteria, setCriteria] = useState<Criteria>({});
-  const [critCount, setCritCount] = useState<number | null>(null);
+  // Export filters on the CTA banner (spec 2026-11-12-filtres-creation-export-filtre §3):
+  // the RIS/BibTeX export follows the analysis lot + these filters (not persisted).
+  const [exportStatus, setExportStatus] = useState<"" | PredictionFilter>("");
+  const [exportAnswers, setExportAnswers] = useState<Answers>({});
   // CTA « Chatter sur les résultats »: request the results mode of the chat panel.
   const [chatRequest, setChatRequest] = useState<{ searchId: string; nonce: number } | null>(null);
   // spec clarte-3 R3: the chat is a disclosure, collapsed by default (one page, one intention).
@@ -238,16 +240,6 @@ function AnalyseContent() {
   const [exampleN, setExampleN] = useState(5);
   const [validate, setValidate] = useState(false);
   const progressRef = useRef<HTMLDivElement>(null);
-
-  // Changing the source analysis restarts the criteria (their answers are
-  // specific to that search's results).
-  const fromId = selection.from_search_id;
-  const [prevFromId, setPrevFromId] = useState<string | undefined>(fromId);
-  if (prevFromId !== fromId) {
-    setPrevFromId(fromId);
-    setCriteria({});
-    setCritCount(null);
-  }
 
   const active = job?.status === "PENDING" || job?.status === "RUNNING";
   const label = (m: ModelInfo) =>
@@ -277,6 +269,9 @@ function AnalyseContent() {
     setPrevSearchKey(searchKey);
     setJob(null);
     setQ(null);
+    // the export filters refer to the previous analysis's fields/answers
+    setExportStatus("");
+    setExportAnswers({});
   }
 
   // Changing the search reloads its question, its items and its analysis state.
@@ -378,10 +373,6 @@ function AnalyseContent() {
     ...(validate ? { validate_with_gold: true } : {}),
   });
 
-  // The criteria block only exists on an analysed source search (its results).
-  const critOrigin = fromId ? (searches ?? []).find((s) => s.id === fromId) : undefined;
-  const showCriteria = !!critOrigin && (critOrigin.predicted ?? 0) > 0;
-
   function handleStop() {
     setStopOpen(true);
   }
@@ -465,14 +456,7 @@ function AnalyseContent() {
     setCreating(true);
     setError(null);
     try {
-      const sel0 = cleanSelection(selection);
-      // Criteria on the results active: the lot B = the criteria's effective lot
-      // (POST criteria-articles), ANDed with the selector's other filters (ids).
-      const crit = fromId && criteriaActive(criteria);
-      const sel = crit
-        ? { ...sel0, ids: (await criteriaArticles(projectId, fromId, criteria)) }
-        : sel0;
-      if (launch && crit && critCount === 0) return; // nothing kept: no launch (the button is disabled too)
+      const sel = cleanSelection(selection);
       const schedule = {
         model: stage2 || stage1,
         ...(stage2 && stage1 && stage2 !== stage1 ? { prefilter_model: stage1 } : {}),
@@ -523,11 +507,8 @@ function AnalyseContent() {
         search_id: created.id,
       });
       await load();
-      const smooth =
-        typeof window.matchMedia === "function" &&
-        !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
       setTimeout(
-        () => progressRef.current?.scrollIntoView({ behavior: smooth ? "smooth" : "auto", block: "start" }),
+        () => smoothScrollIntoView(progressRef.current),
         100
       );
     } catch (err) {
@@ -626,16 +607,6 @@ function AnalyseContent() {
                   <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={t("scopeDefaultName")} />
                 </Field>
                 <ArticleSelector projectId={projectId} searches={searches ?? []} value={selection} onChange={setSelection} onCount={setCount} />
-                {showCriteria && critOrigin && (
-                  <CriteriaBlock
-                    projectId={projectId}
-                    search={critOrigin}
-                    value={criteria}
-                    onChange={setCriteria}
-                    newName={name}
-                    onCount={setCritCount}
-                  />
-                )}
               </div>
               <QuestionEditor question={q?.question ?? ""} fields={q?.fields ?? []} sections={q?.sections ?? ["methods"]} onChange={setQ} />
               {promptId && (
@@ -651,7 +622,7 @@ function AnalyseContent() {
                   <div className="grid gap-3 md:grid-cols-2">
                     <div className="flex flex-col gap-2">
                       <p className="text-sm font-semibold text-foreground">{t("stage1")}</p>
-                      <Select value={stage1} onChange={(e) => setStage1(e.target.value)}>
+                      <Select value={stage1} onChange={(e) => setStage1(e.target.value)} aria-label={t("stage1")}>
                         <option value="">{t("noPrefilter")}</option>
                         {models.map((m) => (
                           <option key={m.id} value={m.name}>
@@ -663,7 +634,7 @@ function AnalyseContent() {
                     </div>
                     <div className="flex flex-col gap-2">
                       <p className="text-sm font-semibold text-foreground">{t("stage2")}</p>
-                      <Select value={stage2} onChange={(e) => setStage2(e.target.value)}>
+                      <Select value={stage2} onChange={(e) => setStage2(e.target.value)} aria-label={t("stage2")}>
                         {stage1 && <option value="">{t("noStage2")}</option>}
                         {models.map((m) => (
                           <option key={m.id} value={m.name}>
@@ -712,7 +683,7 @@ function AnalyseContent() {
                       <Button
                         type="submit"
                         loading={creating}
-                        disabled={!stage2 && !stage1 || !q || q.fields.length === 0 || q.sections.length === 0 || (!chain && count === 0) || (!chain && showCriteria && criteriaActive(criteria) && critCount === 0)}
+                        disabled={!stage2 && !stage1 || !q || q.fields.length === 0 || q.sections.length === 0 || (!chain && count === 0)}
                       >
                         {chain ? t("createScheduled") : t("run")}
                       </Button>
@@ -854,16 +825,40 @@ function AnalyseContent() {
                 derived={searches?.find((s) => s.parent?.id === current.id) ?? null}
                 onNewAnalysis={() => {
                   setSelection({ from_search_id: current.id });
-                  setCriteria({});
                   setPanelOpen(true);
                 }}
                 onChat={() => {
                   setChatRequest((p) => ({ searchId: current.id, nonce: (p?.nonce ?? 0) + 1 }));
                   setChatOpen(true);
-                  chatRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+                  smoothScrollIntoView(chatRef.current);
                 }}
               >
-                <ExportMenu projectId={projectId} />
+                {/* spec 2026-11-12-filtres-creation-export-filtre §3: the RIS/BibTeX export
+                    follows the analysis lot + these filters (same values as the Articles page). */}
+                <div data-testid="export-filters" className="flex flex-wrap items-end gap-2 rounded-lg bg-surface-muted p-2">
+                  <span className="pb-1 text-xs text-muted">{t("exportFilters")}</span>
+                  <label className="flex flex-col gap-0.5 text-xs text-muted">
+                    {tLead("selStatus")}
+                    <select
+                      value={exportStatus}
+                      onChange={(e) => setExportStatus(e.target.value as "" | PredictionFilter)}
+                      className="rounded border border-border bg-surface p-1 text-xs text-foreground"
+                    >
+                      <option value="">{tLead("any")}</option>
+                      {(["TO_REVIEW", "AUTO_ACCEPTED", "AUTO_REJECTED", "NONE"] as const).map((s) => (
+                        <option key={s} value={s}>
+                          {ta(`filter_${s}`)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <AnswerFilters
+                    fields={current?.fields ?? []}
+                    values={exportAnswers}
+                    onChange={(k, v) => setExportAnswers((p) => ({ ...p, [k]: v }))}
+                  />
+                </div>
+                <ExportMenu projectId={projectId} status={exportStatus || undefined} answers={exportAnswers} />
               </CtaBanner>
             )}
             {isLead && current && (current.predicted ?? 0) + (current.reviewed ?? 0) > 0 && !active && !workersBusy && (

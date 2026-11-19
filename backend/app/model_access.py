@@ -12,6 +12,8 @@ import socket
 import uuid
 from urllib.parse import urlsplit
 
+import httpcore
+import httpx
 from sqlalchemy import and_, or_, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -79,6 +81,82 @@ def check_public_url(url: str) -> str:
         if not ipaddress.ip_address(info[4][0]).is_global:
             raise ValueError("base_url must be a public address")
     return str(infos[0][4][0])
+
+
+class _PinnedBackend(httpcore.AsyncNetworkBackend):
+    """Delegates every TCP connection to the validated IP (never re-resolves)."""
+
+    def __init__(self, pinned_ip: str, inner: httpcore.AsyncNetworkBackend | None = None) -> None:
+        super().__init__()
+        self._pinned_ip = pinned_ip
+        self._inner = inner if inner is not None else httpcore.AnyIOBackend()
+
+    async def connect_tcp(self, host, port, timeout=None, local_address=None, socket_options=None):
+        return await self._inner.connect_tcp(
+            self._pinned_ip,
+            port,
+            timeout=timeout,
+            local_address=local_address,
+            socket_options=socket_options,
+        )
+
+    async def connect_unix_socket(self, path, timeout=None, socket_options=None):
+        return await self._inner.connect_unix_socket(
+            path, timeout=timeout, socket_options=socket_options
+        )
+
+    async def sleep(self, seconds):
+        await self._inner.sleep(seconds)
+
+
+class PinnedTransport(httpx.AsyncBaseTransport):
+    """httpx transport whose TCP connections go to a pre-validated IP.
+
+    The hostname stays in the URL (Host header / TLS SNI) — only the connection
+    target is replaced, so the resolved IP cannot change between the validation
+    and the connect (DNS rebinding, run-3 finding
+    ``models.external-model-dns-rebinding-toctou``).
+    """
+
+    def __init__(self, pinned_ip: str) -> None:
+        self._pool = httpcore.AsyncConnectionPool(
+            ssl_context=httpcore.default_ssl_context(),
+            network_backend=_PinnedBackend(pinned_ip),
+        )
+
+    async def handle_async_request(self, request):
+        from httpx._transports.default import AsyncResponseStream, map_httpcore_exceptions
+
+        req = httpcore.Request(
+            method=request.method,
+            url=httpcore.URL(
+                scheme=request.url.raw_scheme,
+                host=request.url.raw_host,
+                port=request.url.port,
+                target=request.url.raw_path,
+            ),
+            headers=request.headers.raw,
+            content=request.stream,
+            extensions=request.extensions,
+        )
+        with map_httpcore_exceptions():
+            resp = await self._pool.handle_async_request(req)
+        return httpx.Response(
+            status_code=resp.status,
+            headers=resp.headers,
+            stream=AsyncResponseStream(resp.stream),
+            extensions=resp.extensions,
+        )
+
+    async def aclose(self) -> None:
+        await self._pool.aclose()
+
+
+def pinned_client(timeout: float, pinned_ip: str | None) -> httpx.AsyncClient:
+    """A default client — or one pinned to the validated IP (SSRF-safe download)."""
+    if pinned_ip is not None:
+        return httpx.AsyncClient(timeout=timeout, transport=PinnedTransport(pinned_ip))
+    return httpx.AsyncClient(timeout=timeout)
 
 
 def check_url_secrets(url: str) -> None:

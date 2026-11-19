@@ -1,5 +1,5 @@
 import { Suspense } from "react";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import GoldPage from "@/app/projects/[id]/gold/page";
 import * as api from "@/lib/api";
 import { SearchInfo } from "@/lib/api";
@@ -36,12 +36,14 @@ jest.mock("@/lib/api", () => ({
   getProject: jest.fn(),
   listSearches: jest.fn(),
   createSearch: jest.fn(),
+  deleteGold: jest.fn(),
 }));
 
 const mockUseAuth = useAuth as unknown as jest.Mock;
 const listGold = api.listGold as jest.Mock;
 const getProject = api.getProject as jest.Mock;
 const listSearches = api.listSearches as jest.Mock;
+const deleteGold = api.deleteGold as jest.Mock;
 
 const search: SearchInfo = {
   id: "s1",
@@ -64,9 +66,9 @@ const search: SearchInfo = {
   last_benchmark: null,
 };
 
-function mountGold() {
+function mountGold(gold: Array<Record<string, unknown>> = []) {
   mockUseAuth.mockReturnValue({ user: { role: "RESEARCHER" }, loading: false });
-  listGold.mockResolvedValue([]);
+  listGold.mockResolvedValue(gold);
   getProject.mockResolvedValue({
     role_in_project: "LEAD",
     question_set: true,
@@ -236,5 +238,76 @@ describe("gold page — spec clarte-2 R3: no corpus", () => {
     mountNoCorpus("ANNOTATOR");
     expect(await screen.findByText("Aucune analyse possible sans articles")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Importer" })).not.toBeInTheDocument();
+  });
+});
+
+// audit 2026-11-10 P2-12 — the gold list is paginated (50/page, client-side)
+describe("gold page — pagination (audit 2026-11-10 P2-12)", () => {
+  const makeGold = (n: number) =>
+    Array.from({ length: n }, (_, i) => ({
+      id: `g${i + 1}`,
+      article_id: `a${i + 1}`,
+      article_title: `Article ${i + 1}`,
+      ground_truth_json: {},
+      search_id: "s1",
+    }));
+
+  it("shows the first page only; « Suivant » reaches the rest", async () => {
+    mountGold(makeGold(52));
+    expect(await screen.findByText("Article 1")).toBeInTheDocument();
+    expect(screen.queryByText("Article 51")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Suivant" }));
+    expect(await screen.findByText("Article 51")).toBeInTheDocument();
+    expect(screen.queryByText("Article 1")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Suivant" })).toBeDisabled();
+  });
+});
+
+// caveman-review 2026-11-10: after a delete the current page must not exceed the new
+// total — otherwise the list is blank ("3 / 2", nothing to read).
+describe("gold page — page clamp after delete (caveman-review 2026-11-10)", () => {
+  it("clamps to the last page when the delete empties the current one", async () => {
+    mockUseAuth.mockReturnValue({ user: { id: "u1", role: "RESEARCHER" }, loading: false });
+    const items = Array.from({ length: 101 }, (_, i) => ({
+      id: `g${i + 1}`,
+      article_id: `a${i + 1}`,
+      article_title: `Article ${i + 1}`,
+      ground_truth_json: {},
+      search_id: "s1",
+      added_by: "u1", // removable by the caller
+    }));
+    let world = items; // the dataset as seen by the page
+    listGold.mockImplementation(async () => world);
+    deleteGold.mockImplementation(async () => {
+      world = world.slice(0, 100); // "Article 101" is gone
+    });
+    getProject.mockResolvedValue({
+      role_in_project: "LEAD",
+      question_set: true,
+      question: "q?",
+      fields: [],
+      text_sections: ["methods"],
+    });
+    listSearches.mockResolvedValue([search]);
+    render(
+      <Suspense fallback={null}>
+        <GoldPage />
+      </Suspense>
+    );
+    expect(await screen.findByText("Article 1")).toBeInTheDocument();
+
+    // go to the last page (page 3, only "Article 101")
+    fireEvent.click(screen.getByRole("button", { name: "Suivant" }));
+    fireEvent.click(screen.getByRole("button", { name: "Suivant" }));
+    expect(await screen.findByText("Article 101")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Retirer" }));
+    const retirers = await screen.findAllByRole("button", { name: "Retirer" });
+    fireEvent.click(retirers[retirers.length - 1]); // the Modal confirm
+    expect(await screen.findByText("2 / 2")).toBeInTheDocument();
+    expect(screen.getByText("Article 100")).toBeInTheDocument();
+    expect(screen.queryByText("Article 101")).not.toBeInTheDocument();
+    expect(deleteGold).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: "Suivant" })).toBeDisabled();
   });
 });

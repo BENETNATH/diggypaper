@@ -48,7 +48,7 @@ describe("ModelsPage — endpoint model picker (multi-select)", () => {
     (api.getModelCapabilities as jest.Mock).mockResolvedValue(caps("off"));
     (api.listExternalModels as jest.Mock).mockResolvedValue({ ok: true, models: ["m-a", "m-b"] });
     render(<ModelsPage />);
-    const url = await screen.findByPlaceholderText("https://api.openai.com/v1");
+    const url = await screen.findByPlaceholderText("extUrlPlaceholder");
     fireEvent.change(url, { target: { value: "https://api.x.test/v1" } });
 
     fireEvent.click(screen.getByText("extList"));
@@ -71,7 +71,7 @@ describe("ModelsPage — endpoint model picker (multi-select)", () => {
     (api.getModelCapabilities as jest.Mock).mockResolvedValue(caps("off"));
     (api.listExternalModels as jest.Mock).mockResolvedValue({ ok: true, models: ["m-a"] });
     const { container } = render(<ModelsPage />);
-    const url = await screen.findByPlaceholderText("https://api.openai.com/v1");
+    const url = await screen.findByPlaceholderText("extUrlPlaceholder");
     fireEvent.change(url, { target: { value: "https://api.x.test/v1" } });
     fireEvent.change(container.querySelector('input[type="password"]')!, {
       target: { value: "sekret" },
@@ -89,7 +89,7 @@ describe("ModelsPage — endpoint model picker (multi-select)", () => {
     (api.getModelCapabilities as jest.Mock).mockResolvedValue(caps("off"));
     (api.listExternalModels as jest.Mock).mockResolvedValue({ ok: true, models: [] });
     render(<ModelsPage />);
-    const url = await screen.findByPlaceholderText("https://api.openai.com/v1");
+    const url = await screen.findByPlaceholderText("extUrlPlaceholder");
     fireEvent.change(url, { target: { value: "https://api.x.test/v1" } });
 
     fireEvent.click(screen.getByText("extList"));
@@ -102,7 +102,7 @@ describe("ModelsPage — endpoint model picker (multi-select)", () => {
     (api.getModelCapabilities as jest.Mock).mockResolvedValue(caps("off"));
     (api.listExternalModels as jest.Mock).mockResolvedValue({ ok: false, error: "timeout" });
     render(<ModelsPage />);
-    const url = await screen.findByPlaceholderText("https://api.openai.com/v1");
+    const url = await screen.findByPlaceholderText("extUrlPlaceholder");
     fireEvent.change(url, { target: { value: "https://api.x.test/v1" } });
 
     fireEvent.click(screen.getByText("extList"));
@@ -114,7 +114,7 @@ describe("ModelsPage — endpoint model picker (multi-select)", () => {
     (api.getModelCapabilities as jest.Mock).mockResolvedValue(caps("off"));
     (api.listExternalModels as jest.Mock).mockResolvedValue({ ok: true, models: ["m-a"] });
     render(<ModelsPage />);
-    const url = await screen.findByPlaceholderText("https://api.openai.com/v1");
+    const url = await screen.findByPlaceholderText("extUrlPlaceholder");
     fireEvent.change(url, { target: { value: "https://api.x.test/v1" } });
 
     fireEvent.click(screen.getByText("extList"));
@@ -131,7 +131,7 @@ describe("ModelsPage — endpoint model picker (multi-select)", () => {
       () => new Promise<void>((r) => (resolveAdd = r))
     );
     render(<ModelsPage />);
-    const url = await screen.findByPlaceholderText("https://api.openai.com/v1");
+    const url = await screen.findByPlaceholderText("extUrlPlaceholder");
     fireEvent.change(url, { target: { value: "https://api.x.test/v1" } });
     fireEvent.click(screen.getByText("extList"));
     await screen.findByText("m-a");
@@ -153,7 +153,7 @@ describe("ModelsPage — endpoint model picker (multi-select)", () => {
       () => new Promise((r) => (resolveList = r))
     );
     render(<ModelsPage />);
-    const url = await screen.findByPlaceholderText("https://api.openai.com/v1");
+    const url = await screen.findByPlaceholderText("extUrlPlaceholder");
     fireEvent.change(url, { target: { value: "https://api.x.test/v1" } });
     fireEvent.click(screen.getByText("extList"));
     // while the listing is in flight, the user switches endpoint
@@ -168,7 +168,7 @@ describe("ModelsPage — endpoint model picker (multi-select)", () => {
     (api.getModelCapabilities as jest.Mock).mockResolvedValue(caps("off"));
     (api.listExternalModels as jest.Mock).mockResolvedValue({ ok: true, models: ["m-a"] });
     const { container } = render(<ModelsPage />);
-    const url = await screen.findByPlaceholderText("https://api.openai.com/v1");
+    const url = await screen.findByPlaceholderText("extUrlPlaceholder");
     fireEvent.change(url, { target: { value: "https://api.x.test/v1" } });
     fireEvent.click(screen.getByText("extList"));
     await screen.findByText("m-a");

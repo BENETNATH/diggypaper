@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
+import { useApiError } from "@/lib/errorMsg";
 import { ApiError, confirmPasswordReset } from "@/lib/api";
 import { Button } from "@/components/ui/Button";
 import { Field, Input } from "@/components/ui/Field";
@@ -12,6 +13,7 @@ import { ErrorBanner } from "@/components/ui/Feedback";
 
 export default function ResetPage() {
   const t = useTranslations("auth");
+  const apiError = useApiError();
   const searchParams = useSearchParams();
   const token = searchParams.get("token") ?? "";
 
@@ -37,7 +39,7 @@ export default function ResetPage() {
         // invalid_token / expired_token (and any failure): one clear error.
         setError(t("invalidResetLink"));
       } else {
-        setError(err instanceof Error ? err.message : t("unknownError"));
+        setError(err instanceof Error ? apiError(err) : t("unknownError"));
       }
     } finally {
       setLoading(false);

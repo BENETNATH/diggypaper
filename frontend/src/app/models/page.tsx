@@ -80,11 +80,21 @@ function ModelsContent() {
   // A single tracking panel: we poll while a download is running.
   const running = Object.entries(pulls).filter(([, p]) => p.state === "running");
   const failed = Object.entries(pulls).filter(([, p]) => p.state === "error");
+  // audit 2026-11-10 P3-4: the poll only re-reads listOllama (the pulls live there);
+  // the models list + capabilities do not change mid-download (was 3 requests / 2 s).
   useEffect(() => {
     if (running.length === 0) return;
-    const id = setInterval(() => void load(), 2000);
+    const id = setInterval(async () => {
+      try {
+        const o = await listOllama();
+        setDetected(o.items.filter((m) => !m.registered));
+        setPulls(o.pulls);
+      } catch {
+        /* Ollama unreachable: the previous list stays, next tick retries */
+      }
+    }, 2000);
     return () => clearInterval(id);
-  }, [running.length, load]);
+  }, [running.length]);
 
   async function run(fn: () => Promise<unknown>) {
     setError(null);
@@ -197,12 +207,12 @@ function ModelsContent() {
               <ProgressBar
                 key={k}
                 value={p.total ? (p.completed / p.total) * 100 : null}
-                label={`${p.name ?? k} — ${p.status}`}
+                label={`${p.name ?? k} — ${t("pulling")}`}
               />
             ))}
             {failed.map(([k, p]) => (
               <p key={k} className="rounded-lg bg-danger/10 p-2 text-sm text-danger">
-                {p.name ?? k} : {/MLX/i.test(p.error ?? "") ? t("errMlx") : p.error}
+                {p.name ?? k} : {/MLX/i.test(p.error ?? "") ? t("errMlx") : modelErrorMessage(p.error ?? "", t)}
               </p>
             ))}
           </div>
@@ -358,10 +368,10 @@ function ModelsContent() {
             <p className="mb-3 text-xs text-muted">{t("extHint")}</p>
             <form onSubmit={addExt} className="grid gap-3 sm:grid-cols-2">
               <Field label={t("name")}>
-                <Input value={ext.name} onChange={(e) => setExt({ ...ext, name: e.target.value })} placeholder="GPT-4o" required={!extList?.length} />
+                <Input value={ext.name} onChange={(e) => setExt({ ...ext, name: e.target.value })} placeholder={t("extNamePlaceholder")} required={!extList?.length} />
               </Field>
               <Field label={t("extModel")}>
-                <Input value={ext.model} onChange={(e) => setExt({ ...ext, model: e.target.value })} placeholder="gpt-4o-mini" required={!extList?.length} />
+                <Input value={ext.model} onChange={(e) => setExt({ ...ext, model: e.target.value })} placeholder={t("extModelPlaceholder")} required={!extList?.length} />
               </Field>
               <Field label={t("extUrl")} hint={t("extUrlHint")}>
                 <Input
@@ -371,7 +381,7 @@ function ModelsContent() {
                     setExtList(null); // a stale list would be confusing on another endpoint
                     listReq.current++; // invalidate any in-flight listing
                   }}
-                  placeholder="https://api.openai.com/v1"
+                  placeholder={t("extUrlPlaceholder")}
                   required
                 />
               </Field>

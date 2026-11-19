@@ -264,5 +264,8 @@ async def test_profile_update_password_and_logout(client, session, researcher_us
     assert (await client.post("/api/v1/auth/change-password", json=short)).status_code == 422
     ok = {"current_password": "researcher-pass-123", "new_password": "new-pass-1234"}
     assert (await client.post("/api/v1/auth/change-password", json=ok)).status_code == 204
+    # The token_version bump also revoked the acting cookie; a fresh one is
+    # re-issued so the acting session survives (other sessions stay cut).
+    assert (await client.get("/api/v1/auth/me")).status_code == 200
     assert (await client.post("/api/v1/auth/logout")).status_code == 204
     assert (await client.get("/api/v1/auth/me")).status_code == 401

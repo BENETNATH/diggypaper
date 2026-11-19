@@ -70,7 +70,7 @@ export function Checkbox({
         {...rest}
         className="h-5 w-5 rounded border-border bg-surface text-primary focus:ring-2 focus:ring-focus/40"
       />
-      <span className="text-sm text-foreground">{label}</span>
+      <span className="text-pretty text-sm text-foreground">{label}</span>
     </label>
   );
 }

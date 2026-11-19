@@ -58,7 +58,8 @@
     "models": "Modèles",
     "profile": "Profil",
     "users": "Utilisateurs",
-    "admin": "Admin"
+    "admin": "Admin",
+    "language": "Langue"
   },
   "landing": {
     "appName": "Diggypaper",
@@ -253,7 +254,8 @@
     "chainCount": "{n, plural, one {1 analyse} other {# analyses}}",
     "pillNew": "Nouvelle",
     "outsideChainHint": "Échantillons à l'aveugle et mises au point : des analyses spécifiques, hors de la chaîne standard.",
-    "watches": "Veille"
+    "watches": "Veille",
+    "onbTitle": "Parcours d'installation"
   },
   "import": {
     "title": "Import du corpus",
@@ -469,7 +471,8 @@
     "legendGood": "conf ≥ seuil",
     "legendWarn": "conf < seuil",
     "legendNeutral": "neutre",
-    "legendError": "erreur"
+    "legendError": "erreur",
+    "exportBib": "BibTeX (.bib)"
   },
   "gold": {
     "title": "Gold standard",
@@ -624,7 +627,9 @@
     "errors": "Erreurs",
     "concordance": "Concordances",
     "concordanceIntro": "Comparaison ad hoc des analyses IA et accord des relectures, par recherche.",
-    "concordanceSearch": "Recherche"
+    "concordanceSearch": "Recherche",
+    "removeVote": "Retirer le vote",
+    "voteFor": "Préférer cette réponse"
   },
   "watches": {
     "title": "Veille du corpus",
@@ -783,27 +788,8 @@
     "thresholdsReject": "Auto-rejeté si confiance <",
     "thresholdsDisabled": "désactivé",
     "thresholdsSaved": "Seuils enregistrés.",
-    "critTitle": "Critères sur les résultats (facultatif)",
-    "critHint": "Filtre le lot avant l'analyse. Sans critère : les {n} résultats passent tous.",
-    "critResponse": "Réponse",
-    "critNone": "Aucun",
-    "critOpEq": "=",
-    "critOpNe": "≠",
-    "critOpContains": "contient",
-    "critYes": "Oui",
-    "critNo": "Non",
-    "critConfidence": "Confiance",
-    "critStatus": "Statut",
-    "critStatusAutoAccepted": "auto-validé",
-    "critStatusAutoRejected": "auto-rejeté",
-    "critStatusReview": "à revoir",
-    "critStatusError": "erreur",
-    "critCounting": "Calcul du nombre d'articles…",
-    "critCount": "→ {n, plural, one {# article retenu} other {# articles retenus}}",
-    "critZero": "Aucun article ne répond aux critères : retirez un critère ou changez la source.",
-    "critChainIntro": "Dans la chaîne, l'analyse apparaîtra :",
-    "critChainK": "{k, plural, one {# critère} other {# critères}}",
     "ctaDone": "Analyse terminée — {n} articles traités",
+    "exportFilters": "Filtre de l'export",
     "ctaNewAnalysis": "Nouvelle analyse depuis les {n} résultats",
     "ctaReview": "Revoir les {n} incertains",
     "ctaChat": "Chatter sur les résultats",
@@ -910,7 +896,8 @@
     "sourceFile": "Fichier source",
     "sourceNotRecorded": "Source non enregistrée",
     "noModelAnswer": "Aucune réponse du modèle pour cette recherche.",
-    "notAnswered": "Non répondu"
+    "notAnswered": "Non répondu",
+    "confirmModel": "Confirmer la réponse du modèle"
   },
   "models": {
     "title": "Modèles",
@@ -1021,7 +1008,12 @@
     "extAdded": "Modèle ajouté",
     "shareClose": "Fermer le partage",
     "shareProjectLabel": "Projet :",
-    "shareUserLabel": "Utilisateur :"
+    "shareUserLabel": "Utilisateur :",
+    "hfPlaceholder": "qwen, gemma, llama…",
+    "extNamePlaceholder": "GPT-4o",
+    "extModelPlaceholder": "gpt-4o-mini",
+    "extUrlPlaceholder": "https://api.openai.com/v1",
+    "pulling": "téléchargement…"
   },
   "question": {
     "suggestion": "Exemple",
@@ -1107,7 +1099,8 @@
     "language": "Langue de l'invité",
     "languageHelp": "La langue choisie est celle de l'e-mail et de l'interface de l'invité (modifiable ensuite dans la barre de navigation).",
     "membersEmptyTitle": "Aucun membre",
-    "membersEmptyHint": "Invitez des membres pour partager le projet."
+    "membersEmptyHint": "Invitez des membres pour partager le projet.",
+    "emailPlaceholder": "collegue@labo.fr"
   },
   "adminUsers": {
     "title": "Utilisateurs",
@@ -1299,7 +1292,9 @@
     "excluded": "{n} article(s) exclu(s) (présent(s) dans une seule des deux analyses)",
     "noCommon": "Aucun article commun entre les deux analyses.",
     "sameJob": "Choisir deux analyses différentes.",
-    "pickJobs": "Choisir deux analyses à comparer."
+    "pickJobs": "Choisir deux analyses à comparer.",
+    "agree": "accord",
+    "disagree": "désaccord"
   },
   "agreement": {
     "title": "Revue / Accord",
@@ -1351,7 +1346,8 @@
     "resultsIndexButton": "Indexer les résultats",
     "resultsIndexFailed": "L'indexation des résultats a échoué.",
     "resultsNotIndexed": "Les résultats ne sont pas encore indexés.",
-    "resultsEmpty": "Aucun résultat à indexer dans cette analyse."
+    "resultsEmpty": "Aucun résultat à indexer dans cette analyse.",
+    "answerDone": "Réponse terminée"
   },
   "index": {
     "title": "Indexation en cours",

@@ -317,12 +317,14 @@ test("R6: the disclosure is permanent, mode-aware, and the tooltip is keyboard-a
   // switch to results mode → the disclosure is mode-aware
   fireEvent.click(screen.getByTestId("chat-mode-results"));
   expect(screen.getByTestId("chat-disclosure").textContent).toContain("disclosureResults");
-  // the ⓘ points to a live element with the tooltip content (aria-describedby)
+  // the ⓘ points to a live element with the tooltip content (aria-describedby).
+  // audit 2026-11-10 P1-2: it is a native <button> (keyboard-operable by default),
+  // no longer a span with role="button" + tabindex.
   const info = screen.getByTestId("chat-info");
   const srId = info.getAttribute("aria-describedby");
   expect(srId).toBeTruthy();
   expect(document.getElementById(srId!)?.textContent).toContain("disclosureTooltip");
-  expect(info).toHaveAttribute("tabindex", "0");
+  expect(info.tagName).toBe("BUTTON");
 });
 
 test("results mode sends mode + search_id in the request body", async () => {
