@@ -351,19 +351,25 @@ async def _lock_ttl(session: AsyncSession) -> int:
     return int(await get_inference_timeout(session)) + _MODEL_BUSY_TTL_GRACE_SECONDS
 
 
+#: Atomic renew of a model lock: EXPIRE only if the value is still our token,
+#: so a lock reclaimed by another worker between the check and the set can never
+#: be extended (the GET-then-EXPIRE version was non-atomic).
+_RENEW_SCRIPT = """
+if redis.call('GET', KEYS[1]) == ARGV[1] then
+    return redis.call('EXPIRE', KEYS[1], ARGV[2])
+end
+return 0
+"""
+
+
 async def _renew_locks(redis_client, locks: list[tuple[str, str]], ttl: int) -> None:
-    """Renews the TTL of each held lock (GET == token → EXPIRE, same TTL as at
-    acquisition). Best-effort like the release: different token or Redis in error →
-    warning, the job continues."""
-    # ponytail: GET then EXPIRE not atomic, Lua compare-and-set if the contention justifies it
+    """Renews the TTL of each held lock atomically (value == our token → EXPIRE,
+    same TTL as at acquisition). Best-effort like the release: different token or
+    Redis in error → warning, the job continues."""
     for key, token in locks:
         try:
-            current = await redis_client.get(key)
-            if isinstance(current, bytes):
-                current = current.decode()
-            if current == token:
-                await redis_client.expire(key, ttl)
-            else:
+            renewed = await redis_client.eval(_RENEW_SCRIPT, 1, key, token, ttl)
+            if not renewed:
                 logger.warning("inference: lock %s lost (different token), not renewed", key)
         except Exception:  # noqa: BLE001
             logger.warning("inference: renewing lock %s failed", key)

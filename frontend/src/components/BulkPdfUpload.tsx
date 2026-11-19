@@ -53,7 +53,7 @@ export function BulkPdfUpload({ projectId, onDone }: { projectId: string; onDone
       </label>
       <p className="text-xs text-muted">{t("bulkHint")}</p>
       {rows.length > 0 && (
-        <ul className="flex flex-col gap-1 text-xs">
+        <ul role="status" className="flex flex-col gap-1 text-xs">
           {rows.map((r, i) => (
             <li key={i} className={r.state === "ok" ? "text-success" : r.state === "wait" ? "text-muted" : "text-danger"}>
               {r.state === "wait" && "… "}

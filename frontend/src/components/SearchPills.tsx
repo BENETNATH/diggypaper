@@ -48,7 +48,7 @@ export function SearchPills({
             aria-pressed={active}
             title={s.question ?? s.name}
             onClick={() => onPick(s.id)}
-            className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm transition-colors ${
+            className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm transition-colors duration-fast ease-out ${
               active
                 ? "border-primary bg-primary/10 font-semibold text-primary"
                 : "border-border bg-surface text-muted hover:text-foreground"
@@ -69,7 +69,7 @@ export function SearchPills({
       {newHref && (
         <Link
           href={newHref}
-          className="rounded-full border border-dashed border-border px-3 py-1 text-sm text-muted transition-colors hover:text-foreground"
+          className="rounded-full border border-dashed border-border px-3 py-1 text-sm text-muted transition-colors duration-fast ease-out hover:text-foreground"
         >
           + {t("pillNew")}
         </Link>

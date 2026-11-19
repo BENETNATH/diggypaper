@@ -253,12 +253,14 @@ describe("project dashboard — to-launch + KPI scope", () => {
     mountWithSearches([b, c]);
     await screen.findByRole("heading", { name: /d'analyses 2/ });
     // circle letters are positional: A = b (never run), B = c (run)
+    // audit 2026-11-10 P1-3/P1-5: DESIGN clarte-1 M2 pins the "not started" node
+    // circle to bg-surface-muted / text-muted-foreground (was bg-muted text-white).
     const circleA = screen.getByText("A", { selector: "span" });
     expect(circleA).not.toHaveClass("bg-success");
-    expect(circleA).toHaveClass("bg-muted");
+    expect(circleA).toHaveClass("bg-surface-muted", "text-muted-foreground");
     const circleB = screen.getByText("B", { selector: "span" });
     expect(circleB).toHaveClass("bg-success");
-    expect(circleB).not.toHaveClass("bg-muted");
+    expect(circleB).not.toHaveClass("bg-surface-muted");
   });
 });
 

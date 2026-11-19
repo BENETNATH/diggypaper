@@ -512,28 +512,38 @@ async def evaluate_watch_matches(
         pass_keys = {f["key"] for f in pass_fields or []}
         criteria = watch.criteria
         combine = watch.combine
-        matched: list[dict] = []
+        matched_pre: list[tuple[uuid.UUID, list[int]]] = []
         for aid in lot:
             d = decisions.get(aid)
             if watch_matches(criteria, combine, d, pass_fields, threshold, primary):
-                art = await db.get(Article, aid)
-                if art is None:
-                    continue
                 # The satisfied criteria (indices, stable) for the e-mail labels.
                 met_idx = [
                     i
                     for i, c in enumerate(criteria or [])
                     if criterion_met(d, c, criterion_key(c, i), pass_keys)
                 ]
-                matched.append(
-                    {
-                        "article_id": str(aid),
-                        "title": art.title,
-                        "pmid": art.pmid,
-                        "confidence": confidence((d or {}).get("confidence_score")),
-                        "criteria": met_idx,
-                    }
-                )
+                matched_pre.append((aid, met_idx))
+        # Batch the matched articles into one query (not one SELECT per match).
+        by_id: dict[uuid.UUID, Article] = {}
+        if matched_pre:
+            arts = (
+                await db.execute(select(Article).where(Article.id.in_([a for a, _ in matched_pre])))
+            ).scalars()
+            by_id = {a.id: a for a in arts}
+        matched: list[dict] = []
+        for aid, met_idx in matched_pre:
+            art = by_id.get(aid)
+            if art is None:
+                continue
+            matched.append(
+                {
+                    "article_id": str(aid),
+                    "title": art.title,
+                    "pmid": art.pmid,
+                    "confidence": confidence((decisions.get(aid) or {}).get("confidence_score")),
+                    "criteria": met_idx,
+                }
+            )
         watch.last_matched = {
             **(watch.last_matched or {}),
             "matched": len(matched),

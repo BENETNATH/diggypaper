@@ -227,7 +227,7 @@ export function SettingsPanel({ projectId }: { projectId?: string }) {
                 <Button type="button" variant="secondary" size="sm" onClick={() => void handleLlmTest()}>
                   {t("llmTest")}
                 </Button>
-                {llmMsg && <span className="text-sm text-muted">{llmMsg}</span>}
+                {llmMsg && <span aria-live="polite" className="text-sm text-muted">{llmMsg}</span>}
               </div>
             )}
           </Card>
@@ -240,7 +240,7 @@ export function SettingsPanel({ projectId }: { projectId?: string }) {
           <Button type="button" variant="secondary" loading={smtpTesting} onClick={handleSmtpTest}>
             {t("testSmtp")}
           </Button>
-          {smtpMsg && <span className="text-sm text-muted">{smtpMsg}</span>}
+          {smtpMsg && <span aria-live="polite" className="text-sm text-muted">{smtpMsg}</span>}
         </div>
       </form>
     </div>

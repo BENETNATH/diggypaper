@@ -209,7 +209,7 @@ export function ResultRow({
         <div className="min-w-0 flex-1">
           <Link
             href={href}
-            className="group/row flex flex-col gap-2 rounded-lg px-3 py-3 transition-colors hover:bg-surface-muted/60 sm:flex-row sm:items-start sm:justify-between sm:gap-6"
+            className="group/row flex flex-col gap-2 rounded-lg px-3 py-3 transition-colors duration-fast ease-out hover:bg-surface-muted/60 sm:flex-row sm:items-start sm:justify-between sm:gap-6"
           >
             <div className="min-w-0 flex-1">
               <p className="line-clamp-2 text-[15px] leading-snug text-foreground">{a.title ?? t("untitled")}</p>
@@ -260,7 +260,7 @@ export function ResultRow({
                   }}
                   aria-label={t("delete")}
                   title={t("delete")}
-                  className="mt-0.5 rounded p-1 text-muted opacity-0 transition-opacity hover:text-danger focus-visible:opacity-100 group-hover/row:opacity-100"
+                  className="mt-0.5 inline-flex h-11 w-11 items-center justify-center rounded-lg text-muted transition duration-fast ease-out hover:bg-danger/10 hover:text-danger sm:h-8 sm:w-8 sm:opacity-0 sm:group-hover/row:opacity-100 sm:focus-visible:opacity-100"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4" aria-hidden>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />

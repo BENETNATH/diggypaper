@@ -16,6 +16,7 @@ seulement l'anglais. Un changement de modèle invalide les vecteurs existants
 from __future__ import annotations
 
 import logging
+import threading
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +26,13 @@ DEFAULT_EMBEDDING_MODEL = "paraphrase-multilingual-MiniLM-L12-v2"
 #: The live embedder, or ``None`` until first use. Tests replace this with a
 #: fake (no model download in the suite).
 _embedder: Embedder | None = None
+
+#: Guards the lazy load-and-assign within this process (API/worker threads):
+#: without it two concurrent first uses could double-load and last-write-wins.
+#: Each Celery worker loads its own copy (no cross-process sharing). The lock
+#: is held for the whole model load (minutes on first use) — concurrent
+#: get_embedder callers serialize until the load completes.
+_embedder_lock = threading.Lock()
 
 
 class Embedder:
@@ -85,8 +93,12 @@ def get_embedder(name: str | None = None) -> Embedder:
     global _embedder
     if _embedder is not None and (name is None or _embedder.name == name):
         return _embedder
-    name = name or DEFAULT_EMBEDDING_MODEL
-    if _embedder is None:
-        logger.info("embeddings: loading %s (first use)", name)
-    _embedder = _SentenceTransformerEmbedder(name)
-    return _embedder
+    with _embedder_lock:
+        # Re-check inside the lock: another thread may have loaded meanwhile.
+        if _embedder is not None and (name is None or _embedder.name == name):
+            return _embedder
+        name = name or DEFAULT_EMBEDDING_MODEL
+        if _embedder is None:
+            logger.info("embeddings: loading %s (first use)", name)
+        _embedder = _SentenceTransformerEmbedder(name)
+        return _embedder

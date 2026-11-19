@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
+import { useApiError } from "@/lib/errorMsg";
 import {
   crateDownloadUrl,
   CrateExport,
@@ -34,6 +35,7 @@ export function ExportMenu({
   fulltext?: boolean;
 }) {
   const t = useTranslations("articles");
+  const apiError = useApiError();
   const searchId = useSearchId(projectId);
   const { user } = useAuth();
   const [lead, setLead] = useState(false);
@@ -75,7 +77,7 @@ export function ExportMenu({
     try {
       setJob(await startCrateExport(projectId, searchId));
     } catch (e) {
-      setError(e instanceof Error ? e.message : "error");
+      setError(apiError(e));
     }
   }
   const r = job?.result ?? {};
@@ -84,20 +86,20 @@ export function ExportMenu({
   return (
     <Menu label={t("exportMenu")} busy={busy} closeOnClick={false}>
       <MenuItem href={exportUrl(projectId, searchId)} download>
-        ⬇ {t("exportXlsx")}
+        <span aria-hidden>⬇</span> {t("exportXlsx")}
       </MenuItem>
       <MenuItem href={referencesUrl(projectId, "ris", status, answers, searchId, text, fulltext)} download>
-        ⬇ {t("exportRis")}
+        <span aria-hidden>⬇</span> {t("exportRis")}
       </MenuItem>
       <MenuItem href={referencesUrl(projectId, "bib", status, answers, searchId, text, fulltext)} download>
-        ⬇ BibTeX
+        <span aria-hidden>⬇</span> {t("exportBib")}
       </MenuItem>
       {filtered && <MenuNote>{t("exportRefsFiltered")}</MenuNote>}
       {lead && (
         <>
         <MenuSeparator />
         <MenuItem onClick={() => void start()} disabled={busy}>
-          📦 {t("exportZip")}
+          <span aria-hidden>📦</span> {t("exportZip")}
         </MenuItem>
         <MenuNote>{t("exportZipHelp")}</MenuNote>
         {busy && (

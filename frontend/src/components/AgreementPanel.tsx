@@ -181,10 +181,10 @@ export function AgreementPanel({
               <table className="w-full text-left text-sm">
                 <thead className="bg-surface-muted text-xs text-muted">
                   <tr>
-                    <th className="px-3 py-2">{t("field")}</th>
-                    <th className="px-3 py-2">{t("colN")}</th>
-                    <th className="px-3 py-2">{t("colAgreement")}</th>
-                    <th className="px-3 py-2">{t("kappa")}</th>
+                    <th scope="col" className="px-3 py-2">{t("field")}</th>
+                    <th scope="col" className="px-3 py-2">{t("colN")}</th>
+                    <th scope="col" className="px-3 py-2">{t("colAgreement")}</th>
+                    <th scope="col" className="px-3 py-2">{t("kappa")}</th>
                   </tr>
                 </thead>
                 <tbody>

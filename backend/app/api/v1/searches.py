@@ -4,7 +4,6 @@ Several searches per project, on the same batch or on a batch derived from anoth
 ("the articles where search 1 answered yes"). Read: member. Write: LEAD.
 """
 
-import json
 import random
 import uuid
 from typing import Annotated, Literal
@@ -38,7 +37,6 @@ from app.db.models import (
     VectorizeProgress,
 )
 from app.model_access import usable_models
-from app.result_filter import article_ids_by_criteria, count_by_criteria
 from app.scheduler import selection_dict, start_ready
 from app.schema import check_fields
 from app.searches import (
@@ -423,37 +421,6 @@ async def get_search_detail(
 ) -> dict:
     project = await _require_project_member(db, project_id, user)
     return await _full_payload(db, await get_search(db, project, search_id))
-
-
-@router.get("/{project_id}/searches/{search_id}/criteria-count")
-async def criteria_count(
-    project_id: uuid.UUID,
-    search_id: uuid.UUID,
-    db: DbDep,
-    user: UserDep,
-    criteria: str | None = None,
-) -> dict:
-    """How many lot articles answer to the criteria (the live counter, R1).
-    ``criteria`` = JSON object (empty/absent = the whole lot)."""
-    await _require_project_member(db, project_id, user)
-    crit: dict = {}
-    if criteria:
-        try:
-            crit = json.loads(criteria)
-            assert isinstance(crit, dict)
-        except (ValueError, AssertionError):
-            raise HTTPException(status_code=422, detail="criteria must be a JSON object") from None
-    return {"count": await count_by_criteria(db, project_id, search_id, crit)}
-
-
-@router.post("/{project_id}/searches/{search_id}/criteria-articles")
-async def criteria_articles(
-    project_id: uuid.UUID, search_id: uuid.UUID, criteria: dict, db: DbDep, user: UserDep
-) -> dict:
-    """The effective lot of the criteria (used when creating the derived search, R2)."""
-    await _require_project_member(db, project_id, user)
-    ids = await article_ids_by_criteria(db, project_id, search_id, criteria)
-    return {"article_ids": [str(i) for i in ids]}
 
 
 @router.get("/{project_id}/searches/{search_id}/results-index")

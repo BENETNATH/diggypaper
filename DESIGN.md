@@ -63,7 +63,8 @@ Concrete consequences (do not reintroduce the reverse):
 
 ## House components
 
-- **`Card`** (`ui/Card.tsx`) — `rounded-xl border bg-surface p-4`, optional `<h2>` title.
+- **`Card`** (`ui/Card.tsx`) — `rounded-xl bg-surface shadow-sm p-4` (no border,
+  surface + shadow per spec 2026-11-09-politique-surfaces), optional `<h2>` title.
   Use for every content block; never restyle with raw divs.
 - **`Badge`** (`ui/Card.tsx`) — status pill, `bg-{state}/15 text-{state}`. The **text
   carries the meaning**; color is complementary (SC 1.4.1). Use `statusColor(status)` for

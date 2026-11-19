@@ -7,7 +7,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Response
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_current_user_or_anonymized, get_db
@@ -71,6 +71,7 @@ async def anonymize(
         .where(HumanAnnotation.user_id == user.id)
         .values(user_id=None, annotator_hash=anonymized_hash)
     )
+    await db.execute(delete(ProjectMember).where(ProjectMember.user_id == user.id))
     user.email = f"anonymized-{uuid.uuid4().hex[:12]}@invalid.local"  # m5 : 12 hex
     user.hashed_password = ""
     user.full_name = None

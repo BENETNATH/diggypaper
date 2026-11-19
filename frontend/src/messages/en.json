@@ -58,7 +58,8 @@
     "models": "Models",
     "profile": "Profile",
     "users": "Users",
-    "admin": "Admin"
+    "admin": "Admin",
+    "language": "Language"
   },
   "landing": {
     "appName": "Diggypaper",
@@ -253,7 +254,8 @@
     "chainCount": "{n, plural, one {1 analysis} other {# analyses}}",
     "pillNew": "New",
     "outsideChainHint": "Blind samples and tuning runs: specific analyses, outside the standard chain.",
-    "watches": "Watch"
+    "watches": "Watch",
+    "onbTitle": "Setup steps"
   },
   "import": {
     "title": "Corpus import",
@@ -469,7 +471,8 @@
     "legendGood": "conf ≥ threshold",
     "legendWarn": "conf < threshold",
     "legendNeutral": "neutral",
-    "legendError": "error"
+    "legendError": "error",
+    "exportBib": "BibTeX (.bib)"
   },
   "gold": {
     "title": "Gold standard",
@@ -624,7 +627,9 @@
     "errors": "Errors",
     "concordance": "Concordance",
     "concordanceIntro": "Ad-hoc comparison of the AI analyses and reviewer agreement, per search.",
-    "concordanceSearch": "Search"
+    "concordanceSearch": "Search",
+    "removeVote": "Remove vote",
+    "voteFor": "Prefer this answer"
   },
   "watches": {
     "title": "Corpus watch",
@@ -783,27 +788,8 @@
     "thresholdsReject": "Auto-rejected if confidence <",
     "thresholdsDisabled": "disabled",
     "thresholdsSaved": "Thresholds saved.",
-    "critTitle": "Criteria on the results (optional)",
-    "critHint": "Filters the batch before the analysis. No criterion: all {n} results pass.",
-    "critResponse": "Answer",
-    "critNone": "None",
-    "critOpEq": "=",
-    "critOpNe": "≠",
-    "critOpContains": "contains",
-    "critYes": "Yes",
-    "critNo": "No",
-    "critConfidence": "Confidence",
-    "critStatus": "Status",
-    "critStatusAutoAccepted": "auto-validated",
-    "critStatusAutoRejected": "auto-rejected",
-    "critStatusReview": "to review",
-    "critStatusError": "error",
-    "critCounting": "Counting the articles…",
-    "critCount": "→ {n, plural, one {# article kept} other {# articles kept}}",
-    "critZero": "No article matches the criteria: remove a criterion or change the source.",
-    "critChainIntro": "In the chain, the analysis will appear as:",
-    "critChainK": "{k, plural, one {# criterion} other {# criteria}}",
     "ctaDone": "Analysis completed — {n} articles processed",
+    "exportFilters": "Export filter",
     "ctaNewAnalysis": "New analysis from the {n} results",
     "ctaReview": "Review the {n} uncertain",
     "ctaChat": "Chat about the results",
@@ -910,7 +896,8 @@
     "sourceFile": "Source file",
     "sourceNotRecorded": "Source not recorded",
     "noModelAnswer": "No model answer for this search.",
-    "notAnswered": "Not answered"
+    "notAnswered": "Not answered",
+    "confirmModel": "Confirm the model's answer"
   },
   "models": {
     "title": "Models",
@@ -1021,7 +1008,12 @@
     "extAdded": "Model added",
     "shareClose": "Close sharing",
     "shareProjectLabel": "Project:",
-    "shareUserLabel": "User:"
+    "shareUserLabel": "User:",
+    "hfPlaceholder": "qwen, gemma, llama…",
+    "extNamePlaceholder": "GPT-4o",
+    "extModelPlaceholder": "gpt-4o-mini",
+    "extUrlPlaceholder": "https://api.openai.com/v1",
+    "pulling": "downloading…"
   },
   "question": {
     "suggestion": "Example",
@@ -1107,7 +1099,8 @@
     "language": "Invitee's language",
     "languageHelp": "The chosen language is used for the invitation e-mail and the invitee's interface (they can change it later in the navigation bar).",
     "membersEmptyTitle": "No members",
-    "membersEmptyHint": "Invite members to share the project."
+    "membersEmptyHint": "Invite members to share the project.",
+    "emailPlaceholder": "colleague@lab.com"
   },
   "adminUsers": {
     "title": "Users",
@@ -1299,7 +1292,9 @@
     "excluded": "{n} article(s) excluded (present in only one of the two analyses)",
     "noCommon": "No article in common between the two analyses.",
     "sameJob": "Pick two different analyses.",
-    "pickJobs": "Pick two analyses to compare."
+    "pickJobs": "Pick two analyses to compare.",
+    "agree": "agreement",
+    "disagree": "disagreement"
   },
   "agreement": {
     "title": "Review / Agreement",
@@ -1351,7 +1346,8 @@
     "resultsIndexButton": "Index the results",
     "resultsIndexFailed": "Indexing the results failed.",
     "resultsNotIndexed": "The results have not been indexed yet.",
-    "resultsEmpty": "No result to index in this analysis."
+    "resultsEmpty": "No result to index in this analysis.",
+    "answerDone": "Answer complete"
   },
   "index": {
     "title": "Indexing in progress",

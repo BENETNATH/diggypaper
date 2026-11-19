@@ -35,17 +35,19 @@ export function OnboardingSteps({
     { n: 4, title: t("onbStep4"), desc: t("onbStep4Desc"), active: false },
   ];
   return (
-    <section className="flex flex-col gap-2" aria-label={t("onbStep1")}>
+    <section className="flex flex-col gap-2" aria-label={t("onbTitle")}>
       {steps.map((s) => (
         <div
           key={s.n}
           className={`flex items-start gap-3 rounded-xl p-3 ${
-            s.active ? "border-2 border-primary bg-primary/5" : "opacity-60"
+            s.active ? "border-2 border-primary bg-primary/5" : ""
           }`}
         >
           <span
-            className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white ${
-              s.active ? "bg-primary" : "bg-border"
+            className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-sm font-bold ${
+              s.active
+                ? "bg-primary text-primary-foreground"
+                : "bg-surface-muted text-muted-foreground"
             }`}
             aria-hidden
           >

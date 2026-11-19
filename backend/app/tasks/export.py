@@ -106,8 +106,8 @@ async def _run_export(
             job = await session.get(ExportJob, uuid.UUID(export_job_id))
             if job is None:
                 raise LookupError(f"export job not found: {export_job_id}")
-            if job.status in ("COMPLETED", "FAILED"):
-                return {}  # task redelivered: already closed
+            if job.status in ("COMPLETED", "FAILED", "RUNNING"):
+                return {}  # task redelivered: already closed or already in flight
             project = await session.get(Project, job.project_id)
             scope = await get_search(session, project, job.search_id)
             project = ScopedProject(project, scope)

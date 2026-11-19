@@ -127,7 +127,7 @@ export function ProgressBar({ value, label }: { value: number | null; label?: st
         aria-valuenow={pct ?? undefined}
       >
         <div
-          className={`h-full rounded-full bg-primary transition-all ${
+          className={`h-full rounded-full bg-primary transition-all duration-fast ease-out ${
             pct === null ? "w-1/3 animate-pulse" : ""
           }`}
           style={pct === null ? undefined : { width: `${pct}%` }}

@@ -4,6 +4,8 @@ import { useState } from "react";
 import { useTranslations } from "next-intl";
 import { SchemaField } from "@/lib/api";
 import { AnswerTextarea, DecisionFields, defaultValues, Values } from "@/components/DecisionFields";
+import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Field";
 
 export type Annotation = Record<string, unknown> & {
   confidence_score: number;
@@ -102,8 +104,10 @@ export function AnnotationForm({ fields, onSubmit, onError, initial, quotes: giv
       <div>
         <label className="block text-sm font-medium">{t("evidenceQuotes")}</label>
         <div className="mt-1 flex gap-2">
-          <input
+          {/* audit 2026-11-10 P3-10: house Input + Button (was raw elements, off-system styling). */}
+          <Input
             type="text"
+            id="annotation-quote-input"
             value={quoteInput}
             onChange={(e) => setQuoteInput(e.target.value)}
             onKeyDown={(e) => {
@@ -113,15 +117,12 @@ export function AnnotationForm({ fields, onSubmit, onError, initial, quotes: giv
               }
             }}
             placeholder={t("quotePlaceholder")}
-            className="flex-1 rounded border p-2"
+            aria-label={t("evidenceQuotes")}
+            className="flex-1"
           />
-          <button
-            type="button"
-            onClick={addQuote}
-            className="rounded bg-primary px-3 py-2 text-white"
-          >
+          <Button type="button" size="sm" onClick={addQuote}>
             {t("addQuote")}
-          </button>
+          </Button>
         </div>
         <ul className="mt-2 flex flex-col gap-1">
           {quotes.map((q, i) => (
@@ -166,7 +167,7 @@ export function AnnotationForm({ fields, onSubmit, onError, initial, quotes: giv
 
       {error && <p className="text-sm text-danger">{error}</p>}
 
-      <button type="submit" className="rounded bg-success px-4 py-2 text-white">
+      <button type="submit" className="rounded bg-success px-4 py-2 text-primary-foreground">
         {t("submitAnnotation")}
       </button>
     </form>

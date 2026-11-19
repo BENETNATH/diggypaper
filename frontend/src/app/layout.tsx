@@ -9,13 +9,14 @@ import { Footer } from "@/components/Footer";
 import { StorageAlert } from "@/components/StorageAlert";
 import "./globals.css";
 
+// audit 2026-11-10 P3-3: WOFF2 (was WOFF1, ~16 % larger).
 const geistSans = localFont({
-  src: "./fonts/GeistVF.woff",
+  src: "./fonts/GeistVF.woff2",
   variable: "--font-geist-sans",
   weight: "100 900",
 });
 const geistMono = localFont({
-  src: "./fonts/GeistMonoVF.woff",
+  src: "./fonts/GeistMonoVF.woff2",
   variable: "--font-geist-mono",
   weight: "100 900",
 });

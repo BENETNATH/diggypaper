@@ -1,6 +1,6 @@
 "use client";
 
-import { useLocale } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { useAuth } from "@/lib/auth";
 import { updateProfile } from "@/lib/api";
 
@@ -26,6 +26,7 @@ export function writeLocaleCookie(lang: string): void {
 /** Language selector of the navigation bar: changes the interface and, if signed in, the profile. */
 export function LanguageSwitcher({ className = "" }: { className?: string }) {
   const locale = useLocale();
+  const t = useTranslations("nav");
   const { user } = useAuth();
 
   async function change(lang: string) {
@@ -42,10 +43,10 @@ export function LanguageSwitcher({ className = "" }: { className?: string }) {
 
   return (
     <select
-      aria-label="Language"
+      aria-label={t("language")}
       value={locale}
       onChange={(e) => void change(e.target.value)}
-      className={`rounded border border-border bg-surface px-1 py-0.5 text-xs text-foreground ${className}`}
+      className={`min-h-[40px] rounded border border-border bg-surface px-2 py-1 text-sm text-foreground ${className}`}
     >
       {LANGS.map((l) => (
         <option key={l.code} value={l.code}>

@@ -96,7 +96,7 @@ export function HfSearch({
           <Input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="qwen, gemma, llama…"
+            placeholder={t("hfPlaceholder")}
             minLength={2}
             required
             aria-label={t("search")}
@@ -161,7 +161,7 @@ export function HfSearch({
               {repo === m.id && !m.decision && (
                 <div className="mb-3 flex flex-col gap-2 rounded-lg bg-surface-muted p-3">
                   {!files ? (
-                    <p className="text-sm text-muted">…</p>
+                    <p role="status" className="text-sm text-muted">…</p>
                   ) : files.length === 0 ? (
                     <p className="text-sm text-warning">{t("noVariants")}</p>
                   ) : (

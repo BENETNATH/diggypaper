@@ -55,7 +55,7 @@ export function ModelSharing({ modelId }: { modelId: string }) {
     <div className="mt-2 rounded-lg bg-surface-muted p-3 text-sm">
       <p className="mb-2 text-xs text-muted">{t("shareHint")}</p>
       {shares === null ? (
-        <p className="text-xs text-muted">…</p>
+        <p role="status" className="text-xs text-muted">…</p>
       ) : shares.length === 0 ? (
         <p className="text-xs text-muted">{t("shareNone")}</p>
       ) : (
@@ -78,12 +78,13 @@ export function ModelSharing({ modelId }: { modelId: string }) {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           placeholder={t("shareEmail")}
+          aria-label={t("shareEmail")}
           className="w-56"
         />
         <Button size="sm" variant="secondary" disabled={!email.trim()} onClick={() => void add({ email: email.trim() })}>
           {t("shareUser")}
         </Button>
-        <Select value={projectId} onChange={(e) => setProjectId(e.target.value)} className="w-56">
+        <Select value={projectId} onChange={(e) => setProjectId(e.target.value)} aria-label={t("shareProject")} className="w-56">
           <option value="">{t("shareProject")}</option>
           {projects.map((p) => (
             <option key={p.id} value={p.id}>
@@ -95,7 +96,7 @@ export function ModelSharing({ modelId }: { modelId: string }) {
           {t("shareProjectBtn")}
         </Button>
       </div>
-      {error && <p className="mt-2 text-sm text-danger">{error}</p>}
+      {error && <p aria-live="polite" className="mt-2 text-sm text-danger">{error}</p>}
     </div>
   );
 }

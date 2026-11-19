@@ -12,6 +12,7 @@ import { currentSearch, withSearch } from "@/lib/search";
 import { notifySearchesChanged, storeSearchId, useSearchId, useSearches } from "@/lib/useSearch";
 import { RequireAuth } from "@/components/RequireAuth";
 import { Button } from "@/components/ui/Button";
+import { Modal } from "@/components/ui/Modal";
 import { Field, Input } from "@/components/ui/Field";
 import { Badge, Card } from "@/components/ui/Card";
 import { Skeleton, ErrorBanner, EmptyState } from "@/components/ui/Feedback";
@@ -20,6 +21,8 @@ import { Skeleton, ErrorBanner, EmptyState } from "@/components/ui/Feedback";
 const RELEVANT_AT = 0.5;
 /** Below this, the gold is too small to measure anything reliable. */
 const MIN_GOLD = 30;
+// audit 2026-11-10 P2-12: the list is paginated client-side (50/page).
+const GOLD_PAGE = 50;
 /** Default size of the blind sample (unbiased gold standard). */
 const DEFAULT_BLIND_N = 40;
 /** Random seed for a blind draw (module scope: impure, kept out of the component). */
@@ -36,6 +39,7 @@ function Stat({ label, value, tone }: { label: string; value: number; tone?: str
 
 function GoldContent() {
   const t = useTranslations("gold");
+  const tc = useTranslations("common");
   const ts = useTranslations("searches");
   const ta = useTranslations("articles");
   const tp = useTranslations("project");
@@ -57,6 +61,13 @@ function GoldContent() {
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null); // "all" or the id of the current row
+  // audit 2026-11-10 P3-14: removing a gold article confirms through the Modal (was window.confirm).
+  const [removeTarget, setRemoveTarget] = useState<GoldArticle | null>(null);
+  // audit 2026-11-10 P2-12: page of the list (client-side, 50/page).
+  const [page, setPage] = useState(1);
+  // caveman-review 2026-11-10: after a delete `page` may exceed the new total — derive the
+  // page to show (clamped), or the list is blank ("3 / 2", nothing to read).
+  const safePage = gold ? Math.min(page, Math.max(1, Math.ceil(gold.length / GOLD_PAGE))) : page;
   // Blind sample (moved here from the old Questions tab): the whole blind/gold flow lives in Gold.
   const [blindN, setBlindN] = useState(DEFAULT_BLIND_N);
   const [blindBusy, setBlindBusy] = useState(false);
@@ -76,8 +87,8 @@ function GoldContent() {
         if (e instanceof ApiError && e.status === 404) return read(undefined);
         throw e;
       })
-      .catch((e) => setError(e instanceof Error ? e.message : "error"));
-  }, [projectId, searchId, role]);
+      .catch((e) => setError(errText(e)));
+  }, [projectId, searchId, role, errText]);
 
   // Reset the dataset when the search changes (kept null while it reloads).
   const searchKey = `${projectId}:${searchId}`;
@@ -85,6 +96,7 @@ function GoldContent() {
   if (prevSearchKey !== searchKey) {
     setPrevSearchKey(searchKey);
     setGold(null);
+    setPage(1);
   }
 
   useEffect(() => {
@@ -99,7 +111,7 @@ function GoldContent() {
       await fn();
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "error");
+      setError(errText(err));
     } finally {
       setBusy(null);
     }
@@ -115,7 +127,13 @@ function GoldContent() {
     act(g.id, () => goldFromReviews(projectId, { articleIds: [g.article_id!], refresh: true }, g.search_id ?? undefined));
 
   const remove = (g: GoldArticle) => {
-    if (!window.confirm(t("removeConfirm"))) return;
+    setRemoveTarget(g);
+  };
+
+  const confirmRemove = () => {
+    if (!removeTarget) return;
+    const g = removeTarget;
+    setRemoveTarget(null);
     void act(g.id, () => deleteGold(projectId, g.id));
   };
 
@@ -227,7 +245,8 @@ function GoldContent() {
       ) : (
         <Card>
           <ul className="divide-y divide-border">
-            {gold.map((g) => (
+            {/* audit 2026-11-10 P2-12: client-side slice (50/page); stats above keep the total. */}
+            {gold.slice((safePage - 1) * GOLD_PAGE, safePage * GOLD_PAGE).map((g) => (
               <li key={g.id} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-foreground">{g.article_title ?? g.article_id}</p>
@@ -298,6 +317,41 @@ function GoldContent() {
             ))}
           </ul>
         </Card>
+      )}
+
+      {gold.length > GOLD_PAGE && (
+        <div className="flex items-center justify-between gap-2">
+          <Button variant="secondary" size="sm" disabled={safePage <= 1} onClick={() => setPage((p) => p - 1)}>
+            {tc("previous")}
+          </Button>
+          <span className="text-sm text-muted">
+            {safePage} / {Math.ceil(gold.length / GOLD_PAGE)}
+          </span>
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={safePage >= Math.ceil(gold.length / GOLD_PAGE)}
+            onClick={() => setPage((p) => p + 1)}
+          >
+            {tc("next")}
+          </Button>
+        </div>
+      )}
+
+      {removeTarget && (
+        <Modal title={t("remove")} onClose={() => setRemoveTarget(null)}>
+          <div className="flex flex-col gap-4">
+            <p className="text-sm text-muted">{t("removeConfirm")}</p>
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" size="sm" onClick={() => setRemoveTarget(null)}>
+                {tc("cancel")}
+              </Button>
+              <Button variant="danger" size="sm" onClick={() => confirmRemove()}>
+                {t("remove")}
+              </Button>
+            </div>
+          </div>
+        </Modal>
       )}
     </div>
   );

@@ -19,6 +19,7 @@ import { RequireAuth } from "@/components/RequireAuth";
 import { Button } from "@/components/ui/Button";
 import { EmptyState, ErrorBanner, Skeleton } from "@/components/ui/Feedback";
 import { Checkbox, Field, Input, Select, Textarea } from "@/components/ui/Field";
+import { Modal } from "@/components/ui/Modal";
 import CriteriaBuilder from "./CriteriaBuilder";
 
 const SOURCES = [
@@ -284,6 +285,7 @@ function WatchForm({
 
 function WatchesContent() {
   const t = useTranslations("watches");
+  const tc = useTranslations("common");
   const toError = useApiError();
   const projectId = useParams<{ id: string }>().id;
   const searchId = useSearchId(projectId);
@@ -292,6 +294,8 @@ function WatchesContent() {
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
+  // audit 2026-11-10 P3-14: deleting a watch confirms through the Modal (was window.confirm).
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
   const load = useCallback(() => {
     return listWatches(projectId)
@@ -336,12 +340,16 @@ function WatchesContent() {
     }
   }
 
-  async function handleDelete(id: string) {
-    if (!window.confirm(t("deleteConfirm"))) return;
-    setBusy(`pause:${id}`);
+  function handleDelete(id: string) {
+    setDeleteTarget(id);
+  }
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    setBusy(`pause:${deleteTarget}`);
     setError(null);
     try {
-      await deleteWatch(projectId, id);
+      await deleteWatch(projectId, deleteTarget);
+      setDeleteTarget(null); // close the modal first; a reload failure must not leave a dead row
       await load();
     } catch (err) {
       setError(toError(err));
@@ -392,6 +400,27 @@ function WatchesContent() {
             />
           ))}
         </div>
+      )}
+
+      {deleteTarget && (
+        <Modal title={t("delete")} onClose={() => setDeleteTarget(null)}>
+          <div className="flex flex-col gap-4">
+            <p className="text-sm text-muted">{t("deleteConfirm")}</p>
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" size="sm" onClick={() => setDeleteTarget(null)}>
+                {tc("cancel")}
+              </Button>
+              <Button
+                variant="danger"
+                size="sm"
+                loading={busy !== null}
+                onClick={() => void confirmDelete()}
+              >
+                {t("delete")}
+              </Button>
+            </div>
+          </div>
+        </Modal>
       )}
     </div>
   );

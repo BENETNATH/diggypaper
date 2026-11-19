@@ -23,19 +23,19 @@ function Confusion({ m }: { m: Prf }) {
         <caption className="mb-1 text-left text-xs text-muted">{t("confusionTitle")}</caption>
         <thead>
           <tr className="text-xs text-muted">
-            <th className="px-3 py-1 text-left font-normal">{t("goldVsModel")}</th>
-            <th className="px-3 py-1 font-normal">{t("predRelevant")}</th>
-            <th className="px-3 py-1 font-normal">{t("predNotRelevant")}</th>
+            <th scope="col" className="px-3 py-1 text-left font-normal">{t("goldVsModel")}</th>
+            <th scope="col" className="px-3 py-1 font-normal">{t("predRelevant")}</th>
+            <th scope="col" className="px-3 py-1 font-normal">{t("predNotRelevant")}</th>
           </tr>
         </thead>
         <tbody>
           <tr>
-            <th className="px-3 py-1.5 text-left font-medium text-foreground">{t("goldRelevant")}</th>
+            <th scope="row" className="px-3 py-1.5 text-left font-medium text-foreground">{t("goldRelevant")}</th>
             <td className={`${cell} bg-success/10`}>{m.tp}</td>
             <td className={`${cell} bg-danger/10`}>{m.fn}</td>
           </tr>
           <tr>
-            <th className="px-3 py-1.5 text-left font-medium text-foreground">{t("goldNotRelevant")}</th>
+            <th scope="row" className="px-3 py-1.5 text-left font-medium text-foreground">{t("goldNotRelevant")}</th>
             <td className={`${cell} bg-danger/10`}>{m.fp}</td>
             <td className={`${cell} bg-success/10`}>{m.tn}</td>
           </tr>
@@ -85,12 +85,12 @@ export function ValidationView({
             <caption className="mb-1 text-left text-xs text-muted">{t("itemsTitle")}</caption>
             <thead>
               <tr className="border-b border-border text-left text-xs text-muted">
-                <th className="py-1 pr-3 font-normal">{t("item")}</th>
-                <th className="px-2 py-1 text-right font-normal">{t("n")}</th>
-                <th className="px-2 py-1 text-right font-normal">{t("metric_recall")}</th>
-                <th className="px-2 py-1 text-right font-normal">{t("metric_precision")}</th>
-                <th className="px-2 py-1 text-right font-normal">{t("metric_f1")}</th>
-                <th className="px-2 py-1 text-right font-normal">{t("metric_accuracy")}</th>
+                <th scope="col" className="py-1 pr-3 font-normal">{t("item")}</th>
+                <th scope="col" className="px-2 py-1 text-right font-normal">{t("n")}</th>
+                <th scope="col" className="px-2 py-1 text-right font-normal">{t("metric_recall")}</th>
+                <th scope="col" className="px-2 py-1 text-right font-normal">{t("metric_precision")}</th>
+                <th scope="col" className="px-2 py-1 text-right font-normal">{t("metric_f1")}</th>
+                <th scope="col" className="px-2 py-1 text-right font-normal">{t("metric_accuracy")}</th>
               </tr>
             </thead>
             <tbody>

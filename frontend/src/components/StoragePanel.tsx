@@ -57,11 +57,11 @@ export function StoragePanel() {
           <table className="w-full text-left text-xs">
             <thead className="text-muted">
               <tr>
-                <th className="py-1 pr-3 font-normal">{t("project")}</th>
-                <th className="py-1 pr-3 text-right font-normal">{t("articles")}</th>
-                <th className="py-1 pr-3 text-right font-normal">PDF</th>
-                <th className="py-1 pr-3 text-right font-normal">{t("idle")}</th>
-                <th className="py-1 font-normal">{t("deletion")}</th>
+                <th scope="col" className="py-1 pr-3 font-normal">{t("project")}</th>
+                <th scope="col" className="py-1 pr-3 text-right font-normal">{t("articles")}</th>
+                <th scope="col" className="py-1 pr-3 text-right font-normal">PDF</th>
+                <th scope="col" className="py-1 pr-3 text-right font-normal">{t("idle")}</th>
+                <th scope="col" className="py-1 font-normal">{t("deletion")}</th>
               </tr>
             </thead>
             <tbody>

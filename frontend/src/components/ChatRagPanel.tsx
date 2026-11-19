@@ -51,7 +51,7 @@ const RESULTS_POLL_MS = 3000;
 function renderCited(text: string) {
   return text.split(/(\[\d+\])/g).map((part, i) =>
     /^\[\d+\]$/.test(part) ? (
-      <mark key={i} className="rounded bg-amber-200/70 px-1 text-foreground">
+      <mark key={i} className="evidence-highlight">
         {part}
       </mark>
     ) : (
@@ -408,22 +408,23 @@ export function ChatRagPanel({ projectId, models, isLead, searches = [], results
             ? t("disclosureResults", { k: RESULTS_TOP_K, name: scopeSearch.name, n: scopeSearch.predicted })
             : t("disclosureCorpus")}
         </span>
-        <span
-          tabIndex={0}
-          role="button"
+        {/* audit 2026-11-10 P1-2: native button (was a span role="button" with no
+            key handler); P2-9: 32px target, tooltip capped to the viewport. */}
+        <button
+          type="button"
           aria-label={t("tooltipLabel")}
           aria-describedby="chat-rag-tooltip-sr"
           data-testid="chat-info"
-          className="group relative ml-auto flex h-[22px] w-[22px] flex-none items-center justify-center rounded-full border border-border bg-surface text-xs font-bold text-muted focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-focus"
+          className="group relative ml-auto flex h-8 w-8 flex-none cursor-pointer items-center justify-center rounded-full border border-border bg-surface text-xs font-bold text-muted transition-colors duration-fast ease-out hover:bg-surface-muted"
         >
           i
           <span
             role="tooltip"
-            className="pointer-events-none absolute right-full top-1/2 z-10 mr-2 hidden w-[340px] -translate-y-1/2 rounded-lg bg-foreground p-3 text-left font-normal text-background shadow group-hover:block group-focus-within:block"
+            className="pointer-events-none absolute right-full top-1/2 z-10 mr-2 hidden w-[min(340px,calc(100vw_-_3rem))] -translate-y-1/2 rounded-lg bg-foreground p-3 text-left font-normal text-background shadow group-hover:block group-focus-within:block"
           >
             {t("disclosureTooltip", { k: RESULTS_TOP_K })}
           </span>
-        </span>
+        </button>
         <span id="chat-rag-tooltip-sr" className="sr-only">
           {t("disclosureTooltip", { k: RESULTS_TOP_K })}
         </span>
@@ -526,6 +527,11 @@ export function ChatRagPanel({ projectId, models, isLead, searches = [], results
                 {t("thinking")} {elapsed}s
               </p>
             )}
+            {/* audit 2026-11-10 P2-5: screen readers never heard the end of a
+                streamed answer — announce it in a live region. */}
+            <div aria-live="polite" className="sr-only">
+              {!current.streaming && t("answerDone")}
+            </div>
             {!current.streaming && (
               <CitationsList citations={current.citations} projectId={projectId} searchId={searchId} />
             )}
