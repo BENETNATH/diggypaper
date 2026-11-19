@@ -50,6 +50,12 @@ def check_messages(log: str) -> list:
         if not commit and not body.strip():
             continue
         first_line = body.strip().splitlines()[0] if body.strip() else ""
+        # Un merge commit généré par git n'a pas de message d'auteur (la CI
+        # PR check la merge ref) : le gate vérifie les commits écrits, pas
+        # ceux que git fabrique — jamais de première ligne « Merge » chez
+        # l'auteur (le format imposé est Conventional).
+        if first_line.startswith("Merge "):
+            continue
         if not CONVENTIONAL.match(first_line):
             errors.append(
                 f"{commit}: conventional commits : première ligne non "

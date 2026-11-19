@@ -120,3 +120,21 @@ def test_cli_exit_codes():
     assert bad.returncode == 1
     assert "Bad message" not in bad.stderr  # le message fautif est listé, pas caché
     assert "conventional" in (bad.stdout + bad.stderr).lower()
+
+
+def test_git_merge_commit_is_skipped():
+    """Un merge commit généré par git n'a pas de message d'auteur : le gate
+    ne doit pas le refuser (CI PR = checkout de la merge ref)."""
+    m = import_module()
+    log = log_of(
+        "Merge ba39b21d45b34a5be10817929ee84115f0a76462 "
+        "into d207dc99d857f02996530edd67fa2c65438890be"
+    )
+    assert m.check_messages(log) == []
+
+
+def test_merge_commit_does_not_mask_bad_commit():
+    m = import_module()
+    errors = m.check_messages(log_of("Bad message", "Merge abc into def"))
+    assert len(errors) == 1
+    assert "deadbeef000000" in errors[0]
