@@ -1670,48 +1670,6 @@ export const previewSelection = async (projectId: string, selection: Selection):
     })
   ).count;
 
-// --- Criteria on a search's results (spec 2026-11-09-sous-analyse-criteres §1)
-
-/** AND of up to 3 families on the latest prediction per article of the lot. */
-export interface Criteria {
-  response?: { field: string; op: "=" | "!=" | "contains"; value: string };
-  confidence?: [number, number];
-  status?: string[];
-}
-export const CRITERIA_STATUSES = [
-  "AUTO_ACCEPTED",
-  "AUTO_REJECTED",
-  "NEEDS_HUMAN_REVIEW",
-  "ERROR",
-] as const;
-
-/** How many lot articles answer to the criteria (the live counter). */
-export const criteriaCount = async (
-  projectId: string,
-  searchId: string,
-  criteria: Criteria
-): Promise<number> =>
-  (
-    await request<{ count: number }>(
-      `/projects/${projectId}/searches/${searchId}/criteria-count?criteria=${encodeURIComponent(
-        JSON.stringify(criteria)
-      )}`
-    )
-  ).count;
-
-/** The effective lot of the criteria (frozen when the derived search is created). */
-export const criteriaArticles = async (
-  projectId: string,
-  searchId: string,
-  criteria: Criteria
-): Promise<string[]> =>
-  (
-    await request<{ article_ids: string[] }>(
-      `/projects/${projectId}/searches/${searchId}/criteria-articles`,
-      { method: "POST", body: JSON.stringify(criteria) }
-    )
-  ).article_ids;
-
 // --- Results index + results-mode chat (spec 2026-11-09-sous-analyse-criteres §4)
 
 /** State of the results index of a search (distinct scope from the corpus index). */
