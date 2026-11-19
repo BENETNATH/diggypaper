@@ -42,8 +42,11 @@ export function ResultsTable({
         <tr className="border-b border-border">
           {canDelete && <th scope="col" className="w-8 px-2 py-2" aria-label={t("selectArticle")} />}
           {/* audit 2026-11-10 P2-8: the article column stays put on horizontal scroll
-              (the title is the row's identifier); solid bg so it covers the scrolled cells. */}
-          <th scope="col" className="sticky left-0 z-10 bg-surface px-3 py-2 text-left text-xs font-medium text-muted">{t("tableArticle")}</th>
+              (the title is the row's identifier); solid bg so it covers the scrolled cells.
+              Width capped at 28 rem (user decision 2026-11-19: −30% vs the content-driven
+              width) so the answer columns get the space — the title clamps, the full
+              title stays one click away (row link). */}
+          <th scope="col" className="sticky left-0 z-10 w-[28rem] max-w-[28rem] bg-surface px-3 py-2 text-left text-xs font-medium text-muted">{t("tableArticle")}</th>
           {fields.map((f) => (
             <th scope="col" key={f.key} className="min-w-[11rem] px-3 py-2 text-left text-xs font-medium text-muted" title={f.label}>
               {f.label}
@@ -68,7 +71,7 @@ export function ResultsTable({
                 />
               </td>
             )}
-            <td className="sticky left-0 z-10 bg-surface px-3 py-2">
+            <td className="sticky left-0 z-10 w-[28rem] max-w-[28rem] bg-surface px-3 py-2">
               <div className="flex items-start gap-1">
                 <Link href={hrefFor(a)} className="min-w-0 text-foreground hover:text-primary">
                   <span className="line-clamp-2 text-[13px] leading-snug">{a.title ?? t("untitled")}</span>
