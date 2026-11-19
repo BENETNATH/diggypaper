@@ -305,6 +305,47 @@ async def test_run_inference_failure_marks_failed(engine, session, fake_redis):
     assert job.status == InferenceJobStatus.FAILED
 
 
+async def test_run_inference_deactivated_model_fails_before_lock(engine, session, fake_redis):
+    """Owner deactivates the model between trigger and launch: queued job FAILED
+    (revocation) — no lock, zero article, no model call."""
+    project = Project(title="P", created_by=None, status=ProjectStatus.FROZEN)
+    session.add(project)
+    await session.commit()
+    prompt = PromptTemplate(
+        project_id=project.id,
+        version_number="v1.0",
+        system_prompt="SYS",
+        user_prompt_schema="Article Text:\n{methods_text}",
+    )
+    session.add(prompt)
+    await session.commit()
+    model = ModelRegistry(name="Kev-4B", model_identifier="kef/kev-4b")
+    session.add(model)
+    await session.commit()
+    await _seed(session, project, prompt, model, n_articles=1)
+    job = InferenceJob(
+        project_id=project.id,
+        prompt_template_id=prompt.id,
+        model_used="Kev-4B",
+        status=InferenceJobStatus.PENDING,
+    )
+    session.add(job)
+    await session.commit()
+    model.is_active = False  # revocation between trigger and launch
+    await session.commit()
+
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    fake = FakeInference(confidence=0.9)
+    with pytest.raises(LookupError):
+        await _run_inference(str(job.id), session_factory=factory, inference=fake, redis=fake_redis)
+    await session.refresh(job)
+    assert job.status == InferenceJobStatus.FAILED
+    assert "Kev-4B" in (job.error or "")
+    assert fake.calls == 0
+    assert fake_redis.set_calls == []
+    assert (await session.execute(select(ArticlePrediction))).scalar_one_or_none() is None
+
+
 async def test_run_inference_stops_when_cancelled(engine, session, fake_redis):
     """Stop requested mid-way: stops before the next article, no email."""
     project = Project(title="P", created_by=None, status=ProjectStatus.FROZEN)
@@ -710,7 +751,8 @@ async def test_no_lock_for_openai_api_model(engine, session, fake_redis):
 
 
 async def test_no_lock_when_model_not_in_registry(engine, session, fake_redis):
-    """model_used absent from the registry -> no lock, path unchanged."""
+    """model_used absent from the registry (deleted before launch) -> revocation:
+    job FAILED, no lock, no article."""
     project = Project(title="P", created_by=None, status=ProjectStatus.FROZEN)
     session.add(project)
     await session.commit()
@@ -726,10 +768,13 @@ async def test_no_lock_when_model_not_in_registry(engine, session, fake_redis):
     session.add(job)
     await session.commit()
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-    result = await _run_inference(
-        str(job.id), session_factory=factory, inference=FakeInference(), redis=fake_redis
-    )
-    assert result["processed"] == 0
+    with pytest.raises(LookupError):
+        await _run_inference(
+            str(job.id), session_factory=factory, inference=FakeInference(), redis=fake_redis
+        )
+    await session.refresh(job)
+    assert job.status == InferenceJobStatus.FAILED
+    assert "Inconnu" in (job.error or "")
     assert fake_redis.set_calls == []
     assert fake_redis.store == {}
 

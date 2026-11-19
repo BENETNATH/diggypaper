@@ -55,9 +55,15 @@ def access_filter(user: User, project_id: uuid.UUID | None = None):
 async def usable_models(
     db: AsyncSession, user: User, names: list[str], project_id: uuid.UUID
 ) -> list[ModelRegistry]:
-    """Models from ``names`` that ``user`` can run in this project (the others are omitted)."""
+    """Models from ``names`` that ``user`` can run in this project (the others
+    are omitted). Deactivated models (``is_active=false``) are never executable:
+    revocation, not display (owner decision 2026-11-19)."""
     rows = await db.execute(
-        select(ModelRegistry).where(ModelRegistry.name.in_(names), access_filter(user, project_id))
+        select(ModelRegistry).where(
+            ModelRegistry.name.in_(names),
+            ModelRegistry.is_active.is_(True),
+            access_filter(user, project_id),
+        )
     )
     return list(rows.scalars().all())
 

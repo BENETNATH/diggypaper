@@ -190,16 +190,25 @@ async def _run_benchmark(
             own_redis = False
             ttl = 0
             try:
+                names = run.models_tested or []
                 found = {
                     m.name: m
                     for m in (
                         await session.execute(
                             select(ModelRegistry).where(
-                                ModelRegistry.name.in_(run.models_tested or [])
+                                ModelRegistry.name.in_(names),
+                                ModelRegistry.is_active.is_(True),
                             )
                         )
                     ).scalars()
                 }
+                if any(n not in found for n in names):
+                    # model deleted or deactivated in the meantime: revocation —
+                    # the run does not launch (running runs finish: no per-article re-check)
+                    raise LookupError(
+                        f"model not usable (deleted or deactivated): "
+                        f"{', '.join(n for n in names if n not in found)}"
+                    )
                 # Acquire the local models (shared key with inference): all-or-nothing;
                 # OPENAI_API models are remote, no lock.
                 keys = sorted(
@@ -430,7 +439,10 @@ async def _retry_benchmark_errors(
                 m.name: m
                 for m in (
                     await session.execute(
-                        select(ModelRegistry).where(ModelRegistry.name.in_(names))
+                        select(ModelRegistry).where(
+                            ModelRegistry.name.in_(names),
+                            ModelRegistry.is_active.is_(True),
+                        )
                     )
                 )
                 .scalars()
@@ -568,7 +580,13 @@ async def _do_benchmark(
     names = run.models_tested or []
     found = {
         m.name: m
-        for m in (await session.execute(select(ModelRegistry).where(ModelRegistry.name.in_(names))))
+        for m in (
+            await session.execute(
+                select(ModelRegistry).where(
+                    ModelRegistry.name.in_(names), ModelRegistry.is_active.is_(True)
+                )
+            )
+        )
         .scalars()
         .all()
     }

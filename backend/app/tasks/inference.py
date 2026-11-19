@@ -240,11 +240,20 @@ async def _run_inference(
                             select(ModelRegistry).where(
                                 ModelRegistry.name.in_(
                                     [n for n in (job.model_used, job.prefilter_model) if n]
-                                )
+                                ),
+                                ModelRegistry.is_active.is_(True),
                             )
                         )
                     ).scalars()
                 }
+                names = [n for n in (job.model_used, job.prefilter_model) if n]
+                if any(n not in registry for n in names):
+                    # model deleted or deactivated in the meantime: revocation —
+                    # the job does not launch (running jobs finish: no per-article re-check)
+                    raise LookupError(
+                        f"model not usable (deleted or deactivated): "
+                        f"{', '.join(n for n in names if n not in registry)}"
+                    )
                 # Per-model lock (local backends: main + prefilter): makes the
                 # serialized wait in Ollama visible. All-or-nothing: one refused lock →
                 # the ones already taken are released (finally) and the job waits. The
@@ -540,7 +549,13 @@ async def _do_inference(
     names = [n for n in (job.model_used, job.prefilter_model) if n]
     registry = {
         m.name: m
-        for m in (await session.execute(select(ModelRegistry).where(ModelRegistry.name.in_(names))))
+        for m in (
+            await session.execute(
+                select(ModelRegistry).where(
+                    ModelRegistry.name.in_(names), ModelRegistry.is_active.is_(True)
+                )
+            )
+        )
         .scalars()
         .all()
     }

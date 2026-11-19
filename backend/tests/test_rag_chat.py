@@ -408,6 +408,24 @@ async def test_chat_unknown_model_400(client, session, researcher_user, do_login
     assert "unknown_model" in resp.text
 
 
+async def test_chat_deactivated_model_400(client, session, researcher_user, do_login):
+    """Deactivated model (is_active=false) -> 400 unknown_model (revocation, not
+    corpus_empty)."""
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project_id = await _chat_project(session, researcher_user)
+    model = (
+        await session.execute(select(ModelRegistry).where(ModelRegistry.name == "Kev-4B"))
+    ).scalar_one()
+    model.is_active = False
+    await session.commit()
+    resp = await client.post(
+        f"/api/v1/projects/{project_id}/chat",
+        json={"question": "comment ?", "model": "Kev-4B"},
+    )
+    assert resp.status_code == 400
+    assert "unknown_model" in resp.text
+
+
 async def test_chat_empty_corpus_400(client, session, researcher_user, do_login):
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     project_id = await _chat_project(session, researcher_user, vectorize=False)

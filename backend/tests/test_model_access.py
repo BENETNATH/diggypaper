@@ -72,3 +72,28 @@ async def test_pinned_client_builds_and_closes():
         assert client._transport is not None
     finally:
         await client.aclose()
+
+
+# --- usable_models ---
+
+
+async def test_usable_models_excludes_deactivated_model(session):
+    """Deactivated model (is_active=false): refused even to its owner (revocation,
+    owner decision 2026-11-19); an active model passes, a phantom one stays out."""
+    from app.db.models import ModelRegistry, Project, User, UserRole
+    from app.model_access import usable_models
+
+    user = User(email="u@lab.fr", hashed_password="h", role=UserRole.RESEARCHER)
+    project = Project(title="P", created_by=user.id)
+    session.add_all([user, project])
+    await session.commit()
+    session.add_all(
+        [
+            ModelRegistry(name="Off", model_identifier="off", owner_id=user.id, is_active=False),
+            ModelRegistry(name="On", model_identifier="on", owner_id=user.id, is_active=True),
+        ]
+    )
+    await session.commit()
+
+    got = await usable_models(session, user, ["Off", "On", "Phantom"], project.id)
+    assert [m.name for m in got] == ["On"]

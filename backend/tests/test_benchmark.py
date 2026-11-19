@@ -288,6 +288,46 @@ async def test_run_benchmark_inference_failure_marks_failed(
     assert run.status == BenchmarkStatus.FAILED
 
 
+async def test_run_benchmark_deactivated_model_fails_before_lock(engine, session, fake_redis):
+    """Model deactivated between trigger and launch: PENDING run FAILED (revocation)
+    — no lock, zero article, no model call."""
+    project = Project(title="P", created_by=None)
+    session.add(project)
+    await session.commit()
+    prompt = PromptTemplate(
+        project_id=project.id,
+        version_number="v1.0",
+        system_prompt="SYS",
+        user_prompt_schema="Article Text:\n{methods_text}",
+    )
+    session.add(prompt)
+    await session.commit()
+    model = ModelRegistry(name="Kev-4B", model_identifier="kef/kev-4b")
+    session.add(model)
+    await session.commit()
+    await _seed(session, project, prompt, model, _gt())
+    run = BenchmarkRun(
+        project_id=project.id,
+        prompt_template_id=prompt.id,
+        models_tested=["Kev-4B"],
+        status=BenchmarkStatus.PENDING,
+    )
+    session.add(run)
+    await session.commit()
+    model.is_active = False  # revocation between trigger and launch
+    await session.commit()
+
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    fake = FakeInference(_gt())
+    with pytest.raises(LookupError):
+        await _run_benchmark(str(run.id), session_factory=factory, inference=fake, redis=fake_redis)
+    await session.refresh(run)
+    assert run.status == BenchmarkStatus.FAILED
+    assert fake.calls == 0
+    assert fake_redis.set_calls == []
+    assert (await session.execute(select(BenchmarkPrediction))).scalar_one_or_none() is None
+
+
 class RecordingInference(FakeInference):
     """Remembers the system prompts received (variants, gold examples)."""
 

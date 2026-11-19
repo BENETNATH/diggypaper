@@ -217,6 +217,21 @@ async def test_trigger_benchmark_unknown_model_422(client, session, researcher_u
     assert resp.status_code == 422
 
 
+async def test_trigger_benchmark_deactivated_model_422(client, session, researcher_user, do_login):
+    """Deactivated model (is_active=false) -> 422 (revocation)."""
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project_id = await _create_project(client)
+    prompt_id, model_name = await _seed_benchmark_prereqs(session, project_id)
+    model = (await session.execute(select(ModelRegistry))).scalar_one()
+    model.is_active = False
+    await session.commit()
+    resp = await client.post(
+        f"/api/v1/projects/{project_id}/benchmarks",
+        json={"prompt_template_id": prompt_id, "models": [model_name]},
+    )
+    assert resp.status_code == 422
+
+
 async def test_trigger_benchmark_duplicate_models_422(client, session, researcher_user, do_login):
     """Duplicate in models → 422 (len(models) != len(set))."""
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)

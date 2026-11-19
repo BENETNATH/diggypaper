@@ -2,6 +2,7 @@
 
 import httpx
 import pytest
+from sqlalchemy import select
 from test_projects_api import _create_project  # noqa: F401  (aide)
 
 from app import query_assistant as qa
@@ -97,6 +98,13 @@ async def test_assistant_route(client, session, researcher_user, do_login, monke
     bad = {**body, "messages": [{"role": "assistant", "content": "x"}]}
     assert (await client.post(url, json=bad)).status_code == 422
     assert (await client.post(url, json={**body, "model": "Nope"})).status_code == 422
+    # Deactivated model: refused (revocation, owner decision 2026-11-19)
+    mdl = (await session.execute(select(ModelRegistry))).scalar_one()
+    mdl.is_active = False
+    await session.commit()
+    assert (await client.post(url, json=body)).status_code == 422
+    mdl.is_active = True
+    await session.commit()
 
     async def vague(model, service, system, prompt):
         return {"reply": "Quelle population ?", "query": None}
