@@ -1,6 +1,32 @@
 # Backlog
 
-Mise à jour : 2026-10-30. Commits cités : `git log --oneline`.
+Mise à jour : 2026-11-19. Commits cités : `git log --oneline`.
+
+## Corrigé le 2026-11-19
+
+- **Fenêtre DNS check→connect fermée (SSRF rebinding)** : l'URL est résolue une
+  fois, tous les enregistrements doivent être publics, et la connexion est
+  **épinglée sur l'IP validée** pour tout l'appel (Host/SNI préservés ; téléchargement
+  PDF : chaque hop de redirect re-vérifié et ré-épinglé). Plus besoin de filtrer la
+  sortie comme palliatif principal (recommandation README maintenue en défense
+  en profondeur). Validé par l'audit sécurité run-4 (harnais empirique : rebind
+  reproduit → 0 hit interne, le contrôle sans épinglage réussit).
+- **Export « blind » : fuite d'orphelins corrigée** (finding HIGH audit run-4) :
+  le filtre `false()` exclut désormais les orphelins (articles sans revue) du
+  listing ; avertissement log au lieu du silence (`dd00842`).
+- **Gate commits : les skip de vérification n'appliquent plus aux merge commits**
+  (finding LOW audit run-4) : la convention est vérifiée sur le corps des commits
+  non-merge ; un merge (≥ 2 parents) est ignoré comme avant, un commit normal
+  n'échappe plus au préfixe « Merge » (`302e298`, propagé au repo harness `73df5ee`).
+- **`is_active=false` = révocation d'exécution** (décision owner sur la NV run-4) :
+  un modèle désactivé est refusé sur les 6 surfaces d'exécution (chat, inference,
+  benchmarks, searches, query assistant, veille) y compris pour son owner ; les
+  jobs déjà en file échouent avec une raison claire au lieu de tourner ; un job
+  déjà démarré termine. Les prédictions déjà produites sont conservées (`eb2af94`).
+- **Chat SSE : cap total sur la réponse streamée** (NV run-4 « accumulation sans
+  borne ») : bornes taille totale (200 k caractères) et durée totale (600 s) dans
+  le moteur de streaming ; dépassement → event SSE `error` propre, pas d'accumulation
+  illimitée dans le conteneur API (`9a9d05b`).
 
 ## Corrigé le 2026-10-30
 
@@ -49,10 +75,9 @@ Mise à jour : 2026-10-30. Commits cités : `git log --oneline`.
    `backend/app/hal/__init__.py` : la notice reste en résumé seul (comme un article
    sans copie ouverte). Le fichier principal HAL est écrasamment du PDF (vérifié
    2026-10-30) ; extracteur à écrire seulement si un corpus réel en dépend.
-2. **Fenêtre de réécriture DNS sortante non fermée** (SSRF) — la vérification
-   d'URL et la connexion ne sont pas atomiques ; pour une instance exposée à des
-   utilisateurs non fiables, filtrer la sortie des conteneurs (cf. README
-   « Réseau sortant »).
+
+(2. « Fenêtre de réécriture DNS sortante non fermée » — corrigé le 2026-11-19 :
+épinglage de l'IP validée sur tout l'appel, see section ci-dessus.)
 
 ## Contexte publication
 

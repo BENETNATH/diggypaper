@@ -23,6 +23,52 @@ PRISMA diagram.
 
 ---
 
+## How it works (plain words)
+
+Diggypaper automates the repeatable, laborious parts of a **systematic
+literature review** — the method where every article matching a protocol is
+collected, screened one by one, and every decision is recorded. The machines
+do the bulk work on your server; you keep the judgment calls.
+
+1. **You build a corpus** — the set of articles under study. Import from
+   PubMed, Europe PMC, OpenAlex or HAL with a query, paste a reference list,
+   follow citations, or drop in your own `.txt`/`.pdf` files. Open full texts
+   are fetched automatically when they exist.
+2. **You ask questions** — each *search* (*recherche*) is one question
+   (yes/no, choice, free text) asked to a batch of articles. A model reads
+   each article and proposes an answer, quoting the text it relied on.
+3. **Confident answers pass, uncertain ones wait** — an optional *pre-filter*
+   (a small model on title + abstract) screens before the main model; answers
+   above the confidence thresholds are auto-accepted or auto-rejected (*triage*),
+   the rest land in a human review queue.
+4. **Humans review** — members open the article card, check the quoted
+   evidence, validate or correct the answer. Validated reviews accumulate
+   into the **gold standard** (*gold*), the reference your team measures
+   against.
+5. **You measure and export** — *benchmarks* compare prompt formulations and
+   models on the gold; results export to spreadsheet, RO-Crate (a
+   self-contained archive of the whole study) and a PRISMA flow diagram.
+
+Two work aids round it off: a **blind sample** (*échantillon à l'aveugle*) —
+articles reviewed **without seeing the AI's answers**, so the gold stays
+unbiased — and a **watch** (*veille*) — the lead re-runs a source query on a
+cadence and is e-mailed when new matching articles arrive. You can also
+**chat with the corpus**: a model answers in plain language from the indexed
+full texts, with citations back to the articles.
+
+**Vocabulary** — *corpus*: the articles of a project · *search*: a question
+asked to a batch, with its results, reviews and parameters · *gold*: the
+validated reference answers · *blind*: a sample reviewed before seeing the
+AI's answers · *benchmark*: a controlled comparison of prompts / models on
+the gold · *pre-filter*: a cheap first-pass model · *triage*: the automatic
+accept / reject / re-read decision · *review*: one human judgment on one
+article for one search · *model*: a registered language model (local Ollama
+or external API) with an access scope and an on/off switch · *watch*: the
+scheduled re-run of a source query with alert criteria · *RO-Crate*: the
+archive format that bundles a study for sharing or re-import.
+
+---
+
 ## Features
 
 ### Building the corpus
@@ -67,6 +113,10 @@ PRISMA diagram.
   title (or DOI) it carries; ambiguous cases or without a match are reported.
 - **Re-search per article** : re-reads the PubMed record (a published preprint changes its
   PMCID or DOI) then looks for the full text again.
+- **Watch (veille)** : a lead schedules the re-run of a source query on a cadence; the new
+  articles are imported and analyzed against a chosen search's criteria, and the lead is
+  alerted by e-mail when some match. Imported articles enter the corpus (origin « watch »)
+  and follow the normal review flow — the watch is an alert, not a silent acceptance.
 
 ### Asking questions to the corpus: the searches
 A project contains several **searches**. A search is a **question** (its answer
@@ -95,6 +145,15 @@ you ask a second question only to the articles retained by the first, without re
 - Fast **pre-filter** (small model on title + abstract) before the main model, **automatic triage** (accepted, rejected,
   to re-read) according to confidence thresholds, time estimate, **resume** of an interrupted analysis
   and **stop** of a running analysis (already processed articles are kept).
+
+### Chat with the corpus
+
+A conversational panel on the project: you ask in plain language, a registered
+model answers **from the vectorized full texts** (local embeddings — nothing
+leaves the server), scoped to the whole corpus or to one analysis's results,
+with **citations back to the articles**. The answer streams as it is generated;
+a stream that outgrows the server's bound (total size or total duration) is
+stopped with a clean error instead of accumulating without limit.
 
 ### Gold standard, blind sample and benchmark
 - **Gold standard** : a reference comes from a **human review**. Any member of the
@@ -135,7 +194,11 @@ you ask a second question only to the articles retained by the first, without re
   language of the invited person.
 - **Models** : registry of models, **sharing** of a model or of a key with people
   or a project, external models that are **personal** ; keys are encrypted (AES-256-GCM). An
-  account can only use the models it owns or that have been shared with it.
+  account can only use the models it owns or that have been shared with it. A model can be
+  **deactivated** (its owner, or an admin): it disappears from the listings and is refused
+  everywhere it would run — chat, analyses, benchmarks, watches — **including for its
+  owner** (revocation, not display); predictions already produced are kept, and queued jobs
+  that were waiting on it fail with a clear reason instead of running.
 - **Administration** : list of accounts (modify, deactivate, delete with or without their
   projects), pending invitations, all projects, SMTP / NCBI / LLM settings.
 
@@ -400,10 +463,14 @@ re-imported, but the team and the gold stay behind). `docker compose down -v` **
 
 ### Outbound network
 
-External models entered by a user and open PDF downloads
-are refused towards internal addresses (checked at each call). The
-DNS rewrite window between verification and connection is not closed: for an
-instance exposed to untrusted users, also filter the outbound of the
+External models entered by a user and open PDF downloads are refused towards
+internal addresses, and the check is made atomic: the URL is resolved
+**once**, every address record must be public, and the connection is **pinned
+to that validated IP** for the whole call (Host/SNI preserved — the server
+sees the original domain; on PDF downloads each redirect hop is re-checked
+and re-pinned). A DNS rebind between the check and the connect can no longer
+reach the internal network. For an instance exposed to untrusted users, keep
+egress filtering as defense in depth: filter the outbound of the
 `backend`/`worker` containers to your internal network (firewall / egress proxy).
 
 ### Models: what works, and what we deploy
@@ -429,7 +496,9 @@ COMPOSE_PROFILES=ollama          # local models (otherwise: no model service)
   displayed are orders of magnitude: always measure the precision on your gold (*Benchmarks*).
 - Each account can register its own external models (encrypted key) and share them with
   accounts or projects; only the models an account owns or that have been shared with it
-  are usable. A shared model spends the credits of its owner.
+  are usable — and a model is usable only while it is **active**: deactivating it
+  revokes it everywhere (see «Working together»), for everyone, including the owner.
+  A shared model spends the credits of its owner.
 - Decision models without chat (Laya, Kev…) are no longer supported: the
   Hugging Face search flags them and refuses to install them.
 
@@ -494,6 +563,14 @@ SameSite=Strict, revoked on password change and on logout). Roles: `LEAD` / `ANN
 | GET/POST | `/projects/{id}/prompts` | Versioned prompts |
 | GET/POST | `/projects/{id}/benchmarks` | Benchmarks (metrics) |
 | GET/POST | `/projects/{id}/inference` | Inference (job) |
+| POST | `/projects/{id}/chat` | Chat RAG (SSE stream, citations) |
+| GET/POST | `/projects/{id}/semantic-search` | Hybrid search over the vectorized corpus |
+| GET/POST/DELETE | `/projects/{id}/watches` | Corpus watch (veille) + alert criteria |
+| GET/POST | `/projects/{id}/query-assistant` | PubMed query assistant (chat) |
+| GET/POST | `/projects/{id}/documents` | Own .txt/.pdf deposit |
+| GET/POST | `/projects/{id}/team` | Members, roles, invitations |
+| GET/POST | `/projects/{id}/citations` | Citation enrichment (iCite, NIH) |
+| GET/POST/PATCH | `/models` · `/models/{id}/share` | Registry, sharing, deactivation (`is_active`) |
 | GET/PUT | `/admin/settings` | Settings by scope (secrets masked) |
 | POST | `/admin/settings/smtp/test` | Test email send |
 | DELETE | `/users/me/anonymize` | GDPR anonymization |
@@ -508,7 +585,10 @@ cd backend && source .venv/bin/activate
 pytest -q
 ruff check . && ruff format .
 
-# Continuous integration: .github/workflows/ci.yml (ruff, pytest, tsc, lint, jest, build)
+# Continuous integration: .github/workflows/
+#   ci.yml      — backend (ruff, pytest) + frontend (tsc, lint, jest, build)
+#   harness.yml — gate tests + commit-convention check
+#   release.yml — GitHub release from backend/VERSION
 # Python dependencies frozen in backend/constraints.txt (used by the image and the CI).
 
 # Frontend
@@ -536,8 +616,8 @@ diggypaper/
 │   │   ├── tasks/            # Celery tasks (import, benchmark, inference)
 │   │   ├── emails/           # FastAPI-Mail (DB > env)
 │   │   └── main.py           # app factory (middleware + routers)
-│   ├── alembic/              # migrations (0001 → 0033)
-│   └── tests/                # 54 suites / 789 tests, offline
+│   ├── alembic/              # migrations (0001 → 0043)
+│   └── tests/                # 70 suites / 1161 tests, offline
 └── frontend/
     ├── src/app/              # routes (login, register, projects/[id]/*)
     ├── src/components/ui/    # design system (Button, Field, Card, Feedback)

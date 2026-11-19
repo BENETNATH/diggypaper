@@ -18,7 +18,10 @@ Sovereign, collaborative platform for **systematic literature review**.
 4. **Human review** — annotators read the article, quote evidence, confirm or correct the
    model's answer. Gold references accumulate as the validated truth; benchmarks compare
    prompts and models on a test lot.
-5. **Export** — Excel, RIS, RO-Crate (full corpus) and a PRISMA 2020 flow diagram.
+5. **Follow-up and conversation** — a *watch* re-runs a source query on a cadence and
+   alerts the lead when new matching articles arrive; the corpus can be *chatted with*
+   (the model answers from the indexed full texts, with citations).
+6. **Export** — Excel, RIS, RO-Crate (full corpus) and a PRISMA 2020 flow diagram.
 
 ## Who it is for
 
@@ -31,7 +34,8 @@ Sovereign, collaborative platform for **systematic literature review**.
 
 - **Sovereignty**: self-hosted, no cloud dependency for analysis; external model APIs are
   optional and their data flow must be disclosed in the UI.
-- **CPU-only**: models run on server CPU (Ollama); the UI must never promise GPU speeds.
+- **CPU-only**: local models run on server CPU (Ollama); the UI must never promise
+  GPU speeds.
 - **GDPR privacy by design**: consent before data processing, per-user data export,
   anonymisation.
 - **Roles are enforced in the UI, not only server-side**: import/analysis/benchmark pages
