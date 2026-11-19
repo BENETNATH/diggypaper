@@ -3,7 +3,7 @@
 
 Utilisé par la CI (job `commits`, PR uniquement) :
 
-  git log --format=%H%x00%B%x00 base..head | scripts/check_commits.py -
+  git log --format=%H%x00%P%x00%B%x00 base..head | scripts/check_commits.py -
 
 Règles (arbitrées le 02/11, portées de cardinal) :
 - première ligne conforme Conventional Commits :
@@ -39,23 +39,23 @@ AI_PATTERNS = (
 
 
 def check_messages(log: str) -> list:
-    """log = séquence de 'hash\\x00message\\x00' (format %H%x00%B%x00)."""
+    """log = séquence de 'hash\\x00parents\\x00message\\x00' (format %H%x00%P%x00%B%x00)."""
     errors = []
     parts = [p for p in log.split("\x00")]
     if parts and parts[-1] == "":
         parts = parts[:-1]
-    for i in range(0, len(parts) - 1, 2):
+    for i in range(0, len(parts) - 2, 3):
         commit = parts[i].strip()
-        body = parts[i + 1]
+        parents = parts[i + 1].split()
+        body = parts[i + 2]
         if not commit and not body.strip():
             continue
-        first_line = body.strip().splitlines()[0] if body.strip() else ""
-        # Un merge commit généré par git n'a pas de message d'auteur (la CI
-        # PR check la merge ref) : le gate vérifie les commits écrits, pas
-        # ceux que git fabrique — jamais de première ligne « Merge » chez
-        # l'auteur (le format imposé est Conventional).
-        if first_line.startswith("Merge "):
+        # Un vrai merge commit (>= 2 parents) est fabriqué par git, pas écrit par
+        # l'auteur : le gate vérifie les commits écrits. Un commit de 1 parent
+        # dont le message commence par « Merge » passe les deux checks.
+        if len(parents) >= 2:
             continue
+        first_line = body.strip().splitlines()[0] if body.strip() else ""
         if not CONVENTIONAL.match(first_line):
             errors.append(
                 f"{commit}: conventional commits : première ligne non "

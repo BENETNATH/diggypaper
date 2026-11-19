@@ -23,7 +23,7 @@ jobs:
           fetch-depth: 0
       - name: Check commit messages
         run: |
-          git log --format=%H%x00%B%x00 "${{ github.event.pull_request.base.sha }}..HEAD" \
+          git log --format=%H%x00%P%x00%B%x00 "${{ github.event.pull_request.base.sha }}..HEAD" \
             | python3 scripts/check_commits.py -
 
   # Les gates du harness sont testés en continu (review gate, check commits,
