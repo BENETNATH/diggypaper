@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useApiError } from "@/lib/errorMsg";
 import { useAuth } from "@/lib/auth";
@@ -18,6 +18,11 @@ export default function LoginPage() {
   const apiError = useApiError();
   const { login } = useAuth();
   const router = useRouter();
+  // R7 (spec 2026-11-20): open-redirect guard — `next` is honoured only if it
+  // starts with "/" but not with "//".
+  const searchParams = useSearchParams();
+  const next = searchParams.get("next");
+  const safeNext = next && next.startsWith("/") && !next.startsWith("//") ? next : null;
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -63,10 +68,10 @@ export default function LoginPage() {
       // New device (no remembered language choice): we take the account's language.
       if (!readLocaleCookie() && u.language_preference) {
         writeLocaleCookie(u.language_preference);
-        router.push("/projects");
+        router.push(safeNext ?? "/projects");
         return;
       }
-      router.push("/projects");
+      router.push(safeNext ?? "/projects");
     } catch (err) {
       if (err instanceof ApiError && err.status === 403) {
         setError(t("consentRequired"));

@@ -36,6 +36,7 @@ from app.core.bootstrap import bootstrap_admin
 from app.core.config import get_settings, validate_settings
 from app.crate import app_version
 from app.i18n import I18nMiddleware
+from app.session_slide import SessionSlideMiddleware
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +61,9 @@ def create_app() -> FastAPI:
     # F5: fail-fast on the dev default secrets (JWT_SECRET / ANON_SALT).
     validate_settings(settings)
     app = FastAPI(title="Diggypaper API", lifespan=lifespan)
-    # Last added = outermost: CORS first (preflight), then i18n.
+    # Last added = outermost: session-slide (innermost) first, then i18n, then
+    # CORS (preflight) — the CORS preflights never reach the slide logic.
+    app.add_middleware(SessionSlideMiddleware)
     app.add_middleware(I18nMiddleware)
     # F3: CORS only if origins are configured (default empty = no CORS,
     # the deployment is same-origin behind nginx).

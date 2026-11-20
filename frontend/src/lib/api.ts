@@ -474,12 +474,29 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   return doRequest<T>(path, options);
 }
 
+/** 401 redirect destination (spec 2026-11-20 R6): /login?next=<current url, encoded>. */
+export function loginRedirectHref(pathname: string, search: string): string {
+  return `/login?next=${encodeURIComponent(pathname + search)}`;
+}
+
 async function doRequest<T>(path: string, options?: RequestInit): Promise<T> {
   const resp = await fetch(`${API_BASE}${path}`, {
     credentials: "include",
     headers: { "Content-Type": "application/json", ...(options?.headers ?? {}) },
     ...options,
   });
+  // Spec 2026-11-20 R6: session expired → hard redirect to the login page; the
+  // page unmounts on navigation, so the call stays pending (no error raised).
+  // Never on the login page itself: the AuthProvider's /auth/me 401 there would
+  // otherwise loop /login?next=/login?next=…
+  if (
+    resp.status === 401 &&
+    !path.startsWith("/auth/login") &&
+    location.pathname !== "/login"
+  ) {
+    window.location.href = loginRedirectHref(location.pathname, location.search);
+    return new Promise<T>(() => {});
+  }
   if (!resp.ok) {
     let detail = resp.statusText;
     try {

@@ -1,4 +1,13 @@
-import { DEDUP_SETTLE_TIMEOUT_MS, errorDetail, errorKey, getProject } from "@/lib/api";
+import {
+  ApiError,
+  DEDUP_SETTLE_TIMEOUT_MS,
+  errorDetail,
+  errorKey,
+  getProject,
+  login,
+  loginRedirectHref,
+  me,
+} from "@/lib/api";
 
 describe("errorDetail", () => {
   it("keeps a string detail", () => {
@@ -88,6 +97,62 @@ describe("GET request coalescing (audit 2026-11-10 P2-10)", () => {
     } finally {
       jest.useRealTimers();
       global.fetch = original;
+    }
+  });
+});
+
+// spec 2026-11-20 R6: a 401 from any call except /auth/login → hard redirect to
+// /login?next=<current url>; the failing call stays pending (the page unmounts).
+// jsdom cannot stub window.location (unforgeable in jsdom 26), so the redirect
+// URL is asserted via loginRedirectHref (the value assigned to location.href)
+// and the pending state via the call itself (no error raised).
+describe("401 session expired → /login?next=", () => {
+  const unauthorized = (detail: string) =>
+    jest.fn(async () => ({
+      ok: false,
+      status: 401,
+      statusText: "Unauthorized",
+      json: async () => ({ detail }),
+    })) as unknown as typeof fetch;
+
+  it("a 401 from a non-login call redirects to /login?next=<encoded url> and stays pending", async () => {
+    // the exact URL assigned to window.location.href by doRequest on 401
+    expect(loginRedirectHref("/projects/p1/inference", "?search=s1")).toBe(
+      `/login?next=${encodeURIComponent("/projects/p1/inference?search=s1")}`
+    );
+    const original = global.fetch;
+    global.fetch = unauthorized("Not authenticated");
+    try {
+      const p = me();
+      // the timeout sentinel wins only if the call never settles (no error raised)
+      const outcome = await Promise.race([p, new Promise((r) => setTimeout(r, 25))]);
+      expect(outcome).toBeUndefined();
+    } finally {
+      global.fetch = original;
+    }
+  });
+
+  it("a 401 from /auth/login does not redirect (the ApiError is raised)", async () => {
+    const original = global.fetch;
+    global.fetch = unauthorized("Invalid or expired invitation token");
+    try {
+      await expect(login("a@b.c", "password-123")).rejects.toThrow(ApiError);
+    } finally {
+      global.fetch = original;
+    }
+  });
+
+  it("a 401 while already on the /login page does not redirect (AuthProvider /auth/me loop guard)", async () => {
+    const original = global.fetch;
+    global.fetch = unauthorized("Not authenticated");
+    try {
+      window.history.replaceState(null, "", "/login");
+      // different path than the previous test: the GET dedup map would otherwise
+      // hand back its never-settling promise
+      await expect(getProject("p1")).rejects.toThrow(ApiError);
+    } finally {
+      global.fetch = original;
+      window.history.replaceState(null, "", "/");
     }
   });
 });
