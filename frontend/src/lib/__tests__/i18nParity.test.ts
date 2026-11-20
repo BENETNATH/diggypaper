@@ -87,6 +87,21 @@ describe("i18n key parity (4 locales)", () => {
     }
   });
 
+  // spec 2026-11-20-projets-quick-actions R6: the 3 new keys exist in every locale;
+  // the role labels are the EXISTING team.lead / team.annotator (reused, not duplicated)
+  it("spec projets-quick-actions: deleteProjectTitle/deleteProjectConfirm/shared present, in the 4 locales", () => {
+    const all = [fr, en, de, es];
+    for (const m of all) {
+      const p = m.projects as Record<string, unknown>;
+      for (const k of ["deleteProjectTitle", "deleteProjectConfirm", "shared"]) {
+        expect(p[k]).toBeTruthy();
+      }
+      const team = m.team as Record<string, unknown>;
+      expect(team.lead).toBeTruthy();
+      expect(team.annotator).toBeTruthy();
+    }
+  });
+
   it("spec analyses-runs-2: the inference fork-409 keys are gone, the run state keys exist, in the 4 locales", () => {
     const all = [fr, en, de, es];
     for (const m of all) {

@@ -118,7 +118,10 @@
     "status_DRAFT": "Entwurf",
     "status_PROCESSING": "Import läuft",
     "status_FROZEN": "Bereit zur Analyse",
-    "status_COMPLETED": "Analysiert"
+    "status_COMPLETED": "Analysiert",
+    "deleteProjectTitle": "Projekt löschen",
+    "deleteProjectConfirm": "„{title}“ und den gesamten Inhalt löschen? Diese Aktion ist unwiderruflich: Artikel, Korpora, Analysen, Ergebnisse und Mitglieder werden gelöscht.",
+    "shared": "Geteilt"
   },
   "project": {
     "loading": "Projekt wird geladen…",

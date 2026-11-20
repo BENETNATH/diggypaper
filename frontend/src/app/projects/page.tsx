@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useAuth } from "@/lib/auth";
@@ -11,7 +10,8 @@ import { RequireAuth } from "@/components/RequireAuth";
 import { GlobalJobsIndicator } from "@/components/GlobalJobsIndicator";
 import { Button } from "@/components/ui/Button";
 import { Field, Input, Select } from "@/components/ui/Field";
-import { Card, Badge, statusColor } from "@/components/ui/Card";
+import { Card } from "@/components/ui/Card";
+import ProjectCard from "@/components/ProjectCard";
 import { Skeleton, ErrorBanner, EmptyState } from "@/components/ui/Feedback";
 
 function ProjectsContent() {
@@ -150,23 +150,7 @@ function ProjectsContent() {
       ) : (
         <div className="grid gap-4 sm:grid-cols-2">
           {projects.map((p) => (
-            <Link key={p.id} href={`/projects/${p.id}`} className="block">
-              <Card className="transition-shadow duration-fast ease-out hover:shadow-md">
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <h3 className="font-semibold text-foreground">{p.title}</h3>
-                    {p.description && (
-                      <p className="mt-1 text-sm text-muted">{p.description}</p>
-                    )}
-                  </div>
-                  <Badge color={statusColor(p.status)}>{t(`status_${p.status}`)}</Badge>
-                </div>
-                <div className="mt-3 flex items-center gap-3 text-sm text-muted">
-                  <span>{t("articles")}: {p.article_count ?? 0}</span>
-                  {p.role_in_project && <span>· {p.role_in_project}</span>}
-                </div>
-              </Card>
-            </Link>
+            <ProjectCard key={p.id} project={p} user={user} onDeleted={load} />
           ))}
         </div>
       )}

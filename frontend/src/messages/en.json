@@ -118,7 +118,10 @@
     "status_DRAFT": "Draft",
     "status_PROCESSING": "Importing",
     "status_FROZEN": "Ready to analyze",
-    "status_COMPLETED": "Analyzed"
+    "status_COMPLETED": "Analyzed",
+    "deleteProjectTitle": "Delete project",
+    "deleteProjectConfirm": "Delete “{title}” and all of its content? This action is irreversible: articles, corpora, analyses, results and members will be deleted.",
+    "shared": "Shared"
   },
   "project": {
     "loading": "Loading project…",

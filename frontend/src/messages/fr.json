@@ -118,7 +118,10 @@
     "status_DRAFT": "Brouillon",
     "status_PROCESSING": "Import en cours",
     "status_FROZEN": "Prêt à analyser",
-    "status_COMPLETED": "Analysé"
+    "status_COMPLETED": "Analysé",
+    "deleteProjectTitle": "Supprimer le projet",
+    "deleteProjectConfirm": "Supprimer « {title} » et tout son contenu ? Cette action est irréversible : articles, corpus, analyses, résultats et membres seront supprimés.",
+    "shared": "Partagé"
   },
   "project": {
     "loading": "Chargement du projet…",

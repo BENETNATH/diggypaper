@@ -341,8 +341,9 @@ async def list_projects(db: DbDep, user: UserDep) -> dict:
     """List of the user's projects (member); a global ADMIN sees all projects.
 
     Each item includes ``role_in_project`` (LEAD/ANNOTATOR, None if the admin is
-    not a member) and ``article_count`` - the frontend needs them for the nav
-    and the permissions.
+    not a member), ``article_count`` and ``member_count`` (number of ProjectMember
+    rows) - the frontend needs them for the nav, the permissions and the
+    « Partagé » chip (spec 2026-11-20-projets-quick-actions R5).
     """
     # The user's memberships (project_id -> role): used for filtering (non-admin)
     # AND for the role_in_project field (admin included, if also a member).
@@ -374,6 +375,19 @@ async def list_projects(db: DbDep, user: UserDep) -> dict:
             .all()
         )
 
+    # Member counts per project: ONE GROUP BY over project_members (no N+1),
+    # spec 2026-11-20-projets-quick-actions R5 (the « Partagé » chip needs it).
+    member_counts: dict[uuid.UUID, int] = {}
+    if projects:
+        counts = (
+            await db.execute(
+                select(ProjectMember.project_id, func.count())
+                .where(ProjectMember.project_id.in_([p.id for p in projects]))
+                .group_by(ProjectMember.project_id)
+            )
+        ).all()
+        member_counts = dict(counts)
+
     items = []
     for project in projects:
         article_count = (
@@ -384,6 +398,7 @@ async def list_projects(db: DbDep, user: UserDep) -> dict:
         payload = _project_payload(project, article_count=article_count)
         role = member_roles.get(project.id)
         payload["role_in_project"] = role.value if role is not None else None
+        payload["member_count"] = member_counts.get(project.id, 0)
         items.append(payload)
     return {"items": items}
 

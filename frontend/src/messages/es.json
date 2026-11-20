@@ -118,7 +118,10 @@
     "status_DRAFT": "Borrador",
     "status_PROCESSING": "Importando",
     "status_FROZEN": "Listo para analizar",
-    "status_COMPLETED": "Analizado"
+    "status_COMPLETED": "Analizado",
+    "deleteProjectTitle": "Eliminar el proyecto",
+    "deleteProjectConfirm": "¿Eliminar «{title}» y todo su contenido? Esta acción es irreversible: se eliminarán artículos, corpus, análisis, resultados y miembros.",
+    "shared": "Compartido"
   },
   "project": {
     "loading": "Cargando proyecto…",

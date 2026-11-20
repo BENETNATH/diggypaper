@@ -168,6 +168,43 @@ async def test_list_projects_401_no_auth(client, session, researcher_user):
     assert resp.status_code == 401
 
 
+async def test_list_projects_member_count(client, session, researcher_user, do_login):
+    """spec 2026-11-20-projets-quick-actions R5: every item carries member_count.
+
+    A solo project (creator only) counts 1 (the creator's LEAD row)."""
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    pid = await _create_project(client, title="Solo")
+    resp = await client.get("/api/v1/projects")
+    item = next(i for i in resp.json()["items"] if i["id"] == pid)
+    assert item["member_count"] == 1
+
+
+async def test_list_projects_member_count_shared(client, session, researcher_user, do_login):
+    """R5: member_count counts ALL ProjectMember rows (>= 2 when shared)."""
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    pid = await _create_project(client, title="Partagé")
+    other = await _make_user(session, "other@lab.fr", UserRole.RESEARCHER, "other-pass-123")
+    session.add(
+        ProjectMember(
+            project_id=uuid.UUID(pid),
+            user_id=other.id,
+            role_in_project=ProjectMemberRole.ANNOTATOR,
+        )
+    )
+    await session.commit()
+    resp = await client.get("/api/v1/projects")
+    item = next(i for i in resp.json()["items"] if i["id"] == pid)
+    assert item["member_count"] == 2
+
+
+async def test_get_project_unchanged_by_member_count(client, session, researcher_user, do_login):
+    """R5: member_count is a list-only field — get_project is unchanged (spec R5)."""
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    pid = await _create_project(client, title="T")
+    data = (await client.get(f"/api/v1/projects/{pid}")).json()
+    assert "member_count" not in data
+
+
 # --- GET /projects/{id} ---
 
 

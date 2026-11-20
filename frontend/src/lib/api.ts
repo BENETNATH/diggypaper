@@ -55,6 +55,8 @@ export interface Project {
   article_count?: number;
   fulltext_count?: number;
   role_in_project?: "LEAD" | "ANNOTATOR" | null;
+  /** Number of members of the project (sent by list_projects, spec 2026-11-20-projets-quick-actions R5). */
+  member_count: number;
 }
 
 export interface Article {
