@@ -152,6 +152,16 @@ async def test_create_watch_unknown_source_422(client, watch_project):
     assert r.status_code == 422, r.text
 
 
+async def test_watch_create_query_too_long_422(client, watch_project):
+    """Query over 20 000 characters -> 422 (same cap as the import)."""
+    project, search, _ = watch_project
+    r = await client.post(
+        f"/api/v1/projects/{project.id}/watches",
+        json={"source": "pubmed", "query": "a" * 20001, "search_id": str(search.id)},
+    )
+    assert r.status_code == 422, r.text
+
+
 async def test_create_watch_unknown_search_404(client, watch_project):
     project, _, _ = watch_project
     r = await client.post(

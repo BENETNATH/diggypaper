@@ -22,15 +22,21 @@ def _client(handler) -> httpx.AsyncClient:
     return httpx.AsyncClient(transport=httpx.MockTransport(handler))
 
 
+def esearch_params(request: httpx.Request) -> dict:
+    """esearch is POST: the params ride in the form body (the URL carries none)."""
+    return dict(httpx.QueryParams(request.content))
+
+
 # --- search_volume ---
 
 
 async def test_search_volume_returns_count():
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/entrez/eutils/esearch.fcgi"
-        assert request.url.params["db"] == "pubmed"
-        assert request.url.params["term"] == "cancer AND mice"
-        assert request.url.params["retmax"] == "0"
+        params = esearch_params(request)
+        assert params["db"] == "pubmed"
+        assert params["term"] == "cancer AND mice"
+        assert params["retmax"] == "0"
         return httpx.Response(200, json={"esearchresult": {"count": "42"}})
 
     async with _client(handler) as http:
@@ -40,12 +46,36 @@ async def test_search_volume_returns_count():
 
 async def test_search_volume_sends_api_key():
     def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url.params["api_key"] == "my-key"
+        assert esearch_params(request)["api_key"] == "my-key"
         return httpx.Response(200, json={"esearchresult": {"count": "7"}})
 
     async with _client(handler) as http:
         count = await search_volume("cancer", "my-key", http)
     assert count == 7
+
+
+async def test_esearch_is_post_with_term_in_body():
+    """esearch goes over POST: the NCBI front bounds the GET URL (~4 096 chars → 414)."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "POST"
+        assert esearch_params(request)["term"] == "cancer AND mice"
+        return httpx.Response(200, json={"esearchresult": {"count": "42"}})
+
+    async with _client(handler) as http:
+        assert await search_volume("cancer AND mice", None, http) == 42
+
+
+async def test_esearch_accepts_a_20k_term():
+    """A 20 000-char term travels complete in the POST body (no URL truncation)."""
+    term = "x" * 20000
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert esearch_params(request)["term"] == term
+        return httpx.Response(200, json={"esearchresult": {"count": "1"}})
+
+    async with _client(handler) as http:
+        assert await search_volume(term, None, http) == 1
 
 
 # --- fetch_pmids ---
@@ -56,7 +86,7 @@ async def test_fetch_pmids_default_retmax_is_configured_cap():
 
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/entrez/eutils/esearch.fcgi"
-        assert request.url.params["retmax"] == "5000"  # IMPORT_MAX_ARTICLES (default)
+        assert esearch_params(request)["retmax"] == "5000"  # IMPORT_MAX_ARTICLES (default)
         return httpx.Response(200, json={"esearchresult": {"idlist": ["1", "2"]}})
 
     async with _client(handler) as http:
@@ -68,7 +98,7 @@ async def test_fetch_pmids_never_asks_more_than_the_ncbi_window(monkeypatch):
     from app.core.config import get_settings
 
     def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url.params["retmax"] == "9999"
+        assert esearch_params(request)["retmax"] == "9999"
         return httpx.Response(200, json={"esearchresult": {"idlist": ["1"]}})
 
     monkeypatch.setattr(get_settings(), "import_max_articles", 99999)
@@ -79,7 +109,7 @@ async def test_fetch_pmids_never_asks_more_than_the_ncbi_window(monkeypatch):
 
 async def test_fetch_pmids_sends_api_key():
     def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url.params["api_key"] == "my-key"
+        assert esearch_params(request)["api_key"] == "my-key"
         return httpx.Response(200, json={"esearchresult": {"idlist": ["1"]}})
 
     async with _client(handler) as http:

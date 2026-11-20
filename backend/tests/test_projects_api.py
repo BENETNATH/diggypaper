@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 import httpx
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from test_pubmed import esearch_params
 from test_tasks_import import _ncbi_handler
 
 from app.core.security import hash_password
@@ -301,11 +302,27 @@ async def test_import_empty_query_422(client, researcher_user, do_login):
 
 
 async def test_import_query_too_long_422(client, researcher_user, do_login):
-    """m8: query over 2000 characters -> 422."""
+    """m8: query over 20 000 characters -> 422."""
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     project_id = await _create_project(client)
-    resp = await client.post(f"/api/v1/projects/{project_id}/import", json={"query": "a" * 2001})
+    resp = await client.post(f"/api/v1/projects/{project_id}/import", json={"query": "a" * 20001})
     assert resp.status_code == 422
+
+
+async def test_import_query_20000_chars_passes_validation(
+    client, researcher_user, do_login, monkeypatch
+):
+    """Exactly 20 000 characters (the cap) -> no length 422 (pipeline mocked)."""
+    import app.tasks as tasks
+
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project_id = await _create_project(client)
+    mock_result = MagicMock()
+    mock_result.id = "job-20k"
+    mock_result.state = "PENDING"
+    monkeypatch.setattr(tasks.import_pubmed_task, "delay", MagicMock(return_value=mock_result))
+    resp = await client.post(f"/api/v1/projects/{project_id}/import", json={"query": "a" * 20000})
+    assert resp.status_code == 202
 
 
 async def test_import_completes_frozen_corpus(
@@ -489,8 +506,9 @@ async def test_query_volume(client, researcher_user, do_login, monkeypatch):
 
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/entrez/eutils/esearch.fcgi"
-        assert request.url.params["retmax"] == "0"
-        assert request.url.params["term"] == "cancer AND mice"
+        params = esearch_params(request)
+        assert params["retmax"] == "0"
+        assert params["term"] == "cancer AND mice"
         return httpx.Response(200, json={"esearchresult": {"count": "42"}})
 
     real_client = httpx.AsyncClient

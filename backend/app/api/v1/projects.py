@@ -123,8 +123,8 @@ class ProjectUpdate(BaseModel):
 
 
 class ImportRequest(BaseModel):
-    # m8: bounding of the PubMed query (max 2000 characters).
-    query: str = Field(min_length=1, max_length=2000)
+    # m8: bounding of the PubMed query (max 20 000 characters — NCBI esearch via POST).
+    query: str = Field(min_length=1, max_length=20000)
     # Optional publication date bounds (ISO YYYY-MM-DD): ANDed into the
     # NCBI term ([dp]) and into the bisection bounds for large result sets (fewer esearch calls).
     date_from: date | None = None

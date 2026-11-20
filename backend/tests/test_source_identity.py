@@ -12,6 +12,7 @@ import sqlalchemy as sa
 from sqlalchemy import String, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from test_pubmed import esearch_params
 
 from app.db.models import Article, ImportJob, ImportJobStatus, Project, ProjectStatus
 from app.refimport import parse_references
@@ -70,7 +71,7 @@ def _efetch_xml(items: list[tuple[str, str | None]]) -> str:
 def _ncbi(items: list[tuple[str, str | None]]):
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("esearch.fcgi"):
-            if request.url.params.get("retmax") == "0":
+            if esearch_params(request).get("retmax") == "0":
                 return httpx.Response(200, json={"esearchresult": {"count": str(len(items))}})
             return httpx.Response(200, json={"esearchresult": {"idlist": [p for p, _ in items]}})
         if request.url.path.endswith("efetch.fcgi"):

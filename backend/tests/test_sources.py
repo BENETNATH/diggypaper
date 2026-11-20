@@ -14,6 +14,7 @@ import httpx
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from test_pubmed import esearch_params
 
 from app.db.models import Article, ImportJob, ImportJobStatus, Project, ProjectStatus
 from app.pubmed import NCBIError, PubMedAdapter, fetch_all_pmids
@@ -219,8 +220,9 @@ def _date_range_handler(records: dict[str, int]):
 
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path.endswith("esearch.fcgi")
-        term = request.url.params["term"]
-        retmax = int(request.url.params.get("retmax", "0"))
+        params = esearch_params(request)
+        term = params["term"]
+        retmax = int(params.get("retmax", "0"))
         ids = in_range(term)
         if retmax == 0:
             return httpx.Response(200, json={"esearchresult": {"count": str(len(ids))}})
@@ -237,9 +239,10 @@ async def test_iter_ids_under_window_equals_fetch_all_pmids():
     def handler(request: httpx.Request) -> httpx.Response:
         calls["n"] += 1
         if request.url.path.endswith("esearch.fcgi"):
-            if request.url.params.get("retmax") == "0":
+            params = esearch_params(request)
+            if params.get("retmax") == "0":
                 return httpx.Response(200, json={"esearchresult": {"count": "50"}})
-            assert request.url.params["retmax"] == "50"  # min(count, plafond d'import)
+            assert params["retmax"] == "50"  # min(count, plafond d'import)
             return httpx.Response(200, json={"esearchresult": {"idlist": ids}})
         raise AssertionError(f"chemin inattendu : {request.url.path}")
 
@@ -265,8 +268,9 @@ async def test_iter_ids_bisection_order_and_calls(monkeypatch):
     esearches: list[tuple[str, int]] = []
 
     def spy(request: httpx.Request) -> httpx.Response:
-        term = request.url.params["term"]
-        retmax = int(request.url.params.get("retmax", "0"))
+        params = esearch_params(request)
+        term = params["term"]
+        retmax = int(params.get("retmax", "0"))
         esearches.append((term, retmax))
         return handler(request)
 
@@ -293,10 +297,11 @@ async def test_iter_ids_user_bounds():
 
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path.endswith("esearch.fcgi")
-        terms.append(request.url.params["term"])
+        params = esearch_params(request)
+        terms.append(params["term"])
         for absent in ("datetype", "mindate", "maxdate"):
-            assert absent not in request.url.params
-        if request.url.params.get("retmax") == "0":
+            assert absent not in params
+        if params.get("retmax") == "0":
             return httpx.Response(200, json={"esearchresult": {"count": "50"}})
         return httpx.Response(200, json={"esearchresult": {"idlist": ids}})
 
@@ -323,8 +328,9 @@ async def test_iter_ids_limit_cap_most_recent():
     esearches: list[tuple[str, int]] = []
 
     def spy(request: httpx.Request) -> httpx.Response:
-        term = request.url.params["term"]
-        retmax = int(request.url.params.get("retmax", "0"))
+        params = esearch_params(request)
+        term = params["term"]
+        retmax = int(params.get("retmax", "0"))
         esearches.append((term, retmax))
         return handler(request)
 
@@ -459,7 +465,7 @@ async def test_adapter_throttle_intervals(monkeypatch):
     def handler(request: httpx.Request) -> httpx.Response:
         calls["n"] += 1
         if request.url.path.endswith("esearch.fcgi"):
-            if request.url.params.get("retmax") == "0":
+            if esearch_params(request).get("retmax") == "0":
                 return httpx.Response(200, json={"esearchresult": {"count": "50"}})
             return httpx.Response(
                 200, json={"esearchresult": {"idlist": [str(1000 + i) for i in range(50)]}}

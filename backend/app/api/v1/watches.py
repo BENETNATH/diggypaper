@@ -83,7 +83,7 @@ def _validate_criteria(criteria: list[Criterion], search: Search) -> None:
 
 class WatchCreate(BaseModel):
     source: str = Field(min_length=1, max_length=32)
-    query: str = Field(min_length=1, max_length=2000)
+    query: str = Field(min_length=1, max_length=20000)
     date_from: date | None = None
     search_id: uuid.UUID
     notify_all: bool = False

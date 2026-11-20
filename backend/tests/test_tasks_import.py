@@ -10,6 +10,7 @@ import httpx
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from test_pubmed import esearch_params
 
 from app.db.base import Base
 from app.db.models import Article, ImportJob, ImportJobStatus, Project, ProjectStatus
@@ -79,7 +80,7 @@ def _ncbi_handler(pmids: list[str], efetch_pmids: list[str] | None = None, with_
     def handler(request: httpx.Request) -> httpx.Response:
         path = request.url.path
         if path.endswith("esearch.fcgi"):
-            if request.url.params.get("retmax") == "0":
+            if esearch_params(request).get("retmax") == "0":
                 return httpx.Response(200, json={"esearchresult": {"count": str(len(pmids))}})
             return httpx.Response(200, json={"esearchresult": {"idlist": pmids}})
         if path.endswith("efetch.fcgi"):
@@ -166,7 +167,7 @@ async def test_import_pubmed_count_zero_frozen(engine):
 
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path.endswith("esearch.fcgi")
-        assert request.url.params["retmax"] == "0"
+        assert esearch_params(request)["retmax"] == "0"
         return httpx.Response(200, json={"esearchresult": {"count": "0"}})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
@@ -359,7 +360,7 @@ async def test_truncation_count_over_10000(engine):
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("esearch.fcgi"):
-            if request.url.params.get("retmax") == "0":
+            if esearch_params(request).get("retmax") == "0":
                 return httpx.Response(200, json={"esearchresult": {"count": "15000"}})
             return httpx.Response(200, json={"esearchresult": {"idlist": pmids}})
         if request.url.path.endswith("efetch.fcgi"):
@@ -391,7 +392,7 @@ async def test_chunking_over_100_pmids(engine):
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("esearch.fcgi"):
-            if request.url.params.get("retmax") == "0":
+            if esearch_params(request).get("retmax") == "0":
                 return httpx.Response(200, json={"esearchresult": {"count": "150"}})
             return httpx.Response(200, json={"esearchresult": {"idlist": pmids}})
         if request.url.path.endswith("efetch.fcgi"):
@@ -420,8 +421,9 @@ async def test_import_pubmed_count_term_bounded_by_dates(engine):
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("esearch.fcgi"):
-            if request.url.params.get("retmax") == "0":
-                term = request.url.params["term"]
+            params = esearch_params(request)
+            if params.get("retmax") == "0":
+                term = params["term"]
                 assert '"2021/01/01"[dp]' in term and '"2021/12/31"[dp]' in term
                 return httpx.Response(200, json={"esearchresult": {"count": "2"}})
             return httpx.Response(200, json={"esearchresult": {"idlist": ["111", "222"]}})
@@ -447,8 +449,9 @@ async def test_import_pubmed_without_dates_count_term_unchanged(engine):
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("esearch.fcgi"):
-            if request.url.params.get("retmax") == "0":
-                term = request.url.params["term"]
+            params = esearch_params(request)
+            if params.get("retmax") == "0":
+                term = params["term"]
                 assert term == "cancer" and "[dp]" not in term
                 return httpx.Response(200, json={"esearchresult": {"count": "1"}})
             return httpx.Response(200, json={"esearchresult": {"idlist": ["111"]}})
@@ -540,7 +543,7 @@ async def test_import_unknown_language_stored_raw(engine):
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("esearch.fcgi"):
-            if request.url.params.get("retmax") == "0":
+            if esearch_params(request).get("retmax") == "0":
                 return httpx.Response(200, json={"esearchresult": {"count": "1"}})
             return httpx.Response(200, json={"esearchresult": {"idlist": ["333"]}})
         return httpx.Response(200, text=xml)

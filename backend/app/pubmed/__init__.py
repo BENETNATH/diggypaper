@@ -30,6 +30,9 @@ response).
 Size limit (I5): NCBI XML payloads > 10 MB are refused (defense in
 depth — the input is NCBI over HTTPS, not user-controlled; the size
 limit suffices, no defusedxml).
+
+esearch en POST : le GET NCBI borne la URL à ~4 096 chars (HTTP 414) ; POST
+vérifié jusqu'à ~50 k chars (2026-11-20).
 """
 
 import asyncio
@@ -109,20 +112,30 @@ async def _throttle(api_key: str | None) -> None:
     await _sleep(_INTERVAL_WITH_KEY if api_key else _INTERVAL_NO_KEY)
 
 
-async def _get_with_retry(
-    http: httpx.AsyncClient, url: str, params: dict, *, retries: int = _RETRIES
+async def _request_with_retry(
+    http: httpx.AsyncClient,
+    url: str,
+    *,
+    params: dict,
+    method: str = "GET",
+    retries: int = _RETRIES,
 ) -> httpx.Response:
-    """NCBI GET with retry on transient errors (m5): 429 / 5xx / timeout.
+    """NCBI request (GET or POST) with retry on transient errors (m5): 429 / 5xx / timeout.
 
-    ``retries`` retries with simple backoff (``_sleep``, mocked in tests); on 429,
-    ``Retry-After`` (in seconds) is honored, capped at ``_RETRY_AFTER_MAX``.
-    No retry on parsing errors (parsing is done by the caller).
+    ``params`` rides in the query string (GET) or the form body (POST: esearch —
+    the GET URL is bounded by the NCBI front). ``retries`` retries with simple
+    backoff (``_sleep``, mocked in tests); on 429, ``Retry-After`` (in seconds) is
+    honored, capped at ``_RETRY_AFTER_MAX``. No retry on parsing errors (parsing
+    is done by the caller).
     C-1: persistent timeout → NCBIError('timeout'); persistent HTTP error →
     NCBIError('HTTP <code>') (WITHOUT the URL or the key).
     """
     for attempt in range(retries + 1):
         try:
-            resp = await http.get(url, params=params)
+            if method == "POST":
+                resp = await http.request("POST", url, data=params)
+            else:
+                resp = await http.request(method, url, params=params)
         except httpx.TimeoutException:
             if attempt >= retries:
                 raise NCBIError("timeout") from None
@@ -166,8 +179,11 @@ def _esearch_params(query: str, retmax: int, api_key: str | None) -> dict:
 async def search_volume(query: str, api_key: str | None, http: httpx.AsyncClient) -> int:
     """PubMed result volume (esearch ``retmax=0``) → count (int)."""
     await _throttle(api_key)
-    resp = await _get_with_retry(
-        http, f"{EUTILS_BASE}/esearch.fcgi", _esearch_params(query, 0, api_key)
+    resp = await _request_with_retry(
+        http,
+        f"{EUTILS_BASE}/esearch.fcgi",
+        params=_esearch_params(query, 0, api_key),
+        method="POST",
     )
     return int(resp.json()["esearchresult"]["count"])
 
@@ -179,8 +195,11 @@ async def explain_query(query: str, api_key: str | None, http: httpx.AsyncClient
     terms or fields it does not know (invented MeSH, typo): signal of a wrong query.
     """
     await _throttle(api_key)
-    resp = await _get_with_retry(
-        http, f"{EUTILS_BASE}/esearch.fcgi", _esearch_params(query, 0, api_key)
+    resp = await _request_with_retry(
+        http,
+        f"{EUTILS_BASE}/esearch.fcgi",
+        params=_esearch_params(query, 0, api_key),
+        method="POST",
     )
     r = resp.json()["esearchresult"]
     errors = r.get("errorlist") or {}
@@ -206,7 +225,9 @@ async def fetch_pmids(
     more than the NCBI limit (``PUBMED_WINDOW`` identifiers per query)."""
     await _throttle(api_key)
     params = _esearch_params(query, min(retmax or _esearch_max(), PUBMED_WINDOW), api_key)
-    resp = await _get_with_retry(http, f"{EUTILS_BASE}/esearch.fcgi", params)
+    resp = await _request_with_retry(
+        http, f"{EUTILS_BASE}/esearch.fcgi", params=params, method="POST"
+    )
     return list(resp.json()["esearchresult"]["idlist"])
 
 
@@ -278,7 +299,7 @@ async def fetch_metadata(
     params = {"db": "pubmed", "retmode": "xml", "id": ",".join(pmids)}
     if api_key:
         params["api_key"] = api_key
-    resp = await _get_with_retry(http, f"{EUTILS_BASE}/efetch.fcgi", params)
+    resp = await _request_with_retry(http, f"{EUTILS_BASE}/efetch.fcgi", params=params)
     _check_xml_size(resp)
     return _parse_pubmed_xml(resp.text)
 
@@ -308,8 +329,8 @@ async def _fetch_pmc_xml(pmcid: str | None, http: httpx.AsyncClient) -> str | No
     if not pmcid:
         return None
     await _throttle(None)
-    resp = await _get_with_retry(
-        http, f"{EUTILS_BASE}/efetch.fcgi", {"db": "pmc", "retmode": "xml", "id": pmcid}
+    resp = await _request_with_retry(
+        http, f"{EUTILS_BASE}/efetch.fcgi", params={"db": "pmc", "retmode": "xml", "id": pmcid}
     )
     _check_xml_size(resp)
     return resp.text

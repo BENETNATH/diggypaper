@@ -14,7 +14,7 @@ import httpx
 from app.pubmed import explain_query, fetch_pmids
 from app.refimport import epmc_pmids_by_doi, parse_references
 
-MAX_QUERY = 2000  # same cap as the import
+MAX_QUERY = 20000  # same cap as the import
 MAX_MESSAGES = 8  # 4 exchanges: enough to refine a query, not to hold a conversation
 MAX_USER_CHARS = 1000
 MAX_REPLY = 600  # explanation attached to a valid query

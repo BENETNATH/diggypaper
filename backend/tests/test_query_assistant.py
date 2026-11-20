@@ -4,6 +4,7 @@ import httpx
 import pytest
 from sqlalchemy import select
 from test_projects_api import _create_project  # noqa: F401  (aide)
+from test_pubmed import esearch_params
 
 from app import query_assistant as qa
 from app.db.models import ModelRegistry
@@ -28,7 +29,7 @@ def _ncbi(query_hits):
     def handler(request: httpx.Request) -> httpx.Response:
         host = request.url.host
         if host == "eutils.ncbi.nlm.nih.gov":
-            term = request.url.params["term"]
+            term = esearch_params(request)["term"]
             if "[uid]" in term:  # recall test: only 111 and 222 are found
                 return httpx.Response(200, json={"esearchresult": {"idlist": query_hits}})
             return httpx.Response(
@@ -67,6 +68,17 @@ async def test_check_query_reports_volume_unknown_terms_and_recall():
     # 3 known PMIDs (111, 222, 333 via DOI) + 1 unfindable DOI; the query finds 2 of them
     assert out["recall"]["total"] == 4 and out["recall"]["found"] == 2
     assert out["recall"]["missing"] == ["333", "10.1000/unknown"]
+
+
+async def test_check_query_too_long_at_20001(monkeypatch):
+    """A query over the 20 000-char cap is flagged too_long (explain is mocked)."""
+
+    async def fake_explain(query, api_key, http):
+        return {"count": 1, "translation": query, "not_found": []}
+
+    monkeypatch.setattr(qa, "explain_query", fake_explain)
+    out = await qa.check_query("a" * 20001, None, [], None)
+    assert out["too_long"] is True
 
 
 async def test_assistant_route(client, session, researcher_user, do_login, monkeypatch):

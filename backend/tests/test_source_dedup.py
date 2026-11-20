@@ -7,6 +7,7 @@ import httpx
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from test_pubmed import esearch_params
 
 from app import prisma
 from app.db.models import Article, Project, ProjectStatus
@@ -66,14 +67,14 @@ def _ncbi(items: list[tuple[str, str | None, str | None]]):
     pmc_calls: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
-        path, params = request.url.path, request.url.params
+        path = request.url.path
         if path.endswith("esearch.fcgi"):
-            if params.get("retmax") == "0":
+            if esearch_params(request).get("retmax") == "0":
                 return httpx.Response(200, json={"esearchresult": {"count": str(len(items))}})
             return httpx.Response(200, json={"esearchresult": {"idlist": [i[0] for i in items]}})
         if path.endswith("efetch.fcgi"):
-            if params.get("db") == "pmc":
-                pmc_calls.append(params.get("id", ""))
+            if request.url.params.get("db") == "pmc":
+                pmc_calls.append(request.url.params.get("id", ""))
                 return httpx.Response(200, text="<pmc-articleset/>")
             return httpx.Response(200, text=_efetch_xml(items))
         raise AssertionError(f"appel inattendu : {request.url}")
@@ -102,14 +103,14 @@ async def test_doi_duplicate_other_identity_linked_fills_and_fulltext(engine):
     full text requested for the row, existing identity and origin intact."""
 
     def handler(request: httpx.Request) -> httpx.Response:
-        path, params = request.url.path, request.url.params
+        path = request.url.path
         if path.endswith("esearch.fcgi"):
-            if params.get("retmax") == "0":
+            if esearch_params(request).get("retmax") == "0":
                 return httpx.Response(200, json={"esearchresult": {"count": "2"}})
             return httpx.Response(200, json={"esearchresult": {"idlist": ["111", "222"]}})
         if path.endswith("efetch.fcgi"):
-            if params.get("db") == "pmc":
-                assert params.get("id") == "PMC111"
+            if request.url.params.get("db") == "pmc":
+                assert request.url.params.get("id") == "PMC111"
                 # JATS long enough to pass ``long_enough``.
                 return httpx.Response(
                     200,
