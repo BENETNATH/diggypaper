@@ -14,6 +14,7 @@ from app.db.models import (
     ProjectStatus,
     PromptTemplate,
 )
+from app.searches import ensure_default_search
 from app.tasks.inference import _run_inference
 
 
@@ -35,6 +36,7 @@ async def test_prefilter_rejects_before_main_model(engine, session, fake_redis):
     project = Project(title="P", status=ProjectStatus.FROZEN)
     session.add(project)
     await session.commit()
+    await ensure_default_search(session, project)
     prompt = PromptTemplate(
         project_id=project.id,
         version_number="v1",

@@ -902,6 +902,12 @@ class InferenceJob(Base):
     )
     # {gold_examples: k gold examples in the prompt, validate_with_gold: bool}
     options: Mapped[dict | None] = mapped_column(JSONB)
+    # Run name (stripped, ≤ 100 chars); NULL = run predating the feature (legacy).
+    # Uniqueness per search is enforced at the API level only (no DB constraint).
+    name: Mapped[str | None] = mapped_column(String(100))
+    # Frozen copy of Search.definition_hash at creation (the corpus definition
+    # analyzed); NULL when the search has no hash. Never recomputed after the fact.
+    definition_hash: Mapped[str | None] = mapped_column(String(32))
     # Resuming an interrupted job: articles already predicted since this date are skipped.
     resume_after: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     status: Mapped[InferenceJobStatus | None] = mapped_column(

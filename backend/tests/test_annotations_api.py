@@ -17,6 +17,7 @@ from app.db.models import (
     ProjectMember,
     ProjectMemberRole,
 )
+from app.searches import ensure_default_search
 
 VALID_ANNOTATION = {
     "use_ai_behavior": True,
@@ -38,6 +39,9 @@ async def _make_project_with_article(
 ) -> tuple[Project, Article]:
     project = Project(title="P", created_by=user.id, fields=fields, question=question)
     session.add(project)
+    await session.commit()
+    # R9: create_project no longer auto-creates the default search — create it explicitly
+    await ensure_default_search(session, project)
     await session.commit()
     session.add(
         ProjectMember(

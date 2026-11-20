@@ -27,7 +27,6 @@ from app.db.models import (
     Watch,
 )
 from app.prisma import prisma_counts
-from app.searches import default_search
 from app.tasks.watch import (
     _resolve_model,
     article_matches,
@@ -55,13 +54,13 @@ def ArticlePrediction_row(article_id, search_id, decision):
 
 
 @pytest.fixture
-async def watch_project(session, researcher_user, client, do_login):
+async def watch_project(session, researcher_user, client, do_login, default_search):
     """A LEAD project with its default search (question + one boolean field)."""
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     project = Project(title="P", created_by=researcher_user.id, question="Q ?", fields=FIELDS)
     session.add(project)
     await session.commit()
-    await default_search(session, project)
+    await default_search(project)  # R9: no longer created by create_project
     session.add(
         ProjectMember(
             project_id=project.id,

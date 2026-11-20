@@ -9,6 +9,7 @@ from sqlalchemy import event, select
 from app.article_text import compose_text, fill_prompt
 from app.db.models import Article, ArticleFile
 from app.fulltext import apply_uploaded_pdf, complete_article, find_open_fulltext, pdf_to_sections
+from app.searches import ensure_default_search
 
 BODY = "lorem ipsum dolor sit amet " * 100
 
@@ -277,6 +278,7 @@ async def test_upload_pdf_sets_fulltext(client, session, researcher_user, do_log
     project = Project(title="P", created_by=researcher_user.id)
     session.add(project)
     await session.commit()
+    await ensure_default_search(session, project)
     session.add(
         ProjectMember(
             project_id=project.id,
@@ -399,6 +401,7 @@ async def _lead_article(session, user, **art):
     project = Project(title="P", created_by=user.id)
     session.add(project)
     await session.commit()
+    await ensure_default_search(session, project)
     session.add(
         ProjectMember(
             project_id=project.id, user_id=user.id, role_in_project=ProjectMemberRole.LEAD

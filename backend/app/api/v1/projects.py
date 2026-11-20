@@ -50,7 +50,7 @@ from app.openalex import OpenAlexError
 from app.pubmed import NCBIError, _esearch_max
 from app.refimport import dedupe, parse_references
 from app.schema import check_fields, normalize_triage_policy, project_fields
-from app.searches import default_search, definition_hash, get_search, in_search, lot_condition
+from app.searches import definition_hash, get_search, in_search, job_in_search, lot_condition
 from app.settings.service import get_setting
 from app.sources import DateBounds
 from app.tasks import ADAPTERS, _source_key_setting, complete_fulltext_task, import_pubmed_task
@@ -316,7 +316,9 @@ async def create_project(payload: ProjectCreate, db: DbDep, user: UserDep) -> di
     )
     db.add(project)
     await db.flush()  # assigns project.id (default Python uuid4) for the membership
-    await default_search(db, project)
+    # R9: the project starts with NO search: the corpora are created explicitly
+    # (POST /projects/{id}/searches); a default search is only re-created on demand
+    # when legacy gold rows (search_id NULL) need their house (R10).
     db.add(
         ProjectMember(
             project_id=project.id, user_id=user.id, role_in_project=ProjectMemberRole.LEAD
@@ -443,9 +445,10 @@ async def update_project(
         payload.question.strip() or None if payload.question is not None else scope.question,
         payload.fields if payload.fields is not None else scope.fields,
     )
-    if new_hash != scope.definition_hash and await _has_results(db, scope):
-        # the question of an already analyzed or re-read search no longer changes:
-        # we create another one
+    if scope.is_default and new_hash != scope.definition_hash and await _has_results(db, scope):
+        # the question of an already analyzed DEFAULT search no longer changes:
+        # we create another one (R11 — explicit corpora stay editable, their runs
+        # are snapshots of the definition they were started with)
         raise HTTPException(status_code=409, detail="question_locked")
     targets = (
         [scope, project] if scope.is_default else [scope]
@@ -742,20 +745,26 @@ def article_filter(
     answers: str | None,
     q: str | None = None,
     fulltext: bool | None = None,
+    run: InferenceJob | None = None,
 ):
     """Conditions of the article list of a search (AI status + answers) and the
     associated sub-queries: only the results and re-reads of THIS search count.
 
     -> (where, pstatus, pconf, pdec, pfc, annotated). Shared by the list and the exports.
+
+    ``run``: the "last prediction" sub-queries then target the RUN's predictions
+    (``inference_job_id == run``) instead of the search's (R7, results per run).
+    The human re-reads and annotations stay at the search level.
     """
 
     def latest(col):
+        if run is not None:
+            cond = ArticlePrediction.inference_job_id == run.id
+        else:
+            cond = in_search(ArticlePrediction.search_id, search)
         return (
             select(col)
-            .where(
-                ArticlePrediction.article_id == Article.id,
-                in_search(ArticlePrediction.search_id, search),
-            )
+            .where(ArticlePrediction.article_id == Article.id, cond)
             .order_by(ArticlePrediction.created_at.desc().nulls_last(), ArticlePrediction.id.desc())
             .limit(1)
             .scalar_subquery()
@@ -820,19 +829,26 @@ async def list_articles(
     search: uuid.UUID | None = None,
     q: Annotated[str | None, Query(max_length=200)] = None,
     fulltext: bool | None = None,
+    run: uuid.UUID | None = None,
 ) -> dict:
     """Articles of a search's batch (default the initial search = the whole corpus) with
     the status of their last prediction in this search.
 
     ``status`` filters (``NONE`` = not yet triaged). ``answers`` = JSON ``{field: value}``:
     filter on the model's answer (exact boolean, exact option, contained text).
+    ``run``: the predictions of that run only (404 if it is not of this search).
     Response: {items, total, page, per_page, stats}; ``stats`` = articles by status.
     """
     project = await _require_project_member(db, project_id, user)
     scope = await get_search(db, project, search)
+    run_job = None
+    if run is not None:
+        run_job = await db.get(InferenceJob, run)
+        if run_job is None or run_job.project_id != project_id or not job_in_search(run_job, scope):
+            raise HTTPException(status_code=404, detail="job not in this search")
 
     where, pstatus, pconf, pdec, pfc, annotated = article_filter(
-        scope, status, answers, q, fulltext
+        scope, status, answers, q, fulltext, run_job
     )
     total = (await db.execute(select(func.count()).select_from(Article).where(*where))).scalar_one()
     order = {

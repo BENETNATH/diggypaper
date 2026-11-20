@@ -22,6 +22,7 @@ from app.db.models import (
     PromptTemplate,
 )
 from app.inference import InferenceError
+from app.searches import ensure_default_search
 from app.settings.service import set_setting
 from app.tasks import inference as inference_task_module
 from app.tasks.inference import ModelBusy, _release_lock, _run_inference, _triage, inference_task
@@ -87,6 +88,7 @@ async def test_run_inference_completes(engine, session, fake_redis):
     project = Project(title="P", created_by=None, status=ProjectStatus.FROZEN)
     session.add(project)
     await session.commit()
+    await ensure_default_search(session, project)
     prompt = PromptTemplate(
         project_id=project.id,
         version_number="v1.0",
@@ -135,6 +137,7 @@ async def test_run_inference_error_marks_article(engine, session, fake_redis):
     project = Project(title="P", created_by=None, status=ProjectStatus.FROZEN)
     session.add(project)
     await session.commit()
+    await ensure_default_search(session, project)
     prompt = PromptTemplate(
         project_id=project.id,
         version_number="v1.0",
@@ -196,6 +199,7 @@ async def test_run_inference_triage_mixed(engine, session, fake_redis):
     project = Project(title="P", created_by=None, status=ProjectStatus.FROZEN)
     session.add(project)
     await session.commit()
+    await ensure_default_search(session, project)
     prompt = PromptTemplate(project_id=project.id, version_number="v1.0", system_prompt="SYS")
     session.add(prompt)
     await session.commit()
@@ -248,6 +252,7 @@ async def test_run_inference_empty_corpus(engine, session, fake_redis):
     project = Project(title="P", created_by=None, status=ProjectStatus.FROZEN)
     session.add(project)
     await session.commit()
+    await ensure_default_search(session, project)
     prompt = PromptTemplate(project_id=project.id, version_number="v1.0", system_prompt="SYS")
     session.add(prompt)
     await session.commit()
@@ -276,6 +281,7 @@ async def test_run_inference_failure_marks_failed(engine, session, fake_redis):
     project = Project(title="P", created_by=None, status=ProjectStatus.FROZEN)
     session.add(project)
     await session.commit()
+    await ensure_default_search(session, project)
     prompt = PromptTemplate(project_id=project.id, version_number="v1.0", system_prompt="SYS")
     session.add(prompt)
     await session.commit()
@@ -311,6 +317,7 @@ async def test_run_inference_deactivated_model_fails_before_lock(engine, session
     project = Project(title="P", created_by=None, status=ProjectStatus.FROZEN)
     session.add(project)
     await session.commit()
+    await ensure_default_search(session, project)
     prompt = PromptTemplate(
         project_id=project.id,
         version_number="v1.0",
@@ -351,6 +358,7 @@ async def test_run_inference_stops_when_cancelled(engine, session, fake_redis):
     project = Project(title="P", created_by=None, status=ProjectStatus.FROZEN)
     session.add(project)
     await session.commit()
+    await ensure_default_search(session, project)
     prompt = PromptTemplate(project_id=project.id, version_number="v1.0", system_prompt="SYS")
     session.add(prompt)
     await session.commit()
@@ -392,6 +400,7 @@ async def test_run_inference_skips_job_cancelled_before_start(engine, session):
     project = Project(title="P", created_by=None, status=ProjectStatus.FROZEN)
     session.add(project)
     await session.commit()
+    await ensure_default_search(session, project)
     prompt = PromptTemplate(project_id=project.id, version_number="v1.0", system_prompt="SYS")
     session.add(prompt)
     await session.commit()
@@ -418,6 +427,7 @@ async def test_warmup_once_for_ollama_model(engine, session, fake_redis):
     project = Project(title="P", created_by=None, status=ProjectStatus.FROZEN)
     session.add(project)
     await session.commit()
+    await ensure_default_search(session, project)
     prompt = PromptTemplate(project_id=project.id, version_number="v1.0", system_prompt="SYS")
     session.add(prompt)
     await session.commit()
@@ -447,6 +457,7 @@ async def test_warmup_skipped_for_openai_api_model(engine, session):
     project = Project(title="P", created_by=None, status=ProjectStatus.FROZEN)
     session.add(project)
     await session.commit()
+    await ensure_default_search(session, project)
     prompt = PromptTemplate(project_id=project.id, version_number="v1.0", system_prompt="SYS")
     session.add(prompt)
     await session.commit()
@@ -483,6 +494,7 @@ async def test_lock_key_ttl_and_token(engine, session, fake_redis):
     project = Project(title="P", created_by=None, status=ProjectStatus.FROZEN)
     session.add(project)
     await session.commit()
+    await ensure_default_search(session, project)
     prompt = PromptTemplate(project_id=project.id, version_number="v1.0", system_prompt="SYS")
     session.add(prompt)
     await session.commit()
@@ -513,6 +525,7 @@ async def test_lock_acquired_before_warmup(engine, session, fake_redis):
     project = Project(title="P", created_by=None, status=ProjectStatus.FROZEN)
     session.add(project)
     await session.commit()
+    await ensure_default_search(session, project)
     prompt = PromptTemplate(project_id=project.id, version_number="v1.0", system_prompt="SYS")
     session.add(prompt)
     session.add(ModelRegistry(name="Kev-4B", model_identifier="x", backend_type="OLLAMA"))
@@ -548,6 +561,7 @@ async def test_lock_busy_writes_waiting_model_and_stays_pending(engine, session,
     project = Project(title="P", created_by=None, status=ProjectStatus.FROZEN)
     session.add(project)
     await session.commit()
+    await ensure_default_search(session, project)
     prompt = PromptTemplate(project_id=project.id, version_number="v1.0", system_prompt="SYS")
     session.add(prompt)
     session.add(ModelRegistry(name="Kev-4B", model_identifier="x", backend_type="OLLAMA"))
@@ -619,6 +633,7 @@ async def test_lock_busy_exhausted_retries_fails_job(engine, session, monkeypatc
     project = Project(title="P", created_by=None, status=ProjectStatus.FROZEN)
     session.add(project)
     await session.commit()
+    await ensure_default_search(session, project)
     prompt = PromptTemplate(project_id=project.id, version_number="v1.0", system_prompt="SYS")
     session.add(prompt)
     await session.commit()
@@ -654,6 +669,7 @@ async def test_lock_released_after_success(engine, session, fake_redis):
     project = Project(title="P", created_by=None, status=ProjectStatus.FROZEN)
     session.add(project)
     await session.commit()
+    await ensure_default_search(session, project)
     prompt = PromptTemplate(project_id=project.id, version_number="v1.0", system_prompt="SYS")
     session.add(prompt)
     session.add(ModelRegistry(name="Kev-4B", model_identifier="x", backend_type="OLLAMA"))
@@ -684,6 +700,7 @@ async def test_lock_released_on_inference_error(engine, session, fake_redis):
     project = Project(title="P", created_by=None, status=ProjectStatus.FROZEN)
     session.add(project)
     await session.commit()
+    await ensure_default_search(session, project)
     prompt = PromptTemplate(project_id=project.id, version_number="v1.0", system_prompt="SYS")
     session.add(prompt)
     session.add(ModelRegistry(name="Kev-4B", model_identifier="x", backend_type="OLLAMA"))
@@ -723,6 +740,7 @@ async def test_no_lock_for_openai_api_model(engine, session, fake_redis):
     project = Project(title="P", created_by=None, status=ProjectStatus.FROZEN)
     session.add(project)
     await session.commit()
+    await ensure_default_search(session, project)
     prompt = PromptTemplate(project_id=project.id, version_number="v1.0", system_prompt="SYS")
     session.add(prompt)
     session.add(
@@ -756,6 +774,7 @@ async def test_no_lock_when_model_not_in_registry(engine, session, fake_redis):
     project = Project(title="P", created_by=None, status=ProjectStatus.FROZEN)
     session.add(project)
     await session.commit()
+    await ensure_default_search(session, project)
     prompt = PromptTemplate(project_id=project.id, version_number="v1.0", system_prompt="SYS")
     session.add(prompt)
     await session.commit()
@@ -784,6 +803,7 @@ async def test_redelivered_closed_job_does_not_relock(engine, session, fake_redi
     project = Project(title="P", created_by=None, status=ProjectStatus.FROZEN)
     session.add(project)
     await session.commit()
+    await ensure_default_search(session, project)
     prompt = PromptTemplate(project_id=project.id, version_number="v1.0", system_prompt="SYS")
     session.add(prompt)
     await session.commit()
@@ -815,6 +835,7 @@ async def _project_prompt(session):
     project = Project(title="P", created_by=None, status=ProjectStatus.FROZEN)
     session.add(project)
     await session.commit()
+    await ensure_default_search(session, project)
     prompt = PromptTemplate(project_id=project.id, version_number="v1.0", system_prompt="SYS")
     session.add(prompt)
     await session.commit()
@@ -1693,6 +1714,7 @@ async def test_run_inference_triggers_results_indexing(engine, session, fake_red
     project = Project(title="P", created_by=None, status=ProjectStatus.FROZEN)
     session.add(project)
     await session.commit()
+    await ensure_default_search(session, project)
     prompt = PromptTemplate(
         project_id=project.id,
         version_number="v1.0",
@@ -1748,6 +1770,7 @@ async def test_run_inference_blind_search_no_results_indexing_trigger(
     project = Project(title="P", created_by=None, status=ProjectStatus.FROZEN)
     session.add(project)
     await session.commit()
+    await ensure_default_search(session, project)
     prompt = PromptTemplate(
         project_id=project.id,
         version_number="v1.0",

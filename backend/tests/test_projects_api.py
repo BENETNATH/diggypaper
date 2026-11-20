@@ -21,6 +21,7 @@ from app.db.models import (
     User,
     UserRole,
 )
+from app.searches import ensure_default_search
 from app.settings.service import set_setting
 
 
@@ -46,9 +47,12 @@ async def _make_user(session: AsyncSession, email: str, role: UserRole, password
     return user
 
 
-async def _create_project(client, title: str = "P1") -> str:
+async def _create_project(client, title: str = "P1", session=None) -> str:
     resp = await client.post("/api/v1/projects", json={"title": title})
     assert resp.status_code == 201
+    if session is not None:
+        project = await session.get(Project, uuid.UUID(resp.json()["id"]))
+        await ensure_default_search(session, project)
     return resp.json()["id"]
 
 
@@ -75,6 +79,7 @@ async def _foreign_project(session, owner: User) -> Project:
         )
     )
     await session.commit()
+    await ensure_default_search(session, project)
     return project
 
 
@@ -174,14 +179,16 @@ async def test_project_payload_returns_null_question_without_legacy_fallback(
     resp = await client.post("/api/v1/projects", json={"title": "T"})
     assert resp.status_code == 201
     assert resp.json()["question"] is None
-    data = (await client.get(f"/api/v1/projects/{resp.json()['id']}")).json()
+    project = await session.get(Project, uuid.UUID(resp.json()["id"]))
+    search = await ensure_default_search(session, project)
+    data = (await client.get(f"/api/v1/projects/{resp.json()['id']}?search={search.id}")).json()
     assert data["question"] is None and data["question_set"] is False
 
 
 async def test_get_project_as_member(client, session, researcher_user, do_login):
     """GET /projects/{id} by a member (200): status, article count, created_by."""
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
-    project_id = await _create_project(client)
+    project_id = await _create_project(client, session=session)
     project = await session.get(Project, uuid.UUID(project_id))
     session.add(Article(project_id=project.id, pmid="1", title="A1"))
     session.add(Article(project_id=project.id, pmid="2", title="A2"))
@@ -205,7 +212,7 @@ async def test_get_project_invited_lead_role_in_payload(client, session, researc
     owner.can_create_projects = True  # the local helper creates invites by default
     await session.commit()
     await do_login("owner@lab.fr", "owner-pass-123", consent=True)
-    project_id = await _create_project(client)
+    project_id = await _create_project(client, session=session)
     session.add(
         ProjectMember(
             project_id=uuid.UUID(project_id),
@@ -428,7 +435,7 @@ async def test_import_active_job_409(client, session, researcher_user, do_login,
 async def test_list_articles_paginated(client, session, researcher_user, do_login):
     """GET /projects/{id}/articles : pagination (page, per_page) + total."""
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
-    project_id = await _create_project(client)
+    project_id = await _create_project(client, session=session)
     project = await session.get(Project, uuid.UUID(project_id))
     for i in range(3):
         session.add(Article(project_id=project.id, pmid=str(100 + i), title=f"Article {i}"))
@@ -455,7 +462,7 @@ async def test_list_articles_exposes_fulltext_note(client, session, researcher_u
     vs 'abstract seul'. Regression: the list endpoint once omitted the field, so a
     textless scanned PDF was labelled 'abstract seul' (meaningless)."""
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
-    project_id = await _create_project(client)
+    project_id = await _create_project(client, session=session)
     project = await session.get(Project, uuid.UUID(project_id))
     session.add(
         Article(
@@ -480,7 +487,7 @@ async def test_list_articles_exposes_fulltext_note(client, session, researcher_u
 
 async def test_list_articles_default_per_page(client, session, researcher_user, do_login):
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
-    project_id = await _create_project(client)
+    project_id = await _create_project(client, session=session)
     resp = await client.get(f"/api/v1/projects/{project_id}/articles")
     assert resp.status_code == 200
     data = resp.json()

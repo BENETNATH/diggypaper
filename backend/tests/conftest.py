@@ -25,7 +25,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.api.ratelimit import reset as _reset_ratelimit
 from app.db.base import Base
-from app.db.models import User, UserRole
+from app.db.models import Project, Search, User, UserRole
 
 # The historical MODULE 5 schema. Used ONLY as explicit test fixture data for
 # projects that define this question — never a runtime default (see
@@ -204,6 +204,32 @@ async def researcher_user(session) -> User:
     return await _make_user(
         session, "researcher@lab.fr", UserRole.RESEARCHER, "researcher-pass-123"
     )
+
+
+@pytest.fixture
+async def default_search(session):
+    """The project's default search, created EXPLICITLY (spec 2026-11-20-analyses-runs
+    R9: ``create_project`` no longer auto-creates it — fixtures that need one make it)."""
+
+    async def _make(project: Project) -> Search:
+        from app.searches import definition_hash, next_search_name
+
+        s = Search(
+            project_id=project.id,
+            name=await next_search_name(session, project.id),
+            question=project.question,
+            fields=project.fields,
+            text_sections=project.text_sections,
+            read_windows=project.read_windows,
+            definition_hash=definition_hash(project.question, project.fields),
+            is_default=True,
+            lot_all=True,
+        )
+        session.add(s)
+        await session.flush()
+        return s
+
+    return _make
 
 
 @pytest.fixture

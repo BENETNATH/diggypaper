@@ -3,6 +3,7 @@
 from conftest import LEGACY_FIELDS
 
 from app.db.models import Article, HumanAnnotation, Project, ProjectMember, ProjectMemberRole
+from app.searches import ensure_default_search
 
 VALID_GT = {
     "use_ai_behavior": True,
@@ -19,6 +20,7 @@ async def _make_project_with_article(
     project = Project(title="P", created_by=lead_user.id, fields=fields)
     session.add(project)
     await session.commit()
+    await ensure_default_search(session, project)
     session.add(
         ProjectMember(
             project_id=project.id, user_id=lead_user.id, role_in_project=ProjectMemberRole.LEAD

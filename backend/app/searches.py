@@ -16,7 +16,7 @@ from fastapi import HTTPException
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Article, GoldArticle, Project, Search, SearchArticle
+from app.db.models import Article, GoldArticle, InferenceJob, Project, Search, SearchArticle
 
 
 def definition_hash(question: str | None, fields: list[dict] | None) -> str:
@@ -29,9 +29,8 @@ def definition_hash(question: str | None, fields: list[dict] | None) -> str:
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:32]
 
 
-async def default_search(db: AsyncSession, project: Project) -> Search:
-    """The project's default search (created on demand: whole corpus, project question)."""
-    s = (
+async def _existing_default(db: AsyncSession, project: Project) -> Search | None:
+    return (
         (
             await db.execute(
                 select(Search)
@@ -42,18 +41,59 @@ async def default_search(db: AsyncSession, project: Project) -> Search:
         .scalars()
         .first()
     )
-    if s is None:  # created on first read, from the project settings at that moment
-        s = Search(
-            project_id=project.id,
-            name=await next_search_name(db, project.id, project.created_at),
-            question=project.question,
-            fields=project.fields,
-            text_sections=project.text_sections,
-            read_windows=project.read_windows,
-            definition_hash=definition_hash(project.question, project.fields),
-            is_default=True,
-            lot_all=True,
+
+
+async def _has_legacy_gold(db: AsyncSession, project: Project) -> bool:
+    """Legacy references (search_id NULL) predating the default search."""
+    return (
+        await db.execute(
+            select(GoldArticle.id)
+            .where(GoldArticle.project_id == project.id, GoldArticle.search_id.is_(None))
+            .limit(1)
         )
+    ).first() is not None
+
+
+def _new_default(project: Project, name: str) -> Search:
+    return Search(
+        project_id=project.id,
+        name=name,
+        question=project.question,
+        fields=project.fields,
+        text_sections=project.text_sections,
+        read_windows=project.read_windows,
+        definition_hash=definition_hash(project.question, project.fields),
+        is_default=True,
+        lot_all=True,
+    )
+
+
+async def _default_search(db: AsyncSession, project: Project) -> Search | None:
+    """The project's default search — created from the project settings only when
+    legacy gold rows (search_id NULL) need their house (R10); None otherwise
+    (R9: no more on-the-fly auto-creation)."""
+    s = await _existing_default(db, project)
+    if s is None and await _has_legacy_gold(db, project):
+        s = _new_default(project, await next_search_name(db, project.id, project.created_at))
+        db.add(s)
+        await db.flush()
+    return s
+
+
+async def default_search(db: AsyncSession, project: Project) -> Search:
+    """The project's default search; 404 when the project has none (R9/R10)."""
+    s = await _default_search(db, project)
+    if s is None:
+        raise HTTPException(status_code=404, detail="no default search in this project")
+    return s
+
+
+async def ensure_default_search(db: AsyncSession, project: Project) -> Search:
+    """The project's default search, created from the project settings when absent —
+    an EXPLICIT creation for the RO-Crate restore (R9: reads no longer auto-create)."""
+    s = await _default_search(db, project)
+    if s is None:
+        s = _new_default(project, await next_search_name(db, project.id, project.created_at))
         db.add(s)
         await db.flush()
     return s
@@ -92,6 +132,36 @@ def in_search(col, search: Search):
     if search.is_default:
         return or_(col == search.id, col.is_(None))
     return col == search.id
+
+
+def job_in_search(job: InferenceJob, search: Search) -> bool:
+    """True if the job belongs to the search (search_id NULL = the default search)."""
+    if search.is_default:
+        return job.search_id in (search.id, None)
+    return job.search_id == search.id
+
+
+def project_as_origin(project: Project) -> Search:
+    """The project settings seen as a default search (whole-corpus lot).
+
+    New projects have no default search (R9): a lot derived from the "initial
+    search" that does not exist falls back to the project settings."""
+    return Search(
+        project_id=project.id,
+        name="",
+        question=project.question,
+        fields=project.fields,
+        text_sections=project.text_sections,
+        read_windows=project.read_windows,
+        is_default=True,
+        lot_all=True,
+    )
+
+
+async def default_origin(db: AsyncSession, project: Project) -> Search:
+    """Origin search for a lot "same as the initial search": the project's default
+    search, or its settings themselves when it does not exist (R9)."""
+    return await _default_search(db, project) or project_as_origin(project)
 
 
 def lot_condition(search: Search):
@@ -133,7 +203,9 @@ async def gold_condition(db: AsyncSession, project: Project, search: Search):
         Search.project_id == project.id, Search.definition_hash == search.definition_hash
     )
     cond = GoldArticle.search_id.in_(same)
-    initial = await default_search(db, project)
-    if initial.definition_hash == search.definition_hash:
+    # R9: the project may have no default search (explicit searches only) — the
+    # NULL legacy rows are only shared when a default with the same definition exists.
+    initial = await _default_search(db, project)
+    if initial is not None and initial.definition_hash == search.definition_hash:
         cond = or_(cond, GoldArticle.search_id.is_(None))
     return and_(GoldArticle.project_id == project.id, cond)

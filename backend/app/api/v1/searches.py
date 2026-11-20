@@ -40,6 +40,7 @@ from app.model_access import usable_models
 from app.scheduler import selection_dict, start_ready
 from app.schema import check_fields
 from app.searches import (
+    default_origin,
     definition_hash,
     get_search,
     in_search,
@@ -117,7 +118,12 @@ async def select_articles(db: AsyncSession, project: Project, sel: Selection) ->
     """Identifiers of the project's articles that answer to ``sel`` (stable order)."""
     import json
 
-    src = await get_search(db, project, sel.from_search_id)
+    # No explicit origin: the "initial search" — the project's default search,
+    # or its settings themselves when it does not exist (R9: no auto-creation).
+    if sel.from_search_id is not None:
+        src = await get_search(db, project, sel.from_search_id)
+    else:
+        src = await default_origin(db, project)
     if src.kind == "blind" and any(
         v is not None
         for v in (sel.status, sel.answers, sel.reviewed, sel.confidence_min, sel.confidence_max)
@@ -371,8 +377,14 @@ async def create_search(
     project = await _require_project_member(db, project_id, user)
     await _require_lead_or_admin(db, project_id, user)
     sel = payload.selection
-    origin = await get_search(db, project, sel.from_search_id)
     sched = payload.schedule
+    # An explicit origin or a schedule needs a REAL search (the lot/parent derive
+    # from it); a plain whole-corpus search falls back to the project settings
+    # when the project has no default search (R9: no auto-creation).
+    if sel.from_search_id is not None or sched is not None:
+        origin = await get_search(db, project, sel.from_search_id)
+    else:
+        origin = await default_origin(db, project)
     if sched is not None:
         if origin.kind == "blind" or payload.kind == "blind":
             raise HTTPException(status_code=422, detail="cannot schedule on a blind search")

@@ -21,6 +21,7 @@ from app.db.models import (
     User,
     UserRole,
 )
+from app.searches import ensure_default_search
 
 
 async def _make_user(session: AsyncSession, email: str, role: UserRole, password: str) -> User:
@@ -43,6 +44,8 @@ async def _create_frozen_project(client, session, researcher_user) -> str:
     project = await session.get(Project, uuid.UUID(project_id))
     project.status = ProjectStatus.FROZEN
     await session.commit()
+    # R9: create_project no longer auto-creates the default search; the trigger resolves it
+    await ensure_default_search(session, project)
     session.add(Article(project_id=project.id, pmid="111", title="A", methods_text="M."))
     await session.commit()
     prompt = PromptTemplate(
@@ -102,6 +105,8 @@ async def test_trigger_inference_admin(client, session, admin_user, do_login, mo
     project = Project(title="Foreign", created_by=other.id, status=ProjectStatus.FROZEN)
     session.add(project)
     await session.commit()
+    # R9: create_project no longer auto-creates the default search; the trigger resolves it
+    await ensure_default_search(session, project)
     session.add(
         ProjectMember(
             project_id=project.id, user_id=other.id, role_in_project=ProjectMemberRole.LEAD
@@ -374,13 +379,12 @@ async def test_extra_instructions_extend_the_generated_prompt(
     from sqlalchemy import select
 
     from app.db.models import PromptTemplate
+    from app.searches import default_search
 
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     project_id, _ = await _create_frozen_project(client, session, researcher_user)
-    # the generated prompt needs a question (no legacy fallback); the initial search
-    # was created at project creation, so it carries it
-    from app.searches import default_search
-
+    # the generated prompt needs a question (no legacy fallback); the default
+    # search is made by the helper (R9), which carries it
     initial = await default_search(session, await session.get(Project, uuid.UUID(project_id)))
     initial.question = "Q?"
     await session.commit()

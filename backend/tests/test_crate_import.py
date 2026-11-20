@@ -25,7 +25,7 @@ from app.db.models import (
     ProjectStatus,
     User,
 )
-from app.searches import default_search
+from app.searches import default_search, ensure_default_search
 from app.tasks.crate_import import _import_crate
 
 FIELDS = [{"key": "ai", "label": "AI used ?", "type": "boolean"}]
@@ -62,7 +62,8 @@ async def _exported_crate(session, tmp_path) -> tuple[str, Project]:
     session.add_all([a1, a2])
     await session.flush()
     session.add(ArticleFile(article_id=a1.id, data=PDF))
-    initial = await default_search(session, project)
+    # R9: the project starts without default search; the export is an explicit creation
+    initial = await ensure_default_search(session, project)
     session.add(
         ArticlePrediction(
             article_id=a1.id,
@@ -153,6 +154,8 @@ async def test_crate_keeps_human_evidence_under_a_project_scoped_pseudonym(sessi
     other = Project(title="Autre", fields=FIELDS)
     session.add(other)
     await session.flush()
+    # R9: the export needs a default search; the project starts without one
+    await ensure_default_search(session, other)
     other_art = Article(project_id=other.id, pmid="222")
     session.add(other_art)
     await session.flush()
@@ -411,6 +414,8 @@ async def _traced_crate(session, tmp_path, model_info=SNAPSHOT, registry=()) -> 
     project = Project(title="Trace", question="Q ?", fields=FIELDS)
     session.add(project)
     await session.flush()
+    # R9: the export needs a default search; the project starts without one
+    await ensure_default_search(session, project)
     art = Article(project_id=project.id, pmid="111", title="Étude A", abstract="Résumé.")
     session.add(art)
     await session.flush()

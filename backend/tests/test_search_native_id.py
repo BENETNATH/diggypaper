@@ -4,7 +4,8 @@
 import uuid
 from pathlib import Path
 
-from app.db.models import Article
+from app.db.models import Article, Project
+from app.searches import ensure_default_search
 
 BACKEND = Path(__file__).parent.parent
 
@@ -15,6 +16,10 @@ async def test_search_blob_includes_native_id(client, session, researcher_user, 
     resp = await client.post("/api/v1/projects", json={"title": "Native search"})
     print("DBG", resp.status_code, resp.text)
     pid = resp.json()["id"]
+    # R9: the fast search resolves search=None and 404s; create the default search
+    project = await session.get(Project, uuid.UUID(pid))
+    await ensure_default_search(session, project)
+    await session.commit()
     arts = [Article(project_id=uuid.UUID(pid), pmid=str(i), title=f"A{i}") for i in range(1, 5)]
     session.add_all(arts)
     arts[0].source, arts[0].native_id, arts[0].pmid = "europepmc", "W123", None

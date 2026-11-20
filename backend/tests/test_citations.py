@@ -54,11 +54,26 @@ async def test_import_citations_adds_candidates_and_creates_search(engine):
     project = await _make_project(engine)
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     async with factory() as s:
+        # R9: the project starts without search — the new citation search reuses the
+        # origin's question, so the origin (a default search) exists explicitly
+        from app.searches import definition_hash
+
         s.add_all(
             [
                 Article(project_id=project.id, pmid="1", title="seed 1"),
                 Article(project_id=project.id, pmid="2", title="seed 2"),
                 Article(project_id=project.id, pmid="10", title="déjà là"),
+                Search(
+                    project_id=project.id,
+                    name="261120-1",
+                    question="Q ?",
+                    fields=[{"key": "ai", "label": "AI", "type": "boolean"}],
+                    definition_hash=definition_hash(
+                        "Q ?", [{"key": "ai", "label": "AI", "type": "boolean"}]
+                    ),
+                    is_default=True,
+                    lot_all=True,
+                ),
             ]
         )
         await s.commit()

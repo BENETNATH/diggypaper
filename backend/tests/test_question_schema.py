@@ -3,6 +3,7 @@
 import pytest
 
 from app.schema import build_system_prompt, check_fields, compute_metrics, validate_decision
+from app.searches import ensure_default_search
 from tests.test_gold_api import _make_project_with_article
 
 FIELDS = [
@@ -55,6 +56,7 @@ def test_validate_metrics_prompt():
 async def test_custom_schema_flow(client, session, researcher_user, do_login):
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     project, article = await _make_project_with_article(session, researcher_user)
+    await ensure_default_search(session, project)
     base = f"/api/v1/projects/{project.id}"
     r = await client.patch(base, json={"question": "Blinding?", "fields": FIELDS})
     assert r.status_code == 200 and r.json()["custom_schema"] is True
@@ -84,7 +86,8 @@ async def test_articles_prediction_status_and_auto_prompt(
 
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     project, article = await _make_project_with_article(session, researcher_user)
-    project.question = "Which design?"  # a prompt needs a real question (no legacy fallback)
+    search = await ensure_default_search(session, project)
+    search.question = "Which design?"  # a prompt needs a real question (no legacy fallback)
     await session.commit()
     base = f"/api/v1/projects/{project.id}"
     r = (await client.get(f"{base}/articles")).json()

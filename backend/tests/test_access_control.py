@@ -17,6 +17,7 @@ from app.db.models import (
     User,
     UserRole,
 )
+from app.searches import ensure_default_search
 from tests.conftest import _make_user
 
 API = "/api/v1"
@@ -186,6 +187,7 @@ async def test_platform_model_needs_a_share_and_inference_checks_it(
         [model, PromptTemplate(project_id=project.id, version_number="v1", system_prompt="S")]
     )
     await session.commit()
+    await ensure_default_search(session, project)  # R9: inference 404s without one
     await _login(client, "alice@lab.fr", "alice-pass-123")
     assert await _names(client) == []
     r = await client.post(f"{API}/projects/{project.id}/inference", json={"model": "Kev"})

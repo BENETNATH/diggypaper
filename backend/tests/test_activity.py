@@ -25,6 +25,7 @@ from app.db.models import (
     User,
     UserRole,
 )
+from app.searches import ensure_default_search
 
 
 async def _make_user(
@@ -55,12 +56,14 @@ async def _member_project(client, session, user) -> str:
     project_id = resp.json()["id"]
     project = await session.get(Project, uuid.UUID(project_id))
     project.status = ProjectStatus.FROZEN
+    # R9: create_project no longer auto-creates the default search — create it explicitly
+    await ensure_default_search(session, project)
     search = (
         (await session.execute(select(Search).where(Search.project_id == project.id)))
         .scalars()
         .first()
     )
-    assert search is not None  # created automatically with the project
+    assert search is not None  # created explicitly by ensure_default_search
     search.name = "Question A"
     await session.commit()
     return project_id

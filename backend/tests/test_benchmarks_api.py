@@ -22,6 +22,7 @@ from app.db.models import (
     User,
     UserRole,
 )
+from app.searches import ensure_default_search
 
 
 async def _make_user(session: AsyncSession, email: str, role: UserRole, password: str) -> User:
@@ -249,6 +250,7 @@ async def test_trigger_benchmark_no_gold_422(client, session, researcher_user, d
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     project_id = await _create_project(client)
     project = await session.get(Project, uuid.UUID(project_id))
+    await ensure_default_search(session, project)
     prompt = PromptTemplate(project_id=project.id, version_number="v1.0")
     session.add(prompt)
     await session.commit()

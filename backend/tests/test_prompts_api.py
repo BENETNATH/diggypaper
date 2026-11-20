@@ -3,6 +3,7 @@
 from conftest import LEGACY_FIELDS
 
 from app.db.models import Project, ProjectMember, ProjectMemberRole
+from app.searches import ensure_default_search
 
 
 async def _make_project_with_lead(session, lead_user, other_user=None, fields=None):
@@ -24,6 +25,7 @@ async def _make_project_with_lead(session, lead_user, other_user=None, fields=No
             )
         )
     await session.commit()
+    await ensure_default_search(session, project)
     return project
 
 

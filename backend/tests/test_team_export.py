@@ -17,6 +17,7 @@ from app.db.models import (
     ProjectMember,
     ProjectMemberRole,
 )
+from app.searches import ensure_default_search
 
 
 @pytest.fixture
@@ -108,6 +109,8 @@ async def test_cannot_remove_last_lead(client, lead_project, researcher_user):
 
 
 async def test_export_xlsx_contains_results(client, session, lead_project):
+    # R9: no auto-created default search — the export resolves it explicitly
+    await ensure_default_search(session, lead_project)
     art = Article(
         project_id=lead_project.id,
         pmid="42",
@@ -165,6 +168,8 @@ async def test_list_articles_filters_by_answers(client, session, lead_project):
         {"key": "note", "label": "Note", "type": "text"},
     ]
     session.add(lead_project)
+    # R9: the default search is made from the (mutated) fields
+    await ensure_default_search(session, lead_project)
     arts = []
     for pmid, dec in (
         ("1", {"ai": True, "sex": "MALE", "note": "Deep_Lab Cut"}),
@@ -219,6 +224,8 @@ async def test_export_ro_crate_async(
     from app.tasks import export as texport
     from app.tasks import inference as tinf
 
+    # R9: no auto-created default search — the export resolves it explicitly
+    await ensure_default_search(session, lead_project)
     a1 = Article(
         project_id=lead_project.id,
         pmid="42",
@@ -518,6 +525,8 @@ async def test_crate_download_expired_410(client, session, lead_project, monkeyp
 
 
 async def test_export_references_ris_bibtex_follow_filters(client, session, lead_project):
+    # R9: no auto-created default search — the export resolves it explicitly
+    await ensure_default_search(session, lead_project)
     arts = []
     for pmid, status, title in (
         ("1", PredictionStatus.AUTO_ACCEPTED, "Deep learning & mice_100%"),
@@ -560,6 +569,9 @@ async def test_export_references_ris_bibtex_follow_filters(client, session, lead
 
 async def test_prisma_counts_and_svg(client, session, lead_project):
     from app.db.models import HumanAnnotation, ImportJob, ImportJobStatus
+
+    # R9: no auto-created default search — the export resolves it explicitly
+    await ensure_default_search(session, lead_project)
 
     def art(pmid, sections=None):
         a = Article(project_id=lead_project.id, pmid=pmid, title=pmid, sections=sections)
@@ -654,6 +666,7 @@ async def test_resume_inference_skips_done_articles(engine, session, fake_redis)
     project = Project(title="P", status=ProjectStatus.FROZEN)
     session.add(project)
     await session.commit()
+    await ensure_default_search(session, project)
     prompt = PromptTemplate(project_id=project.id, version_number="v1", system_prompt="S")
     done = Article(project_id=project.id, pmid="1", title="done", abstract="a")
     todo = Article(project_id=project.id, pmid="2", title="todo", abstract="a")
@@ -711,6 +724,8 @@ async def test_trigger_inference_resume(client, session, lead_project, monkeypat
     )
     from app.tasks import inference as tinf
 
+    # R9: no auto-created default search — the trigger resolves it explicitly
+    await ensure_default_search(session, lead_project)
     monkeypatch.setattr(
         tinf.inference_task, "delay", lambda jid: type("R", (), {"state": "PENDING"})()
     )
@@ -741,6 +756,8 @@ async def test_trigger_inference_resume(client, session, lead_project, monkeypat
 async def test_review_status_reviewer_and_prefill(client, session, lead_project):
     lead_project.fields = [{"key": "ai", "label": "AI", "type": "boolean"}]
     session.add(lead_project)
+    # R9: the default search is made from the (mutated) fields
+    await ensure_default_search(session, lead_project)
     a = Article(project_id=lead_project.id, pmid="1")
     session.add(a)
     await session.flush()
@@ -819,6 +836,8 @@ async def test_export_xlsx_traces_model_identifier_and_version(client, session, 
     version and details of both stages, read from the job snapshot (registry not required)."""
     from app.db.models import InferenceJob, InferenceJobStatus
 
+    # R9: no auto-created default search — the export resolves it explicitly
+    await ensure_default_search(session, lead_project)
     art = Article(project_id=lead_project.id, pmid="42", title="Mice")
     session.add(art)
     await session.commit()
@@ -865,6 +884,8 @@ async def test_export_xlsx_without_recorded_version_says_so(client, session, lea
     explicit "not recorded" mention in Project — no error."""
     from app.db.models import InferenceJob, InferenceJobStatus
 
+    # R9: no auto-created default search — the export resolves it explicitly
+    await ensure_default_search(session, lead_project)
     art = Article(project_id=lead_project.id, pmid="42", title="Mice")
     session.add(art)
     await session.commit()
@@ -897,6 +918,8 @@ async def test_export_xlsx_without_recorded_version_says_so(client, session, lea
 
 async def test_export_ris_bib_notes_mention_model_and_version(client, session, lead_project):
     """The RIS / BibTeX note of each article cites the model, its identifier and its version."""
+    # R9: no auto-created default search — the export resolves it explicitly
+    await ensure_default_search(session, lead_project)
     rows = (("1", "qwen3:8b", DIGEST_BIG), ("2", None, None))
     for pmid, ident, version in rows:
         a = Article(project_id=lead_project.id, pmid=pmid, title=f"T{pmid}", doi=f"10.1/{pmid}")
@@ -928,6 +951,8 @@ async def test_export_neutralizes_formula_in_model_version_columns(client, sessi
     apostrophe in the new XLSX columns (Results) and in the snapshot (Project)."""
     from app.db.models import InferenceJob, InferenceJobStatus
 
+    # R9: no auto-created default search — the export resolves it explicitly
+    await ensure_default_search(session, lead_project)
     evil = '=HYPERLINK("http://evil.test","x")'
     art = Article(project_id=lead_project.id, pmid="42", title="Mice")
     session.add(art)
@@ -962,6 +987,8 @@ async def test_export_neutralizes_formula_in_model_version_columns(client, sessi
 async def test_export_ris_bib_model_version_cannot_inject_fields(client, session, lead_project):
     """Third-party version `}\r\nTY  - JOUR` (imported crate): a single N1 line in RIS (no
     false record), balanced BibTeX braces; same with a trailing `\`."""
+    # R9: no auto-created default search — the export resolves it explicitly
+    await ensure_default_search(session, lead_project)
     evil = "}\r\nTY  - JOUR"
     for pmid, model, version in (("1", "Big", evil), ("2", "Big\\", "v\\")):
         a = Article(project_id=lead_project.id, pmid=pmid, title=f"T{pmid}", doi=f"10.1/{pmid}")

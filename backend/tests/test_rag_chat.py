@@ -33,7 +33,6 @@ from app.db.models import (
     UserRole,
 )
 from app.inference import InferenceError, OpenAICompatibleService
-from app.searches import default_search
 from app.semantic_search import semantic_search
 from app.tasks.vectorize import vectorize_project
 
@@ -848,13 +847,13 @@ async def test_chat_scoped_to_search_lot(client, session, researcher_user, do_lo
 
 
 async def test_chat_scoped_lot_all_search_unfiltered(
-    client, session, researcher_user, do_login, monkeypatch
+    client, session, researcher_user, do_login, monkeypatch, default_search
 ):
     """A lot_all search (e.g. the default one) covers the whole corpus."""
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     project_id = await _chat_project(session, researcher_user)
     project = await _project(session, project_id)
-    s = await default_search(session, project)
+    s = await default_search(project)
     assert s.lot_all is True
 
     async def fake_stream(self, model, messages):

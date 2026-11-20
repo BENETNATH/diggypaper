@@ -25,7 +25,7 @@ from app.db.models import (
 )
 from app.inference import clean_meta
 from app.schema import project_fields
-from app.searches import default_search, definition_hash
+from app.searches import definition_hash, ensure_default_search
 from app.tasks import _make_session_factory, _session_factory_override
 
 logger = logging.getLogger(__name__)
@@ -113,7 +113,9 @@ async def _restore(
         project.question = definition["question"]
         project.fields = definition["fields"]
         project.text_sections = definition["text_sections"]
-        search = await default_search(session, project)
+        # R9: the target may be a new project without default search — the restore
+        # creates it explicitly from the crate's definition (just written above)
+        search = await ensure_default_search(session, project)
         search.question, search.fields = project.question, project.fields
         search.text_sections = project.text_sections
         search.definition_hash = definition_hash(search.question, search.fields)

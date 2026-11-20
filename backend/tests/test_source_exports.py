@@ -13,15 +13,20 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api.v1.export import write_crate
 from app.db.models import Article, ImportJob, ImportJobStatus, Project, ProjectStatus, User
+from app.searches import ensure_default_search
 from app.tasks.crate_import import _import_crate
 
 GRAPH = json.dumps({"@graph": [{"conformsTo": {"@id": "https://w3id.org/ro/crate/1.1"}}]})
 
 
-async def _project(client, do_login) -> str:
+async def _project(client, session, do_login) -> str:
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     resp = await client.post("/api/v1/projects", json={"title": "Sources"})
     assert resp.status_code == 201
+    # R9: the export resolves search=None and 404s; create the default search explicitly
+    project = await session.get(Project, uuid.UUID(resp.json()["id"]))
+    await ensure_default_search(session, project)
+    await session.commit()
     return resp.json()["id"]
 
 
@@ -50,7 +55,7 @@ def _articles(pid) -> list[Article]:
 async def test_xlsx_results_source_columns(client, session, researcher_user, do_login):
     """Results: "Source" (readable label) and "Source identifier" right after the full text
     link; empty for an old article without source."""
-    pid = await _project(client, do_login)
+    pid = await _project(client, session, do_login)
     session.add_all(_articles(pid))
     await session.commit()
     resp = await client.get(f"/api/v1/projects/{pid}/export.xlsx")
@@ -68,7 +73,7 @@ async def test_xlsx_results_source_columns(client, session, researcher_user, do_
 async def test_xlsx_projet_sheet_import_sources(client, session, researcher_user, do_login):
     """Project: each import mentions its source; an old search job without source says
     "not recorded"; a reference import (mixed sources) points to the per-article detail."""
-    pid = await _project(client, do_login)
+    pid = await _project(client, session, do_login)
     session.add_all(
         [
             ImportJob(
@@ -113,7 +118,7 @@ async def test_xlsx_projet_sheet_import_sources(client, session, researcher_user
 
 async def test_ris_db_tag_and_bibtex_source_field(client, session, researcher_user, do_login):
     """RIS: DB tag = source name; BibTeX: readable ``source`` field; nothing without source."""
-    pid = await _project(client, do_login)
+    pid = await _project(client, session, do_login)
     session.add_all(_articles(pid))
     await session.commit()
     ris = (await client.get(f"/api/v1/projects/{pid}/export.ris")).text
@@ -131,6 +136,8 @@ async def test_crate_exports_source_and_job_source(session, tmp_path):
     project = Project(title="Crate", question="Q ?")
     session.add(project)
     await session.flush()
+    # R9: the RO-Crate write needs the default search
+    await ensure_default_search(session, project)
     session.add_all(_articles(project.id))
     session.add(
         ImportJob(

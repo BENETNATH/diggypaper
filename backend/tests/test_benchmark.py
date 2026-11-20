@@ -17,6 +17,7 @@ from app.db.models import (
     Project,
     PromptTemplate,
 )
+from app.searches import ensure_default_search
 from app.tasks.benchmark import _run_benchmark
 
 
@@ -56,6 +57,7 @@ async def test_run_benchmark_completes(engine, session, fake_redis):
     project = Project(title="P", created_by=None)
     session.add(project)
     await session.commit()
+    await ensure_default_search(session, project)
     prompt = PromptTemplate(
         project_id=project.id,
         version_number="v1.0",
@@ -226,6 +228,7 @@ async def test_run_benchmark_no_gold_raises(engine, session, fake_redis):
     project = Project(title="P", created_by=None)
     session.add(project)
     await session.commit()
+    await ensure_default_search(session, project)
     prompt = PromptTemplate(project_id=project.id, version_number="v1.0", system_prompt="SYS")
     session.add(prompt)
     await session.commit()
@@ -260,6 +263,7 @@ async def test_run_benchmark_inference_failure_marks_failed(
     project = Project(title="P", created_by=None)
     session.add(project)
     await session.commit()
+    await ensure_default_search(session, project)
     prompt = PromptTemplate(project_id=project.id, version_number="v1.0", system_prompt="SYS")
     session.add(prompt)
     await session.commit()
@@ -294,6 +298,7 @@ async def test_run_benchmark_deactivated_model_fails_before_lock(engine, session
     project = Project(title="P", created_by=None)
     session.add(project)
     await session.commit()
+    await ensure_default_search(session, project)
     prompt = PromptTemplate(
         project_id=project.id,
         version_number="v1.0",
@@ -348,6 +353,7 @@ async def test_benchmark_provider_error_recorded_not_fatal(engine, session, fake
     project = Project(title="P", created_by=None)
     session.add(project)
     await session.commit()
+    await ensure_default_search(session, project)
     prompt = PromptTemplate(
         project_id=project.id,
         version_number="v1.0",
@@ -409,6 +415,7 @@ async def test_benchmark_retry_errors(engine, session, fake_redis):
     project = Project(title="P", created_by=None)
     session.add(project)
     await session.commit()
+    await ensure_default_search(session, project)
     prompt = PromptTemplate(
         project_id=project.id,
         version_number="v1.0",
@@ -474,6 +481,7 @@ async def test_benchmark_retry_errors_persistent_failure(engine, session, fake_r
     project = Project(title="P", created_by=None)
     session.add(project)
     await session.commit()
+    await ensure_default_search(session, project)
     prompt = PromptTemplate(
         project_id=project.id,
         version_number="v1.0",
@@ -529,6 +537,7 @@ async def _project_with_articles(session, n=4, fields=None):
     project = Project(title="P", created_by=None, fields=fields)
     session.add(project)
     await session.commit()
+    await ensure_default_search(session, project)
     prompt = PromptTemplate(
         project_id=project.id, version_number="v1.0", system_prompt="AUTO", user_prompt_schema=None
     )

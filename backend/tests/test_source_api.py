@@ -7,13 +7,18 @@ from unittest.mock import MagicMock
 import httpx
 import pytest
 
-from app.db.models import Article, ImportJob, ImportJobStatus
+from app.db.models import Article, ImportJob, ImportJobStatus, Project
+from app.searches import ensure_default_search
 
 
-async def _project(client, do_login) -> str:
+async def _project(client, session, do_login) -> str:
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     resp = await client.post("/api/v1/projects", json={"title": "Sources"})
     assert resp.status_code == 201
+    # R9: the article list resolves search=None and 404s; create the default search
+    project = await session.get(Project, uuid.UUID(resp.json()["id"]))
+    await ensure_default_search(session, project)
+    await session.commit()
     return resp.json()["id"]
 
 
@@ -28,19 +33,19 @@ def _mock_delay(monkeypatch) -> MagicMock:
 
 
 async def test_import_source_defaults_to_pubmed_and_is_forwarded(
-    client, researcher_user, do_login, monkeypatch
+    client, session, researcher_user, do_login, monkeypatch
 ):
     """POST /import without ``source`` -> the task receives source='pubmed'."""
-    pid = await _project(client, do_login)
+    pid = await _project(client, session, do_login)
     delay = _mock_delay(monkeypatch)
     resp = await client.post(f"/api/v1/projects/{pid}/import", json={"query": "cancer"})
     assert resp.status_code == 202
     assert delay.call_args.kwargs["source"] == "pubmed"
 
 
-async def test_import_unknown_source_422(client, researcher_user, do_login, monkeypatch):
+async def test_import_unknown_source_422(client, session, researcher_user, do_login, monkeypatch):
     """Source absent from the adapter registry -> 422, no task started."""
-    pid = await _project(client, do_login)
+    pid = await _project(client, session, do_login)
     delay = _mock_delay(monkeypatch)
     resp = await client.post(
         f"/api/v1/projects/{pid}/import", json={"query": "cancer", "source": "arxiv"}
@@ -49,11 +54,13 @@ async def test_import_unknown_source_422(client, researcher_user, do_login, monk
     delay.assert_not_called()
 
 
-async def test_query_volume_unknown_source_422(client, researcher_user, do_login, monkeypatch):
+async def test_query_volume_unknown_source_422(
+    client, session, researcher_user, do_login, monkeypatch
+):
     """query-volume shares the ``source`` validation (same model): 422 without network call."""
     import app.api.v1.projects as projects_api
 
-    pid = await _project(client, do_login)
+    pid = await _project(client, session, do_login)
 
     def no_network():
         raise AssertionError("no network call expected")
@@ -67,7 +74,7 @@ async def test_query_volume_unknown_source_422(client, researcher_user, do_login
 
 async def test_jobs_list_exposes_source(client, session, researcher_user, do_login):
     """GET /jobs: the source of each import (null for a reference import)."""
-    pid = await _project(client, do_login)
+    pid = await _project(client, session, do_login)
     session.add_all(
         [
             ImportJob(
@@ -93,7 +100,7 @@ async def test_article_payloads_expose_source_and_native_id(
     client, session, researcher_user, do_login
 ):
     """Article list and detail: ``source`` + ``native_id`` (null for old ones)."""
-    pid = await _project(client, do_login)
+    pid = await _project(client, session, do_login)
     art = Article(
         project_id=uuid.UUID(pid), pmid="42", source="pubmed", native_id="42", title="New"
     )
@@ -132,10 +139,10 @@ def _no_openalex_sleep(monkeypatch):
     monkeypatch.setattr("app.openalex._sleep", _noop)
 
 
-async def test_query_volume_europepmc(client, researcher_user, do_login, monkeypatch):
+async def test_query_volume_europepmc(client, session, researcher_user, do_login, monkeypatch):
     """source='europepmc' -> EPMC /search (no NCBI call), date bounds carried."""
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
-    pid = await _project(client, do_login)
+    pid = await _project(client, session, do_login)
     import app.api.v1.projects as projects_api
 
     seen: list[dict] = []
@@ -166,10 +173,12 @@ async def test_query_volume_europepmc(client, researcher_user, do_login, monkeyp
     assert p["query"] == "(p53) AND FIRST_PDATE:[2024-01-15 TO 2024-06-30]"
 
 
-async def test_query_volume_europepmc_error_502(client, researcher_user, do_login, monkeypatch):
+async def test_query_volume_europepmc_error_502(
+    client, session, researcher_user, do_login, monkeypatch
+):
     """Persistent EPMC 503 (retries included) → 502 {error: europepmc_unavailable}, no URL."""
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
-    pid = await _project(client, do_login)
+    pid = await _project(client, session, do_login)
     import app.api.v1.projects as projects_api
 
     def handler(_request: httpx.Request) -> httpx.Response:
@@ -190,10 +199,10 @@ async def test_query_volume_europepmc_error_502(client, researcher_user, do_logi
 # --- query-volume OpenAlex (spec 2026-10-29-sources-phase4a D1) ----------------
 
 
-async def test_query_volume_openalex(client, researcher_user, do_login, monkeypatch):
+async def test_query_volume_openalex(client, session, researcher_user, do_login, monkeypatch):
     """source='openalex' -> OpenAlex /works (no NCBI/EPMC call), count in ``meta``."""
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
-    pid = await _project(client, do_login)
+    pid = await _project(client, session, do_login)
     import app.api.v1.projects as projects_api
 
     seen: list[dict] = []
@@ -219,10 +228,12 @@ async def test_query_volume_openalex(client, researcher_user, do_login, monkeypa
     assert p["filter"] == "from_publication_date:2024-01-15"
 
 
-async def test_query_volume_openalex_error_502(client, researcher_user, do_login, monkeypatch):
+async def test_query_volume_openalex_error_502(
+    client, session, researcher_user, do_login, monkeypatch
+):
     """Persistent OpenAlex 429 (retries included) → 502 {error: openalex_unavailable}, no URL."""
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
-    pid = await _project(client, do_login)
+    pid = await _project(client, session, do_login)
     import app.api.v1.projects as projects_api
 
     def handler(_request: httpx.Request) -> httpx.Response:
@@ -240,13 +251,13 @@ async def test_query_volume_openalex_error_502(client, researcher_user, do_login
     assert "openalex.org" not in resp.text
 
 
-async def test_query_volume_hal_error_502(client, researcher_user, do_login, monkeypatch):
+async def test_query_volume_hal_error_502(client, session, researcher_user, do_login, monkeypatch):
     """HAL errors (400 exhausted, 503 after retries, timeout) → 502 {error: hal_unavailable},
     no URL (same contract as the other sources)."""
     import app.api.v1.projects as projects_api
     import app.hal as hal
 
-    pid = await _project(client, do_login)
+    pid = await _project(client, session, do_login)
 
     async def _noop(_delay: float) -> None:
         return None

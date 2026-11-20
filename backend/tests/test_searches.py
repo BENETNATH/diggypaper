@@ -28,15 +28,13 @@ FIELDS = [{"key": "ai", "label": "AI", "type": "boolean"}]
 
 
 @pytest.fixture
-async def corpus(session, researcher_user, client, do_login):
+async def corpus(session, researcher_user, client, do_login, default_search):
     """LEAD project with 4 articles; initial search: ai=yes for A1, A2; no for A3, A4."""
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     project = Project(title="P", created_by=researcher_user.id, question="Q ?", fields=FIELDS)
     session.add(project)
     await session.commit()
-    from app.searches import default_search
-
-    await default_search(session, project)  # as create_project does
+    await default_search(project)  # R9: no longer created by create_project
     session.add(
         ProjectMember(
             project_id=project.id,
@@ -79,7 +77,7 @@ async def test_default_search_covers_the_whole_corpus(client, corpus):
 
 
 async def test_search_payload_returns_null_question_without_legacy_fallback(
-    client, session, researcher_user, do_login
+    client, session, researcher_user, do_login, default_search
 ):
     """spec 2026-11-02-legacy-questions §1: the payload carries the real value (null)."""
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
@@ -93,9 +91,7 @@ async def test_search_payload_returns_null_question_without_legacy_fallback(
             role_in_project=ProjectMemberRole.LEAD,
         )
     )
-    from app.searches import default_search
-
-    await default_search(session, project)
+    await default_search(project)
     await session.commit()
     items = (await client.get(f"/api/v1/projects/{project.id}/searches")).json()["items"]
     assert items and items[0]["question"] is None
@@ -167,7 +163,7 @@ async def test_selection_sample_reviewed_and_errors(client, session, corpus):
 
 
 async def test_non_lead_cannot_create_and_foreign_search_is_404(
-    client, session, corpus, admin_user
+    client, session, corpus, admin_user, default_search
 ):
     project, _ = corpus
     other = Project(title="Autre", created_by=None)
@@ -175,9 +171,7 @@ async def test_non_lead_cannot_create_and_foreign_search_is_404(
     await session.commit()
     base = f"/api/v1/projects/{project.id}"
     # a search from another project is not reachable from this one
-    from app.searches import default_search
-
-    foreign = await default_search(session, other)
+    foreign = await default_search(other)
     await session.commit()
     assert (
         await client.get(f"{base}/articles", params={"search": str(foreign.id)})

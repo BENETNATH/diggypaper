@@ -19,6 +19,7 @@ from app.db.models import (
     User,
     UserRole,
 )
+from app.searches import ensure_default_search
 
 
 class FakeMailer:
@@ -189,6 +190,9 @@ async def test_admin_storage_and_keep_endpoints(
         p["id"] == str(project.id) for p in full["projects"]
     )
     await maintenance.retention_sweep(session, FakeMailer())
+    # R9: GET /projects/{id} 404s without a default search; add it after the
+    # sweep so the project is still judged inactive when the warning fires.
+    await ensure_default_search(session, project)
     got = (await client.get(f"/api/v1/projects/{project.id}")).json()
     assert got["retention_delete_on"]  # deletion scheduled, visible to the leads
     r = await client.post(f"/api/v1/projects/{project.id}/keep")

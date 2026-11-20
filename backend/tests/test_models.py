@@ -1067,6 +1067,53 @@ def test_inference_jobs_model_info_column():
     assert isinstance(c["model_info"].type, JSON) and c["model_info"].nullable
 
 
+def test_inference_jobs_columns():
+    c = InferenceJob.__table__.columns
+    assert set(c.keys()) == {
+        "id",
+        "project_id",
+        "prompt_template_id",
+        "model_used",
+        "prefilter_model",
+        "model_info",
+        "search_id",
+        "options",
+        "resume_after",
+        "status",
+        "result_json",
+        "error",
+        "created_by",
+        "created_at",
+        "completed_at",
+        "name",
+        "definition_hash",
+    }
+    assert c["id"].primary_key
+    assert isinstance(c["id"].type, Uuid)
+    assert fk(c["project_id"]).column is Project.__table__.c.id
+    assert fk(c["project_id"]).ondelete == "CASCADE"
+    assert isinstance(c["model_used"].type, String) and not c["model_used"].nullable
+    assert fk(c["search_id"]).column is Search.__table__.c.id
+    assert fk(c["search_id"]).ondelete == "CASCADE"
+    assert isinstance(c["options"].type, JSON)
+    assert c["status"].type.enums == ["PENDING", "RUNNING", "COMPLETED", "FAILED"]
+    assert c["status"].server_default.arg == "PENDING"
+    assert isinstance(c["result_json"].type, JSON)
+    assert isinstance(c["error"].type, Text) and c["error"].nullable
+    assert isinstance(c["created_by"].type, Uuid) and c["created_by"].nullable
+    assert fk(c["created_by"]).column is User.__table__.c.id
+    assert fk(c["created_by"]).ondelete == "SET NULL"
+    assert isinstance(c["created_at"].type, DateTime) and c["created_at"].type.timezone
+    assert c["created_at"].server_default is not None
+    assert isinstance(c["completed_at"].type, DateTime) and c["completed_at"].nullable
+    # Run name + frozen corpus definition (spec 2026-11-20-analyses-runs §1);
+    # NULL = run predating the feature. Uniqueness: API level only, no DB constraint.
+    assert isinstance(c["name"].type, String) and c["name"].type.length == 100
+    assert c["name"].nullable
+    assert isinstance(c["definition_hash"].type, String) and c["definition_hash"].type.length == 32
+    assert c["definition_hash"].nullable
+
+
 def test_migration_0029_adds_traceability_columns(monkeypatch):
     """Migration 0029 (after 0028) adds the 3 columns; the downgrade removes them."""
     import importlib.util
@@ -1254,3 +1301,39 @@ def test_migration_0042_triage_policy_field_confidences(monkeypatch):
         ]
         + DOWNGRADE_TAIL
     )
+
+
+def test_migration_0043_run_name_and_definition_hash(monkeypatch):
+    """0043 (after 0042): inference_jobs.name + inference_jobs.definition_hash
+    (spec 2026-11-20-analyses-runs §1 — run name + frozen corpus definition)."""
+    import importlib.util
+    from pathlib import Path
+
+    versions = Path(__file__).resolve().parents[1] / "alembic" / "versions"
+    found = sorted(versions.glob("0043_*.py"))
+    assert len(found) == 1, "migration 0043 attendue"
+    spec = importlib.util.spec_from_file_location("migration_0043", found[0])
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    assert mod.revision == "0043" and mod.down_revision == "0042"
+
+    added, dropped = [], []
+
+    class Op:
+        def add_column(self, table, column):
+            added.append((table, column.name, column.nullable))
+
+        def drop_column(self, table, name):
+            dropped.append((table, name))
+
+    monkeypatch.setattr(mod, "op", Op())
+    mod.upgrade()
+    assert sorted(added) == [
+        ("inference_jobs", "definition_hash", True),
+        ("inference_jobs", "name", True),
+    ]
+    mod.downgrade()
+    assert sorted(dropped) == [
+        ("inference_jobs", "definition_hash"),
+        ("inference_jobs", "name"),
+    ]
