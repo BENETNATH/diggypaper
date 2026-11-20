@@ -50,7 +50,14 @@ from app.openalex import OpenAlexError
 from app.pubmed import NCBIError, _esearch_max
 from app.refimport import dedupe, parse_references
 from app.schema import check_fields, normalize_triage_policy, project_fields
-from app.searches import definition_hash, get_search, in_search, job_in_search, lot_condition
+from app.searches import (
+    definition_hash,
+    get_search,
+    in_search,
+    job_in_search,
+    lot_condition,
+    resolve_search,
+)
 from app.settings.service import get_setting
 from app.sources import DateBounds
 from app.tasks import ADAPTERS, _source_key_setting, complete_fulltext_task, import_pubmed_task
@@ -393,7 +400,7 @@ async def get_project(
     without it, every non-admin appears annotator (bug 2026-10-30: an invited LEAD
     saw "only a project lead can create searches")."""
     project = await _require_project_member(db, project_id, user)
-    scope = await get_search(db, project, search)
+    scope = await resolve_search(db, project, search)
     article_count = (
         await db.execute(
             select(func.count()).select_from(Article).where(Article.project_id == project.id)

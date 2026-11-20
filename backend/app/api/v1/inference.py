@@ -36,7 +36,7 @@ from app.db.models import (
     UserRole,
 )
 from app.model_access import usable_models
-from app.searches import get_search, in_search, job_in_search
+from app.searches import get_search, in_search, job_in_search, resolve_search
 from app.tasks.inference import inference_task
 
 router = APIRouter(prefix="/projects", tags=["inference"])
@@ -565,15 +565,17 @@ async def get_inference(
     ``active``: the project's job in progress (all searches), else ``{"job": null}`` - one
     analysis at a time per project."""
     project = await _require_project_member(db, project_id, user)
-    scope = await get_search(db, project, search)
-    where = (
-        [
+    scope = await resolve_search(db, project, search)
+    if active:
+        where = [
             InferenceJob.project_id == project_id,
             InferenceJob.status.in_([InferenceJobStatus.PENDING, InferenceJobStatus.RUNNING]),
         ]
-        if active
-        else [InferenceJob.project_id == project_id, in_search(InferenceJob.search_id, scope)]
-    )
+    else:
+        if scope is None:
+            # no default search (R9) and no explicit one: no scoped job can exist
+            return {"job": None}
+        where = [InferenceJob.project_id == project_id, in_search(InferenceJob.search_id, scope)]
     job = (
         (
             await db.execute(

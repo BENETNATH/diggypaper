@@ -127,6 +127,17 @@ async def get_search(
     return s
 
 
+async def resolve_search(
+    db: AsyncSession, project: Project, search_id: uuid.UUID | None = None
+) -> Search | None:
+    """Search for a project-level endpoint (project detail, project-wide inference):
+    the explicit search (404 if it is not of this project), else the default search —
+    or ``None`` when the project has no default (R9: the project settings stand in)."""
+    if search_id is not None:
+        return await get_search(db, project, search_id)
+    return await _default_search(db, project)
+
+
 def in_search(col, search: Search):
     """Condition "this row belongs to the search"; NULL = default search."""
     if search.is_default:

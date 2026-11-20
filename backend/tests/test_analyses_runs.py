@@ -680,3 +680,35 @@ async def test_t13_question_locked_only_for_the_default_search(
     )
     assert r.status_code == 409
     assert r.json()["detail"] == "question_locked"
+
+
+async def test_t14_new_project_no_search_detail(client, session, researcher_user, do_login):
+    """T14: a new project (no search) stays reachable — the overview must not 404 (R9
+    regression 2026-11-20: GET /projects/{id} and GET /projects/{id}/inference resolved
+    the default search and 404'd, breaking the project overview on the pas-à-pas)."""
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    r = await client.post("/api/v1/projects", json={"title": "Nouveau"})
+    assert r.status_code == 201, r.text
+    project_id = r.json()["id"]
+    # the project detail answers 200 with the project settings, search_id null
+    r1 = await client.get(f"/api/v1/projects/{project_id}")
+    assert r1.status_code == 200, r1.text
+    assert r1.json()["search_id"] is None
+    assert "role_in_project" in r1.json()
+    # the inference status answers 200 with no job (active and last)
+    r2 = await client.get(f"/api/v1/projects/{project_id}/inference", params={"active": True})
+    assert r2.status_code == 200, r2.text
+    assert r2.json() == {"job": None}
+    r3 = await client.get(f"/api/v1/projects/{project_id}/inference")
+    assert r3.status_code == 200, r3.text
+    assert r3.json() == {"job": None}
+    # an explicit foreign search still 404s (get_search is not weakened)
+    r4 = await client.post("/api/v1/projects", json={"title": "Autre"})
+    other = await session.get(Project, uuid.UUID(r4.json()["id"]))
+    session.add(Article(project_id=other.id, pmid="9", title="X1"))
+    await session.commit()
+    r5 = await client.post(f"/api/v1/projects/{other.id}/searches", json={"question": "Q ?"})
+    assert r5.status_code == 201, r5.text
+    foreign_search = r5.json()["id"]
+    r6 = await client.get(f"/api/v1/projects/{project_id}", params={"search": foreign_search})
+    assert r6.status_code == 404
