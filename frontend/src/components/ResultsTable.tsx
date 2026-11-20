@@ -6,6 +6,7 @@ import { Article, SchemaField } from "@/lib/api";
 import { AnswerCell, STATUS_DOT } from "@/components/ResultRow";
 import { deriveHumanFieldState } from "@/lib/resultCells";
 import { biblioLine } from "@/components/Certainty";
+import { HScroll } from "@/components/HScroll";
 
 /**
  * Results read as a table — one column per question (spec 2026-11-06-ux-refonte-v4 R3).
@@ -36,7 +37,7 @@ export function ResultsTable({
   // The table can be wider than its card (one column per question, min widths):
   // scroll horizontally inside the card, never outside the page background.
   return (
-    <div className="overflow-x-auto">
+    <HScroll>
       <table className="w-full min-w-[36rem] border-collapse text-sm">
       <thead>
         <tr className="border-b border-border">
@@ -151,6 +152,6 @@ export function ResultsTable({
           </span>
         </div>
       )}
-    </div>
+    </HScroll>
   );
 }

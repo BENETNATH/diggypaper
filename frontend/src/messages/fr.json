@@ -15,7 +15,8 @@
     "retry": "Réessayer",
     "close": "Fermer",
     "adminOnly": "Accès réservé aux administrateurs.",
-    "skipToContent": "Aller au contenu principal"
+    "skipToContent": "Aller au contenu principal",
+    "hscrollLabel": "Défilement horizontal du tableau"
   },
   "jobs": {
     "status_PENDING": "En attente",

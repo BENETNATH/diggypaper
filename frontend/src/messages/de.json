@@ -15,7 +15,8 @@
     "close": "Schließen",
     "adminOnly": "Zugriff nur für Administratoren.",
     "skipToContent": "Zum Hauptinhalt springen",
-    "versionNotRecordedHelp": "Die Modellversion wurde für diesen Job nicht erfasst."
+    "versionNotRecordedHelp": "Die Modellversion wurde für diesen Job nicht erfasst.",
+    "hscrollLabel": "Horizontales Scrollen der Tabelle"
   },
   "jobs": {
     "status_PENDING": "Ausstehend",

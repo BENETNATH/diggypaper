@@ -8,6 +8,7 @@ import { Card } from "@/components/ui/Card";
 import { Select } from "@/components/ui/Field";
 import { ErrorBanner, Skeleton } from "@/components/ui/Feedback";
 import { withSearch } from "@/lib/search";
+import { HScroll } from "@/components/HScroll";
 
 const pct = (v: number | null): string => (v === null ? "—" : `${(v * 100).toFixed(1)}%`);
 const kappa = (v: number | null): string => (v === null ? "—" : v.toFixed(2));
@@ -177,7 +178,7 @@ export function AgreementPanel({
             </div>
           </div>
           {h.by_field.length > 1 && (
-            <div className="overflow-x-auto rounded-lg">
+            <HScroll className="rounded-lg">
               <table className="w-full text-left text-sm">
                 <thead className="bg-surface-muted text-xs text-muted">
                   <tr>
@@ -198,7 +199,7 @@ export function AgreementPanel({
                   ))}
                 </tbody>
               </table>
-            </div>
+            </HScroll>
           )}
           {/* AI block (model chosen): agreement between the model and reviewer B */}
           {ai && ai.n > 0 && (

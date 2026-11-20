@@ -15,7 +15,8 @@
     "close": "Close",
     "adminOnly": "Access restricted to administrators.",
     "skipToContent": "Skip to main content",
-    "versionNotRecordedHelp": "The model version was not recorded for this job."
+    "versionNotRecordedHelp": "The model version was not recorded for this job.",
+    "hscrollLabel": "Horizontal table scroll"
   },
   "jobs": {
     "status_PENDING": "Pending",

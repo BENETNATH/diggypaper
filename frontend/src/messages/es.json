@@ -15,7 +15,8 @@
     "close": "Cerrar",
     "adminOnly": "Acceso restringido a administradores.",
     "skipToContent": "Saltar al contenido principal",
-    "versionNotRecordedHelp": "La versión del modelo no se registró en este job."
+    "versionNotRecordedHelp": "La versión del modelo no se registró en este job.",
+    "hscrollLabel": "Desplazamiento horizontal de la tabla"
   },
   "jobs": {
     "status_PENDING": "Pendiente",

@@ -6,6 +6,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { getStorage, Storage } from "@/lib/api";
 import { Card } from "@/components/ui/Card";
 import { ErrorBanner } from "@/components/ui/Feedback";
+import { HScroll } from "@/components/HScroll";
 
 const gb = (n: number | null | undefined): string => (n == null ? "—" : `${(n / 1024 ** 3).toFixed(1)} GB`);
 const mb = (n: number): string => (n >= 1024 ** 3 ? gb(n) : `${Math.round(n / 1024 ** 2)} MB`);
@@ -53,7 +54,7 @@ export function StoragePanel() {
             ? t("retentionOn", { days: s.retention_days, grace: s.grace_days })
             : t("retentionOff")}
         </p>
-        <div className="overflow-x-auto">
+        <HScroll>
           <table className="w-full text-left text-xs">
             <thead className="text-muted">
               <tr>
@@ -82,7 +83,7 @@ export function StoragePanel() {
               ))}
             </tbody>
           </table>
-        </div>
+        </HScroll>
       </div>
     </Card>
   );

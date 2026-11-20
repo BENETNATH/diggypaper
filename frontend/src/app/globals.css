@@ -152,6 +152,15 @@
       box-shadow: 0 0 0 5px color-mix(in oklch, var(--primary) 40%, transparent);
     }
   }
+  /* Pouce de la barre de scroll flottante (spec 2026-11-19-hscroll-float) :
+     Tailwind v3 ne génère pas le modificateur d'opacité sur les couleurs var()
+     (bg-muted-foreground/45 est silencieusement absent du CSS compilé). */
+  .hscroll-thumb {
+    background-color: color-mix(in oklch, var(--muted-foreground) 45%, transparent);
+  }
+  .group:hover .hscroll-thumb {
+    background-color: color-mix(in oklch, var(--muted-foreground) 65%, transparent);
+  }
   /* Skeleton (frontend-design-pro : skeleton > spinner) */
   .skeleton {
     position: relative;

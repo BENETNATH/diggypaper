@@ -3,6 +3,7 @@
 import { useTranslations } from "next-intl";
 import type { PrimaryCriterion, Prf, SchemaField, Scored } from "@/lib/api";
 import { pct, primaryParts } from "@/lib/benchmark";
+import { HScroll } from "@/components/HScroll";
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
@@ -18,7 +19,7 @@ function Confusion({ m }: { m: Prf }) {
   const t = useTranslations("validation");
   const cell = "px-3 py-1.5 text-center tabular-nums";
   return (
-    <div className="overflow-x-auto">
+    <HScroll>
       <table className="text-sm">
         <caption className="mb-1 text-left text-xs text-muted">{t("confusionTitle")}</caption>
         <thead>
@@ -41,7 +42,7 @@ function Confusion({ m }: { m: Prf }) {
           </tr>
         </tbody>
       </table>
-    </div>
+    </HScroll>
   );
 }
 
@@ -80,7 +81,7 @@ export function ValidationView({
         <Stat label={t("metric_accuracy")} value={pct(scored.accuracy ?? rel.accuracy)} />
       </div>
       {items.length > 0 && (
-        <div className="overflow-x-auto">
+        <HScroll>
           <table className="w-full text-sm">
             <caption className="mb-1 text-left text-xs text-muted">{t("itemsTitle")}</caption>
             <thead>
@@ -109,7 +110,7 @@ export function ValidationView({
               ))}
             </tbody>
           </table>
-        </div>
+        </HScroll>
       )}
       <Confusion m={rel} />
     </div>

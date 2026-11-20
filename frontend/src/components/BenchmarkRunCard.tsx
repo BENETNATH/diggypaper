@@ -7,6 +7,7 @@ import { createPrompt, getBenchmark, getBenchmarkVotes, BenchmarkResult, Benchma
 import { pct, primaryParts, rankResults, resultKey, savedPromptVersion } from "@/lib/benchmark";
 import { withSearch } from "@/lib/search";
 import { BenchmarkDisagreements } from "@/components/BenchmarkDisagreements";
+import { HScroll } from "@/components/HScroll";
 import { ValidationView } from "@/components/ValidationView";
 import { Button } from "@/components/ui/Button";
 import { Badge, Card, statusColor } from "@/components/ui/Card";
@@ -240,7 +241,7 @@ export function BenchmarkRunCard({
                     ? t("rankedOnAgreement")
                     : t("rankedOnTime")}
               </p>
-              <div className="overflow-x-auto">
+              <HScroll>
                 <table className="w-full min-w-[40rem] text-sm">
                   <thead>
                     <tr className="border-b border-border text-xs text-muted">
@@ -321,7 +322,7 @@ export function BenchmarkRunCard({
                     })}
                   </tbody>
                 </table>
-              </div>
+              </HScroll>
               <p className="text-xs text-muted">{t("metricsLegend")}</p>
               {!ranked.some((r) => r.details?.scored) && <p className="text-xs text-muted">{t("noGoldScores")}</p>}
               <p className="text-xs text-muted">{t("useForAnalysisHint")}</p>

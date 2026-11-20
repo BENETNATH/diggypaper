@@ -14,6 +14,7 @@ import { Card } from "@/components/ui/Card";
 import { Select } from "@/components/ui/Field";
 import { ErrorBanner, Skeleton } from "@/components/ui/Feedback";
 import { withSearch } from "@/lib/search";
+import { HScroll } from "@/components/HScroll";
 
 /** The main decision value as text ("—", "true", "oui", "exclude", …). */
 const fmt = (v: unknown): string => (v === null || v === undefined ? "—" : String(v));
@@ -162,7 +163,7 @@ export function ComparisonPanel({
             <p className="text-sm text-muted">{t("noCommon")}</p>
           ) : (
             <>
-              <div className="overflow-x-auto rounded-lg">
+              <HScroll className="rounded-lg">
                 <table className="w-full text-left text-sm">
                   <thead className="bg-surface-muted text-xs text-muted">
                     <tr>
@@ -201,7 +202,7 @@ export function ComparisonPanel({
                     ))}
                   </tbody>
                 </table>
-              </div>
+              </HScroll>
               {data.rows.length > COMPARE_PAGE && (
                 <div className="mt-2 flex items-center justify-between gap-2">
                   <Button
