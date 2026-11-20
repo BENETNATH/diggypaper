@@ -37,6 +37,13 @@ const slug = (s: string) =>
     .replace(/^(\d)/, "f_$1")
     .slice(0, 40);
 
+/** Smallest free key: `base`, else `base_2`, `base_3`, … (sliced after the suffix). */
+const uniqueKey = (base: string, taken: Set<string>) => {
+  let key = base;
+  for (let n = 2; taken.has(key); n += 1) key = `${base}_${n}`.slice(0, 40);
+  return key;
+};
+
 /** Controlled editor: question, answer fields, text parts read by the models. */
 export function QuestionEditor({
   question,
@@ -66,7 +73,10 @@ export function QuestionEditor({
         const { optionsText, ...rest } = patch;
         const next = { ...f, ...rest };
         if (optionsText !== undefined) next.options = optionsText.split(",").map((o) => o.trim());
-        if (rest.label !== undefined && f.key.startsWith("new_")) next.key = slug(rest.label) || f.key;
+        if (rest.label !== undefined && f.key.startsWith("new_")) {
+          const base = slug(rest.label);
+          if (base) next.key = uniqueKey(base, new Set(fields.filter((_, j) => j !== i).map((x) => x.key)));
+        }
         if (rest.type === "choice" && !next.options?.length) next.options = ["YES", "NO"];
         // A choice item only has accuracy (no recall / precision).
         if (next.type === "choice" && next.primary) next.metric = "accuracy";
@@ -102,11 +112,8 @@ export function QuestionEditor({
   /** R4: duplicate an item right after itself (same type/options, a fresh key). */
   function duplicate(i: number) {
     const f = fields[i];
-    const keys = new Set(fields.map((x) => x.key));
-    let key = f.key;
-    for (let n = 2; keys.has(key); n += 1) key = `${f.key}_${n}`.slice(0, 40);
     const next = [...fields];
-    next.splice(i + 1, 0, { ...f, key });
+    next.splice(i + 1, 0, { ...f, key: uniqueKey(f.key, new Set(fields.map((x) => x.key))) });
     set({ fields: next });
   }
 
@@ -248,9 +255,12 @@ export function QuestionEditor({
             type="button"
             variant="secondary"
             size="sm"
-            onClick={() =>
-              set({ fields: [...fields, { key: `new_${fields.length + 1}`, label: "", type: "boolean" }] })
-            }
+            onClick={() => {
+              const keys = new Set(fields.map((x) => x.key));
+              let n = 1;
+              while (keys.has(`new_${n}`)) n += 1;
+              set({ fields: [...fields, { key: `new_${n}`, label: "", type: "boolean" }] });
+            }}
           >
             + {t("addField")}
           </Button>
