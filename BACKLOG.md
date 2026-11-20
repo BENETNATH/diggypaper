@@ -1,6 +1,6 @@
 # Backlog
 
-Mise à jour : 2026-11-19. Commits cités : `git log --oneline`.
+Mise à jour : 2026-11-20. Commits cités : `git log --oneline`.
 
 ## Corrigé le 2026-11-19
 
@@ -68,6 +68,10 @@ Mise à jour : 2026-11-19. Commits cités : `git log --oneline`.
 - Timeout inférence paramétrable, warm-up anti cold start, ordre des PMIDs,
   suppression des poids Ollama, lock par modèle + file visible, bornes date
   d'import : corrigés (2026-10-27 → 29 ; specs `2026-10-2*` et `git log`).
+- **Réorganisation corpus/analyses** (specs `2026-11-20-analyses-runs-1/-2`,
+  maquette validée 2026-11-20) : en cours — corpus de questions (Search) séparés
+  des analyses/runs (InferenceJob + `name` + `definition_hash` figée, écraser,
+  supprimer, `?run=` sur les résultats). Run backend lancé le 2026-11-20.
 
 ## Bugs / gaps connus
 
@@ -78,6 +82,26 @@ Mise à jour : 2026-11-19. Commits cités : `git log --oneline`.
 
 (2. « Fenêtre de réécriture DNS sortante non fermée » — corrigé le 2026-11-19 :
 épinglage de l'IP validée sur tout l'appel, see section ci-dessus.)
+
+## Évolutions prévues
+
+1. **Questions conditionnelles (skip logic)** — analyse de faisabilité
+   validée le 2026-11-20, **aucune migration de données** (les champs sont du
+   JSONB dans `Search.fields`). Un champ porte `condition: {field, equals}` ;
+   le champ référencé doit être défini avant (évaluation transitive dans
+   l'ordre des champs, pas de cycle). Décisions arbitrées :
+   (1) v1 = égalité sur un seul champ antérieur, booléen/choice uniquement ;
+   (2) `primary` (critère d'auto-accept) interdit sur un champ conditionnel ;
+   (3) tolérance modèle : une valeur rendue alors que la condition n'est pas
+   remplie est conservée ; (4) filtre « non posée » dans les résultats → v2.
+   Touchpoints : `check_fields` / `build_system_prompt` / `validate_decision`
+   (`backend/app/schema.py`), benchmarks comptant le champ conditionnel que si
+   la condition est remplie, `QuestionEditor` (sélecteur de condition),
+   relecture masquant le champ quand la condition n'est pas remplie, i18n
+   4 langues. Le tableau de résultats rend déjà « — » pour une valeur absente
+   (`ResultsTable.tsx`). Séquençage : **après** la réorganisation
+   corpus/analyses (réécriture de QuestionEditor) ; spec + maquette
+   QuestionEditor à faire ensuite.
 
 ## Contexte publication
 
