@@ -109,3 +109,10 @@ Mise à jour : 2026-11-20. Commits cités : `git log --oneline`.
   « coût CPU » du papier : Xeon E5-2609 v2, qwen3:4b > 15 min/article →
   qwen3:1.7b pour le gate (job 906766d9, 3 articles, seed 42).
 - Journals cibles (Couperin) : RSM (0 €, CUP illimité) n°1, SysRevs n°2 (fit exact).
+
+## À arbitrer (2026-11-20)
+- **Refresh full-text « Relancer la recherche du texte intégral » : membre ou lead ?**
+  `search_fulltext` (annotations.py:182) n'exige que le rôle MEMBRE (rate-limit 10),
+  comportement existant depuis e521e05 ; l'UI scopée l'expose déjà à tous les membres.
+  Audit feature fiche-corpus (2026-11-20) : si lead-only est attendu, ajouter
+  `_require_lead_or_admin` dans un commit dédié (pas de régression dans le diff).

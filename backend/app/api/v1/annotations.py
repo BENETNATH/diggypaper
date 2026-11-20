@@ -31,7 +31,7 @@ from app.api.v1.projects import (
 from app.article_text import compose_text
 from app.db.models import Article, ArticlePrediction, HumanAnnotation, Project, Search, User
 from app.schema import validate_decision
-from app.searches import get_search, in_search
+from app.searches import in_search, resolve_search
 
 logger = logging.getLogger(__name__)
 
@@ -58,10 +58,13 @@ async def _require_article(
     return article
 
 
-async def _scope(db: AsyncSession, project_id: uuid.UUID, search_id: uuid.UUID | None) -> Search:
-    """Requested search (default the initial search): question, items, text sections."""
+async def _scope(
+    db: AsyncSession, project_id: uuid.UUID, search_id: uuid.UUID | None
+) -> Search | None:
+    """Requested search (default the initial search) or None when the project has no
+    analysis (corpus mode, spec 2026-11-20-fiche-article-corpus R1)."""
     project = await db.get(Project, project_id)
-    return await get_search(db, project, search_id)
+    return await resolve_search(db, project, search_id)
 
 
 def _article_payload(a: Article, kinds: list[str] | None = None) -> dict:
@@ -110,10 +113,11 @@ async def get_article(
     search: uuid.UUID | None = None,
 ) -> dict:
     """Article alone (with methods_text) for the annotation viewer; the text "given to
-    the models" follows the sections of the search."""
+    the models" follows the sections of the search — corpus mode (no search): all
+    sections (spec 2026-11-20-fiche-article-corpus R1)."""
     article = await _require_article(db, project_id, article_id, user)
     scope = await _scope(db, project_id, search)
-    return _article_payload(article, scope.text_sections)
+    return _article_payload(article, ["all"] if scope is None else scope.text_sections)
 
 
 async def _require_lead_article(
@@ -214,7 +218,7 @@ async def search_fulltext(
     return {
         "found": source is not None,
         "source": source,
-        "article": _article_payload(article, scope.text_sections),
+        "article": _article_payload(article, ["all"] if scope is None else scope.text_sections),
     }
 
 
@@ -310,7 +314,7 @@ async def upload_fulltext(
     await apply_uploaded_pdf(db, article, sections, data)
     await db.commit()
     scope = await _scope(db, project_id, search)
-    payload = _article_payload(article, scope.text_sections)
+    payload = _article_payload(article, ["all"] if scope is None else scope.text_sections)
     payload["pdf_check"] = {True: "match", False: "forced", None: "unverified"}[verdict]
     return payload
 
@@ -323,9 +327,12 @@ async def get_prediction(
     user: UserDep,
     search: uuid.UUID | None = None,
 ) -> dict | None:
-    """Most recent prediction of the article in this search (null if none)."""
+    """Most recent prediction of the article in this search (null if none).
+    Corpus mode (no search): no analysis → null."""
     article = await _require_article(db, project_id, article_id, user)
     scope = await _scope(db, project_id, search)
+    if scope is None:
+        return None
     if scope.kind == "blind":
         # Blind sample: prediction visible only after the user's re-read.
         mine = (
@@ -393,9 +400,11 @@ async def get_annotation(
     search: uuid.UUID | None = None,
 ) -> dict | None:
     """Last human re-read of the article in this search (answers + re-reader +
-    status), null if none."""
+    status), null if none. Corpus mode (no search): no analysis → null."""
     article = await _require_article(db, project_id, article_id, user)
     scope = await _scope(db, project_id, search)
+    if scope is None:
+        return None
     if scope.kind == "blind":  # blind: only their own review, never another reviewer's
         own = (
             await db.execute(
@@ -449,6 +458,8 @@ async def create_annotation(
     """
     article = await _require_article(db, project_id, article_id, user)
     scope = await _scope(db, project_id, search)
+    if scope is None:  # an annotation answers a question — the project has none
+        raise HTTPException(status_code=400, detail="no analysis in this project")
     fields = scope.fields or []
     decision: dict = {}
     if fields:

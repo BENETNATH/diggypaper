@@ -18,12 +18,12 @@ import { useSearchId, useSearches } from "@/lib/useSearch";
 import { useApiError } from "@/lib/errorMsg";
 import { useAuth } from "@/lib/auth";
 import { roleFromList } from "@/lib/role";
-import { CorporaEmpty } from "@/components/CorporaEmpty";
 import { EmptyState } from "@/components/ui/Feedback";
 import {
   Article,
   ArticlePrediction,
   ArticleReview,
+  getArticle,
   getArticleWithPrediction,
   getOverview,
   getPrediction,
@@ -115,7 +115,10 @@ export default function AnnotatePage() {
 
   // Queue of the project's articles: used to open the first, then to chain through them.
   useEffect(() => {
-    if (!projectId || noCorpora) return;
+    // Never fire a search-scoped fetch before the search list is known: on a
+    // corpus-mode project the queue would 400 and set a stale error shown by
+    // the corpus branch (spec 2026-11-20-fiche-article-corpus R2).
+    if (!projectId || searches === null || noCorpora) return;
     const load = async () => {
       // Article list filters (remembered by the tab).
       let saved: { filter?: string; sort?: "added" | "date_desc" | "date_asc" | "score_desc"; answers?: Record<string, string | boolean>; q?: string; fulltext?: boolean } = {};
@@ -157,7 +160,7 @@ export default function AnnotatePage() {
         setError(apiError(e));
         setLoading(false);
       });
-  }, [projectId, articleId, router, queueMode, searchId, apiError, noCorpora]);
+  }, [projectId, articleId, router, queueMode, searchId, apiError, noCorpora, searches]);
 
   // Spinner while the article loads (reset when the article or search changes).
   const loadKey = `${projectId}:${articleId}:${searchId}`;
@@ -187,6 +190,26 @@ export default function AnnotatePage() {
       .catch((e) => setError(apiError(e)))
       .finally(() => setLoading(false));
   }, [projectId, articleId, searchId, apiError, noCorpora]);
+
+  // spec 2026-11-20-fiche-article-corpus R2: corpus mode (no analysis) — the article
+  // sheet of the corpus view, fetched without search (the search-scoped calls 404).
+  useEffect(() => {
+    if (!noCorpora || !projectId || !articleId) return;
+    let active = true;
+    getArticle(projectId, articleId)
+      .then((a) => {
+        if (active) setArticle(a);
+      })
+      .catch((e) => {
+        if (active) setError(apiError(e));
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [noCorpora, projectId, articleId, apiError]);
 
   // caveman-review 2026-11-10: submit-in-flight guard — a double-click (or a second
   // confirmation while the first is in flight) must not double-submit.
@@ -328,6 +351,23 @@ export default function AnnotatePage() {
     }
   }, [projectId, articleId, searchId, t, apiError]);
 
+  // audit 2026-11-10 P3-14: the "this PDF does not match" decision (upload flow).
+  const mismatchModal = mismatchFile ? (
+    <Modal title={t("replacePdf")} onClose={() => setMismatchFile(null)}>
+      <div className="flex flex-col gap-4">
+        <p className="text-sm text-muted">{t("pdfMismatch")}</p>
+        <div className="flex justify-end gap-2">
+          <Button variant="secondary" size="sm" onClick={() => setMismatchFile(null)}>
+            {tc("cancel")}
+          </Button>
+          <Button variant="danger" size="sm" onClick={() => void confirmMismatch()}>
+            {t("replacePdf")}
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  ) : null;
+
   // S1 (spec R2): a corpus-less project — the overview's count + the role from the list.
   if (noCorpora) {
     if (articleCount === null) return <div className="p-4">{tc("loading")}</div>;
@@ -345,7 +385,97 @@ export default function AnnotatePage() {
         />
       );
     }
-    return <CorporaEmpty projectId={projectId} articleCount={articleCount} isLead={isLead} />;
+    // spec 2026-11-20-fiche-article-corpus R2: a corpus-view row click — the article sheet
+    // without a question: the document column alone (no queue/stepper, no model banner,
+    // no annotation form, no blind banner, no swipe).
+    if (articleId) {
+      if (loading || !article) return <div className="p-4">{tc("loading")}</div>;
+      if (error) return <div className="p-4 text-danger">{error}</div>;
+      return (
+        <div className="flex flex-col">
+          <header className="border-b p-4">
+            <Link
+              href={`/projects/${projectId}/articles`}
+              className="text-sm text-primary hover:underline"
+            >
+              ← {t("backToCorpus")}
+            </Link>
+            <h1 className="mt-1 text-lg font-semibold">
+              {article.title ?? `Article ${article.pmid ?? article.id}`}
+            </h1>
+            {biblioLine(article) && (
+              <p className="text-sm text-foreground/80">{biblioLine(article)}</p>
+            )}
+            <p className="text-xs text-muted">
+              {sourceLabel(article.source, article.native_id, ta("sourceFile")) ??
+                ta("sourceNotRecorded")}{" "}
+              · {article.has_fulltext ? ta("corpusFulltext") : ta("corpusAbstractOnly")}
+            </p>
+            <ArticleLinks article={article} className="mt-0.5" />
+          </header>
+          <main className="max-h-[calc(100vh_-_10rem)] overflow-y-auto p-4">
+            <h2 className="mb-2 text-sm font-medium text-muted">
+              {article.has_fulltext ? ta("corpusFulltext") : t("document")}
+            </h2>
+            <div
+              className={`mb-2 rounded p-2 text-xs ${
+                article.has_fulltext ? "bg-surface-muted" : "border border-warning/40 bg-warning/10"
+              }`}
+            >
+              {!article.has_fulltext && (
+                <p className="text-foreground">
+                  {article.fulltext_note === "preprint_not_archived"
+                    ? t("preprintNote")
+                    : article.fulltext_note === "metadata_only"
+                      ? t("metadataOnlyNote")
+                      : t("abstractOnlyNote")}
+                </p>
+              )}
+              <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1">
+                {!article.fulltext_source ||
+                !["upload", "ocr", "pdf:upload"].includes(article.fulltext_source) ? (
+                  <button
+                    type="button"
+                    className="font-medium text-primary hover:underline disabled:opacity-50"
+                    disabled={searching || pdfBusy}
+                    onClick={() => void handleSearch()}
+                  >
+                    {searching ? t("searching") : t("searchFulltext")}
+                  </button>
+                ) : null}
+                <label className="cursor-pointer font-medium text-primary hover:underline">
+                  {pdfBusy ? t("pdfBusy") : article.has_fulltext ? t("replacePdf") : t("addPdf")}
+                  <input
+                    type="file"
+                    accept="application/pdf"
+                    className="hidden"
+                    disabled={pdfBusy || searching}
+                    onChange={(e) => void handlePdf(e.target.files?.[0])}
+                  />
+                </label>
+                {searchNote && <span className="text-muted">{searchNote}</span>}
+                {pdfError && <span className="text-danger">{pdfError}</span>}
+              </div>
+            </div>
+            <EvidenceHighlighter
+              text={article.text ?? article.methods_text ?? ""}
+              quotes={[]}
+            />
+          </main>
+          {mismatchModal}
+        </div>
+      );
+    }
+    return (
+      <div className="p-4 text-sm">
+        <Link
+          href={`/projects/${projectId}/articles`}
+          className="font-medium text-primary hover:underline"
+        >
+          {ta("corpusCount", { n: articleCount })} — {t("viewCorpus")} →
+        </Link>
+      </div>
+    );
   }
   if (loading || searches === null) return <div className="p-4">{tc("loading")}</div>;
   if (error) return <div className="p-4 text-danger">{error}</div>;
@@ -643,21 +773,7 @@ export default function AnnotatePage() {
         </button>
       </nav>
 
-      {mismatchFile && (
-        <Modal title={t("replacePdf")} onClose={() => setMismatchFile(null)}>
-          <div className="flex flex-col gap-4">
-            <p className="text-sm text-muted">{t("pdfMismatch")}</p>
-            <div className="flex justify-end gap-2">
-              <Button variant="secondary" size="sm" onClick={() => setMismatchFile(null)}>
-                {tc("cancel")}
-              </Button>
-              <Button variant="danger" size="sm" onClick={() => void confirmMismatch()}>
-                {t("replacePdf")}
-              </Button>
-            </div>
-          </div>
-        </Modal>
-      )}
+      {mismatchModal}
     </div>
   );
 }

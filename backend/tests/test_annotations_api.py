@@ -9,6 +9,8 @@ Annotation viewer endpoints:
 import uuid
 from datetime import UTC
 
+from sqlalchemy import select
+
 from app.db.models import (
     Article,
     ArticlePrediction,
@@ -16,6 +18,7 @@ from app.db.models import (
     Project,
     ProjectMember,
     ProjectMemberRole,
+    Search,
 )
 from app.searches import ensure_default_search
 
@@ -412,3 +415,102 @@ async def test_create_annotation_401_no_auth(client, session, researcher_user):
         json=VALID_ANNOTATION,
     )
     assert resp.status_code == 401
+
+
+# --- corpus mode (spec 2026-11-20-fiche-article-corpus R1/R4): no search at all ---
+
+
+async def _make_corpus_project(session, user) -> tuple[Project, Article]:
+    """Project WITHOUT any search (no analysis) + an article with full-text sections."""
+    project = Project(title="P", created_by=user.id)
+    session.add(project)
+    await session.commit()
+    session.add(
+        ProjectMember(
+            project_id=project.id, user_id=user.id, role_in_project=ProjectMemberRole.LEAD
+        )
+    )
+    article = Article(
+        project_id=project.id,
+        pmid="111",
+        title="A study",
+        abstract="ABSTRACT",
+        sections=[
+            {"kind": "introduction", "title": "Intro", "text": "INTRO"},
+            {"kind": "methods", "title": "Methods", "text": "METH"},
+        ],
+    )
+    session.add(article)
+    await session.commit()
+    return project, article
+
+
+async def test_get_article_no_search_full_text_sections(client, session, researcher_user, do_login):
+    """Corpus mode: get_article returns the article with its full text — all sections
+    (no search → no question scoping the text)."""
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project, article = await _make_corpus_project(session, researcher_user)
+    resp = await client.get(f"/api/v1/projects/{project.id}/articles/{article.id}")
+    assert resp.status_code == 200
+    text = resp.json()["text"]
+    assert "ABSTRACT" in text
+    assert "INTRO" in text
+    assert "METH" in text
+
+
+async def test_get_prediction_no_search_null(client, session, researcher_user, do_login):
+    """Corpus mode: no analysis → no prediction to show (200 null, not a 404) —
+    even when legacy prediction rows exist."""
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project, article = await _make_corpus_project(session, researcher_user)
+    await _make_prediction(session, article)
+    resp = await client.get(f"/api/v1/projects/{project.id}/articles/{article.id}/prediction")
+    assert resp.status_code == 200
+    assert resp.json() is None
+
+
+async def test_get_annotation_no_search_null(client, session, researcher_user, do_login):
+    """Corpus mode: no analysis → no re-read to show (200 null, not a 404) —
+    even when legacy re-read rows exist."""
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project, article = await _make_corpus_project(session, researcher_user)
+    session.add(
+        HumanAnnotation(
+            article_id=article.id, user_id=researcher_user.id, decision_json={"confidence_score": 1}
+        )
+    )
+    await session.commit()
+    resp = await client.get(f"/api/v1/projects/{project.id}/articles/{article.id}/annotation")
+    assert resp.status_code == 200
+    assert resp.json() is None
+
+
+async def test_create_annotation_no_search_400(client, session, researcher_user, do_login):
+    """Corpus mode: an annotation answers a question — no analysis in the project →
+    400 with an explicit detail (not a 404 on the missing default search)."""
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project, article = await _make_corpus_project(session, researcher_user)
+    resp = await client.post(
+        f"/api/v1/projects/{project.id}/articles/{article.id}/annotation",
+        json=VALID_ANNOTATION,
+    )
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "no analysis in this project"
+
+
+async def test_get_article_foreign_search_404(client, session, researcher_user, do_login):
+    """Explicit search from another project → 404 (unchanged resolve_search invariant)."""
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project, article = await _make_project_with_article(session, researcher_user)
+    other = Project(title="Other", created_by=researcher_user.id)
+    session.add(other)
+    await session.commit()
+    await ensure_default_search(session, other)
+    await session.commit()
+    foreign = (
+        await session.execute(select(Search).where(Search.project_id == other.id))
+    ).scalar_one()
+    resp = await client.get(
+        f"/api/v1/projects/{project.id}/articles/{article.id}?search={foreign.id}"
+    )
+    assert resp.status_code == 404

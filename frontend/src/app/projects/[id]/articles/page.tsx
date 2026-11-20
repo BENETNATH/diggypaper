@@ -36,7 +36,7 @@ import { useSearchId, useSearches } from "@/lib/useSearch";
 import { useAuth } from "@/lib/auth";
 import { isProjectLead, roleFromList } from "@/lib/role";
 import { useHasMounted } from "@/lib/useHasMounted";
-import { CorporaEmpty } from "@/components/CorporaEmpty";
+import { CorpusList } from "@/components/CorpusList";
 
 const num = (v: unknown): number => (typeof v === "number" ? v : 0);
 
@@ -71,6 +71,7 @@ function ResultsContent() {
   const pathname = usePathname();
   const sp = useSearchParams();
   const [articleCount, setArticleCount] = useState<number | null>(null);
+  const [fulltextCount, setFulltextCount] = useState<number | null>(null);
 
   // Runs of the current corpus (spec 2026-11-20-analyses-runs-2 R5): newest first.
   const [runs, setRuns] = useState<InferenceJob[] | null>(null);
@@ -177,7 +178,10 @@ function ResultsContent() {
     let active = true;
     getOverview(projectId)
       .then((o) => {
-        if (active) setArticleCount(o.articles);
+        if (active) {
+          setArticleCount(o.articles);
+          setFulltextCount(o.fulltext);
+        }
       })
       .catch(() => {});
     roleFromList(projectId)
@@ -329,24 +333,32 @@ function ResultsContent() {
   }
 
   // S1 (spec R2): a corpus-less project — no search-scoped fetch, the overview's article
-  // count and the role from the project list drive the empty state.
+  // count and the role from the project list drive the state: the corpus view when the
+  // project already has articles (spec 2026-11-20-corpus-view), the empty state otherwise.
   if (noCorpora) {
     if (articleCount === null) return <Skeleton rows={5} />;
-    if (articleCount === 0) {
+    if (articleCount > 0) {
       return (
-        <EmptyState
-          title={tp("noCorpus")}
-          action={
-            isLead ? (
-              <Link href={`/projects/${projectId}/import`}>
-                <Button variant="secondary">{tp("importCta")}</Button>
-              </Link>
-            ) : undefined
-          }
+        <CorpusList
+          projectId={projectId}
+          isLead={isLead}
+          articleCount={articleCount}
+          fulltextCount={fulltextCount}
         />
       );
     }
-    return <CorporaEmpty projectId={projectId} articleCount={articleCount} isLead={isLead} />;
+    return (
+      <EmptyState
+        title={tp("noCorpus")}
+        action={
+          isLead ? (
+            <Link href={`/projects/${projectId}/import`}>
+              <Button variant="secondary">{tp("importCta")}</Button>
+            </Link>
+          ) : undefined
+        }
+      />
+    );
   }
 
   if (error) return <ErrorBanner message={error} onRetry={() => void load()} />;

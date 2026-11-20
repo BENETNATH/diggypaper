@@ -860,9 +860,73 @@ async def list_articles(
     filter on the model's answer (exact boolean, exact option, contained text).
     ``run``: the predictions of that run only (404 if it is not of this search).
     Response: {items, total, page, per_page, stats}; ``stats`` = articles by status.
+
+    No analysis in the project (no search, spec 2026-11-20-corpus-view R1): the whole
+    corpus is listed, prediction fields null, ``stats = null`` — the search-only
+    parameters (``status`` / ``answers`` / ``run`` / ``sort=score_desc``) are 400.
     """
     project = await _require_project_member(db, project_id, user)
-    scope = await get_search(db, project, search)
+    scope = await resolve_search(db, project, search)
+    if scope is None:
+        if status is not None or answers is not None or run is not None or sort == "score_desc":
+            raise HTTPException(status_code=400, detail="no analysis in this project")
+        where = [Article.project_id == project.id, *text_conditions(q)]
+        if fulltext is not None:  # full text / abstract only (same criterion as article_filter)
+            ft = Article.fulltext_source
+            where.append(ft.is_not(None) if fulltext else ft.is_(None))
+        total = (
+            await db.execute(select(func.count()).select_from(Article).where(*where))
+        ).scalar_one()
+        order = {
+            "date_desc": [Article.pub_date.desc().nulls_last()],
+            "date_asc": [Article.pub_date.asc().nulls_last()],
+            "added": [Article.created_at],
+        }[sort] + [Article.id]
+        rows = (
+            (
+                await db.execute(
+                    select(Article)
+                    .where(*where)
+                    .order_by(*order)
+                    .offset((page - 1) * per_page)
+                    .limit(per_page)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        return {
+            "items": [
+                {
+                    "id": str(a.id),
+                    "pmid": a.pmid,
+                    "pmcid": a.pmcid,
+                    "doi": a.doi,
+                    "title": a.title,
+                    "abstract": a.abstract,
+                    "original_language": a.original_language,
+                    "origin": a.origin,
+                    "origin_seeds": a.origin_seeds,
+                    "has_fulltext": bool(a.sections),
+                    "fulltext_source": a.fulltext_source,
+                    "fulltext_note": a.fulltext_note,
+                    **biblio_payload(a),
+                    "prediction_status": None,
+                    "confidence": None,
+                    "answers": [],
+                    "field_confidences": None,
+                    "model_json": None,
+                    "human": None,
+                    "annotated": False,
+                    "review": None,
+                }
+                for a in rows
+            ],
+            "total": total,
+            "page": page,
+            "per_page": per_page,
+            "stats": None,
+        }
     run_job = None
     if run is not None:
         run_job = await db.get(InferenceJob, run)

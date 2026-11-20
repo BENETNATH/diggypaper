@@ -584,18 +584,21 @@ async def test_t11_new_project_has_no_auto_search(client, session, researcher_us
     assert (await session.execute(select(Search))).scalars().all() == []
 
 
-async def test_t12_search_none_404_without_a_default(client, session, researcher_user, do_login):
-    """T12: an endpoint resolving search=None on a project without search -> 404
-    (nothing is created); a legacy NULL gold row -> the default search IS created
-    (house of the NULL data, R10)."""
+async def test_t12_search_none_never_autocreates(client, session, researcher_user, do_login):
+    """T12: resolving search=None on a project without search never auto-creates a
+    search. The article list serves the whole corpus with null prediction data
+    (spec 2026-11-20-corpus-view R1 — overrides the former 404); a legacy NULL
+    gold row -> the default search IS created (house of the NULL data, R10)."""
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     r = await client.post("/api/v1/projects", json={"title": "Sans corpus"})
     project = await session.get(Project, uuid.UUID(r.json()["id"]))
     session.add(Article(project_id=project.id, pmid="1", title="A1"))
     await session.commit()
     r2 = await client.get(f"/api/v1/projects/{project.id}/articles")
-    assert r2.status_code == 404
-    assert r2.json()["detail"] == "no default search in this project"
+    assert r2.status_code == 200, r2.text
+    data = r2.json()
+    assert data["total"] == 1 and data["items"][0]["title"] == "A1"
+    assert data["stats"] is None  # no analysis: no prediction stats
     assert (
         await session.execute(select(Search).where(Search.project_id == project.id))
     ).scalars().all() == []

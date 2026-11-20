@@ -185,12 +185,24 @@ describe("articles page — no corpus (R2/S1)", () => {
     expect(screen.queryByRole("link", { name: "importCta" })).not.toBeInTheDocument();
   });
 
-  it("no corpus, articles waiting → the S1 empty state with the « new corpus » CTA", async () => {
+  // spec 2026-11-20-corpus-view R2: articles without any analysis → the corpus view
+  // (the old dead-end CorporaEmpty only remains for a truly empty project, above).
+  it("no corpus, articles waiting → the corpus view, fetched without search, with the analysis CTA", async () => {
     mount({ corpora: [], articleCount: 12 });
-    expect(await screen.findByText("corporaEmpty")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "pillNew" })).toHaveAttribute("href", "/projects/p1/inference?new=1");
-    expect(listArticles).not.toHaveBeenCalled();
+    expect(await screen.findByText("corpusTitle")).toBeInTheDocument();
+    await waitFor(() => expect(listArticles).toHaveBeenCalled());
+    expect(listArticles.mock.calls[0][6]).toBeUndefined(); // no search id
+    expect(screen.getByRole("link", { name: /corpusCtaAction/ })).toHaveAttribute(
+      "href",
+      "/projects/p1/inference"
+    );
     expect(getProject).not.toHaveBeenCalled();
+  });
+
+  it("no corpus, articles waiting → no CTA for a member", async () => {
+    mount({ role: "ANNOTATOR", corpora: [], articleCount: 12 });
+    expect(await screen.findByText("corpusTitle")).toBeInTheDocument();
+    expect(screen.queryByText("corpusCta")).not.toBeInTheDocument();
   });
 });
 

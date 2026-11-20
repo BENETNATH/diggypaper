@@ -2,6 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import AnnotatePage from "@/app/projects/[id]/annotate/page";
 import * as api from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { useSearches } from "@/lib/useSearch";
 
 type Catalog = Record<string, Record<string, string>>;
 
@@ -21,20 +22,25 @@ jest.mock("next-intl", () => {
   };
 });
 /* eslint-enable @typescript-eslint/no-require-imports */
+// `mockKind` switches the current search kind (standard vs blind) between tests.
+let mockKind = "standard";
+// spec 2026-11-20-fiche-article-corpus: the page is tested both in search mode
+// (mockHasCorpora = true, the scoped default of the older tests) and corpus mode
+// (no search at all, URL without ?search=).
+let mockHasCorpora = true;
+let mockUrlParams = "article=a1&queue=review&search=s1";
 jest.mock("next/navigation", () => ({
   useParams: () => ({ id: "p1" }),
   useRouter: () => ({ push: jest.fn(), replace: jest.fn() }),
-  useSearchParams: () => new URLSearchParams("article=a1&queue=review&search=s1"),
+  useSearchParams: () => new URLSearchParams(mockUrlParams),
   usePathname: () => "/projects/p1/annotate",
 }));
-// `mockKind` switches the current search kind (standard vs blind) between tests.
-let mockKind = "standard";
 jest.mock("@/lib/useSearch", () => ({
   useSearchId: () => "s1",
-  useSearches: () => ({
-    searches: [{ id: "s1", name: "S1", kind: mockKind }],
-    current: { id: "s1", name: "S1", kind: mockKind },
-  }),
+  useSearches: jest.fn(() => ({
+    searches: mockHasCorpora ? [{ id: "s1", name: "S1", kind: mockKind }] : [],
+    current: mockHasCorpora ? { id: "s1", name: "S1", kind: mockKind } : undefined,
+  })),
 }));
 jest.mock("@/lib/auth", () => ({ useAuth: jest.fn() }));
 jest.mock("@/lib/api", () => ({
@@ -42,6 +48,7 @@ jest.mock("@/lib/api", () => ({
   listArticles: jest.fn(),
   getProject: jest.fn(),
   getArticleWithPrediction: jest.fn(),
+  getArticle: jest.fn(),
   submitAnnotation: jest.fn(),
   getOverview: jest.fn(),
   listProjects: jest.fn(),
@@ -51,6 +58,7 @@ const mockUseAuth = useAuth as unknown as jest.Mock;
 const listArticles = api.listArticles as jest.Mock;
 const getProject = api.getProject as jest.Mock;
 const getArticleWithPrediction = api.getArticleWithPrediction as jest.Mock;
+const getArticle = api.getArticle as jest.Mock;
 const submitAnnotation = api.submitAnnotation as jest.Mock;
 
 const prediction = {
@@ -81,11 +89,20 @@ const article = {
 
 beforeEach(() => {
   mockKind = "standard";
+  mockHasCorpora = true;
+  mockUrlParams = "article=a1&queue=review&search=s1";
   mockUseAuth.mockReturnValue({ user: { role: "RESEARCHER" }, loading: false });
   listArticles.mockReset().mockResolvedValue({ items: [{ id: "a1" }], total: 1 });
   getProject.mockReset().mockResolvedValue({ fields: [], text_sections: ["methods"] });
   getArticleWithPrediction.mockReset().mockResolvedValue({ article, prediction, review: null });
   submitAnnotation.mockReset().mockResolvedValue({ status: "VALIDATED" });
+  getArticle.mockReset().mockResolvedValue(article);
+  (api.getOverview as jest.Mock)
+    .mockReset()
+    .mockResolvedValue({ articles: 0 });
+  (api.listProjects as jest.Mock)
+    .mockReset()
+    .mockResolvedValue([{ id: "p1", role_in_project: "LEAD" }]);
 });
 
 // audit 2026-11-10 P1-1: accept/reject used to be swipe-only (WCAG 2.1.1).
@@ -124,5 +141,79 @@ describe("AnnotatePage — keyboard accept", () => {
     findConf()?.click(); // second click while the first is in flight
     await waitFor(() => expect(submitAnnotation).toHaveBeenCalledTimes(1));
     expect(submitAnnotation).toHaveBeenCalledTimes(1); // still exactly one
+  });
+});
+
+// spec 2026-11-20-fiche-article-corpus R4: corpus mode (no search) — the article sheet
+// unlocks the corpus-view row click: the document renders, annotation does not.
+describe("AnnotatePage — corpus mode (no search)", () => {
+  it("articleId → the article renders (full text, lead buttons), getArticle SANS searchId, no form, no stepper", async () => {
+    mockHasCorpora = false;
+    mockUrlParams = "article=a1";
+    (api.getOverview as jest.Mock).mockResolvedValue({ articles: 82 });
+    render(<AnnotatePage />);
+    expect(await screen.findByText("Titre", { selector: "h1" })).toBeInTheDocument();
+    // fetched without any search id
+    expect(getArticle).toHaveBeenCalledWith("p1", "a1");
+    // the full text and the lead buttons of the document column
+    expect(screen.getByText("abc def")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Relancer la recherche du texte intégral" })
+    ).toBeInTheDocument();
+    expect(screen.getByText("Remplacer par un PDF")).toBeInTheDocument();
+    // no annotation form, no queue/stepper, no model banner
+    expect(
+      screen.queryByRole("button", { name: "Enregistrer la relecture" })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("navigation", { name: "Navigation entre articles" })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Aucune réponse du modèle pour cette recherche.")
+    ).not.toBeInTheDocument();
+    expect(listArticles).not.toHaveBeenCalled();
+    // back to the corpus view, no search param
+    expect(screen.getByRole("link", { name: /Retour au corpus/ })).toHaveAttribute(
+      "href",
+      "/projects/p1/articles"
+    );
+  });
+
+  it("no articleId → the link to the corpus view (count), not the dead-end empty state", async () => {
+    mockHasCorpora = false;
+    mockUrlParams = "queue=review";
+    (api.getOverview as jest.Mock).mockResolvedValue({ articles: 82 });
+    render(<AnnotatePage />);
+    const link = await screen.findByRole("link", { name: /Voir le corpus/ });
+    expect(link).toHaveAttribute("href", "/projects/p1/articles");
+    expect(screen.getByText(/82 articles/)).toBeInTheDocument();
+    expect(screen.queryByText("Aucun corpus de questions")).not.toBeInTheDocument();
+    expect(getArticle).not.toHaveBeenCalled();
+  });
+
+  it("does not fire the review-queue fetch while the search list is still loading (no stale error in corpus mode)", async () => {
+    mockHasCorpora = false;
+    mockUrlParams = "article=a1";
+    (api.getOverview as jest.Mock).mockResolvedValue({ articles: 82 });
+    const mockUseSearches = useSearches as unknown as jest.Mock;
+    const defaultImpl = mockUseSearches.getMockImplementation();
+    // first render: the search list is still loading (searches = null)
+    mockUseSearches.mockReturnValue({ searches: null, current: undefined });
+    try {
+      const { rerender } = render(<AnnotatePage />);
+      // the search-scoped queue fetch must not fire before the search state is known
+      await waitFor(() => expect(mockUseSearches).toHaveBeenCalled());
+      expect(listArticles).not.toHaveBeenCalled();
+      // the search list resolves: no search → the corpus branch, no stale error
+      mockUseSearches.mockReturnValue({ searches: [], current: undefined });
+      rerender(<AnnotatePage />);
+      expect(await screen.findByText("Titre", { selector: "h1" })).toBeInTheDocument();
+      expect(listArticles).not.toHaveBeenCalled();
+      expect(
+        screen.queryByText(/no analysis in this project|aucune analyse/i)
+      ).not.toBeInTheDocument();
+    } finally {
+      if (defaultImpl) mockUseSearches.mockImplementation(defaultImpl);
+    }
   });
 });
