@@ -10,11 +10,11 @@ jest.mock("next-intl", () => {
 jest.mock("@/lib/search", () => ({ withSearch: (p: string) => p }));
 jest.mock("@/lib/api", () => ({
   ...jest.requireActual("@/lib/api"),
-  getSearchJobs: jest.fn(),
+  listSearchJobs: jest.fn(),
   getComparison: jest.fn(),
 }));
 
-const getSearchJobs = api.getSearchJobs as jest.Mock;
+const listSearchJobs = api.listSearchJobs as jest.Mock;
 const getComparison = api.getComparison as jest.Mock;
 
 const JOBS = [
@@ -91,7 +91,7 @@ const PAYLOAD = {
 
 describe("ComparisonPanel (§5: the payload is consumed as-is)", () => {
   it("shows the aggregate and the article-by-article table from the payload", async () => {
-    getSearchJobs.mockResolvedValue({ jobs: JOBS });
+    listSearchJobs.mockResolvedValue({ jobs: JOBS });
     getComparison.mockResolvedValue(PAYLOAD);
     render(<ComparisonPanel projectId="p1" searchId="s1" />);
     // default pair: the two most recent jobs
@@ -118,7 +118,7 @@ describe("ComparisonPanel (§5: the payload is consumed as-is)", () => {
   });
 
   it("lists the disagreements with a link to the article sheet", async () => {
-    getSearchJobs.mockResolvedValue({ jobs: JOBS });
+    listSearchJobs.mockResolvedValue({ jobs: JOBS });
     getComparison.mockResolvedValue(PAYLOAD);
     render(<ComparisonPanel projectId="p1" searchId="s1" />);
     await waitFor(() => expect(getComparison).toHaveBeenCalled());
@@ -131,16 +131,16 @@ describe("ComparisonPanel (§5: the payload is consumed as-is)", () => {
   });
 
   it("says there is nothing in common when the lots are disjoint (n = 0)", async () => {
-    getSearchJobs.mockResolvedValue({ jobs: JOBS });
+    listSearchJobs.mockResolvedValue({ jobs: JOBS });
     getComparison.mockResolvedValue({ ...PAYLOAD, n: 0, n_agree: 0, agreement: null, n_excluded: 4, rows: [], disagreements: [] });
     render(<ComparisonPanel projectId="p1" searchId="s1" />);
     expect(await screen.findByText("noCommon")).toBeInTheDocument();
   });
 
   it("renders nothing when the search has a single analysis", async () => {
-    getSearchJobs.mockResolvedValue({ jobs: JOBS.slice(1) });
+    listSearchJobs.mockResolvedValue({ jobs: JOBS.slice(1) });
     const { container } = render(<ComparisonPanel projectId="p1" searchId="s1" />);
-    await waitFor(() => expect(getSearchJobs).toHaveBeenCalled());
+    await waitFor(() => expect(listSearchJobs).toHaveBeenCalled());
     await waitFor(() => expect(container.firstChild).toBeNull());
   });
 });
@@ -158,7 +158,7 @@ describe("ComparisonPanel — table pagination (audit 2026-11-10 P2-12)", () => 
   }));
 
   it("shows the first page only; « next » reaches the rest", async () => {
-    getSearchJobs.mockResolvedValue({ jobs: JOBS });
+    listSearchJobs.mockResolvedValue({ jobs: JOBS });
     getComparison.mockResolvedValue({ ...PAYLOAD, n: 52, rows: manyRows, disagreements: [] });
     render(<ComparisonPanel projectId="p1" searchId="s1" />);
     expect(await screen.findByText("Article 1")).toBeInTheDocument();

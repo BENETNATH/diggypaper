@@ -383,6 +383,14 @@ export interface InferenceJob {
   /** Snapshot of both stages (null: older analysis). */
   model_info?: { main: ModelSnapshot | null; prefilter: ModelSnapshot | null } | null;
   status: "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
+  /** Auto-name (YYMMDD-n) or user-chosen name; null for legacy runs. */
+  name?: string | null;
+  /** Fingerprint of the analysis definition (question + model + options). */
+  definition_hash?: string | null;
+  /** Predictions produced so far (progress). */
+  n_predictions?: number;
+  /** Triage breakdown so far (status → count). */
+  breakdown?: Partial<Record<string, number>>;
   result: Record<string, unknown> | null;
   error: string | null;
   created_at: string | null;
@@ -851,7 +859,9 @@ export async function listArticles(
   answers: Record<string, string | boolean> = {},
   searchId?: string,
   text?: string,
-  fulltext?: boolean
+  fulltext?: boolean,
+  /** A specific run's results (a search's predictions by default). */
+  run?: string
 ): Promise<{
   items: Article[];
   total: number;
@@ -865,6 +875,7 @@ export async function listArticles(
     (searchId ? `&search=${searchId}` : "") +
     (text?.trim() ? `&q=${encodeURIComponent(text.trim())}` : "") +
     (fulltext != null ? `&fulltext=${fulltext}` : "") +
+    (run ? `&run=${run}` : "") +
     `&sort=${sort}` +
     (Object.keys(active).length ? `&answers=${encodeURIComponent(JSON.stringify(active))}` : "");
   return request(`/projects/${projectId}/articles?page=${page}&per_page=${perPage}${q}`);
@@ -1274,6 +1285,10 @@ export async function triggerInference(
     gold_examples?: number;
     instructions?: string;
     validate_with_gold?: boolean;
+    /** Named output (exclusively with `overwrite_job_id`): the run's name. */
+    name?: string;
+    /** Replace this run's results (same lot): `name` must be absent. */
+    overwrite_job_id?: string;
   }
 ): Promise<{ job_id: string; status: string }> {
   return request<{ job_id: string; status: string }>(
@@ -1320,23 +1335,35 @@ export async function getInference(
 
 // --- Re-run & comparison (spec 2026-11-07) ----------------------------------
 
-/** Re-runs the same search with another model: a NEW job, previous predictions kept. */
+/**
+ * Re-runs the same search with another model: a NEW job, previous predictions kept —
+ * or, with ``overwrite_job_id``, replaces that run's results in place (same lot, same name).
+ */
 export const rerunSearch = (
   projectId: string,
   searchId: string,
-  model: string
+  model: string,
+  opts?: { overwrite_job_id?: string }
 ): Promise<{ job_id: string; status: string }> =>
   request(`/projects/${projectId}/searches/${searchId}/rerun`, {
     method: "POST",
-    body: JSON.stringify({ model }),
+    body: JSON.stringify({ model, ...(opts?.overwrite_job_id ? { overwrite_job_id: opts.overwrite_job_id } : {}) }),
   });
 
-/** The search's inference jobs, newest first (the comparison selector). */
-export const getSearchJobs = (
+/** The search's runs (inference jobs), newest first. */
+export const listSearchJobs = (
   projectId: string,
   searchId: string
 ): Promise<{ jobs: InferenceJob[] }> =>
   request(`/projects/${projectId}/searches/${searchId}/jobs`);
+
+/** Deletes a finished run and its results (LEAD). */
+export const deleteSearchJob = (
+  projectId: string,
+  searchId: string,
+  jobId: string
+): Promise<void> =>
+  request(`/projects/${projectId}/searches/${searchId}/jobs/${jobId}`, { method: "DELETE" });
 
 export interface ComparisonRow {
   article_id: string;

@@ -3,7 +3,8 @@ import { render, screen, fireEvent, waitFor, within } from "@testing-library/rea
 import * as navModule from "next/navigation";
 import InferencePage from "@/app/projects/[id]/inference/page";
 import * as api from "@/lib/api";
-import { SearchInfo } from "@/lib/api";
+import { searchStoreKey } from "@/lib/search";
+import { InferenceJob, ModelInfo, SchemaField, SearchInfo } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 
 // i18n keys returned as-is (stable identity: page effects depend on the t callback):
@@ -14,64 +15,64 @@ jest.mock("next-intl", () => {
 });
 jest.mock("next/navigation", () => {
   const replace = jest.fn();
-  // The current `?search=` value of the mocked location (set by the tests).
-  const state = { searchParam: null as string | null };
+  // The current URL params of the mocked location (set by the tests).
+  const state = { searchParam: null as string | null, newParam: null as string | null };
   return {
     replace,
     state,
     useParams: () => ({ id: "p1" }),
     useSearchParams: () => ({
-      get: (k: string) => (k === "search" ? state.searchParam : null),
-      toString: () => (state.searchParam ? `search=${state.searchParam}` : ""),
+      get: (k: string) => (k === "search" ? state.searchParam : k === "new" ? state.newParam : null),
+      toString: () => {
+        const p = new URLSearchParams();
+        if (state.searchParam) p.set("search", state.searchParam);
+        if (state.newParam) p.set("new", state.newParam);
+        return p.toString();
+      },
     }),
     usePathname: () => "/projects/p1/inference",
     useRouter: () => ({ replace }),
   };
 });
 jest.mock("@/lib/auth", () => ({ useAuth: jest.fn() }));
-// Concordance panels (spec 2026-11-08): moved to the benchmarks page — these
-// markers let the page test assert they no longer render here.
-jest.mock("@/components/ComparisonPanel", () => ({
-  ComparisonPanel: () => <div data-testid="marker-comparison" />,
-}));
-jest.mock("@/components/AgreementPanel", () => ({
-  AgreementPanel: () => <div data-testid="marker-agreement" />,
-}));
 jest.mock("@/lib/api", () => ({
   ...jest.requireActual("@/lib/api"),
   listSearches: jest.fn(),
   getInference: jest.fn(),
   getProject: jest.fn(),
+  getOverview: jest.fn(),
+  listProjects: jest.fn(),
   listModels: jest.fn(),
   listGold: jest.fn(),
-  getPrompt: jest.fn(),
-  deleteSearch: jest.fn(),
+  listSearchJobs: jest.fn(),
+  deleteSearchJob: jest.fn(),
   previewSelection: jest.fn(),
   createSearch: jest.fn(),
+  updateProject: jest.fn(),
   triggerInference: jest.fn(),
+  rerunSearch: jest.fn(),
   cancelInference: jest.fn(),
-  getResultsIndex: jest.fn(),
-  triggerResultsIndex: jest.fn(),
 }));
 
 const mockUseAuth = useAuth as unknown as jest.Mock;
 const nav = navModule as unknown as {
   replace: jest.Mock;
-  state: { searchParam: string | null };
+  state: { searchParam: string | null; newParam: string | null };
 };
-/** getInference that 404s for a (deleted) search id, and resolves null for the default. */
-const inference404Stale = (_p: string, s?: string, all?: boolean): Promise<unknown> =>
-  all
-    ? Promise.resolve(null)
-    : s
-      ? Promise.reject(new api.ApiError(404, "search not found"))
-      : Promise.resolve(null);
 const listSearches = api.listSearches as jest.Mock;
 const getInference = api.getInference as jest.Mock;
 const getProject = api.getProject as jest.Mock;
+const getOverview = api.getOverview as jest.Mock;
+const listProjects = api.listProjects as jest.Mock;
 const listModels = api.listModels as jest.Mock;
 const listGold = api.listGold as jest.Mock;
-const deleteSearch = api.deleteSearch as jest.Mock;
+const listSearchJobs = api.listSearchJobs as jest.Mock;
+const deleteSearchJob = api.deleteSearchJob as jest.Mock;
+const createSearch = api.createSearch as jest.Mock;
+const updateProject = api.updateProject as jest.Mock;
+const triggerInference = api.triggerInference as jest.Mock;
+const rerunSearch = api.rerunSearch as jest.Mock;
+const cancelInference = api.cancelInference as jest.Mock;
 
 const search: SearchInfo = {
   id: "s1",
@@ -80,71 +81,90 @@ const search: SearchInfo = {
   is_default: true,
   question: "q?",
   fields: [{ key: "ai", label: "AI", type: "boolean" }],
-  text_sections: null,
+  text_sections: ["methods"],
   parent: null,
   parent_spec: null,
   created_at: null,
   created_by: null,
   lot_size: 10,
-  predicted: 0,
+  predicted: 5,
   reviewed: 0,
   breakdown: {},
   to_review: 0,
-  last_job: null,
+  last_job: { status: "COMPLETED", model: "Kev" },
   last_benchmark: null,
 };
+const draftSearch: SearchInfo = { ...search, last_job: null, predicted: 0 };
 
-const model = { id: "m1", name: "Kev" } as unknown as api.ModelInfo;
-const runningJob = {
-  id: "j1",
-  project_id: "p1",
-  search_id: "s1",
-  status: "RUNNING",
-  result: { done: 1, total: 10 },
-} as unknown as api.InferenceJob;
+const models: ModelInfo[] = [
+  { id: "m1", name: "Kev", ram_usage_mb: 4000 },
+  { id: "m2", name: "other", ram_usage_mb: 8000 },
+] as unknown as ModelInfo[];
 
 const completedJob = {
-  id: "j2",
+  id: "j1",
   project_id: "p1",
+  prompt_template_id: null,
+  model_used: "Kev",
+  model_info: { main: { name: "Kev", backend: "ollama", identifier: "Kev", version: "v1" }, prefilter: null },
   search_id: "s1",
   status: "COMPLETED",
+  name: "261101-1",
+  n_predictions: 10,
+  breakdown: { AUTO_ACCEPTED: 6, AUTO_REJECTED: 1, NEEDS_HUMAN_REVIEW: 3 },
   result: { done: 10, total: 10, auto_accepted: 6, auto_rejected: 1, needs_review: 3 },
-  model_used: "Kev",
-} as unknown as api.InferenceJob;
+  error: null,
+  created_at: "2026-11-01T09:00:00Z",
+  completed_at: "2026-11-01T09:30:00Z",
+} as unknown as InferenceJob;
+const runningJob = {
+  ...completedJob,
+  id: "j2",
+  status: "RUNNING",
+  name: "261120-2",
+  n_predictions: 4,
+  breakdown: {},
+  result: { done: 4, total: 10 },
+  created_at: "2026-11-20T08:00:00Z",
+  completed_at: null,
+} as unknown as InferenceJob;
 
 function mount(overrides: {
   user: { role?: string };
-  roleInProject: string | null;
-  busy?: api.InferenceJob | null;
-  job?: api.InferenceJob | null;
+  roleInProject?: string | null;
   searches?: SearchInfo[];
+  jobs?: InferenceJob[];
+  busy?: InferenceJob | null;
+  articleCount?: number;
   question?: string | null;
-  fields?: api.SchemaField[];
+  fields?: SchemaField[];
   /** count of the selection preview (default 4) */
   preview?: number;
-  /** corpus size of the mocked project (default 10) */
-  articleCount?: number;
-  /** Overrides getInference (e.g. to 404 for a stale selection); default resolves. */
-  inference?: (_p: string, s?: string, all?: boolean) => Promise<unknown>;
 }) {
   mockUseAuth.mockReturnValue({ user: overrides.user, loading: false });
   listSearches.mockResolvedValue(overrides.searches ?? [search]);
+  getOverview.mockResolvedValue({
+    articles: overrides.articleCount ?? 10,
+    fulltext: 0,
+    analysed: 0,
+    reviewed: 0,
+    gold: 0,
+    searches: [],
+  });
+  listProjects.mockResolvedValue([{ id: "p1", role_in_project: overrides.roleInProject ?? "LEAD" }]);
   getProject.mockResolvedValue({
-    role_in_project: overrides.roleInProject,
+    role_in_project: overrides.roleInProject ?? "LEAD",
     question_set: true,
     question: overrides.question ?? "q?",
     fields: overrides.fields ?? search.fields,
     text_sections: ["methods"],
     article_count: overrides.articleCount ?? 10,
   });
-  listModels.mockResolvedValue([model]);
+  listModels.mockResolvedValue(models);
   listGold.mockResolvedValue([]);
+  listSearchJobs.mockResolvedValue({ jobs: overrides.jobs ?? [] });
+  getInference.mockResolvedValue(overrides.busy ?? null);
   (api.previewSelection as jest.Mock).mockResolvedValue(overrides.preview ?? 4);
-  getInference.mockImplementation(
-    overrides.inference ??
-      ((_p: string, _s?: string, all?: boolean) =>
-        Promise.resolve(all ? (overrides.busy ?? null) : (overrides.job ?? null))),
-  );
   return render(
     <Suspense fallback={null}>
       <InferencePage />
@@ -152,416 +172,284 @@ function mount(overrides: {
   );
 }
 
-async function panelOpen() {
-  // the creation panel opens once the searches, the project role and the models are loaded
-  await screen.findByText("panelTitle");
-  await waitFor(() => expect(listModels).toHaveBeenCalled());
-}
-
 beforeEach(() => {
   nav.replace.mockClear();
   nav.state.searchParam = null;
+  nav.state.newParam = null;
+  triggerInference.mockReset();
+  rerunSearch.mockReset();
+  deleteSearchJob.mockReset();
+  createSearch.mockReset();
+  updateProject.mockReset();
+  cancelInference.mockReset();
 });
 
-describe("inference page — chaining (spec 2026-11-02-legacy-questions §4)", () => {
-  it("the chain box is NOT offered while no analysis runs (predicted < lot_size is not enough)", async () => {
-    mount({ user: { role: "RESEARCHER" }, roleInProject: "LEAD", busy: null });
-    await panelOpen();
-    expect(screen.queryByText("chainLabel")).not.toBeInTheDocument();
+// spec 2026-11-20-analyses-runs-2 F3 — page Analyse : état vide, carte corpus, runs, actions.
+describe("inference page — spec 2026-11-20-2 F3 (corpora + runs)", () => {
+  it("0 corpora: the S1 empty state with the CTA; no search=null API calls (R2)", async () => {
+    mount({ user: {}, roleInProject: "LEAD", searches: [], articleCount: 33 });
+    expect(await screen.findByText("corporaEmpty")).toBeInTheDocument();
+    // the lead CTA opens the creation panel
+    expect(screen.getByRole("button", { name: /pillNew/ })).toBeInTheDocument();
+    // no API call resolves search=null (the backend 404s: never call it)
+    await waitFor(() => expect(getInference).not.toHaveBeenCalled());
+    expect(getProject).not.toHaveBeenCalled();
+    expect(getOverview).toHaveBeenCalledWith("p1");
+    expect(listProjects).toHaveBeenCalledWith();
   });
 
-  it("the chain box is offered while an analysis runs", async () => {
-    mount({ user: { role: "RESEARCHER" }, roleInProject: "LEAD", busy: runningJob });
-    await panelOpen();
-    expect(screen.getByText("chainLabel")).toBeInTheDocument();
-  });
-});
-
-describe("inference page — delete a search (spec §5 + §6)", () => {
-  // a touched search (predicted > 0) is shown in the list → its AnalysisRow
-  const touched = { ...search, predicted: 2 };
-
-  it("the delete button is visible for a lead, on the initial search too", async () => {
-    mount({ user: { role: "RESEARCHER" }, roleInProject: "LEAD", searches: [touched] });
-    await panelOpen();
-    await screen.findByText("delete");
+  it("0 corpora: the lead CTA opens the creation panel inline (R4)", async () => {
+    mount({ user: {}, roleInProject: "LEAD", searches: [], articleCount: 33 });
+    expect(await screen.findByText("corporaEmpty")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /pillNew/ }));
+    // the panel is reachable in the S1 state: name field + create action
+    expect(await screen.findByText("newCorpusTitle")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "createCorpus" })).toBeInTheDocument();
   });
 
-  it("the delete button is visible for a global admin (not a member)", async () => {
-    mount({ user: { role: "ADMIN" }, roleInProject: null, searches: [touched] });
-    await panelOpen();
-    await screen.findByText("delete");
+  it("0 corpora: ?new=1 opens the creation panel in the S1 state (R4)", async () => {
+    nav.state.newParam = "1";
+    mount({ user: {}, roleInProject: "LEAD", searches: [], articleCount: 33 });
+    expect(await screen.findByText("corporaEmpty")).toBeInTheDocument();
+    expect(await screen.findByText("newCorpusTitle")).toBeInTheDocument();
   });
 
-  it("no delete button for a non-lead member", async () => {
-    mount({ user: { role: "RESEARCHER" }, roleInProject: "ANNOTATOR", searches: [touched] });
-    await screen.findByText("leadOnly"); // no creation panel for a non-lead
-    expect(screen.queryByText("delete")).not.toBeInTheDocument();
+  it("stale tab-memory selection (deleted corpus): recovers to a live corpus, no permanent skeleton (R10)", async () => {
+    sessionStorage.setItem(searchStoreKey("p1"), "dead-id");
+    mount({ user: {}, roleInProject: "LEAD", searches: [search] });
+    expect(
+      await screen.findByText("corpusCard", {}, { timeout: 5000 })
+    ).toBeInTheDocument();
+    // the stale reference is dropped from tab memory
+    expect(sessionStorage.getItem(searchStoreKey("p1"))).toBeNull();
   });
 
-  it("confirm → deleteSearch is called and the list is refreshed (Modal, spec clarte-3 R8)", async () => {
-    deleteSearch.mockResolvedValue(undefined);
-    mount({ user: { role: "RESEARCHER" }, roleInProject: "LEAD", searches: [touched] });
-    await panelOpen();
-    fireEvent.click(await screen.findByText("delete"));
-    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "delete" }));
-    await waitFor(() => expect(deleteSearch).toHaveBeenCalledWith("p1", "s1"));
-    await waitFor(() => expect(listSearches.mock.calls.length).toBeGreaterThanOrEqual(2)); // refresh
+  it("no selection and no default (new projects, R9): the first corpus is the current one", async () => {
+    // a project whose corpora were all created through the UI (none is_default)
+    sessionStorage.clear();
+    const only = { ...search, id: "s-only", is_default: false, name: "Corps" };
+    mount({ user: {}, roleInProject: "LEAD", searches: [only] });
+    expect(
+      await screen.findByText("corpusCard", {}, { timeout: 5000 })
+    ).toBeInTheDocument();
   });
 
-  it("403: the error is shown, the row stays", async () => {
-    deleteSearch.mockRejectedValue(new api.ApiError(403, "lead required"));
-    mount({ user: { role: "RESEARCHER" }, roleInProject: "LEAD", searches: [touched] });
-    await panelOpen();
-    fireEvent.click(await screen.findByText("delete"));
-    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "delete" }));
-    await screen.findByText("errors.leadRequired"); // the existing error channel
-    expect(screen.getByText("S1")).toBeInTheDocument(); // the row is intact
-  });
-
-  it("stored search deleted: the polling 404 falls back cleanly (spec §6)", async () => {
-    sessionStorage.setItem("diggy:search:p1", "deleted-id");
-    // a visible (touched) row stays in the list, pointing at a stored search that no longer exists
-    mount({
-      user: { role: "RESEARCHER" },
-      roleInProject: "LEAD",
-      searches: [{ ...search, predicted: 1 }],
-      inference: inference404Stale,
-    });
-    await panelOpen();
-    // no crash, no job shown for the dead search
-    expect(screen.queryByText("progressTitle")).not.toBeInTheDocument();
-    expect(screen.getByText("S1")).toBeInTheDocument();
-    // and no error banner: the stale selection quietly falls back to the default search
-    await waitFor(() => expect(screen.queryByText("errors.notFound")).not.toBeInTheDocument(), {
-      timeout: 2000,
-    });
-    sessionStorage.removeItem("diggy:search:p1");
-  });
-});
-
-describe("inference page — spec clarte-3 (one page, one intention)", () => {
-  it("the triage thresholds no longer live here (R1: moved to the overview)", async () => {
-    mount({ user: { role: "RESEARCHER" }, roleInProject: "LEAD" });
-    await panelOpen();
-    expect(screen.queryByText("thresholdsHint")).not.toBeInTheDocument();
-    expect(screen.queryByText("thresholdsAccept")).not.toBeInTheDocument();
-  });
-
-  it("the gold/benchmark card is gone (R4)", async () => {
-    mount({ user: { role: "RESEARCHER" }, roleInProject: "LEAD" });
-    await panelOpen();
-    expect(screen.queryByText("goldSectionTitle")).not.toBeInTheDocument();
-  });
-
-  it("the chat is a disclosure, collapsed by default (R3)", async () => {
-    mount({ user: { role: "RESEARCHER" }, roleInProject: "LEAD" });
-    await panelOpen();
-    const details = screen.getByText("chatTitle").closest("details");
-    expect(details).toBeTruthy();
-    expect(details).not.toHaveAttribute("open");
-  });
-
-  it("stop: confirmed through the Modal, never window.confirm (R8)", async () => {
-    const confirmSpy = jest.spyOn(window, "confirm").mockImplementation(() => true);
-    (api.cancelInference as jest.Mock).mockResolvedValue(undefined);
-    mount({ user: { role: "RESEARCHER" }, roleInProject: "LEAD", job: runningJob });
-    await panelOpen();
-    fireEvent.click(await screen.findByText("■ stop"));
-    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "stop" }));
-    await waitFor(() => expect(api.cancelInference).toHaveBeenCalledWith("p1"));
-    expect(confirmSpy).not.toHaveBeenCalled();
-    confirmSpy.mockRestore();
-  });
-});
-
-// A selection pointing at a deleted analysis (tab memory or `?search=` in the URL):
-// the pages must fall back to the default search quietly, without a "not found" banner.
-describe("inference page — stale selection after a search was deleted", () => {
-  const stale = "deleted-id";
-
-  beforeEach(() => {
-    nav.replace.mockClear();
-    nav.state.searchParam = null;
-    sessionStorage.removeItem("diggy:search:p1");
-  });
-
-  it("stored stale search: no banner, the stored id is dropped, default job shown", async () => {
-    sessionStorage.setItem("diggy:search:p1", stale);
-    mount({ user: { role: "RESEARCHER" }, roleInProject: "LEAD", searches: [], inference: inference404Stale });
-    await panelOpen();
-    // the dead selection converges to the default search: no "not found" banner…
-    await waitFor(() => expect(screen.queryByText("errors.notFound")).not.toBeInTheDocument(), {
-      timeout: 2000,
-    });
-    // …and the stale reference is purged so the next fetches use the default search.
-    await waitFor(() => expect(sessionStorage.getItem("diggy:search:p1")).toBeNull(), {
-      timeout: 2000,
-    });
-    expect(getInference).toHaveBeenCalledWith("p1", undefined); // the default search
-  });
-
-  it("URL stale search: the `?search=` param is rewritten away", async () => {
-    nav.state.searchParam = stale;
-    mount({ user: { role: "RESEARCHER" }, roleInProject: "LEAD", searches: [], inference: inference404Stale });
-    await panelOpen();
-    await waitFor(() => expect(screen.queryByText("errors.notFound")).not.toBeInTheDocument(), {
-      timeout: 2000,
-    });
-    // the URL is rewritten without the dead `?search=` (other params are preserved)
-    await waitFor(() => {
-      const urls = nav.replace.mock.calls.map((c) => c[0]);
-      expect(urls).toContain("/projects/p1/inference");
-    }, { timeout: 2000 });
-    expect(screen.queryByText("errors.notFound")).not.toBeInTheDocument();
-  });
-});
-
-// spec 2026-11-02-frontend-vocabulary-a11y-polish §3, §4, §5, §8
-describe("inference page — « à lancer » section, aria-live, polish", () => {
-  const touched = { ...search, predicted: 2 };
-
-  it("untouched analysis: the « à lancer » section renders it; « analyses réalisées » hidden", async () => {
-    mount({ user: { role: "RESEARCHER" }, roleInProject: "LEAD" });
-    await panelOpen();
-    expect(screen.getByText("toLaunch")).toBeInTheDocument();
-    expect(screen.getByText("badgeToLaunch")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "launch" })).toBeInTheDocument();
-    expect(screen.queryByText("listTitle")).not.toBeInTheDocument();
-  });
-
-  it("only launched analyses: the list is shown, no « à lancer » section", async () => {
-    mount({ user: { role: "RESEARCHER" }, roleInProject: "LEAD", searches: [touched] });
-    await panelOpen();
-    expect(screen.getByText("listTitle")).toBeInTheDocument();
-    expect(screen.queryByText("toLaunch")).not.toBeInTheDocument();
-    expect(screen.queryByText("badgeToLaunch")).not.toBeInTheDocument();
-  });
-
-  it("empty state NOT shown while an untouched analysis exists (non-lead)", async () => {
-    mount({ user: { role: "RESEARCHER" }, roleInProject: "ANNOTATOR" });
-    await screen.findByText("leadOnly");
-    expect(screen.getByText("toLaunch")).toBeInTheDocument();
-    expect(screen.queryByText("emptyHint")).not.toBeInTheDocument();
-  });
-
-  it("empty state shown when no analysis exists at all (non-lead)", async () => {
-    mount({ user: { role: "RESEARCHER" }, roleInProject: "ANNOTATOR", searches: [] });
-    await screen.findByText("leadOnly");
-    expect(screen.getByText("emptyHint")).toBeInTheDocument();
-    expect(screen.queryByText("toLaunch")).not.toBeInTheDocument();
-  });
-
-  it("collapsed panel button: « + Créer » (panelCreate)", async () => {
-    mount({ user: { role: "RESEARCHER" }, roleInProject: "LEAD", searches: [touched] });
-    await panelOpen();
-    expect(screen.getByText(/\+ panelCreate/)).toBeInTheDocument();
-  });
-
-  it("completed job: the CTA banner offers the review action", async () => {
-    mount({ user: { role: "RESEARCHER" }, roleInProject: "LEAD", searches: [touched], job: completedJob });
-    await panelOpen();
-    // the CTA banner (spec 2026-11-09 R3) replaced the old button row; the
-    // « aller à la relecture » action is now its ctaReview item (needs_review=3).
-    expect(await screen.findByText(/ctaReview/)).toBeInTheDocument();
-  });
-
-  it("the avancement card wrapper carries aria-live=polite", async () => {
-    mount({ user: { role: "RESEARCHER" }, roleInProject: "LEAD", searches: [touched], job: completedJob });
-    await panelOpen();
-    const card = await screen.findByText("progressTitle");
-    expect(card.closest("[aria-live]")).toHaveAttribute("aria-live", "polite");
-  });
-});
-
-// The « Enregistrer » button: create the analysis without launching it, so the question
-// and the fields can be completed later (the analysis then shows in « à lancer »).
-describe("inference page — « Enregistrer » (save without launching)", () => {
-  const saved = { ...search, id: "s2", is_default: false, name: "261103-1" };
-  const createSearch = api.createSearch as jest.Mock;
-  const triggerInference = api.triggerInference as jest.Mock;
-
-  beforeEach(() => {
-    createSearch.mockClear();
-    triggerInference.mockClear();
-  });
-
-  it("creates the analysis without launching it; the panel stays open", async () => {
-    createSearch.mockResolvedValue(saved);
-    mount({ user: { role: "RESEARCHER" }, roleInProject: "LEAD" });
-    await panelOpen();
-    fireEvent.click(screen.getByRole("button", { name: "save" }));
-    await waitFor(() =>
-      expect(createSearch).toHaveBeenCalledWith(
-        "p1",
-        expect.objectContaining({ kind: "standard", question: "q?", selection: {} })
-      )
-    );
-    expect(triggerInference).not.toHaveBeenCalled();
-    // the new analysis becomes the current one (?search= in the URL)
-    await waitFor(() =>
-      expect(nav.replace.mock.calls.map((c) => c[0]).some((u) => u?.includes("search=s2")))
-    );
-    // the panel stays open so the question can be completed before the launch
-    expect(screen.getByText("panelTitle")).toBeInTheDocument();
-  });
-
-  it("save with an empty question+fields: no 422 (fields left unset)", async () => {
-    createSearch.mockResolvedValue(saved);
-    mount({ user: { role: "RESEARCHER" }, roleInProject: "LEAD", question: "", fields: [] });
-    await panelOpen();
-    fireEvent.click(screen.getByRole("button", { name: "save" }));
-    await waitFor(() => expect(createSearch).toHaveBeenCalled());
-    const payload = createSearch.mock.calls[createSearch.mock.calls.length - 1][1];
-    expect(payload.question).toBe("");
-    expect(payload.fields).toBeUndefined();
-    expect(triggerInference).not.toHaveBeenCalled();
-  });
-
-  it("save is disabled when no article is selected", async () => {
-    createSearch.mockResolvedValue(saved);
-    mount({ user: { role: "RESEARCHER" }, roleInProject: "LEAD", preview: 0 });
-    await panelOpen();
-    // the live preview is debounced (400 ms): wait for it to report a count of 0
-    await waitFor(
-      () => expect(screen.getByRole("button", { name: "save" })).toBeDisabled(),
-      { timeout: 2000 }
-    );
-    expect(createSearch).not.toHaveBeenCalled();
-  });
-
-  it("an analysis created but not launched shows in « à lancer » with its « Lancer » button", async () => {
-    mount({ user: { role: "RESEARCHER" }, roleInProject: "LEAD", searches: [search, saved] });
-    expect(await screen.findByText("toLaunch")).toBeInTheDocument();
-    const launches = screen.getAllByRole("button", { name: "launch" });
-    expect(launches).toHaveLength(2); // the default one + the saved one
-  });
-});
-
-describe("inference page — creation panel polish (UI feedback 2026-11-03)", () => {
-  it("« partir des articles de » is hidden while no analysis has been launched", async () => {
-    mount({ user: { role: "RESEARCHER" }, roleInProject: "LEAD" }); // default search, untouched
-    await panelOpen();
-    expect(screen.queryByText("selFrom")).not.toBeInTheDocument();
-  });
-
-  it("« partir des articles de » is offered once an analysis has been launched", async () => {
-    mount({ user: { role: "RESEARCHER" }, roleInProject: "LEAD", searches: [{ ...search, predicted: 2 }] });
-    await panelOpen();
-    // the panel stays collapsed on a project with launched analyses: open it
-    fireEvent.click(screen.getByText(/\+ panelCreate/));
-    expect(await screen.findByText("selFrom")).toBeInTheDocument();
-  });
-
-  it("a single article count is shown (the duplicate « seront analysés » line is gone)", async () => {
-    mount({ user: { role: "RESEARCHER" }, roleInProject: "LEAD" });
-    await panelOpen();
-    // the live preview is debounced (400 ms): wait for the selector's count to settle
-    await waitFor(() => expect(screen.getByText("selected")).toBeInTheDocument(), { timeout: 2000 });
-    expect(screen.queryByText("scopeCount")).not.toBeInTheDocument();
-  });
-});
-
-describe("inference page — concordance moved to benchmarks (2026-11-08)", () => {
-  it("no longer renders the comparison / agreement panels", async () => {
-    mount({ user: { role: "RESEARCHER" }, roleInProject: "LEAD" });
-    await panelOpen();
-    expect(screen.queryByTestId("marker-comparison")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("marker-agreement")).not.toBeInTheDocument();
-  });
-
-  it("chat scope selector offers the non-default standard searches only", async () => {
-    // The default search's lot is the whole corpus: offering it as a scope
-    // would duplicate the "whole corpus" option (audit finding
-    // lotall-scope-duplicates-corpus).
-    const saved = { ...search, id: "s2", is_default: false, name: "261103-1" };
-    mount({ user: { role: "RESEARCHER" }, roleInProject: "LEAD", searches: [search, saved] });
-    await panelOpen();
-    const select = await screen.findByTestId("chat-scope");
-    const options = Array.from(select.querySelectorAll("option")).map((o) => o.value);
-    // "corpus" is the panel's whole-corpus option; s1 (default, lot_all) is
-    // out — its scope is the corpus itself.
-    expect(options).toEqual(["corpus", "s2"]);
-  });
-});
-
-// spec 2026-11-12-filtres-creation-export-filtre: ONE filter block in the creation
-// form (the criteria block is gone) + the CTA banner at the end of a completed analysis.
-describe("inference page — one filter block + CTA banner", () => {
-  const getResultsIndex = api.getResultsIndex as jest.Mock;
-  const analysed = { ...search, id: "sB", is_default: false, name: "B", predicted: 5, lot_size: 10 };
-
-  beforeEach(() => {
-    // the CTA « chatter » button scrolls the chat panel into view (jsdom: not implemented)
-    (window.HTMLElement.prototype as unknown as { scrollIntoView: jest.Mock }).scrollIntoView = jest.fn();
-  });
-
-  it("one filter block: no criteria block, the selector's filters are the only ones", async () => {
-    // default untouched search + an analysed one: the panel is collapsed (a search launched)
-    mount({ user: { role: "RESEARCHER" }, roleInProject: "LEAD", searches: [search, analysed] });
-    await panelOpen();
-    fireEvent.click(screen.getByText(/\+ panelCreate/));
-    await screen.findByText("selFrom");
-    expect(screen.queryByTestId("criteria-block")).not.toBeInTheDocument();
-    // pick the analysed search B as the source → the selector's own filters show
-    const fromSel = screen.getByText("selFrom").closest("label")!.querySelector("select")!;
-    fireEvent.change(fromSel, { target: { value: "sB" } });
-    expect(await screen.findByText("selStatus")).toBeInTheDocument();
-    expect(screen.queryByTestId("crit-count")).not.toBeInTheDocument();
-    // one live counter only (the selector's preview), never the criteria' one
-    await waitFor(() => expect(screen.getByText("selected")).toBeInTheDocument(), { timeout: 2000 });
-    expect(screen.queryByText("critCount")).not.toBeInTheDocument();
-  });
-
-  it("the CTA banner offers export filters; the RIS export follows them", async () => {
-    // the completed analysis is the selected one (?search= in the URL)
-    nav.state.searchParam = "s1";
-    mount({ user: { role: "RESEARCHER" }, roleInProject: "LEAD", searches: [{ ...search, predicted: 2 }], job: completedJob });
-    await panelOpen();
-    await screen.findByTestId("cta-banner");
-    // the export filter group: status select + the answer filter of the search's field
-    const box = screen.getByTestId("export-filters");
-    const [statusSel, answerSel] = within(box).getAllByRole("combobox");
-    fireEvent.change(statusSel, { target: { value: "AUTO_ACCEPTED" } });
-    fireEvent.change(answerSel, { target: { value: "true" } });
-    // the export menu notes that the references follow the filters
-    fireEvent.click(await screen.findByRole("button", { name: /exportMenu/ }));
-    expect(await screen.findByText("exportRefsFiltered")).toBeInTheDocument();
-    const ris = screen.getByRole("menuitem", { name: /exportRis/ });
-    expect(ris).toHaveAttribute("href", expect.stringContaining("search=s1"));
-    expect(ris).toHaveAttribute("href", expect.stringContaining("status=AUTO_ACCEPTED"));
-    expect(ris).toHaveAttribute("href", expect.stringContaining("answers="));
-  });
-
-  it("the CTA banner is offered at the end of a completed analysis", async () => {
-    mount({ user: { role: "RESEARCHER" }, roleInProject: "LEAD", searches: [{ ...search, predicted: 2 }], job: completedJob });
-    await panelOpen();
-    expect(await screen.findByTestId("cta-banner")).toBeInTheDocument();
-  });
-
-  it("ctaChat switches the chat panel to the results mode of the analysis", async () => {
-    getResultsIndex.mockResolvedValue({ status: "ready", done: 10, total: 10 });
-    mount({ user: { role: "RESEARCHER" }, roleInProject: "LEAD", searches: [{ ...search, predicted: 2 }], job: completedJob });
-    await panelOpen();
-    await screen.findByTestId("cta-banner");
-    // initially the panel is in corpus mode
-    expect(screen.getByTestId("chat-mode-corpus")).toHaveAttribute("aria-pressed", "true");
-    fireEvent.click(screen.getByRole("button", { name: "ctaChat" }));
-    await waitFor(() => expect(screen.getByTestId("chat-mode-results")).toHaveAttribute("aria-pressed", "true"));
-  });
-});
-
-// spec 2026-11-09-clarte-2 — R3: on a corpus-less project the empty state offers the Import CTA
-describe("inference page — spec clarte-2 R3: empty corpus CTA", () => {
-  it("the empty state offers « Import » to a lead on a corpus-less project", async () => {
+  it("0 corpora, 0 articles: the Import CTA stays (spec clarte-2 R3)", async () => {
     mount({ user: {}, roleInProject: "LEAD", searches: [], articleCount: 0 });
     expect(await screen.findByText("importCta")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "importCta" })).toHaveAttribute("href", "/projects/p1/import");
   });
 
-  it("no CTA when the corpus is not empty", async () => {
-    mount({ user: {}, roleInProject: "LEAD", searches: [], articleCount: 10 });
-    await panelOpen();
-    expect(screen.queryByText("importCta")).not.toBeInTheDocument();
+  it("corpus card: name, question, field labels, draft badge when never run", async () => {
+    mount({ user: {}, roleInProject: "LEAD", searches: [draftSearch] });
+    expect(await screen.findByText("corpusCard")).toBeInTheDocument();
+    expect(screen.getByText("q?")).toBeInTheDocument();
+    expect(screen.getByText("AI")).toBeInTheDocument();
+    expect(screen.getByText("badgeDraft")).toBeInTheDocument();
+    // the lead can edit the question
+    expect(screen.getByRole("button", { name: "editQuestion" })).toBeInTheDocument();
+  });
+
+  it("runs: both runs render (name, status badge, model, x/y, date)", async () => {
+    mount({ user: {}, roleInProject: "LEAD", jobs: [runningJob, completedJob] });
+    // the two most recent runs, newest first
+    expect(await screen.findByText("261120-2")).toBeInTheDocument();
+    expect(screen.getByText("261101-1")).toBeInTheDocument();
+    expect(screen.getByText("status_RUNNING")).toBeInTheDocument();
+    expect(screen.getByText("status_COMPLETED")).toBeInTheDocument();
+    // model (mono ref) + lot + analysed + date, one meta line per run
+    expect(screen.getAllByText("runLot").length).toBe(2);
+    expect(screen.getAllByText("runAnalysed").length).toBe(2);
+    expect(screen.getAllByText("01/11/2026").length).toBeGreaterThan(0);
+  });
+
+  it("COMPLETED run: the breakdown sub-line (only the non-zero parts)", async () => {
+    mount({ user: {}, roleInProject: "LEAD", jobs: [completedJob] });
+    await screen.findByText("261101-1");
+    expect(screen.getByText("runBreakAccepted")).toBeInTheDocument();
+    expect(screen.getByText("runBreakRejected")).toBeInTheDocument();
+    expect(screen.getByText("runBreakReview")).toBeInTheDocument();
+    expect(screen.queryByText("runBreakNone")).not.toBeInTheDocument();
+  });
+
+  it("legacy run (no name): « sans nom » + the date", async () => {
+    mount({ user: {}, roleInProject: "LEAD", jobs: [{ ...completedJob, name: null }] });
+    expect(await screen.findByText("runUnnamed")).toBeInTheDocument();
+  });
+
+  it("cancelled run (FAILED + error=cancelled): the gray « Annulée » badge, not « Échec »", async () => {
+    mount({ user: {}, roleInProject: "LEAD", jobs: [{ ...completedJob, status: "FAILED", error: "cancelled" }] });
+    expect(await screen.findByText("status_CANCELLED")).toBeInTheDocument();
+  });
+
+  it("RUNNING run: the progress bar", async () => {
+    mount({ user: {}, roleInProject: "LEAD", jobs: [runningJob] });
+    await screen.findByText("261120-2");
+    expect(screen.getByRole("progressbar")).toBeInTheDocument();
+  });
+
+  it("Relancer menu: « Écraser ce résultat » + model → rerunSearch {model, overwrite_job_id}", async () => {
+    rerunSearch.mockResolvedValue({ job_id: "j3", status: "PENDING" });
+    mount({ user: {}, roleInProject: "LEAD", jobs: [completedJob] });
+    await screen.findByText("261101-1");
+    fireEvent.click(screen.getByRole("button", { name: /rerunMenu/ }));
+    const menu = screen.getByRole("menu");
+    // the model select defaults to the run's model, then switches to « other »
+    const select = within(menu).getByRole("combobox");
+    expect(select).toHaveValue("Kev");
+    fireEvent.change(select, { target: { value: "other" } });
+    fireEvent.click(within(menu).getByRole("menuitem", { name: /runOverwrite/ }));
+    await waitFor(() =>
+      expect(rerunSearch).toHaveBeenCalledWith("p1", "s1", "other", { overwrite_job_id: "j1" })
+    );
+  });
+
+  it("Relancer menu: « Nouvelle analyse sur ce lot » → the panel opens with the run's model preselected", async () => {
+    mount({ user: {}, roleInProject: "LEAD", jobs: [completedJob] });
+    await screen.findByText("261101-1");
+    fireEvent.click(screen.getByRole("button", { name: /rerunMenu/ }));
+    fireEvent.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: /runNamed/ }));
+    expect(screen.getByText("panelTitle")).toBeInTheDocument();
+    // the launch panel's main model is the run's model
+    expect(screen.getByRole("combobox", { name: "stage2" })).toHaveValue("Kev");
+  });
+
+  it("Supprimer → Modal → deleteSearchJob → the list refreshes", async () => {
+    deleteSearchJob.mockResolvedValue(undefined);
+    mount({ user: {}, roleInProject: "LEAD", jobs: [completedJob] });
+    await screen.findByText("261101-1");
+    fireEvent.click(screen.getByRole("button", { name: "delete" }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "delete" }));
+    await waitFor(() => expect(deleteSearchJob).toHaveBeenCalledWith("p1", "s1", "j1"));
+    await waitFor(() => expect(listSearchJobs.mock.calls.length).toBeGreaterThanOrEqual(2)); // refresh
+  });
+
+  it("launch panel, new mode: the name is sent, prefilled with the next YYMMDD-n", async () => {
+    triggerInference.mockResolvedValue({ job_id: "j3", status: "PENDING" });
+    mount({ user: {}, roleInProject: "LEAD", jobs: [completedJob] });
+    await screen.findByText("261101-1");
+    fireEvent.click(screen.getByRole("button", { name: "run" }));
+    await waitFor(() => expect(triggerInference).toHaveBeenCalled());
+    const payload = triggerInference.mock.calls[0][1];
+    expect(payload.search_id).toBe("s1");
+    expect(payload.model).toBe("Kev");
+    // "261101-1" does not block today's rank 1
+    expect(payload.name).toMatch(/^\d{6}-\d+$/);
+    expect(payload).not.toHaveProperty("overwrite_job_id");
+  });
+
+  it("launch panel, overwrite mode: overwrite_job_id is sent and NO name", async () => {
+    triggerInference.mockResolvedValue({ job_id: "j3", status: "PENDING" });
+    mount({ user: {}, roleInProject: "LEAD", jobs: [completedJob] });
+    await screen.findByText("261101-1");
+    fireEvent.click(screen.getByRole("radio", { name: /outOverwrite/ }));
+    const overwrite = screen.getByRole("combobox", { name: /outOverwrite/ });
+    fireEvent.change(overwrite, { target: { value: "j1" } });
+    fireEvent.click(screen.getByRole("button", { name: "run" }));
+    await waitFor(() => expect(triggerInference).toHaveBeenCalled());
+    const payload = triggerInference.mock.calls[0][1];
+    expect(payload.overwrite_job_id).toBe("j1");
+    expect(payload).not.toHaveProperty("name");
+  });
+
+  it("launch panel: the active run is disabled in the overwrite select", async () => {
+    mount({ user: {}, roleInProject: "LEAD", jobs: [runningJob, completedJob] });
+    await screen.findByText("261120-2");
+    fireEvent.click(screen.getByRole("radio", { name: /outOverwrite/ }));
+    const overwrite = screen.getByRole("combobox", { name: /outOverwrite/ });
+    const options = Array.from(overwrite.querySelectorAll("option"));
+    const active = options.find((o) => o.value === "j2");
+    const done = options.find((o) => o.value === "j1");
+    expect(active).toBeDefined();
+    expect(active).toBeDisabled();
+    expect(done).not.toBeDisabled();
+  });
+
+  it("stop the active run: confirmed through the Modal (never window.confirm)", async () => {
+    const confirmSpy = jest.spyOn(window, "confirm").mockImplementation(() => true);
+    cancelInference.mockResolvedValue(undefined);
+    mount({ user: {}, roleInProject: "LEAD", jobs: [runningJob] });
+    await screen.findByText("261120-2");
+    fireEvent.click(screen.getByRole("button", { name: /stop/ }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "stop" }));
+    await waitFor(() => expect(cancelInference).toHaveBeenCalledWith("p1"));
+    expect(confirmSpy).not.toHaveBeenCalled();
+    confirmSpy.mockRestore();
+  });
+});
+
+// spec 2026-11-02-legacy-questions §4: the chain stays offered only while the project is busy.
+describe("inference page — chaining", () => {
+  it("the chain box is NOT offered while no analysis runs", async () => {
+    mount({ user: {}, roleInProject: "LEAD", busy: null });
+    await screen.findByText("corpusCard");
+    expect(screen.queryByText("chainLabel")).not.toBeInTheDocument();
+  });
+
+  it("the chain box is offered while an analysis runs", async () => {
+    mount({ user: {}, roleInProject: "LEAD", busy: { ...runningJob, search_id: "s1" } });
+    await screen.findByText("chainLabel");
+  });
+});
+
+// spec 2026-11-20-analyses-runs-2 F4 — création de corpus (« Nouveau corpus de questions »).
+describe("inference page — spec 2026-11-20-2 F4 (create corpus)", () => {
+  const saved = { ...search, id: "s2", is_default: false, name: "261103-1" };
+
+  it("?new=1 opens the create panel; « Créer le corpus » → createSearch → diggy:searches", async () => {
+    nav.state.newParam = "1";
+    createSearch.mockResolvedValue(saved);
+    mount({ user: {}, roleInProject: "LEAD" });
+    expect(await screen.findByText("newCorpusTitle")).toBeInTheDocument();
+    // the optional name is prefilled with the next free auto name
+    const nameInput = screen.getByRole("textbox", { name: /nameLabel/ });
+    // jest-dom 7 toHaveValue is strict equality (no RegExp): assert the shape on the raw value
+    expect((nameInput as HTMLInputElement).value).toMatch(/^\d{6}-\d+$/);
+    fireEvent.click(screen.getByRole("button", { name: "createCorpus" }));
+    await waitFor(() => expect(createSearch).toHaveBeenCalled());
+    const payload = createSearch.mock.calls[0][1];
+    expect(payload.question).toBe("q?");
+    expect(payload.name).toMatch(/^\d{6}-\d+$/);
+    // the list refetches (diggy:searches dispatch) and the new corpus becomes the current one
+    await waitFor(() => expect(listSearches.mock.calls.length).toBeGreaterThanOrEqual(2));
+    await waitFor(() =>
+      expect(nav.replace.mock.calls.map((c) => c[0]).some((u) => u?.includes("search=s2")))
+    );
+  });
+
+  it("an empty name lets the backend auto-name (no name key)", async () => {
+    nav.state.newParam = "1";
+    createSearch.mockResolvedValue(saved);
+    mount({ user: {}, roleInProject: "LEAD" });
+    const nameInput = await screen.findByRole("textbox", { name: /nameLabel/ });
+    fireEvent.change(nameInput, { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "createCorpus" }));
+    await waitFor(() => expect(createSearch).toHaveBeenCalled());
+    const payload = createSearch.mock.calls[0][1];
+    expect(payload).not.toHaveProperty("name");
+  });
+});
+
+// spec 2026-11-20-analyses-runs-2 F6 — édition de corpus (question + champs + sections).
+describe("inference page — spec 2026-11-20-2 F6 (edit corpus)", () => {
+  it("« Éditer la question »: the editor is prefilled; save → PATCH ?search= with the question", async () => {
+    updateProject.mockResolvedValue({});
+    mount({ user: {}, roleInProject: "LEAD" });
+    await screen.findByText("corpusCard");
+    fireEvent.click(screen.getByRole("button", { name: "editQuestion" }));
+    // the editor is prefilled with the corpus's question
+    const editor = screen.getByRole("textbox", { name: /questionLabel/ });
+    expect(editor).toHaveValue("q?");
+    fireEvent.change(editor, { target: { value: "new question?" } });
+    fireEvent.click(screen.getByRole("button", { name: "save" }));
+    await waitFor(() =>
+      expect(updateProject).toHaveBeenCalledWith(
+        "p1",
+        expect.objectContaining({ question: "new question?" }),
+        "s1"
+      )
+    );
+    // the project's searches refetch (the corpus changed)
+    await waitFor(() => expect(listSearches.mock.calls.length).toBeGreaterThanOrEqual(2));
   });
 });

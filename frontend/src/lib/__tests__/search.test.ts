@@ -1,4 +1,14 @@
-import { articlesStoreKey, cleanSelection, currentSearch, isUntouched, resolveSearchId, selectionFromFilters, withSearch } from "@/lib/search";
+import {
+  articlesStoreKey,
+  cleanSelection,
+  currentSearch,
+  isUntouched,
+  nextAutoName,
+  resolveSearchId,
+  runStatusKey,
+  selectionFromFilters,
+  withSearch,
+} from "@/lib/search";
 import type { SearchInfo } from "@/lib/api";
 
 describe("resolveSearchId", () => {
@@ -55,6 +65,14 @@ describe("recherches", () => {
     expect(currentSearch(all)?.id).toBe("a");
     expect(currentSearch(null)).toBeUndefined();
   });
+  it("currentSearch: no selection and no default (new projects, R9) → the first corpus, never nothing", () => {
+    // the backend sorts default-first, then by date: the first item is the primary corpus
+    expect(currentSearch([s("a", false), s("b", false)])?.id).toBe("a");
+    expect(currentSearch([s("a", false)])?.id).toBe("a");
+  });
+  it("currentSearch: a stale requested id falls back to the first corpus (the selection is cleaned separately)", () => {
+    expect(currentSearch([s("a", false), s("b", false)], "dead-id")?.id).toBe("a");
+  });
   it("articlesStoreKey separates the filters of each search", () => {
     expect(articlesStoreKey("p")).toBe("diggy:articles:p");
     expect(articlesStoreKey("p", "s")).toBe("diggy:articles:p:s");
@@ -63,6 +81,33 @@ describe("recherches", () => {
   it("the quick search goes into the selection (cleaned) and into the filters", () => {
     expect(selectionFromFilters("ALL", {}, "s1", "  deep gait ")).toEqual({ from_search_id: "s1", q: "deep gait" });
     expect(selectionFromFilters("ALL", {}, "s1", "   ")).toEqual({ from_search_id: "s1" });
+  });
+});
+
+describe("nextAutoName (spec 2026-11-20-analyses-runs-2 R3)", () => {
+  const day = new Date("2026-11-20T00:00:00Z");
+  it("next free rank for today's YYMMDD prefix", () => {
+    expect(nextAutoName([], day)).toBe("261120-1");
+    expect(nextAutoName(["261120-1"], day)).toBe("261120-2");
+    expect(nextAutoName(["261120-1", "261120-2", "261120-4"], day)).toBe("261120-3");
+  });
+  it("runs of other days do not block today's rank", () => {
+    expect(nextAutoName(["261101-1", "261101-2"], day)).toBe("261120-1");
+    expect(nextAutoName(["261120-1", "261101-2"], day)).toBe("261120-2");
+  });
+  it("free-form names never block an auto rank", () => {
+    expect(nextAutoName(["ma recherche", null], day)).toBe("261120-1");
+  });
+});
+
+describe("runStatusKey (spec 2026-11-20-analyses-runs-2 R3)", () => {
+  it("a cancelled run (FAILED + error=cancelled) reads « Annulée », not « Échec »", () => {
+    expect(runStatusKey({ status: "FAILED", error: "cancelled" })).toBe("CANCELLED");
+  });
+  it("other runs keep their own status", () => {
+    expect(runStatusKey({ status: "FAILED", error: "boom" })).toBe("FAILED");
+    expect(runStatusKey({ status: "COMPLETED", error: null })).toBe("COMPLETED");
+    expect(runStatusKey({ status: "PENDING", error: null })).toBe("PENDING");
   });
 });
 

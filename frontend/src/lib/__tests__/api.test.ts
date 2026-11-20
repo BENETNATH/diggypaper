@@ -1,12 +1,17 @@
 import {
   ApiError,
   DEDUP_SETTLE_TIMEOUT_MS,
+  deleteSearchJob,
   errorDetail,
   errorKey,
   getProject,
+  listArticles,
+  listSearchJobs,
   login,
   loginRedirectHref,
   me,
+  rerunSearch,
+  triggerInference,
 } from "@/lib/api";
 
 describe("errorDetail", () => {
@@ -153,6 +158,114 @@ describe("401 session expired → /login?next=", () => {
     } finally {
       global.fetch = original;
       window.history.replaceState(null, "", "/");
+    }
+  });
+});
+// spec 2026-11-20-analyses-runs-2 F2: named runs, per-run results, run deletion.
+describe("analyses-runs helpers (spec 2026-11-20-2 F2)", () => {
+  const fetchOnce = (body: unknown, status = 200) => {
+    const f = jest.fn(async () => ({
+      ok: true,
+      status,
+      json: async () => body,
+    })) as unknown as typeof fetch;
+    return f;
+  };
+  const lastCall = (m: jest.Mock): [string, RequestInit | undefined] =>
+    m.mock.calls[m.mock.calls.length - 1];
+
+  it("listSearchJobs: GET /projects/{id}/searches/{sid}/jobs", async () => {
+    const f = fetchOnce({ jobs: [] }) as unknown as jest.Mock;
+    const original = global.fetch;
+    global.fetch = f;
+    try {
+      const r = await listSearchJobs("p1", "s1");
+      expect(r).toEqual({ jobs: [] });
+      const [url, opts] = lastCall(f);
+      expect(url).toBe("/api/v1/projects/p1/searches/s1/jobs");
+      expect(opts?.method ?? "GET").toBe("GET");
+    } finally {
+      global.fetch = original;
+    }
+  });
+
+  it("deleteSearchJob: DELETE /projects/{id}/searches/{sid}/jobs/{jid}", async () => {
+    const f = fetchOnce(undefined, 204) as unknown as jest.Mock;
+    const original = global.fetch;
+    global.fetch = f;
+    try {
+      await deleteSearchJob("p1", "s1", "j1");
+      const [url, opts] = lastCall(f);
+      expect(url).toBe("/api/v1/projects/p1/searches/s1/jobs/j1");
+      expect(opts?.method).toBe("DELETE");
+    } finally {
+      global.fetch = original;
+    }
+  });
+
+  it("triggerInference with name: the name is sent, no overwrite_job_id", async () => {
+    const f = fetchOnce({ job_id: "j1", status: "PENDING", name: "261120-1" }) as unknown as jest.Mock;
+    const original = global.fetch;
+    global.fetch = f;
+    try {
+      await triggerInference("p1", { model: "Kev", search_id: "s1", name: "261120-1" });
+      const [url, opts] = lastCall(f);
+      expect(url).toBe("/api/v1/projects/p1/inference");
+      expect(JSON.parse(opts!.body as string)).toEqual({
+        model: "Kev",
+        search_id: "s1",
+        name: "261120-1",
+      });
+    } finally {
+      global.fetch = original;
+    }
+  });
+
+  it("triggerInference in overwrite mode: overwrite_job_id is sent and NO name key", async () => {
+    const f = fetchOnce({ job_id: "j2", status: "PENDING", name: "261120-1" }) as unknown as jest.Mock;
+    const original = global.fetch;
+    global.fetch = f;
+    try {
+      await triggerInference("p1", {
+        model: "Kev",
+        search_id: "s1",
+        overwrite_job_id: "j1",
+      });
+      const body = JSON.parse(lastCall(f)[1]!.body as string);
+      expect(body.overwrite_job_id).toBe("j1");
+      expect(body).not.toHaveProperty("name");
+    } finally {
+      global.fetch = original;
+    }
+  });
+
+  it("rerunSearch in overwrite mode: POST {model, overwrite_job_id}, no name", async () => {
+    const f = fetchOnce({ job_id: "j2", status: "PENDING", name: "261120-1" }) as unknown as jest.Mock;
+    const original = global.fetch;
+    global.fetch = f;
+    try {
+      await rerunSearch("p1", "s1", "Kev", { overwrite_job_id: "j1" });
+      const [url, opts] = lastCall(f);
+      expect(url).toBe("/api/v1/projects/p1/searches/s1/rerun");
+      expect(opts?.method).toBe("POST");
+      expect(JSON.parse(opts!.body as string)).toEqual({ model: "Kev", overwrite_job_id: "j1" });
+    } finally {
+      global.fetch = original;
+    }
+  });
+
+  it("listArticles with run: the ?run= query is appended", async () => {
+    const f = fetchOnce({ items: [], total: 0, page: 1, per_page: 50, stats: {} }) as unknown as jest.Mock;
+    const original = global.fetch;
+    global.fetch = f;
+    try {
+      await listArticles("p1", 1, 50, undefined, "added", {}, "s1", undefined, undefined, "j1");
+      const [url] = lastCall(f);
+      expect(url).toContain("/api/v1/projects/p1/articles?");
+      expect(url).toContain("search=s1");
+      expect(url).toContain("run=j1");
+    } finally {
+      global.fetch = original;
     }
   });
 });

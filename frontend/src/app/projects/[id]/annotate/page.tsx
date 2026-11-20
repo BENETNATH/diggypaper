@@ -16,11 +16,16 @@ import { addQuote } from "@/lib/highlight";
 import { articlesStoreKey, withSearch } from "@/lib/search";
 import { useSearchId, useSearches } from "@/lib/useSearch";
 import { useApiError } from "@/lib/errorMsg";
+import { useAuth } from "@/lib/auth";
+import { roleFromList } from "@/lib/role";
+import { CorporaEmpty } from "@/components/CorporaEmpty";
+import { EmptyState } from "@/components/ui/Feedback";
 import {
   Article,
   ArticlePrediction,
   ArticleReview,
   getArticleWithPrediction,
+  getOverview,
   getPrediction,
   getProject,
   goldFromReviews,
@@ -46,6 +51,8 @@ export default function AnnotatePage() {
   const ti = useTranslations("import"); // labels of the text parts
   const tc = useTranslations("common");
   const ta = useTranslations("articles"); // labels of the source
+  const tp = useTranslations("project");
+  const { user } = useAuth();
   const locale = useLocale();
   const params = useParams<{ id: string }>();
   const searchParams = useSearchParams();
@@ -59,6 +66,10 @@ export default function AnnotatePage() {
   const apiError = useApiError();
   // Blind search: we re-review without seeing the model's answer (unbiased gold).
   const isBlind = current?.kind === "blind";
+  // S1 (spec R2): a corpus-less project never calls search-scoped APIs.
+  const noCorpora = searches !== null && searches.length === 0;
+  const [articleCount, setArticleCount] = useState<number | null>(null);
+  const [isLead, setIsLead] = useState(false);
 
   const [article, setArticle] = useState<Article | null>(null);
   const [prediction, setPrediction] = useState<ArticlePrediction | null>(null);
@@ -82,9 +93,29 @@ export default function AnnotatePage() {
   const [goldBusy, setGoldBusy] = useState(false);
   const [goldNote, setGoldNote] = useState<string | null>(null);
 
+  // S1 (spec R2): no corpus at all — the role comes from the project list, the article
+  // count from the overview (the search-scoped calls below would 404).
+  useEffect(() => {
+    if (!noCorpora) return;
+    let active = true;
+    getOverview(projectId)
+      .then((o) => {
+        if (active) setArticleCount(o.articles);
+      })
+      .catch(() => {});
+    roleFromList(projectId)
+      .then((r) => {
+        if (active) setIsLead(r === "LEAD" || user?.role === "ADMIN");
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [noCorpora, projectId, user]);
+
   // Queue of the project's articles: used to open the first, then to chain through them.
   useEffect(() => {
-    if (!projectId) return;
+    if (!projectId || noCorpora) return;
     const load = async () => {
       // Article list filters (remembered by the tab).
       let saved: { filter?: string; sort?: "added" | "date_desc" | "date_asc" | "score_desc"; answers?: Record<string, string | boolean>; q?: string; fulltext?: boolean } = {};
@@ -126,7 +157,7 @@ export default function AnnotatePage() {
         setError(apiError(e));
         setLoading(false);
       });
-  }, [projectId, articleId, router, queueMode, searchId, apiError]);
+  }, [projectId, articleId, router, queueMode, searchId, apiError, noCorpora]);
 
   // Spinner while the article loads (reset when the article or search changes).
   const loadKey = `${projectId}:${articleId}:${searchId}`;
@@ -137,7 +168,7 @@ export default function AnnotatePage() {
   }
 
   useEffect(() => {
-    if (!projectId || !articleId) return;
+    if (!projectId || !articleId || noCorpora) return;
     getProject(projectId, searchId)
       .then((p) => {
         setFields(p.fields ?? []);
@@ -155,7 +186,7 @@ export default function AnnotatePage() {
       })
       .catch((e) => setError(apiError(e)))
       .finally(() => setLoading(false));
-  }, [projectId, articleId, searchId, apiError]);
+  }, [projectId, articleId, searchId, apiError, noCorpora]);
 
   // caveman-review 2026-11-10: submit-in-flight guard — a double-click (or a second
   // confirmation while the first is in flight) must not double-submit.
@@ -297,6 +328,25 @@ export default function AnnotatePage() {
     }
   }, [projectId, articleId, searchId, t, apiError]);
 
+  // S1 (spec R2): a corpus-less project — the overview's count + the role from the list.
+  if (noCorpora) {
+    if (articleCount === null) return <div className="p-4">{tc("loading")}</div>;
+    if (articleCount === 0) {
+      return (
+        <EmptyState
+          title={tp("noCorpus")}
+          action={
+            isLead ? (
+              <Link href={`/projects/${projectId}/import`}>
+                <Button variant="secondary">{tp("importCta")}</Button>
+              </Link>
+            ) : undefined
+          }
+        />
+      );
+    }
+    return <CorporaEmpty projectId={projectId} articleCount={articleCount} isLead={isLead} />;
+  }
   if (loading || searches === null) return <div className="p-4">{tc("loading")}</div>;
   if (error) return <div className="p-4 text-danger">{error}</div>;
   if (!article)

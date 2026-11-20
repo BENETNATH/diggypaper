@@ -1,20 +1,25 @@
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { SearchPills } from "@/components/SearchPills";
-import type { SearchInfo } from "@/lib/api";
+import { SearchInfo } from "@/lib/api";
 
-// Same fr-catalog mock as the other page tests (avoids loading the ESM next-intl build).
-jest.mock("next-intl", () => ({
-  useTranslations: (ns: string) => (key: string) => {
-    const fr: Record<string, string> = { project: { pillNew: "Nouvelle" } }[ns] ?? {};
-    return fr[key] ?? key;
-  },
+// i18n keys returned as-is (the tests do not depend on the message files).
+jest.mock("next-intl", () => {
+  const t = (key: string) => key;
+  return { useLocale: () => "fr", useTranslations: () => t };
+});
+jest.mock("next/navigation", () => ({
+  Link: ({ children, href, ...rest }: { children: React.ReactNode; href: string } & React.AnchorHTMLAttributes<HTMLAnchorElement>) => (
+    <a href={href} {...rest}>
+      {children}
+    </a>
+  ),
 }));
 
-const mk = (id: string, name: string, kind: SearchInfo["kind"] = "standard"): SearchInfo => ({
-  id,
-  name,
-  kind,
-  is_default: false,
+const base: SearchInfo = {
+  id: "s1",
+  name: "Survie à 30 jours",
+  kind: "standard",
+  is_default: true,
   question: "q?",
   fields: [],
   text_sections: null,
@@ -23,83 +28,77 @@ const mk = (id: string, name: string, kind: SearchInfo["kind"] = "standard"): Se
   created_at: null,
   created_by: null,
   lot_size: 10,
-  predicted: 10,
+  predicted: 0,
   reviewed: 0,
   breakdown: {},
   to_review: 0,
   last_job: null,
   last_benchmark: null,
-});
+};
 
-// spec v4 R6 — barre de pastilles des analyses standards
-describe("SearchPills", () => {
-  it("one pill per analysis, the active one is pressed + highlighted", () => {
-    render(
-      <SearchPills searches={[mk("a", "A"), mk("b", "B")]} activeId="b" onPick={jest.fn()} ariaLabel="Analyse active" />
-    );
-    const pa = screen.getByRole("button", { name: "A · A" });
-    const pb = screen.getByRole("button", { name: "B · B" });
-    expect(pa).toHaveAttribute("aria-pressed", "false");
-    expect(pb).toHaveAttribute("aria-pressed", "true");
-    expect(pb).toHaveClass("border-primary");
-    expect(pa).not.toHaveClass("border-primary");
-  });
-
-  it("clicking a pill selects that analysis", () => {
-    const onPick = jest.fn();
-    render(
-      <SearchPills searches={[mk("a", "A"), mk("b", "B")]} activeId="a" onPick={onPick} ariaLabel="Analyse active" />
-    );
-    fireEvent.click(screen.getByRole("button", { name: "B · B" }));
-    expect(onPick).toHaveBeenCalledWith("b");
-  });
-
-  it("lead: the label, the status dots and the dashed « + Nouvelle » pill", () => {
-    const untouched = { ...mk("b", "B"), predicted: 0 };
+describe("SearchPills (spec 2026-11-20-2 §1, F1)", () => {
+  it("no corpus: only the label and the CTA (no pills)", () => {
     render(
       <SearchPills
-        searches={[mk("a", "A"), untouched]}
-        activeId="a"
-        onPick={jest.fn()}
-        ariaLabel="Analyse active"
-        label="ANALYSES"
+        searches={[]}
+        activeId="s1"
+        onPick={() => {}}
+        ariaLabel="Corpus de questions"
+        label="corporaTitle"
         newHref="/projects/p1/inference?new=1"
       />
     );
-    expect(screen.getByText("ANALYSES")).toBeInTheDocument();
-    const link = screen.getByRole("link", { name: "+ Nouvelle" });
-    expect(link).toHaveAttribute("href", "/projects/p1/inference?new=1");
-    // the first pill (predicted=10) shows the green status dot, the untouched one the grey one
-    const [dotGreen, dotGrey] = screen.getAllByTestId("dot");
-    expect(dotGreen).toHaveClass("bg-success");
-    expect(dotGrey).toHaveClass("bg-muted");
+    expect(screen.getByText("corporaTitle")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /pillNew/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /pillNew/ })).toHaveAttribute("href", "/projects/p1/inference?new=1");
+    // no pill button
+    expect(screen.queryByRole("button", { name: /Survie à 30 jours/ })).not.toBeInTheDocument();
   });
 
-  it("spec clarte-1 R1: all analyses in the row — standards first, off-chain with their kind badge", () => {
+  it("a corpus with results: green dot, no « brouillon »", () => {
     render(
       <SearchPills
-        searches={[mk("a", "A"), mk("b", "Blind", "blind"), mk("c", "Tuning", "tuning")]}
-        activeId="a"
-        onPick={jest.fn()}
-        ariaLabel="Analyse active"
+        searches={[{ ...base, predicted: 3, last_job: { status: "COMPLETED", model: "Kev" } }]}
+        activeId={undefined}
+        onPick={() => {}}
+        ariaLabel="Corpus de questions"
+        label="corporaTitle"
       />
     );
-    const blind = screen.getByRole("button", { name: /Blind/ });
-    const tuning = screen.getByRole("button", { name: /Tuning/ });
-    expect(blind).toHaveAttribute("aria-pressed", "false");
-    expect(blind).toHaveTextContent("kind_blind");
-    expect(tuning).toHaveTextContent("kind_tuning");
-    // standards first, then off-chain
-    const texts = screen.getAllByRole("button").map((b) => b.textContent);
-    expect(texts[0]).toContain("A");
-    expect(texts[1]).toContain("Blind");
-    expect(texts[2]).toContain("Tuning");
+    const pill = screen.getByRole("button", { name: /Survie à 30 jours/ });
+    const dot = pill.querySelector('[data-testid="dot"]')!;
+    expect(dot.className).toContain("bg-success");
+    expect(pill.textContent).not.toContain("draft");
   });
 
-  it("renders nothing when there is no standard analysis", () => {
-    const { container } = render(
-      <SearchPills searches={[]} activeId={undefined} onPick={jest.fn()} ariaLabel="Analyse active" />
+  it("a corpus without any run: neutral dot + « brouillon » suffix", () => {
+    render(
+      <SearchPills
+        searches={[{ ...base, predicted: 0, last_job: null }]}
+        activeId={undefined}
+        onPick={() => {}}
+        ariaLabel="Corpus de questions"
+        label="corporaTitle"
+      />
     );
-    expect(container).toBeEmptyDOMElement();
+    const pill = screen.getByRole("button", { name: /Survie à 30 jours/ });
+    const dot = pill.querySelector('[data-testid="dot"]')!;
+    expect(dot.className).toContain("bg-muted");
+    expect(pill.textContent).toContain("draft");
+  });
+
+  it("the active pill keeps the primary border pattern", () => {
+    render(
+      <SearchPills
+        searches={[base]}
+        activeId="s1"
+        onPick={() => {}}
+        ariaLabel="Corpus de questions"
+        label="corporaTitle"
+      />
+    );
+    const pill = screen.getByRole("button", { name: /Survie à 30 jours/ });
+    expect(pill.className).toContain("border-primary");
+    expect(pill).toHaveAttribute("aria-pressed", "true");
   });
 });

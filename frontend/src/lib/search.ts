@@ -5,7 +5,7 @@
  * `?search=<id>` in the URL, otherwise by sessionStorage (`diggy:search:{projectId}`), otherwise
  * absent (= the project's initial search).
  */
-import type { PredictionFilter, SearchInfo, Selection } from "@/lib/api";
+import type { InferenceJob, PredictionFilter, SearchInfo, Selection } from "@/lib/api";
 
 export const searchStoreKey = (projectId: string): string => `diggy:search:${projectId}`;
 /** Prefilled selection passed from the Articles page to the Searches page. */
@@ -32,9 +32,33 @@ export function withSearch(href: string, searchId?: string): string {
   return `${path}?${params.toString()}${hash ? `#${hash}` : ""}`;
 }
 
-/** Requested search, otherwise the initial search. */
+/**
+ * Requested search, otherwise the project's primary corpus — the default one when it
+ * exists, else the first of the list (the backend sorts default-first, then by date;
+ * new projects have no default, R9: the oldest corpus is the primary one).
+ */
 export function currentSearch(searches: SearchInfo[] | null, searchId?: string): SearchInfo | undefined {
-  return searches?.find((s) => (searchId ? s.id === searchId : s.is_default));
+  if (!searches?.length) return undefined;
+  return searches.find((s) => (searchId ? s.id === searchId : s.is_default)) ?? searches[0];
+}
+
+/**
+ * Next free auto-name (YYMMDD-n, UTC date) for a list of existing run names —
+ * the client-side prefill of the launch panel (the backend computes the same
+ * name when no `name` is sent). Only names of the same day block a rank.
+ */
+export function nextAutoName(names: Array<string | null | undefined>, now: Date = new Date()): string {
+  const iso = now.toISOString();
+  const prefix = `${iso.slice(2, 4)}${iso.slice(5, 7)}${iso.slice(8, 10)}`;
+  let n = 1;
+  while (names.includes(`${prefix}-${n}`)) n += 1;
+  return `${prefix}-${n}`;
+}
+
+/** i18n status of a run: a run cancelled by the user (FAILED + error=cancelled) reads « Annulée ». */
+export function runStatusKey(job: Pick<InferenceJob, "status" | "error">): string {
+  if (job.status === "FAILED" && job.error === "cancelled") return "CANCELLED";
+  return job.status;
 }
 
 /**

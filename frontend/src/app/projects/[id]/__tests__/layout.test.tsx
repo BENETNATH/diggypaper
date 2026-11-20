@@ -108,7 +108,7 @@ function mount(projectOverride?: Partial<api.Project>) {
 
 // spec 2026-11-09-clarte-1 — R1 sélecteur unique, R4 bannières masquées sur l'overview
 describe("project layout (spec clarte-1)", () => {
-  it("R1: no <select>, no « toutes les analyses » link; pills = all analyses, standards first, kind badge off-chain", async () => {
+  it("R1: no <select>, no « toutes les analyses » link; pills = all corpora, standards first", async () => {
     mockState.pathname = "/projects/p1";
     const { container } = mount();
     await screen.findByRole("button", { name: /Alpha/ });
@@ -116,13 +116,17 @@ describe("project layout (spec clarte-1)", () => {
     expect(container.querySelector("select")).toBeNull();
     expect(screen.queryByRole("combobox")).toBeNull();
     expect(screen.queryByRole("link", { name: /allSearches/ })).toBeNull();
-    // the row holds ALL analyses: standard first, then the off-chain one with its kind badge
-    const pills = screen.getAllByRole("button").filter((b) => b.textContent?.includes("·"));
+    // the row is labelled « Corpus de questions » (spec 2026-11-20-2 R1) and holds ALL
+    // corpora: standard first, then the off-chain one
+    const group = container.querySelector('[role="group"][aria-label="corporaTitle"]');
+    expect(group).not.toBeNull();
+    const pills = group ? Array.from(group.querySelectorAll("button")) : [];
     expect(pills).toHaveLength(2);
     expect(pills[0].textContent).toContain("Alpha");
     expect(pills[1].textContent).toContain("Beta");
-    expect(screen.getByRole("button", { name: /Beta/ })).toHaveTextContent("kind_blind");
-    // lead: the dashed « + Nouvelle » pill stays
+    // no run yet: the « brouillon » suffix (spec 2026-11-20-2 R1)
+    expect(pills[1].textContent).toContain("draft");
+    // lead: the dashed « + Nouveau corpus de questions » pill stays
     expect(screen.getByRole("link", { name: /pillNew/ })).toBeInTheDocument();
   });
 

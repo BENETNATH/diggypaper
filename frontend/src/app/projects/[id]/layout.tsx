@@ -12,7 +12,7 @@ import { Modal } from "@/components/ui/Modal";
 import { JobProgress } from "@/components/JobProgress";
 import { SearchPills } from "@/components/SearchPills";
 import { orderChain } from "@/lib/chain";
-import { isProjectLead } from "@/lib/role";
+import { isProjectLead, roleFromList } from "@/lib/role";
 import { withSearch } from "@/lib/search";
 import { useAuth } from "@/lib/auth";
 import { storeSearchId, useSearchId, useSearches } from "@/lib/useSearch";
@@ -91,6 +91,9 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [project, setProject] = useState<Project | null>(null);
+  // A corpus-less project now 404s on getProject: the lead flag still needs the role,
+  // read from the project list instead (spec 2026-11-20-analyses-runs-2 R2).
+  const [projectRole, setProjectRole] = useState<Project["role_in_project"]>(null);
 
   // Current search. The layout is rendered on the server: until the client has mounted, we
   // do not read sessionStorage (otherwise the tab links differ between server and client).
@@ -106,7 +109,13 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
   // import polling (setProject) and the `diggy:project` events, so a tab switch does not
   // re-fetch it (audit 2026-11-10 P1-7).
   useEffect(() => {
-    getProject(id).then(setProject).catch(() => setProject(null));
+    getProject(id)
+      .then(setProject)
+      .catch(() => {
+        setProject(null);
+        // 404: a corpus-less project — the role comes from the project list.
+        roleFromList(id).then(setProjectRole).catch(() => {});
+      });
   }, [id]);
 
   // The Import page pushes the project's updated state (status PROCESSING → FROZEN) without changing the URL.
@@ -240,7 +249,7 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
   // Pill order: standards first (chain order), then off-chain (spec clarte-1 R1).
   const standard = (searches ?? []).filter((s) => s.kind === "standard");
   const pillOrder = orderChain(standard).concat((searches ?? []).filter((s) => s.kind !== "standard"));
-  const isLead = isProjectLead(project, user);
+  const isLead = isProjectLead(project ?? { role_in_project: projectRole }, user);
   const isAnnotate = pathname.startsWith(`${base}/annotate`);
 
   // spec clarte-2 R1: measure-group counters — gold refs + benchmark draws from the overview,
@@ -427,13 +436,14 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
         ))}
       </nav>
 
-      {/* spec clarte-1 R1: the pill row is the single analysis selector (all analyses) */}
+      {/* spec clarte-1 R1: the pill row is the single corpus selector
+          (spec 2026-11-20-analyses-runs-2 R1: « Corpus de questions ») */}
       {searches && (
         <SearchPills
           searches={pillOrder}
           activeId={searchId}
-          ariaLabel={t("chainPillsAria")}
-          label={t("searchesTitle")}
+          ariaLabel={t("corporaTitle")}
+          label={t("corporaTitle")}
           newHref={isLead ? `${base}/inference?new=1` : undefined}
           onPick={(sid) => {
             storeSearchId(id, sid);

@@ -4,10 +4,11 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
-import { ApiError, createSearch, deleteGold, getProject, goldFromReviews, listGold, GoldArticle, SchemaField } from "@/lib/api";
+import { ApiError, createSearch, deleteGold, getOverview, getProject, goldFromReviews, listGold, GoldArticle, SchemaField } from "@/lib/api";
 import { useApiError } from "@/lib/errorMsg";
 import { useAuth } from "@/lib/auth";
-import { isProjectLead } from "@/lib/role";
+import { isProjectLead, roleFromList } from "@/lib/role";
+import { CorporaEmpty } from "@/components/CorporaEmpty";
 import { currentSearch, withSearch } from "@/lib/search";
 import { notifySearchesChanged, storeSearchId, useSearchId, useSearches } from "@/lib/useSearch";
 import { RequireAuth } from "@/components/RequireAuth";
@@ -50,6 +51,8 @@ function GoldContent() {
   const searchId = useSearchId(projectId);
   const { searches } = useSearches(projectId, searchId);
   const current = currentSearch(searches, searchId);
+  // S1 (spec R2): a corpus-less project never calls search-scoped APIs.
+  const noCorpora = searches !== null && searches.length === 0;
 
   const [gold, setGold] = useState<GoldArticle[] | null>(null);
   const { user } = useAuth();
@@ -100,8 +103,29 @@ function GoldContent() {
   }
 
   useEffect(() => {
+    if (noCorpora) return;
     load();
-  }, [load]);
+  }, [load, noCorpora]);
+
+  // S1 (spec R2): no corpus at all — the role comes from the project list, the article
+  // count from the overview (the search-scoped load above would 404).
+  useEffect(() => {
+    if (!noCorpora) return;
+    let active = true;
+    getOverview(projectId)
+      .then((o) => {
+        if (active) setArticleCount(o.articles);
+      })
+      .catch(() => {});
+    roleFromList(projectId)
+      .then((r) => {
+        if (active) setLead(r === "LEAD" || user?.role === "ADMIN");
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [noCorpora, projectId, user]);
 
   async function act(key: string, fn: () => Promise<unknown>) {
     setBusy(key);
@@ -157,6 +181,26 @@ function GoldContent() {
   }
 
   const answer = (v: unknown): string => (typeof v === "boolean" ? (v ? ta("yes") : ta("no")) : String(v ?? "—"));
+
+  // S1 (spec R2): a corpus-less project — the overview's count + the role from the list.
+  if (noCorpora) {
+    if (articleCount === null) return <Skeleton rows={3} />;
+    if (articleCount === 0) {
+      return (
+        <EmptyState
+          title={tp("noCorpus")}
+          action={
+            lead ? (
+              <Link href={`/projects/${projectId}/import`}>
+                <Button size="sm">{tp("importCta")}</Button>
+              </Link>
+            ) : undefined
+          }
+        />
+      );
+    }
+    return <CorporaEmpty projectId={projectId} articleCount={articleCount} isLead={lead} />;
+  }
 
   if (error && !gold) return <ErrorBanner message={error} onRetry={() => void load()} />;
   if (!gold) return <Skeleton rows={3} />;

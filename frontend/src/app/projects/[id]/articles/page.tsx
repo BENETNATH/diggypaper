@@ -2,16 +2,19 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { usePathname, useParams, useRouter, useSearchParams } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import {
+  getOverview,
   getProject,
   prismaUrl,
   prismaPdfUrl,
   listArticles,
+  listSearchJobs,
   deleteArticle,
   bulkDeleteArticles,
   Article,
+  InferenceJob,
   PredictionFilter,
   SchemaField,
 } from "@/lib/api";
@@ -28,11 +31,14 @@ import { RequireAuth } from "@/components/RequireAuth";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Skeleton, ErrorBanner, EmptyState } from "@/components/ui/Feedback";
-import { articlesStoreKey, prefillStoreKey, selectionFromFilters, withSearch } from "@/lib/search";
-import { useSearchId } from "@/lib/useSearch";
+import { articlesStoreKey, prefillStoreKey, runStatusKey, selectionFromFilters, withSearch } from "@/lib/search";
+import { useSearchId, useSearches } from "@/lib/useSearch";
 import { useAuth } from "@/lib/auth";
-import { isProjectLead } from "@/lib/role";
+import { isProjectLead, roleFromList } from "@/lib/role";
 import { useHasMounted } from "@/lib/useHasMounted";
+import { CorporaEmpty } from "@/components/CorporaEmpty";
+
+const num = (v: unknown): number => (typeof v === "number" ? v : 0);
 
 type Filter = PredictionFilter | "ALL";
 const FILTERS: Filter[] = ["ALL", "TO_REVIEW", "AUTO_ACCEPTED", "AUTO_REJECTED", "NONE"];
@@ -52,12 +58,69 @@ function ResultsContent() {
   const t = useTranslations("articles");
   const tc = useTranslations("common");
   const tp = useTranslations("project");
+  const tj = useTranslations("jobs");
+  const ti = useTranslations("inference");
   const errText = useApiError(); // raw API error → i18n message
   const { user } = useAuth();
   const locale = useLocale();
   const projectId = useParams<{ id: string }>().id;
   const searchId = useSearchId(projectId);
+  const { searches, current } = useSearches(projectId, searchId);
+  const noCorpora = searches !== null && searches.length === 0;
   const router = useRouter();
+  const pathname = usePathname();
+  const sp = useSearchParams();
+  const [articleCount, setArticleCount] = useState<number | null>(null);
+
+  // Runs of the current corpus (spec 2026-11-20-analyses-runs-2 R5): newest first.
+  const [runs, setRuns] = useState<InferenceJob[] | null>(null);
+  const currentId = current?.id ?? null;
+  const corpusKey = currentId ?? "none";
+  const [prevCorpusKey, setPrevCorpusKey] = useState(corpusKey);
+  if (prevCorpusKey !== corpusKey) {
+    setPrevCorpusKey(corpusKey);
+    setRuns(null);
+  }
+  useEffect(() => {
+    if (!currentId) return;
+    let active = true;
+    listSearchJobs(projectId, currentId)
+      .then((r) => {
+        if (active) setRuns(r.jobs);
+      })
+      .catch(() => {
+        if (active) setRuns([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [projectId, currentId]);
+  // The URL's ?run= wins over the in-memory choice (render reset, not an effect).
+  const urlRun = sp.get("run");
+  const [pickedRun, setPickedRun] = useState<string | null>(urlRun);
+  const [prevUrlRun, setPrevUrlRun] = useState(urlRun);
+  if (prevUrlRun !== urlRun) {
+    setPrevUrlRun(urlRun);
+    setPickedRun(urlRun);
+  }
+  const runExists = (rid: string | null | undefined) => !!rid && runs?.some((r) => r.id === rid);
+  const effectiveRun = runExists(pickedRun) ? pickedRun : (runs?.[0]?.id ?? undefined);
+  const runLabel = (r: InferenceJob) =>
+    [
+      r.name ?? ti("runUnnamed"),
+      tj(`status_${runStatusKey(r)}`),
+      `${r.n_predictions ?? num(r.result?.done)}/${num(r.result?.total)}`,
+      r.created_at ? new Date(r.created_at).toLocaleDateString(locale) : null,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+
+  function pickRun(value: string) {
+    setPickedRun(value);
+    const params = new URLSearchParams(sp.toString());
+    params.set("run", value);
+    router.replace(`${pathname}?${params.toString()}`);
+  }
 
   const [articles, setArticles] = useState<Article[] | null>(null);
   const [stats, setStats] = useState<Record<string, number>>({});
@@ -107,10 +170,30 @@ function ResultsContent() {
     setFulltext(saved.fulltext);
   }
 
+  // No corpus at all (spec R2): the role comes from the project list, the article count
+  // from the overview — the search-scoped calls below would 404 on a deleted corpus.
+  useEffect(() => {
+    if (!noCorpora) return;
+    let active = true;
+    getOverview(projectId)
+      .then((o) => {
+        if (active) setArticleCount(o.articles);
+      })
+      .catch(() => {});
+    roleFromList(projectId)
+      .then((r) => {
+        if (active) setIsLead(r === "LEAD" || user?.role === "ADMIN");
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [projectId, noCorpora, user]);
+
   // Loads the fields / lead of the search, then marks the restore complete (so the
   // remembered filters can be applied to the first fetch).
   useEffect(() => {
-    if (!mounted) return;
+    if (!mounted || noCorpora) return;
     getProject(projectId, searchId)
       .then((p) => {
         setFields(p.fields ?? []);
@@ -119,7 +202,7 @@ function ResultsContent() {
       })
       .catch(() => setFields([]))
       .finally(() => setReady(true));
-  }, [projectId, searchId, user, mounted]);
+  }, [projectId, searchId, user, mounted, noCorpora]);
 
   useEffect(() => {
     if (!ready) return;
@@ -163,7 +246,7 @@ function ResultsContent() {
   }
 
   const load = useCallback(() => {
-    return listArticles(projectId, page, PER_PAGE, filter === "ALL" ? undefined : filter, sort, answers, searchId, text, fulltext)
+    return listArticles(projectId, page, PER_PAGE, filter === "ALL" ? undefined : filter, sort, answers, searchId, text, fulltext, effectiveRun ?? undefined)
       .then((res) => {
         setArticles(res.items);
         setTotal(res.total);
@@ -171,7 +254,7 @@ function ResultsContent() {
         setError(null);
       })
       .catch((e) => setError(errText(e)));
-  }, [projectId, page, filter, sort, answers, searchId, text, fulltext, errText]);
+  }, [projectId, page, filter, sort, answers, searchId, text, fulltext, effectiveRun, errText]);
 
   // --- Selection & deletion (LEAD / ADMIN only) ---
   function toggleSelect(id: string) {
@@ -209,9 +292,11 @@ function ResultsContent() {
     return () => clearTimeout(id);
   }, [toast]);
 
+  // The first fetch waits for the corpus's runs: the run parameter (the newest run by
+  // default) is only known then, so the list never flashes the unscoped predictions.
   useEffect(() => {
-    if (ready) void load();
-  }, [ready, load, projectId, searchId]);
+    if (ready && runs !== null) void load();
+  }, [ready, runs, load, projectId, searchId]);
 
   const count = (f: Filter) =>
     f === "ALL"
@@ -243,6 +328,27 @@ function ResultsContent() {
     router.push(withSearch(`/projects/${projectId}/inference?new=1`, searchId));
   }
 
+  // S1 (spec R2): a corpus-less project — no search-scoped fetch, the overview's article
+  // count and the role from the project list drive the empty state.
+  if (noCorpora) {
+    if (articleCount === null) return <Skeleton rows={5} />;
+    if (articleCount === 0) {
+      return (
+        <EmptyState
+          title={tp("noCorpus")}
+          action={
+            isLead ? (
+              <Link href={`/projects/${projectId}/import`}>
+                <Button variant="secondary">{tp("importCta")}</Button>
+              </Link>
+            ) : undefined
+          }
+        />
+      );
+    }
+    return <CorporaEmpty projectId={projectId} articleCount={articleCount} isLead={isLead} />;
+  }
+
   if (error) return <ErrorBanner message={error} onRetry={() => void load()} />;
   if (!articles) return <Skeleton rows={5} />;
 
@@ -268,6 +374,25 @@ function ResultsContent() {
           </Menu>
         </div>
       </div>
+
+      {/* The corpus's runs: the displayed results come from the selected run (newest by default). */}
+      {runs !== null && runs.length > 0 && (
+        <div className="flex flex-wrap items-center gap-3 rounded-lg bg-surface px-3 py-2">
+          <select
+            value={effectiveRun ?? ""}
+            onChange={(e) => pickRun(e.target.value)}
+            aria-label={t("runSelector")}
+            className="rounded-lg border border-border bg-surface px-2 py-1 text-sm text-foreground"
+          >
+            {runs.map((r) => (
+              <option key={r.id} value={r.id}>
+                {runLabel(r)}
+              </option>
+            ))}
+          </select>
+          <p className="text-xs text-muted">{t("runSelectorNote")}</p>
+        </div>
+      )}
 
       {!triaged && count("ALL") > 0 && isLead && (
         <p className="rounded-lg bg-primary/5 px-3 py-2 text-sm">

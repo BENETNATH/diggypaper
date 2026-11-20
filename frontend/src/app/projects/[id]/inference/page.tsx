@@ -1,180 +1,209 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { useParams, useSearchParams } from "next/navigation";
+import { usePathname, useParams, useRouter, useSearchParams } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { useAuth } from "@/lib/auth";
-import { isProjectLead } from "@/lib/role";
+import { isProjectLead, roleFromList } from "@/lib/role";
 import { ModelRef } from "@/components/ModelRef";
 import {
-  ApiError,
-  createSearch,
   cancelInference,
-  deleteSearch,
+  createSearch,
+  deleteSearchJob,
   getInference,
+  getOverview,
   getProject,
-  getPrompt,
   listGold,
   listModels,
-  triggerInference,
+  listSearchJobs,
   rerunSearch,
+  triggerInference,
+  updateProject,
   InferenceJob,
   ModelInfo,
-  PredictionFilter,
   SchemaField,
-  SearchInfo,
-  Validation,
+  SearchCreate,
   Selection,
 } from "@/lib/api";
 import { useApiError } from "@/lib/errorMsg";
-import { smoothScrollIntoView } from "@/lib/motion";
 import { MAX_GOLD_EXAMPLES } from "@/lib/benchmark";
-import { ExportMenu } from "@/components/ExportMenu";
-import { AnswerFilters, Answers } from "@/components/AnswerFilters";
-import { CtaBanner } from "@/components/CtaBanner";
 import { RequireAuth } from "@/components/RequireAuth";
 import { QuestionEditor } from "@/components/QuestionEditor";
 import { ArticleSelector } from "@/components/ArticleSelector";
+import { CorporaEmpty } from "@/components/CorporaEmpty";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { Checkbox, Field, Input, Select } from "@/components/ui/Field";
-import { ValidationView } from "@/components/ValidationView";
 import { Card, Badge, statusColor } from "@/components/ui/Card";
 import { EmptyState, ErrorBanner, Skeleton } from "@/components/ui/Feedback";
 import { JobProgress } from "@/components/JobProgress";
-import { ChatRagPanel } from "@/components/ChatRagPanel";
-import { cleanSelection, isUntouched, searchStoreKey, withSearch } from "@/lib/search";
+import { Menu, MenuItem, MenuSeparator } from "@/components/ui/Menu";
+import { cleanSelection, nextAutoName, runStatusKey, withSearch } from "@/lib/search";
 import {
   notifySearchesChanged,
   storeSearchId,
   useSearchId,
   useSearches,
-  useSelectSearch,
 } from "@/lib/useSearch";
 
 const num = (v: unknown): number => (typeof v === "number" ? v : 0);
 const cleanFields = (fields: SchemaField[]): SchemaField[] =>
   fields.map((f) => ({ ...f, options: f.type === "choice" ? (f.options ?? []).filter(Boolean) : undefined }));
-/** An analysis that has never been launched (no results, no job): it goes in « à lancer ». */
-const unlaunched = (s: SearchInfo): boolean => s.predicted === 0 && s.reviewed === 0 && !s.last_job;
+const runActive = (j: InferenceJob): boolean => j.status === "PENDING" || j.status === "RUNNING";
 
-function Stat({ label, value, tone }: { label: string; value: number; tone?: string }) {
+/** « Relancer ▾ » of one run: overwrite in place (model choice) or open the launch panel. */
+function RerunMenu({
+  job,
+  models,
+  submitting,
+  onOverwrite,
+  onNamed,
+}: {
+  job: InferenceJob;
+  models: ModelInfo[];
+  submitting: boolean;
+  onOverwrite: (model: string) => void;
+  onNamed: () => void;
+}) {
+  const t = useTranslations("inference");
+  const label = (m: ModelInfo) => `${m.name}${m.ram_usage_mb ? ` · ~${m.ram_usage_mb} MB` : ""}`;
+  const [model, setModel] = useState<string | null>(null); // null: the run's own model
   return (
-    <div className={`rounded-lg p-2 text-center ${tone ?? "bg-surface-muted"}`}>
-      <div className="text-lg font-bold text-foreground">{value.toLocaleString()}</div>
-      <div className="text-xs text-muted">{label}</div>
-    </div>
+    <Menu label={t("rerunMenu")}>
+      <MenuItem disabled={submitting} onClick={() => onOverwrite(model ?? job.model_used)}>
+        <span className="font-medium">{t("runOverwrite")}</span>
+        <span className="block text-xs text-muted">{t("runOverwriteSub")}</span>
+      </MenuItem>
+      {/* the model choice does not close the menu: the overwrite action is chosen after it */}
+      <div onClick={(e) => e.stopPropagation()} className="px-3 py-2">
+        <p className="mb-1 text-xs font-medium text-muted">{t("model")}</p>
+        <Select value={model ?? job.model_used} onClick={(e) => e.stopPropagation()} onChange={(e) => setModel(e.target.value)}>
+          {models.map((m) => (
+            <option key={m.id} value={m.name}>
+              {label(m)}
+            </option>
+          ))}
+        </Select>
+      </div>
+      <MenuSeparator />
+      <MenuItem disabled={submitting} onClick={onNamed}>
+        <span className="font-medium">{t("runNamed")}</span>
+        <span className="block text-xs text-muted">{t("runNamedSub")}</span>
+      </MenuItem>
+    </Menu>
   );
 }
 
-/** One row of the "analyses performed" list: the question, its state and a link to its results. */
-export function AnalysisRow({
-  s,
-  projectId,
+/** One run of the corpus: identity, progress/state, actions (spec 2026-11-20-analyses-runs-2 R3). */
+function RunRow({
+  j,
+  models,
+  lot,
   locale,
-  isLead = false,
+  isLead,
+  seeResultsHref,
+  submitting,
+  onOverwrite,
+  onNamed,
   onDelete,
-  toLaunch = false,
+  onStop,
+  onResume,
 }: {
-  s: SearchInfo;
-  projectId: string;
+  j: InferenceJob;
+  models: ModelInfo[];
+  lot: number;
   locale: string;
-  /** Lead or admin (same rule as the server: the row's delete endpoint). */
-  isLead?: boolean;
-  onDelete?: () => void;
-  /** Never-launched initial analysis: badge + « Lancer » instead of « Ouvrir ». */
-  toLaunch?: boolean;
+  isLead: boolean;
+  seeResultsHref: string;
+  submitting: boolean;
+  onOverwrite: (model: string) => void;
+  onNamed: () => void;
+  onDelete: () => void;
+  onStop: () => void;
+  onResume: () => void;
 }) {
-  const t = useTranslations("searches");
+  const t = useTranslations("inference");
   const tj = useTranslations("jobs");
-  const tp = useTranslations("project");
   const tc = useTranslations("common");
-  const [deleteOpen, setDeleteOpen] = useState(false);
+  const status = runStatusKey(j);
+  const x = j.n_predictions ?? num(j.result?.done);
+  const y = num(j.result?.total) || lot;
+  const date = j.created_at ? new Date(j.created_at).toLocaleDateString(locale) : null;
+  // COMPLETED only: the triage breakdown, non-zero parts joined (spec R3).
+  const parts: string[] = [];
+  if (j.status === "COMPLETED") {
+    const b = j.breakdown ?? {};
+    if (b.AUTO_ACCEPTED) parts.push(t("runBreakAccepted", { n: b.AUTO_ACCEPTED }));
+    if (b.AUTO_REJECTED) parts.push(t("runBreakRejected", { n: b.AUTO_REJECTED }));
+    if (b.NEEDS_HUMAN_REVIEW) parts.push(t("runBreakReview", { n: b.NEEDS_HUMAN_REVIEW }));
+    if (b.NONE) parts.push(t("runBreakNone", { n: b.NONE }));
+  }
+  const failed = j.status === "FAILED" && j.error !== "cancelled";
   return (
-    <>
-    <li className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-lg bg-surface shadow-sm p-3">
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="font-medium text-foreground">{s.name}</span>
-          {toLaunch && <Badge color="gray">{t("badgeToLaunch")}</Badge>}
-          {s.is_default && <Badge color="blue">{tp("badgeInitial")}</Badge>}
-          {s.kind !== "standard" && <Badge color="gray" title={t(`kindHint_${s.kind}`)}>{t(`kind_${s.kind}`)}</Badge>}
-          {s.schedule_state === "waiting" && <Badge color="gray">{t("scheduledBadge")}</Badge>}
-          {s.last_job && (
-            <Badge color={statusColor(s.last_job.status)}>
-              {tj(`status_${s.last_job.status}`)}
-            </Badge>
+    <li className="rounded-lg bg-surface-muted/50 p-3">
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-medium text-foreground">{j.name ?? t("runUnnamed")}</span>
+            <Badge color={statusColor(status)}>{tj(`status_${status}`)}</Badge>
+          </div>
+          <p className="mt-0.5 text-xs text-muted">
+            <ModelRef name={j.model_used} identifier={j.model_info?.main?.identifier} version={j.model_info?.main?.version} />
+            {" · "}
+            <span>{t("runLot", { n: lot })}</span>
+            {" · "}
+            <span>{t("runAnalysed", { x, y })}</span>
+            {date ? (
+              <>
+                {" · "}
+                <span>{date}</span>
+              </>
+            ) : null}
+          </p>
+          {parts.length > 0 && (
+            <p className="mt-0.5 text-xs text-muted">
+              {parts.map((p, i) => (
+                <Fragment key={i}>
+                  {i > 0 ? " · " : null}
+                  <span>{p}</span>
+                </Fragment>
+              ))}
+            </p>
+          )}
+          {runActive(j) && (
+            <div className="mt-2 max-w-md">
+              <JobProgress inline done={x} total={y} />
+            </div>
           )}
         </div>
-        {s.question ? (
-          <p className="mt-0.5 line-clamp-1 text-sm text-muted" title={s.question}>
-            {s.question}
-          </p>
-        ) : (
-          <p className="mt-0.5 line-clamp-1 text-sm text-muted">{t("noQuestion")}</p>
-        )}
-        {s.fields?.length ? (
-          <p
-            className="mt-0.5 truncate text-xs text-muted"
-            title={`${t("fieldsLabel")}: ${s.fields.map((f) => f.label).join(", ")}`}
-          >
-            {t("fieldsLabel")}: {s.fields.map((f) => f.label).join(" · ")}
-          </p>
-        ) : null}
-        <p className="mt-0.5 text-xs text-muted" aria-live="polite">
-          {tp("lotSize", { n: s.lot_size })}
-          {" · "}
-          {s.kind === "blind"
-            ? t("progressReviewed", { done: s.reviewed, total: s.lot_size })
-            : t("progressAnalysed", { done: s.predicted, total: s.lot_size })}
-          {s.created_at ? ` · ${new Date(s.created_at).toLocaleDateString(locale)}` : ""}
-          {s.last_job && <> · <ModelRef name={s.last_job.model} version={s.last_job.model_version} /></>}
-        </p>
-      </div>
-      <div className="flex shrink-0 items-center gap-2">
-        {toLaunch ? (
-          // selects the analysis and opens the pre-filled creation panel
-          <Link href={`/projects/${projectId}/inference?search=${s.id}&new=1`}>
-            <Button size="sm">{t("launch")}</Button>
-          </Link>
-        ) : (
-          <Link href={withSearch(`/projects/${projectId}/articles`, s.id)}>
+        <div className="flex shrink-0 items-center gap-2">
+          <Link href={seeResultsHref}>
             <Button size="sm" variant="secondary">
-              {t("open")}
+              {t("seeResults")}
             </Button>
           </Link>
-        )}
-        {isLead && onDelete && (
-          <Button size="sm" variant="ghost" onClick={() => setDeleteOpen(true)}>
-            {t("delete")}
-          </Button>
-        )}
-      </div>
-    </li>
-    {deleteOpen && (
-      <Modal title={t("delete")} onClose={() => setDeleteOpen(false)}>
-        <div className="flex flex-col gap-4">
-          <p className="text-sm text-muted">{t("deleteConfirm", { name: s.name })}</p>
-          <div className="flex justify-end gap-2">
-            <Button variant="secondary" size="sm" onClick={() => setDeleteOpen(false)}>
-              {tc("cancel")}
-            </Button>
-            <Button
-              variant="danger"
-              size="sm"
-              onClick={() => {
-                setDeleteOpen(false);
-                onDelete?.();
-              }}
-            >
+          {isLead && (
+            <RerunMenu job={j} models={models} submitting={submitting} onOverwrite={onOverwrite} onNamed={onNamed} />
+          )}
+          {isLead && (
+            <Button size="sm" variant="ghost" onClick={onDelete}>
               {tc("delete")}
             </Button>
-          </div>
+          )}
+          {isLead && runActive(j) && (
+            <Button size="sm" variant="danger" loading={submitting} onClick={onStop} title={t("stopHint")}>
+              {t("stop")}
+            </Button>
+          )}
+          {isLead && failed && (
+            <Button size="sm" variant="secondary" loading={submitting} onClick={onResume}>
+              {t("resume")}
+            </Button>
+          )}
         </div>
-      </Modal>
-    )}
-    </>
+      </div>
+    </li>
   );
 }
 
@@ -182,104 +211,97 @@ function AnalyseContent() {
   const t = useTranslations("inference");
   const tq = useTranslations("question");
   const tLead = useTranslations("searches");
-  const tj = useTranslations("jobs");
-  const ta = useTranslations("articles");
   const tp = useTranslations("project");
   const tc = useTranslations("common");
   const errText = useApiError();
   const locale = useLocale();
   const { user } = useAuth();
-  const [isLead, setIsLead] = useState(false);
-  // spec clarte-2 R3: corpus size — the Import CTA in the empty state (0 = nothing to analyse)
-  const [articleCount, setArticleCount] = useState<number | null>(null);
   const projectId = useParams<{ id: string }>().id;
+  const pathname = usePathname();
+  const router = useRouter();
+  const sp = useSearchParams();
   const searchId = useSearchId(projectId);
   const { searches, current } = useSearches(projectId, searchId);
-  const selectSearch = useSelectSearch(projectId);
-  // Benchmark prefill: ?model=<name>&prompt=<id>.
-  const sp = useSearchParams();
-  const wantedModel = sp.get("model");
-  const wantedPrompt = sp.get("prompt");
+  // The creation panel opens when asked (?new=1, from the pill CTA / overview / S1).
   const openNew = sp.get("new") === "1";
 
-  // "New search" panel: collapsed by default, expanded when there is nothing yet, or when
-  // requested (?new=1) / prefilled from the Articles page.
-  const [panelOpen, setPanelOpen] = useState(false);
-  const [name, setName] = useState("");
-  const [selection, setSelection] = useState<Selection>({});
-  const [count, setCount] = useState<number | null>(null);
-  const [creating, setCreating] = useState(false);
-  const [chain, setChain] = useState(false);
-  // Export filters on the CTA banner (spec 2026-11-12-filtres-creation-export-filtre §3):
-  // the RIS/BibTeX export follows the analysis lot + these filters (not persisted).
-  const [exportStatus, setExportStatus] = useState<"" | PredictionFilter>("");
-  const [exportAnswers, setExportAnswers] = useState<Answers>({});
-  // CTA « Chatter sur les résultats »: request the results mode of the chat panel.
-  const [chatRequest, setChatRequest] = useState<{ searchId: string; nonce: number } | null>(null);
-  // spec clarte-3 R3: the chat is a disclosure, collapsed by default (one page, one intention).
-  const [chatOpen, setChatOpen] = useState(false);
-  const chatRef = useRef<HTMLDetailsElement>(null);
-
-  const [job, setJob] = useState<InferenceJob | null>(null);
-  const [busy, setBusy] = useState<InferenceJob | null>(null); // the project's in-progress analysis (all searches)
+  const [isLead, setIsLead] = useState(false);
+  const [articleCount, setArticleCount] = useState<number | null>(null);
+  const [jobs, setJobs] = useState<InferenceJob[] | null>(null);
+  const [q, setQ] = useState<{ question: string; fields: SchemaField[]; sections: string[] } | null>(null);
+  const [busy, setBusy] = useState<InferenceJob | null>(null); // the project's in-progress job (one per project)
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [q, setQ] = useState<{ question: string; fields: SchemaField[]; sections: string[] } | null>(null);
-  const [stage1, setStage1] = useState("");
-  const [stage2, setStage2] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  // spec clarte-3 R8: the stop action confirms through the design-system Modal (was window.confirm).
-  const [stopOpen, setStopOpen] = useState(false);
-  // Re-run with another model (spec 2026-11-07 §4): the chosen model + the panel's open state.
-  const [rerunModel, setRerunModel] = useState("");
-  const [promptId, setPromptId] = useState<string | null>(wantedPrompt);
+
+  // Launch panel (« Nouvelle analyse »): output name / overwrite, gold options, chaining.
+  const [launchOpen, setLaunchOpen] = useState(false);
+  const [launchModel, setLaunchModel] = useState("");
   const [instructions, setInstructions] = useState("");
-  const [promptTitle, setPromptTitle] = useState<string | null>(null);
   const [goldCount, setGoldCount] = useState<number | null>(null);
   const [examplesOn, setExamplesOn] = useState(false);
   const [exampleN, setExampleN] = useState(5);
   const [validate, setValidate] = useState(false);
-  const progressRef = useRef<HTMLDivElement>(null);
+  const [chain, setChain] = useState(false);
+  const [outMode, setOutMode] = useState<"new" | "overwrite">("new");
+  const [runName, setRunName] = useState<string | null>(null); // null: the derived auto name
+  const [overwriteId, setOverwriteId] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
-  const active = job?.status === "PENDING" || job?.status === "RUNNING";
-  const label = (m: ModelInfo) =>
-    `${m.name}${m.ram_usage_mb ? ` · ~${m.ram_usage_mb} MB` : ""}`;
+  // Corpus creation / edition panel (spec R3/R4).
+  const [createOpen, setCreateOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [createQ, setCreateQ] = useState<{ question: string; fields: SchemaField[]; sections: string[] } | null>(null);
+  const [createName, setCreateName] = useState<string | null>(null); // null: the derived auto name
+  const [createSelection, setCreateSelection] = useState<Selection>({});
+  const [count, setCount] = useState<number | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [saving, setSaving] = useState(false);
 
-  const load = useCallback(() => {
-    return Promise.all([getInference(projectId, searchId), getInference(projectId, undefined, true)])
-      .then(([j, b]) => {
-        setJob(j);
-        setBusy(b);
-        setError(null);
-      })
-      .catch((e) => {
-        // 404: the selected analysis was deleted (no job anymore) — the selection falls
-        // back to the project's default search (see useSearches); it is not an error.
-        if (e instanceof ApiError && e.status === 404) {
-          setJob(null);
-          setBusy(null);
-        } else setError(errText(e));
-      });
-  }, [projectId, searchId, errText]);
+  const [stopOpen, setStopOpen] = useState(false);
+  const [deleteJob, setDeleteJob] = useState<InferenceJob | null>(null);
 
-  // Changing the search resets the analysis state (kept empty while it reloads).
-  const searchKey = `${projectId}:${searchId}`;
-  const [prevSearchKey, setPrevSearchKey] = useState(searchKey);
-  if (prevSearchKey !== searchKey) {
-    setPrevSearchKey(searchKey);
-    setJob(null);
+  // Changing the corpus resets its derived state (kept empty while it reloads).
+  const corpusKey = current?.id ?? "none";
+  const [prevCorpusKey, setPrevCorpusKey] = useState(corpusKey);
+  if (prevCorpusKey !== corpusKey) {
+    setPrevCorpusKey(corpusKey);
+    setJobs(null);
     setQ(null);
-    // the export filters refer to the previous analysis's fields/answers
-    setExportStatus("");
-    setExportAnswers({});
+    setBusy(null);
+    setGoldCount(null);
+    setLaunchOpen(false);
+    setInstructions("");
+    setExamplesOn(false);
+    setValidate(false);
+    setChain(false);
+    setOutMode("new");
+    setRunName(null);
+    setOverwriteId("");
+    setCreateQ(null);
+    setCreateName(null);
+    setCreateSelection({});
+    setCount(null);
+    setEditOpen(false);
   }
+  // ?new=1 opens the creation panel (the layout CTA, the overview CTAs, the S1 CTA).
+  if (openNew && !createOpen) setCreateOpen(true);
 
-  // Changing the search reloads its question, its items and its analysis state.
+  // The corpus of the current search: runs, question, role, gold references.
+  const corpusId = current?.id;
   useEffect(() => {
-    load();
-    getProject(projectId, searchId)
+    if (!corpusId) return;
+    let active = true;
+    listSearchJobs(projectId, corpusId)
+      .then((r) => {
+        if (active) setJobs(r.jobs);
+      })
+      .catch(() => {
+        if (active) setJobs([]); // 404: the corpus was deleted (the selection falls back)
+      });
+    getProject(projectId, corpusId)
       .then((p) => {
-        const set = p.question_set !== false; // otherwise: no question, only a suggestion
+        if (!active) return;
+        const set = p.question_set !== false;
         setQ({
           question: set ? (p.question ?? "") : "",
           fields: set ? (p.fields ?? []) : [],
@@ -289,100 +311,147 @@ function AnalyseContent() {
         setArticleCount(p.article_count ?? null);
       })
       .catch(() => {});
-  }, [load, projectId, searchId, user]);
+    listGold(projectId, corpusId)
+      .then((g) => {
+        if (active) setGoldCount(g.length);
+      })
+      .catch(() => {
+        if (active) setGoldCount(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [projectId, corpusId, user]);
+
+  // No corpus at all (spec R2): the role comes from the project list and the article
+  // count from the overview — never a search-scoped call (the backend 404s).
+  useEffect(() => {
+    if (searches === null || searches.length > 0) return;
+    let active = true;
+    getOverview(projectId)
+      .then((o) => {
+        if (active) setArticleCount(o.articles);
+      })
+      .catch(() => {});
+    roleFromList(projectId)
+      .then((r) => {
+        if (active) setIsLead(r === "LEAD" || user?.role === "ADMIN");
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [projectId, searches, user]);
 
   useEffect(() => {
     listModels(projectId).then(setModels).catch(() => {});
   }, [projectId]);
 
-  // The panel opens by default only when there is no search yet (fresh project) or when asked.
-  const none = !!searches && searches.every(isUntouched);
-  if ((none || openNew) && !panelOpen) setPanelOpen(true);
-
-  // One-shot prefill pushed by the Articles page (client only: sessionStorage).
-  const [prefillApplied, setPrefillApplied] = useState(false);
-  if (!prefillApplied) {
-    setPrefillApplied(true);
-    try {
-      const raw = sessionStorage.getItem(`diggy:newsearch:${projectId}`);
-      if (raw) {
-        sessionStorage.removeItem(`diggy:newsearch:${projectId}`);
-        setSelection(JSON.parse(raw) as Selection);
-        setPanelOpen(true);
-      }
-    } catch {
-      /* no prefill */
-    }
-  }
-
-  // Prompt from a benchmark: we show its title so the choice is visible.
-  const [prevPromptId, setPrevPromptId] = useState(promptId);
-  if (prevPromptId !== promptId) {
-    setPrevPromptId(promptId);
-    setPromptTitle(null);
-  }
+  // The project's in-progress job (the one-per-project guard): read on mount of a corpus,
+  // re-read while one is active.
+  const loadBusy = useCallback(
+    () =>
+      getInference(projectId, undefined, true)
+        .then(setBusy)
+        .catch(() => {}),
+    [projectId]
+  );
   useEffect(() => {
-    if (!promptId) return;
-    getPrompt(projectId, promptId)
-      .then((p) => setPromptTitle(p.title ?? p.version_number))
-      .catch(() => setPromptId(null));
-  }, [projectId, promptId]);
-
-  // Gold references of the search: without them, no examples and no validation.
-  const [prevGoldKey, setPrevGoldKey] = useState(searchKey);
-  if (prevGoldKey !== searchKey) {
-    setPrevGoldKey(searchKey);
-    setGoldCount(null);
-  }
+    if (!corpusId) return;
+    loadBusy();
+  }, [corpusId, loadBusy]);
+  const busyActive = !!busy && runActive(busy);
   useEffect(() => {
-    listGold(projectId, searchId)
-      .then((g) => setGoldCount(g.length))
-      .catch(() => setGoldCount(null));
-  }, [projectId, searchId]);
+    if (!corpusId || !busyActive) return;
+    const id = setInterval(loadBusy, 3000);
+    return () => clearInterval(id);
+  }, [corpusId, busyActive, loadBusy]);
+
+  // Default launch model: the lightest known (same rule as before).
+  if (models.length > 0 && !launchModel) {
+    const known = models.filter((m) => m.ram_usage_mb).sort((a, b) => a.ram_usage_mb! - b.ram_usage_mb!);
+    setLaunchModel((known[0] ?? models[0]).name);
+  }
+  // Overwrite mode: the first finished run is preselected (active runs are disabled).
+  if (outMode === "overwrite" && !overwriteId && jobs?.length) {
+    const first = jobs.find((j) => !runActive(j));
+    if (first) setOverwriteId(first.id);
+  }
   const noGold = goldCount === 0;
   if (noGold && (examplesOn || validate)) {
     setExamplesOn(false);
     setValidate(false);
   }
 
-  useEffect(() => {
-    if (!active && !busy) return;
-    const id = setInterval(() => load(), 3000);
-    return () => clearInterval(id);
-  }, [active, busy, load]);
-
-  // Default selection: no stage 1; stage 2 = lightest model whose RAM is known.
-  if (models.length > 0 && !stage2) {
-    const wanted = models.find((m) => m.name === wantedModel);
-    if (wanted) {
-      setStage2(wanted.name);
-    } else {
-      const known = models.filter((m) => m.ram_usage_mb).sort((a, b) => a.ram_usage_mb! - b.ram_usage_mb!);
-      setStage2((known[0] ?? models[0]).name);
-    }
-  }
-
-  // A chained analysis is only offered while its base search is still being analysed
-  // (busy: the project's in-progress analysis job — nothing running, no chaining).
-  const chainable = !!busy && !!current && (current.predicted ?? 0) < (current.lot_size ?? 0);
-  const queued = (searches ?? []).filter((s) => s.schedule_state === "waiting");
-  const workersBusy = !!busy && busy.search_id && busy.search_id !== current?.id;
-
   const goldOptions = () => ({
     ...(examplesOn ? { gold_examples: exampleN } : {}),
     ...(validate ? { validate_with_gold: true } : {}),
   });
 
-  function handleStop() {
-    setStopOpen(true);
+  const reloadJobs = useCallback(() => {
+    if (!corpusId) return;
+    listSearchJobs(projectId, corpusId).then((r) => setJobs(r.jobs)).catch(() => {});
+  }, [projectId, corpusId]);
+
+  /** Overwrite a run in place (Relancer ▾): same lot, results replaced (spec R3). */
+  async function handleOverwrite(job: InferenceJob, model: string) {
+    if (!corpusId) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      await rerunSearch(projectId, corpusId, model, { overwrite_job_id: job.id });
+      notifySearchesChanged();
+      reloadJobs();
+      loadBusy();
+    } catch (err) {
+      setError(errText(err));
+    } finally {
+      setSubmitting(false);
+    }
   }
+
+  /** Delete a finished run and its results (spec R3). */
+  async function handleDeleteJob() {
+    if (!deleteJob || !corpusId) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      await deleteSearchJob(projectId, corpusId, deleteJob.id);
+      setDeleteJob(null);
+      notifySearchesChanged();
+      reloadJobs();
+    } catch (err) {
+      setError(errText(err));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  /** Resume the failed predictions of a run (same configuration). */
+  async function handleResume(job: InferenceJob) {
+    if (!corpusId) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      await triggerInference(projectId, { model: job.model_used, search_id: corpusId, resume: true });
+      notifySearchesChanged();
+      reloadJobs();
+      loadBusy();
+    } catch (err) {
+      setError(errText(err));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   async function confirmStop() {
     setStopOpen(false);
     setSubmitting(true);
     setError(null);
     try {
       await cancelInference(projectId);
-      await load();
+      loadBusy();
+      reloadJobs();
     } catch (err) {
       setError(errText(err));
     } finally {
@@ -390,127 +459,36 @@ function AnalyseContent() {
     }
   }
 
-  /** Deletes a search (lead/admin); the list refreshes, the error stays on the banner. */
-  async function handleDelete(s: SearchInfo) {
-    setError(null);
-    try {
-      await deleteSearch(projectId, s.id);
-      if (searchId === s.id) {
-        // the selection pointed at the deleted row: back to the project's default search
-        sessionStorage.removeItem(searchStoreKey(projectId));
-      }
-      notifySearchesChanged();
-    } catch (err) {
-      setError(errText(err));
-    }
-  }
-
-  /** Re-runs the current search with its stored question (no new search created). */
-  async function handleRerun() {
-    if (!current) return;
-    setSubmitting(true);
-    setError(null);
-    try {
-      await triggerInference(projectId, {
-        model: stage2 || stage1 || (job?.model_used ?? ""),
-        ...(stage1 && stage2 && stage1 !== stage2 ? { prefilter_model: stage1 } : {}),
-        ...(!promptId && instructions.trim() ? { instructions: instructions.trim() } : {}),
-        ...goldOptions(),
-        search_id: current.id,
-      });
-      await load();
-    } catch (err) {
-      setError(errText(err));
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  /** Re-runs the current search with ANOTHER model (a new job; the old predictions stay). */
-  async function handleRerunModel() {
-    if (!current || !rerunModel) return;
-    setSubmitting(true);
-    setError(null);
-    try {
-      await rerunSearch(projectId, current.id, rerunModel);
-      setRerunModel("");
-      await load();
-    } catch (err) {
-      setError(errText(err));
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  /** Creates a new search (from the corpus or from a previous search) and runs it — or chains it.
-   * ``launch=false`` (« Enregistrer »): saves the analysis without launching it, so the
-   * question and fields may still be empty (they get completed later, before the launch). */
-  async function handleCreate(e: React.SyntheticEvent, launch: boolean) {
+  /** Create a corpus of questions (spec R4): question + fields + lot, no launch. */
+  async function handleCreateCorpus(e: React.SyntheticEvent) {
     e.preventDefault();
-    if (!q || count === 0) return;
-    if (
-      launch &&
-      ((!stage2 && !stage1) || q.fields.length === 0 || q.sections.length === 0)
-    )
-      return;
+    if (count === 0) return;
+    const ed = createQ ?? q ?? { question: "", fields: [], sections: ["methods"] };
+    const shownName = createName ?? nextAutoName((searches ?? []).map((s) => s.name));
     setCreating(true);
     setError(null);
     try {
-      const sel = cleanSelection(selection);
-      const schedule = {
-        model: stage2 || stage1,
-        ...(stage2 && stage1 && stage2 !== stage1 ? { prefilter_model: stage1 } : {}),
-        ...(instructions.trim() ? { instructions: instructions.trim() } : {}),
-        selection: sel,
-      };
-      if (launch && chain && current) {
-        // Chained: the analysis starts once the base search has finished (one at a time per project).
-        const s = await createSearch(projectId, {
-          name: name.trim() || undefined,
-          kind: "standard",
-          schedule,
-          question: q.question,
-          // empty: inherit the origin's fields (the backend rejects an empty list)
-          fields: q.fields.length ? cleanFields(q.fields) : undefined,
-          text_sections: q.sections,
-          selection: { from_search_id: current.id, ...sel },
-        });
-        storeSearchId(projectId, s.id);
-        notifySearchesChanged();
-        setChain(false);
-        setName("");
-        setSelection({});
-        return;
-      }
-      const created = await createSearch(projectId, {
-        name: name.trim() || undefined,
+      const payload: SearchCreate = {
         kind: "standard",
-        question: q.question,
-        // empty: inherit the origin's fields (the backend rejects an empty list)
-        fields: q.fields.length ? cleanFields(q.fields) : undefined,
-        text_sections: q.sections,
-        selection: sel,
-      });
+        selection: cleanSelection(createSelection),
+        ...(shownName.trim() ? { name: shownName.trim() } : {}),
+        ...(ed.question.trim() ? { question: ed.question.trim() } : {}),
+        ...(ed.fields.length ? { fields: cleanFields(ed.fields) } : {}),
+        text_sections: ed.sections,
+      };
+      const created = await createSearch(projectId, payload);
       storeSearchId(projectId, created.id);
+      // the new corpus becomes the current one; the ?new=1 flag is consumed (not kept in the URL).
+      const params = new URLSearchParams(sp.toString());
+      params.set("search", created.id);
+      params.delete("new");
+      const qs = params.toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname);
       notifySearchesChanged();
-      selectSearch(created.id);
-      if (launch) setPanelOpen(false);
-      setName("");
-      setSelection({});
-      if (!launch) return; // saved only: the panel stays open to complete the question
-      await triggerInference(projectId, {
-        model: stage2 || stage1,
-        ...(stage2 && stage1 && stage2 !== stage1 ? { prefilter_model: stage1 } : {}),
-        ...(promptId ? { prompt_template_id: promptId } : {}),
-        ...(!promptId && instructions.trim() ? { instructions: instructions.trim() } : {}),
-        ...goldOptions(),
-        search_id: created.id,
-      });
-      await load();
-      setTimeout(
-        () => smoothScrollIntoView(progressRef.current),
-        100
-      );
+      setCreateOpen(false);
+      setCreateQ(null);
+      setCreateName(null);
+      setCreateSelection({});
     } catch (err) {
       setError(errText(err));
     } finally {
@@ -518,65 +496,147 @@ function AnalyseContent() {
     }
   }
 
-  const r = job?.result ?? {};
-  const jobModels =
-    job && (
-      <>
-        <ModelRef name={job.model_used} identifier={job.model_info?.main?.identifier} version={job.model_info?.main?.version} />
-        {job.prefilter_model && (
-          <span className="block">
-            {t("prefilterShort")}: <ModelRef name={job.prefilter_model} identifier={job.model_info?.prefilter?.identifier} version={job.model_info?.prefilter?.version} />
-          </span>
-        )}
-      </>
-    );
-  const total = num(r.total);
-  const needs = [
-    !stage2 && !stage1 ? t("needModel") : null,
-    // R1: the orientation is optional — only the answer items are required
-    q && q.fields.length === 0 ? t("needField") : null,
-    q && q.sections.length === 0 ? t("needSection") : null,
-    !chain && count === 0 ? t("needSelection") : null,
-  ].filter((x): x is string => x !== null);
+  /** Edit a corpus (spec R3): question + fields + sections → PATCH ?search=<sid>. */
+  async function handleSaveCorpus(e: React.SyntheticEvent) {
+    e.preventDefault();
+    if (!corpusId) return;
+    const ed = createQ ?? q;
+    if (!ed) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await updateProject(
+        projectId,
+        {
+          question: ed.question.trim() || undefined,
+          fields: ed.fields.length ? cleanFields(ed.fields) : undefined,
+          text_sections: ed.sections,
+        },
+        corpusId
+      );
+      setEditOpen(false);
+      setCreateQ(null);
+      notifySearchesChanged();
+    } catch (err) {
+      // 409 question_locked (legacy is_default) → the banner keeps its message.
+      setError(errText(err));
+    } finally {
+      setSaving(false);
+    }
+  }
 
-  const gauges = (
-    <div className="flex flex-col gap-1">
-      {workersBusy && busy && (
-        <p className="text-xs text-warning">
-          {t("workersBusy", { name: searches?.find((s) => s.id === busy.search_id)?.name ?? "…" })}
-        </p>
-      )}
-      {queued.map((s) => (
-        <p key={s.id} className="text-xs text-muted">
-          {t("queuedNext", { name: s.name })}
-        </p>
-      ))}
-    </div>
-  );
+  /** Launch an analysis of the current corpus (named output, overwrite, or chain). */
+  async function handleLaunch(e: React.SyntheticEvent) {
+    e.preventDefault();
+    if (!corpusId || !launchModel) return;
+    const shownName = runName ?? nextAutoName((jobs ?? []).map((j) => j.name));
+    setSubmitting(true);
+    setError(null);
+    try {
+      if (chain) {
+        // Chained: a new corpus scheduled on this lot, started when the current run finishes.
+        await createSearch(projectId, {
+          kind: "standard",
+          schedule: {
+            model: launchModel,
+            ...(instructions.trim() ? { instructions: instructions.trim() } : {}),
+          },
+          selection: { from_search_id: corpusId },
+        });
+        setChain(false);
+        notifySearchesChanged();
+        return;
+      }
+      const payload: Parameters<typeof triggerInference>[1] = {
+        model: launchModel,
+        search_id: corpusId,
+        ...(instructions.trim() ? { instructions: instructions.trim() } : {}),
+        ...goldOptions(),
+      };
+      if (outMode === "overwrite" && overwriteId) payload.overwrite_job_id = overwriteId;
+      else if (shownName.trim()) payload.name = shownName.trim();
+      await triggerInference(projectId, payload);
+      setOutMode("new");
+      setOverwriteId("");
+      setRunName(null);
+      setLaunchOpen(false);
+      notifySearchesChanged();
+      reloadJobs();
+      loadBusy();
+    } catch (err) {
+      // 409: another job is already running on the project (one active job per project).
+      setError(errText(err));
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
-  // spec clarte-2 R3: no corpus → the analysis is impossible; the empty state (with the
-  // Import CTA for a lead) replaces the panel/lists, which would be useless without articles.
-  if (articleCount === 0) {
+  const workersBusy = !!busy && busy.search_id && busy.search_id !== corpusId;
+  const chainable = !!busy && !!current && runActive(busy) && (current.predicted ?? 0) < (current.lot_size ?? 0);
+
+  // The creation panel (spec R4): reachable in every state — including S1, where the
+  // project's first corpus is born.
+  const shownCreateName = createName ?? nextAutoName((searches ?? []).map((s) => s.name));
+  const editQ = createQ ?? q;
+  const createPanel = isLead && createOpen ? (
+    <Card title={t("newCorpusTitle")}>
+      <form onSubmit={(e) => void handleCreateCorpus(e)} className="flex flex-col gap-4">
+        <Field label={tLead("nameLabel")} hint={tLead("namePlaceholder")}>
+          <Input value={shownCreateName} onChange={(e) => setCreateName(e.target.value)} />
+        </Field>
+        <QuestionEditor
+          question={editQ?.question ?? ""}
+          fields={editQ?.fields ?? []}
+          sections={editQ?.sections ?? ["methods"]}
+          onChange={setCreateQ}
+        />
+        <ArticleSelector projectId={projectId} searches={searches ?? []} value={createSelection} onChange={setCreateSelection} onCount={setCount} />
+        <div className="flex flex-wrap items-center gap-3">
+          <Button type="submit" loading={creating} disabled={count === 0}>
+            {t("createCorpus")}
+          </Button>
+          <Button type="button" variant="secondary" onClick={() => setCreateOpen(false)}>
+            {tc("cancel")}
+          </Button>
+        </div>
+      </form>
+    </Card>
+  ) : null;
+
+  // S1 (spec R2): a corpus-less project never calls search-scoped APIs. The role (project
+  // list) and the article count (overview) land in the same commit: no CTA flash for members.
+  if (searches !== null && searches.length === 0) {
+    if (articleCount === null) return <Skeleton rows={4} />;
     return (
       <div className="flex flex-col gap-4">
         <div>
           <h1 className="text-xl font-bold text-foreground">{t("title")}</h1>
           <p className="mt-1 text-sm text-muted">{t("intro")}</p>
         </div>
-        <EmptyState
-          title={tLead("empty")}
-          hint={tLead("emptyHint")}
-          action={
-            isLead ? (
-              <Link href={`/projects/${projectId}/import`}>
-                <Button variant="secondary">{tp("importCta")}</Button>
-              </Link>
-            ) : undefined
-          }
-        />
+        {articleCount === 0 ? (
+          <EmptyState
+            title={tp("noCorpus")}
+            action={
+              isLead ? (
+                <Link href={`/projects/${projectId}/import`}>
+                  <Button variant="secondary">{tp("importCta")}</Button>
+                </Link>
+              ) : undefined
+            }
+          />
+        ) : (
+          <CorporaEmpty projectId={projectId} articleCount={articleCount} isLead={isLead} onNew={isLead ? () => setCreateOpen(true) : undefined} />
+        )}
+        {createPanel}
       </div>
     );
   }
+
+  if (!current || jobs === null) return <Skeleton rows={4} />;
+
+  const shownRunName = runName ?? nextAutoName(jobs.map((j) => j.name));
+  const runLabel = (j: InferenceJob) =>
+    `${j.name ?? t("runUnnamed")} · ${j.model_used} · ${j.n_predictions ?? num(j.result?.done)}/${num(j.result?.total) || current.lot_size}`;
 
   return (
     <div className="flex flex-col gap-4">
@@ -587,413 +647,218 @@ function AnalyseContent() {
 
       {error && <ErrorBanner message={error} />}
 
-      {isLead ? (
+      {/* The selected corpus: identity + question + edit (spec R3). */}
+      <Card
+        title={
+          <span className="flex flex-wrap items-center justify-between gap-2">
+            <span className="flex flex-wrap items-center gap-2">
+              {t("corpusCard", { name: current.name })}
+              {current.last_job == null && <Badge color="yellow">{t("badgeDraft")}</Badge>}
+            </span>
+            {isLead && (
+              <Button variant="ghost" size="sm" onClick={() => setEditOpen(true)}>
+                {t("editQuestion")}
+              </Button>
+            )}
+          </span>
+        }
+      >
+        <div className="flex flex-col gap-1">
+          {current.question && (
+            <p className="text-sm text-foreground">
+              <span className="mr-1 text-xs font-medium text-muted">{tq("questionLabel")} : </span>
+              <span>{current.question}</span>
+            </p>
+          )}
+          {(current.fields?.length ?? 0) > 0 && (
+            <p className="text-sm text-foreground">
+              <span className="mr-1 text-xs font-medium text-muted">{tLead("fieldsLabel")} : </span>
+              <span>{current.fields!.map((f) => f.label || f.key).join(" · ")}</span>
+            </p>
+          )}
+        </div>
+      </Card>
+
+      {/* The corpus's runs, newest first (spec R3). */}
+      <Card title={tLead("title")}>
+        {jobs.length === 0 ? (
+          <EmptyState
+            title={t("runsEmpty")}
+            hint={t("runsEmptyHint", { n: current.lot_size })}
+            action={
+              isLead ? (
+                <Button variant="secondary" size="sm" onClick={() => setLaunchOpen(true)}>
+                  {t("runsEmptyCta")}
+                </Button>
+              ) : undefined
+            }
+          />
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {jobs.map((j) => (
+              <RunRow
+                key={j.id}
+                j={j}
+                models={models}
+                lot={current.lot_size}
+                locale={locale}
+                isLead={isLead}
+                seeResultsHref={`${withSearch(`/projects/${projectId}/articles`, current.id)}&run=${j.id}`}
+                submitting={submitting}
+                onOverwrite={(model) => void handleOverwrite(j, model)}
+                onNamed={() => {
+                  setLaunchModel(j.model_used);
+                  setLaunchOpen(true);
+                }}
+                onDelete={() => setDeleteJob(j)}
+                onStop={() => setStopOpen(true)}
+                onResume={() => void handleResume(j)}
+              />
+            ))}
+          </ul>
+        )}
+      </Card>
+
+      {/* Launch an analysis of the corpus (spec R3): named output / overwrite / chain.
+          Shown once the corpus has runs, or the project is busy (chain box + the
+          « another analysis runs » hint need it), or the user opened it. */}
+      {isLead && (jobs.length > 0 || launchOpen || busyActive) && (
         <Card
           title={
             <span className="flex items-center gap-2">
               {t("panelTitle")}
-              {panelOpen && (
-                <Button type="button" variant="ghost" size="sm" onClick={() => setPanelOpen(false)}>
+              {launchOpen && (
+                <Button type="button" variant="ghost" size="sm" onClick={() => setLaunchOpen(false)}>
                   −
                 </Button>
               )}
             </span>
           }
         >
-          {panelOpen ? (
-            <form onSubmit={(e) => void handleCreate(e, true)} className="flex flex-col gap-4">
-              <div className="flex flex-col gap-2">
-                <Field label={t("scopeNewName")}>
-                  <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={t("scopeDefaultName")} />
-                </Field>
-                <ArticleSelector projectId={projectId} searches={searches ?? []} value={selection} onChange={setSelection} onCount={setCount} />
-              </div>
-              <QuestionEditor question={q?.question ?? ""} fields={q?.fields ?? []} sections={q?.sections ?? ["methods"]} onChange={setQ} />
-              {promptId && (
-                <div className="flex flex-wrap items-center gap-2 rounded-lg bg-primary/5 p-3 text-sm text-foreground">
-                  <span>{t("promptChosen", { title: promptTitle ?? "…" })}</span>
-                  <Button type="button" variant="ghost" size="sm" onClick={() => setPromptId(null)}>
-                    {t("promptGenerated")}
-                  </Button>
-                </div>
-              )}
-              {isLead && models.length > 0 && (
-                <div className="flex flex-col gap-4 rounded-lg bg-surface-muted p-3">
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <div className="flex flex-col gap-2">
-                      <p className="text-sm font-semibold text-foreground">{t("stage1")}</p>
-                      <Select value={stage1} onChange={(e) => setStage1(e.target.value)} aria-label={t("stage1")}>
-                        <option value="">{t("noPrefilter")}</option>
-                        {models.map((m) => (
-                          <option key={m.id} value={m.name}>
-                            {label(m)}
-                          </option>
-                        ))}
-                      </Select>
-                      <span className="text-xs text-muted">{t("stage1Hint")}</span>
-                    </div>
-                    <div className="flex flex-col gap-2">
-                      <p className="text-sm font-semibold text-foreground">{t("stage2")}</p>
-                      <Select value={stage2} onChange={(e) => setStage2(e.target.value)} aria-label={t("stage2")}>
-                        {stage1 && <option value="">{t("noStage2")}</option>}
-                        {models.map((m) => (
-                          <option key={m.id} value={m.name}>
-                            {label(m)}
-                          </option>
-                        ))}
-                      </Select>
-                    </div>
-                  </div>
-                  <Field label={t("instructionsTitle")} hint={t("instructionsHint")}>
-                    <Input value={instructions} onChange={(e) => setInstructions(e.target.value)} maxLength={2000} placeholder={t("instructionsPlaceholder")} />
-                  </Field>
-                  <div className="flex flex-col gap-2">
-                    <p className="text-sm font-semibold text-foreground">{t("goldTitle")}</p>
-                    <p className="text-xs text-muted">{noGold ? t("goldNone") : t("goldHint")}</p>
-                    <div className="flex flex-wrap items-center gap-3">
-                      <Checkbox label={t("useExamples")} checked={examplesOn} disabled={noGold} onChange={(e) => setExamplesOn(e.target.checked)} />
-                      {examplesOn && (
-                        <label className="flex items-center gap-2 text-sm text-foreground">
-                          {t("exampleLabel")}
-                          <input
-                            type="number"
-                            min={1}
-                            max={MAX_GOLD_EXAMPLES}
-                            value={exampleN}
-                            onChange={(e) => setExampleN(Math.min(MAX_GOLD_EXAMPLES, Math.max(1, parseInt(e.target.value, 10) || 1)))}
-                            className="w-20 rounded border border-border bg-surface p-1 text-sm text-foreground"
-                          />
-                        </label>
-                      )}
-                    </div>
-                    <Checkbox label={t("validateGold")} checked={validate} disabled={noGold} onChange={(e) => setValidate(e.target.checked)} />
-                    {goldCount !== null && !noGold && (
-                      <p className="text-xs text-muted">{t("goldCount", { n: goldCount })}</p>
-                    )}
-                  </div>
-                  {chainable && (
-                    /* shortcut: 3e niveau visuel aplatit (R2) — espacement seul, pas de fond ni bordure */
-                    <div className="rounded-lg p-3">
-                      <Checkbox label={t("chainLabel", { name: current?.name ?? "…" })} checked={chain} onChange={(e) => setChain(e.target.checked)} />
-                      <p className="mt-1 text-xs text-muted">{t("chainHint")}</p>
-                    </div>
-                  )}
-                  <div className="flex flex-col gap-1">
-                    <div className="flex flex-wrap items-center gap-3">
-                      <Button
-                        type="submit"
-                        loading={creating}
-                        disabled={!stage2 && !stage1 || !q || q.fields.length === 0 || q.sections.length === 0 || (!chain && count === 0)}
-                      >
-                        {chain ? t("createScheduled") : t("run")}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        loading={creating}
-                        disabled={!q || count === 0}
-                        onClick={(e) => void handleCreate(e, false)}
-                      >
-                        {t("save")}
-                      </Button>
-                      <Button type="button" variant="secondary" onClick={() => setPanelOpen(false)}>
-                        {t("cancel")}
-                      </Button>
-                    </div>
-                    {needs.length > 0 && (
-                      <p className="text-sm text-muted">
-                        {t("needsIntro")} {needs.join(" ")}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              )}
-            </form>
-          ) : (
-            <div className="flex flex-wrap items-center gap-3">
-              <p className="text-sm text-muted">{t("panelCollapsedHint")}</p>
-              <Button variant="secondary" onClick={() => setPanelOpen(true)}>
-                + {t("panelCreate")}
-              </Button>
+          <form onSubmit={(e) => void handleLaunch(e)} className="flex flex-col gap-4">
+            <div className="flex flex-col gap-2">
+              <p className="text-sm font-semibold text-foreground">{t("stage2")}</p>
+              <Select value={launchModel} onChange={(e) => setLaunchModel(e.target.value)} aria-label={t("stage2")}>
+                {models.map((m) => (
+                  <option key={m.id} value={m.name}>
+                    {m.name}
+                    {m.ram_usage_mb ? ` · ~${m.ram_usage_mb} MB` : ""}
+                  </option>
+                ))}
+              </Select>
             </div>
-          )}
-        </Card>
-      ) : (
-        <p className="text-sm text-muted">{tLead("leadOnly")}</p>
-      )}
-
-      {/* Follow the analysis of the current search, with worker / chaining state on the gauge. */}
-      {(job || active || workersBusy) && (
-        <div ref={progressRef} aria-live="polite">
-          <Card title={t("progressTitle")}>
-            {active || workersBusy ? (
-              <JobProgress
-                title={
-                  <span className="font-mono text-xs text-muted">
-                    {workersBusy
-                      ? searches?.find((s) => s.id === busy?.search_id)?.name ?? "…"
-                      : jobModels ?? "…"}
-                  </span>
-                }
-                done={num(workersBusy ? busy?.result?.done : r.done)}
-                total={num(workersBusy ? busy?.result?.total : total)}
-                segments={{
-                  accepted: num(workersBusy ? busy?.result?.auto_accepted : r.auto_accepted),
-                  rejected: num(workersBusy ? busy?.result?.auto_rejected : r.auto_rejected),
-                  review: num(workersBusy ? busy?.result?.needs_review : r.needs_review),
-                }}
-                action={
-                  isLead && !workersBusy && (
-                    <Button size="sm" variant="danger" loading={submitting} onClick={handleStop} title={t("stopHint")}>
-                      ■ {t("stop")}
-                    </Button>
-                  )
-                }
-                hint={gauges}
-              />
-            ) : (
-              <div className="mb-3 flex items-center justify-between gap-3 text-sm text-muted">
-                <span className="font-mono">{jobModels}</span>
-                <Badge color={statusColor(job?.status ?? "")}>{tj(`status_${job?.status ?? ""}`)}</Badge>
-              </div>
-            )}
-            {/* The questions as created (orientation + answer fields) — never the raw prompt */}
-            {q && (q.question || q.fields.length > 0) && (
-              <div className="mb-3 rounded-lg bg-surface-muted p-3 text-sm">
-                <p className="mb-1 text-xs font-medium text-muted">{t("questionsTitle")}</p>
-                {q.question && (
-                  <p className="mb-2 text-foreground">
-                    <span className="mr-1.5 text-xs text-muted">{tq("questionLabel")} :</span>
-                    {q.question}
-                  </p>
+            <Field label={t("instructionsTitle")} hint={t("instructionsHint")}>
+              <Input value={instructions} onChange={(e) => setInstructions(e.target.value)} maxLength={2000} placeholder={t("instructionsPlaceholder")} />
+            </Field>
+            <div className="flex flex-col gap-2">
+              <p className="text-sm font-semibold text-foreground">{t("goldTitle")}</p>
+              <p className="text-xs text-muted">{noGold ? t("goldNone") : t("goldHint")}</p>
+              <div className="flex flex-wrap items-center gap-3">
+                <Checkbox label={t("useExamples")} checked={examplesOn} disabled={noGold} onChange={(e) => setExamplesOn(e.target.checked)} />
+                {examplesOn && (
+                  <label className="flex items-center gap-2 text-sm text-foreground">
+                    {t("exampleLabel")}
+                    <input
+                      type="number"
+                      min={1}
+                      max={MAX_GOLD_EXAMPLES}
+                      value={exampleN}
+                      onChange={(e) => setExampleN(Math.min(MAX_GOLD_EXAMPLES, Math.max(1, parseInt(e.target.value, 10) || 1)))}
+                      className="w-20 rounded border border-border bg-surface p-1 text-sm text-foreground"
+                    />
+                  </label>
                 )}
-                <ul className="flex flex-col gap-1">
-                  {q.fields.map((f) => (
-                    <li key={f.key} className="text-foreground">
-                      {f.label || f.key}
-                      {f.options?.length ? (
-                        <span className="ml-1.5 text-xs text-muted">({f.options.join(" · ")})</span>
-                      ) : null}
-                    </li>
-                  ))}
-                </ul>
+              </div>
+              <Checkbox label={t("validateGold")} checked={validate} disabled={noGold} onChange={(e) => setValidate(e.target.checked)} />
+              {goldCount !== null && !noGold && (
+                <p className="text-xs text-muted">{t("goldCount", { n: goldCount })}</p>
+              )}
+            </div>
+            {chainable && (
+              <div className="rounded-lg p-3">
+                <Checkbox label={t("chainLabel", { name: current.name })} checked={chain} onChange={(e) => setChain(e.target.checked)} />
+                <p className="mt-1 text-xs text-muted">{t("chainHint")}</p>
               </div>
             )}
-            {!active && job?.status === "COMPLETED" && (
-              <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                <Stat label={t("processed")} value={num(r.processed ?? r.done)} />
-                <Stat label={t("autoAccepted")} value={num(r.auto_accepted)} tone="bg-success/10" />
-                <Stat label={t("autoRejected")} value={num(r.auto_rejected)} tone="bg-danger/10" />
-                <Stat label={t("needsReview")} value={num(r.needs_review)} tone="bg-warning/10" />
-              </div>
-            )}
-            {num(r.gold_examples) > 0 && (
-              <p className="mt-2 text-xs text-muted">{t("goldExamplesUsed", { n: num(r.gold_examples) })}</p>
-            )}
-            {num(r.prefiltered) > 0 && (
-              <p className="mt-2 text-xs text-muted">{t("prefilteredCount", { n: num(r.prefiltered) })}</p>
-            )}
-            {num(r.invalid_json) > 0 && (
-              <p className="mt-2 text-xs text-warning">{t("invalidJson", { n: num(r.invalid_json) })}</p>
-            )}
-            {job?.status === "COMPLETED" && !!r.validation && (
-              <div className="mt-4 rounded-lg bg-surface-muted p-3">
-                <h3 className="mb-2 text-sm font-semibold text-foreground">{t("validationTitle")}</h3>
-                <ValidationView scored={r.validation as Validation} primary={(r.validation as Validation).primary} fields={q?.fields ?? []} />
-              </div>
-            )}
-            {job?.status === "FAILED" && job.error === "cancelled" && (
-              <p className="mt-3 rounded-lg bg-warning/10 p-3 text-sm text-foreground">{t("stopped", { n: num(r.done) })}</p>
-            )}
-            {job?.status === "FAILED" && job.error && job.error !== "cancelled" && (
-              <p className="mt-3 rounded-lg bg-danger/10 p-3 text-sm text-danger">{errText(job.error)}</p>
-            )}
-            {job?.status === "FAILED" && (
-              <div className="mt-3 flex flex-col items-start gap-1">
-                <Button loading={submitting} onClick={handleStop}>
-                  {t("resume")}
-                </Button>
-                <span className="text-xs text-muted">{t("resumeHint", { n: num(r.done) })}</span>
-              </div>
-            )}
-            {job?.status === "COMPLETED" && !active && current && (
-              <CtaBanner
-                projectId={projectId}
-                searchId={current.id}
-                nResults={num(r.processed ?? r.done)}
-                nReview={num(r.needs_review)}
-                derived={searches?.find((s) => s.parent?.id === current.id) ?? null}
-                onNewAnalysis={() => {
-                  setSelection({ from_search_id: current.id });
-                  setPanelOpen(true);
-                }}
-                onChat={() => {
-                  setChatRequest((p) => ({ searchId: current.id, nonce: (p?.nonce ?? 0) + 1 }));
-                  setChatOpen(true);
-                  smoothScrollIntoView(chatRef.current);
-                }}
-              >
-                {/* spec 2026-11-12-filtres-creation-export-filtre §3: the RIS/BibTeX export
-                    follows the analysis lot + these filters (same values as the Articles page). */}
-                <div data-testid="export-filters" className="flex flex-wrap items-end gap-2 rounded-lg bg-surface-muted p-2">
-                  <span className="pb-1 text-xs text-muted">{t("exportFilters")}</span>
-                  <label className="flex flex-col gap-0.5 text-xs text-muted">
-                    {tLead("selStatus")}
-                    <select
-                      value={exportStatus}
-                      onChange={(e) => setExportStatus(e.target.value as "" | PredictionFilter)}
-                      className="rounded border border-border bg-surface p-1 text-xs text-foreground"
-                    >
-                      <option value="">{tLead("any")}</option>
-                      {(["TO_REVIEW", "AUTO_ACCEPTED", "AUTO_REJECTED", "NONE"] as const).map((s) => (
-                        <option key={s} value={s}>
-                          {ta(`filter_${s}`)}
+            <fieldset className="flex flex-col gap-3 rounded-lg border border-border p-3">
+              <legend className="px-1 text-sm font-semibold text-foreground">{t("outTitle")}</legend>
+              <label className="flex items-center gap-2 text-sm text-foreground">
+                <input type="radio" name="out" checked={outMode === "new"} onChange={() => setOutMode("new")} className="h-4 w-4 rounded border-border" />
+                {t("outNew")}
+              </label>
+              {outMode === "new" && (
+                <div className="flex flex-col gap-1 pl-6">
+                  <p className="text-xs text-muted">{t("outNewHint")}</p>
+                  <Input value={shownRunName} onChange={(e) => setRunName(e.target.value)} />
+                </div>
+              )}
+              <label className="flex items-center gap-2 text-sm text-foreground">
+                <input type="radio" name="out" checked={outMode === "overwrite"} onChange={() => setOutMode("overwrite")} className="h-4 w-4 rounded border-border" />
+                {t("outOverwrite")}
+              </label>
+              {outMode === "overwrite" && (
+                <div className="flex flex-col gap-1 pl-6">
+                  <p className="text-xs text-muted">{t("outOverwriteHint")}</p>
+                  <Field label={t("outOverwrite")}>
+                    <Select value={overwriteId} onChange={(e) => setOverwriteId(e.target.value)}>
+                      {jobs.map((j) => (
+                        <option key={j.id} value={j.id} disabled={runActive(j)}>
+                          {runLabel(j)}
                         </option>
                       ))}
-                    </select>
-                  </label>
-                  <AnswerFilters
-                    fields={current?.fields ?? []}
-                    values={exportAnswers}
-                    onChange={(k, v) => setExportAnswers((p) => ({ ...p, [k]: v }))}
-                  />
-                </div>
-                <ExportMenu projectId={projectId} status={exportStatus || undefined} answers={exportAnswers} />
-              </CtaBanner>
-            )}
-            {isLead && current && (current.predicted ?? 0) + (current.reviewed ?? 0) > 0 && !active && !workersBusy && (
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                <Button variant="ghost" loading={submitting} onClick={() => void handleRerun()}>
-                  {t("relaunch")}
-                </Button>
-                {models.length > 1 && (
-                  <span className="flex items-center gap-1.5">
-                    <Select
-                      value={rerunModel}
-                      onChange={(e) => setRerunModel(e.target.value)}
-                      aria-label={t("rerunWithModel")}
-                      className="text-xs"
-                    >
-                      <option value="">{t("rerunWithModel")}</option>
-                      {models
-                        .filter((m) => m.name !== job?.model_used)
-                        .map((m) => (
-                          <option key={m.id} value={m.name}>
-                            {label(m)}
-                          </option>
-                        ))}
                     </Select>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      disabled={!rerunModel}
-                      loading={submitting}
-                      onClick={() => void handleRerunModel()}
-                    >
-                      {t("rerunLaunch")}
-                    </Button>
-                  </span>
-                )}
-              </div>
-            )}
-          </Card>
-        </div>
-      )}
-
-      {/* Compare two analyses / reviewer agreement: moved to the benchmarks
-          page (spec 2026-11-08 — single home for the concordances). */}
-
-      {/* Corpus chat (spec 2026-11-07-chat-rag §5): visible to members —
-          it questions the whole project corpus, or the lot of one search.
-          Disclosure collapsed by default (spec clarte-3 R3): the page keeps one intention. */}
-      <details
-        ref={chatRef}
-        className="scroll-mt-4 rounded-xl bg-surface p-4 shadow-sm"
-        open={chatOpen}
-        onToggle={(e) => setChatOpen(e.currentTarget.open)}
-      >
-        <summary className="cursor-pointer select-none text-base font-semibold text-foreground">
-          {t("chatTitle")}
-        </summary>
-        <div className="mt-3">
-          <ChatRagPanel
-            projectId={projectId}
-            models={models}
-            isLead={isLead}
-            searches={(searches ?? []).filter((s) => s.kind === "standard")}
-            resultsRequest={chatRequest}
-          />
-        </div>
-      </details>
-
-      {/* Gold standard & benchmark: no more card here (spec clarte-3 R4) — the
-          compact reminder lives on the overview, and the pages are in the nav. */}
-
-      {/* The never-launched analyses first, then the analyses performed, each with a link. */}
-      {searches && searches.length > 0 ? (
-        <>
-          {searches.some(unlaunched) && (
-            <div>
-              <h2 className="mb-2 text-sm font-semibold text-foreground">{tLead("toLaunch")}</h2>
-              <ul className="flex flex-col gap-2">
-                {searches
-                  .filter(unlaunched)
-                  .map((s) => (
-                    <AnalysisRow
-                      key={s.id}
-                      s={s}
-                      projectId={projectId}
-                      locale={locale}
-                      isLead={isLead}
-                      toLaunch
-                      onDelete={() => void handleDelete(s)}
-                    />
-                  ))}
-              </ul>
-            </div>
-          )}
-          {searches.some((s) => !unlaunched(s)) && (
-            <div>
-              <h2 className="mb-2 text-sm font-semibold text-foreground">{t("listTitle")}</h2>
-              <ul className="flex flex-col gap-2">
-                {searches
-                  .filter((s) => !unlaunched(s))
-                  .map((s) => (
-                    <AnalysisRow
-                      key={s.id}
-                      s={s}
-                      projectId={projectId}
-                      locale={locale}
-                      isLead={isLead}
-                      onDelete={() => void handleDelete(s)}
-                    />
-                  ))}
-              </ul>
-            </div>
-          )}
-        </>
-      ) : searches ? (
-        // No analysis at all (launched or to launch). The creation panel (above) is already
-        // open for a lead on a fresh project: the empty state would repeat it. Members
-        // without the form still see it.
-        isLead && panelOpen ? null : (
-          <EmptyState
-            title={tLead("empty")}
-            hint={tLead("emptyHint")}
-            action={
-              isLead ? (
-                <Button variant="secondary" onClick={() => setPanelOpen(true)}>
-                  + {t("panelCreate")}
+                  </Field>
+                </div>
+              )}
+            </fieldset>
+            <div className="flex flex-col gap-1">
+              <div className="flex flex-wrap items-center gap-3">
+                <Button type="submit" loading={submitting}>
+                  {t("run")}
                 </Button>
-              ) : undefined
-            }
-          />
-        )
-      ) : (
-        <Skeleton rows={3} />
+                <Button type="button" variant="secondary" onClick={() => setLaunchOpen(false)}>
+                  {t("cancel")}
+                </Button>
+              </div>
+              {workersBusy && busy && (
+                <p className="text-xs text-warning">
+                  {t("workersBusy", { name: searches?.find((s) => s.id === busy.search_id)?.name ?? "…" })}
+                </p>
+              )}
+            </div>
+          </form>
+        </Card>
       )}
 
-      {/* spec clarte-3 R8: stopping the analysis confirms through the Modal (was window.confirm). */}
+      {/* Create a corpus of questions (spec R4): the panel also renders in the S1 state. */}
+      {createPanel}
+
+      {/* Edit the corpus (spec R3): the same editor, saved through PATCH ?search=. */}
+      {isLead && editOpen && editQ && (
+        <Card title={t("newCorpusTitle")}>
+          <form onSubmit={(e) => void handleSaveCorpus(e)} className="flex flex-col gap-4">
+            <QuestionEditor
+              question={editQ.question}
+              fields={editQ.fields}
+              sections={editQ.sections}
+              onChange={setCreateQ}
+            />
+            <div className="flex flex-wrap items-center gap-3">
+              <Button type="submit" loading={saving}>
+                {tc("save")}
+              </Button>
+              <Button type="button" variant="secondary" onClick={() => {
+                setEditOpen(false);
+                setCreateQ(null);
+              }}>
+                {tc("cancel")}
+              </Button>
+            </div>
+          </form>
+        </Card>
+      )}
+
+      {/* Stopping the active run confirms through the Modal (spec clarte-3 R8). */}
       {stopOpen && (
         <Modal title={t("stop")} onClose={() => setStopOpen(false)}>
           <div className="flex flex-col gap-4">
@@ -1004,6 +869,23 @@ function AnalyseContent() {
               </Button>
               <Button variant="danger" size="sm" loading={submitting} onClick={() => void confirmStop()}>
                 {t("stop")}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Delete a run and its results (LEAD). */}
+      {deleteJob && (
+        <Modal title={tc("delete")} onClose={() => setDeleteJob(null)}>
+          <div className="flex flex-col gap-4">
+            <p className="text-sm text-muted">{t("runDeleteConfirm", { name: deleteJob.name ?? t("runUnnamed") })}</p>
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" size="sm" onClick={() => setDeleteJob(null)}>
+                {tc("cancel")}
+              </Button>
+              <Button variant="danger" size="sm" loading={submitting} onClick={() => void handleDeleteJob()}>
+                {tc("delete")}
               </Button>
             </div>
           </div>

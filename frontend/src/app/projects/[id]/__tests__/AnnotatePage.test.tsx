@@ -1,6 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import AnnotatePage from "@/app/projects/[id]/annotate/page";
 import * as api from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 
 type Catalog = Record<string, Record<string, string>>;
 
@@ -35,14 +36,18 @@ jest.mock("@/lib/useSearch", () => ({
     current: { id: "s1", name: "S1", kind: mockKind },
   }),
 }));
+jest.mock("@/lib/auth", () => ({ useAuth: jest.fn() }));
 jest.mock("@/lib/api", () => ({
   ...jest.requireActual("@/lib/api"),
   listArticles: jest.fn(),
   getProject: jest.fn(),
   getArticleWithPrediction: jest.fn(),
   submitAnnotation: jest.fn(),
+  getOverview: jest.fn(),
+  listProjects: jest.fn(),
 }));
 
+const mockUseAuth = useAuth as unknown as jest.Mock;
 const listArticles = api.listArticles as jest.Mock;
 const getProject = api.getProject as jest.Mock;
 const getArticleWithPrediction = api.getArticleWithPrediction as jest.Mock;
@@ -76,6 +81,7 @@ const article = {
 
 beforeEach(() => {
   mockKind = "standard";
+  mockUseAuth.mockReturnValue({ user: { role: "RESEARCHER" }, loading: false });
   listArticles.mockReset().mockResolvedValue({ items: [{ id: "a1" }], total: 1 });
   getProject.mockReset().mockResolvedValue({ fields: [], text_sections: ["methods"] });
   getArticleWithPrediction.mockReset().mockResolvedValue({ article, prediction, review: null });

@@ -75,4 +75,30 @@ describe("i18n key parity (4 locales)", () => {
       expect(i["triageSaveFailed"]).toBeTruthy(); // audit I-1: the failed save is surfaced
     }
   });
+
+  // spec 2026-11-20-analyses-runs-2 F7: the segment control is « Corpus de questions »
+  // (R1/R7) and the dead fork-409 panel copy is gone (R6) — in every locale.
+  it("spec analyses-runs-2: project.corporaTitle present, chainPillsAria gone, in the 4 locales", () => {
+    const all = [fr, en, de, es];
+    for (const m of all) {
+      const p = m.project as Record<string, unknown>;
+      expect(p.corporaTitle).toBeTruthy();
+      expect(p.chainPillsAria).toBeUndefined();
+    }
+  });
+
+  it("spec analyses-runs-2: the inference fork-409 keys are gone, the run state keys exist, in the 4 locales", () => {
+    const all = [fr, en, de, es];
+    for (const m of all) {
+      const i = m.inference as Record<string, unknown>;
+      for (const gone of ["questionLocked", "relaunch", "rerunWithModel", "rerunLaunch"]) {
+        expect(i[gone]).toBeUndefined();
+      }
+      for (const k of ["corporaEmpty", "corpusCard", "runUnnamed", "outNew", "outOverwrite"]) {
+        expect(i[k]).toBeTruthy();
+      }
+      const jobs = m.jobs as Record<string, unknown>;
+      expect(jobs.status_CANCELLED).toBeTruthy(); // the gray « Annulée » badge (runStatusKey)
+    }
+  });
 });

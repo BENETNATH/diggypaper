@@ -99,8 +99,12 @@ export function useSearches(projectId: string, searchId?: string, refreshKey?: s
       params.delete("search");
       const qs = params.toString();
       router.replace(qs ? `${pathname}?${qs}` : pathname);
+    } else {
+      // The stale id lived only in tab memory (no URL to rewrite): re-read the list so
+      // the selection falls back and the mounted pages re-render with the cleaned id.
+      reload();
     }
-  }, [searchId, listFailed, searches, projectId, sp, pathname, router]);
+  }, [searchId, listFailed, searches, projectId, sp, pathname, router, reload]);
 
   return { searches, current: currentSearch(searches, searchId), reload };
 }

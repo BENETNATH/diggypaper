@@ -32,7 +32,7 @@ jest.mock("@/lib/api", () => ({
   rerunBenchmark: jest.fn(),
   retryBenchmarkErrors: jest.fn(),
   getComparison: jest.fn().mockImplementation(() => new Promise(() => {})),
-  getSearchJobs: jest.fn().mockImplementation(() => new Promise(() => {})),
+  listSearchJobs: jest.fn().mockImplementation(() => new Promise(() => {})),
   getAgreement: jest.fn().mockImplementation(() => new Promise(() => {})),
 }));
 // The panels expose the searchId they were mounted for: the page test checks

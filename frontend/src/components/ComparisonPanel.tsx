@@ -6,7 +6,7 @@ import { useTranslations } from "next-intl";
 import {
   Comparison,
   getComparison,
-  getSearchJobs,
+  listSearchJobs,
   InferenceJob,
 } from "@/lib/api";
 import { Button } from "@/components/ui/Button";
@@ -67,7 +67,7 @@ export function ComparisonPanel({
   // The search's jobs, newest first; the two most recent completed ones are the default pair.
   useEffect(() => {
     let on = true;
-    getSearchJobs(projectId, searchId)
+    listSearchJobs(projectId, searchId)
       .then((r) => {
         if (!on) return;
         const done = r.jobs.filter((j) => j.status === "COMPLETED");
