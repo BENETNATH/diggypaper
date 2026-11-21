@@ -178,23 +178,21 @@ export function ResultRow({
 }) {
   const t = useTranslations("articles");
   const tc = useTranslations("common");
-  // spec 2026-11-21 R9: the bare DOI of the meta line becomes a « DOI » link + copy button.
+  // Fix 2026-11-21: the openable identifier — a DOI link (with copy) when available, a
+  // PubMed link otherwise — is a slot of its own, next to the source label (it was
+  // source XOR DOI before, so the DOI never showed on PubMed-imported rows).
   const src = sourceLabel(a.source, a.native_id, t("sourceFile"));
-  const doiMeta =
-    !src && a.doi ? (
-      <>
-        {a.doi_url ? (
-          <a
-            href={a.doi_url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-primary hover:underline"
-          >
-            DOI
-          </a>
-        ) : (
-          a.doi
-        )}
+  const ident = a.doi_url ? (
+    <>
+      <a
+        href={a.doi_url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-primary hover:underline"
+      >
+        DOI
+      </a>
+      {a.doi && (
         <CopyButton
           value={a.doi}
           label={tc("copyDoi")}
@@ -202,11 +200,22 @@ export function ResultRow({
           size="sm"
           className="ml-0.5 align-[-2px] opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100"
         />
-      </>
-    ) : null;
+      )}
+    </>
+  ) : a.pmid ? (
+    <a
+      href={`https://pubmed.ncbi.nlm.nih.gov/${a.pmid}/`}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="text-primary hover:underline"
+    >
+      PubMed
+    </a>
+  ) : a.doi ?? "";
   const meta = [
     biblioLine(a),
-    src ?? doiMeta ?? a.doi ?? "",
+    src ?? "",
+    ident,
     a.has_fulltext
       ? t("fulltext")
       : a.fulltext_note === "no_text_layer"

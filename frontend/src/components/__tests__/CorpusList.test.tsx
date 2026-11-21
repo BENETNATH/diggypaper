@@ -48,6 +48,18 @@ const A2: Article = {
   origin: "references",
   has_fulltext: false,
 } as unknown as Article;
+// PMID only, no DOI (the common case for the FST corpus): the row must offer a PubMed link.
+const TITLE3 = "Behavioral despair in mice: a primary screening test for antidepressants.";
+const A3: Article = {
+  id: "a3",
+  title: TITLE3,
+  first_author: "Porsolt, R. D.",
+  journal: "Psychopharmacologia",
+  pub_date: "1977-06-01",
+  origin: "pubmed",
+  pmid: "596982",
+  has_fulltext: false,
+} as unknown as Article;
 
 function mount(overrides: {
   isLead?: boolean;
@@ -223,5 +235,21 @@ describe("CorpusList — PDF drop zone & copy (spec 2026-11-21)", () => {
     });
     await waitFor(() => expect(listArticles.mock.calls.length).toBeGreaterThan(before));
     expect(api.matchArticlePdf).toHaveBeenCalledTimes(1);
+  });
+
+  it("row with a DOI → the DOI opens in a new tab (identifiable, not just copied)", async () => {
+    mount({ items: [A1] });
+    await screen.findByText(TITLE1);
+    const doi = screen.getByRole("link", { name: "DOI" });
+    expect(doi).toHaveAttribute("href", "https://doi.org/10.1/x");
+    expect(doi).toHaveAttribute("target", "_blank");
+  });
+
+  it("row with only a PMID → a PubMed link to the record", async () => {
+    mount({ items: [A3] });
+    await screen.findByText(TITLE3);
+    const pubmed = screen.getByRole("link", { name: "PubMed" });
+    expect(pubmed).toHaveAttribute("href", "https://pubmed.ncbi.nlm.nih.gov/596982/");
+    expect(pubmed).toHaveAttribute("target", "_blank");
   });
 });

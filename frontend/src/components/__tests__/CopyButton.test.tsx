@@ -57,4 +57,25 @@ describe("CopyButton (spec 2026-11-21 R8)", () => {
     });
     expect(screen.queryAllByText("bulkCopyFailed")).toHaveLength(0);
   });
+
+  it("clipboard API absent (non-secure context) → execCommand fallback copies", async () => {
+    // HTTP on a non-localhost IP: navigator.clipboard is undefined (the bug the user hit).
+    Object.defineProperty(globalThis.navigator, "clipboard", { value: undefined, configurable: true });
+    const execCommand = jest.fn().mockReturnValue(true);
+    document.execCommand = execCommand;
+    render(<CopyButton value="T" label="Copier le titre de l'article" title="Titre" />);
+    fireEvent.click(screen.getByRole("button", { name: "Copier le titre de l'article" }));
+    await act(async () => {});
+    expect(execCommand).toHaveBeenCalledWith("copy");
+    expect(screen.getAllByText("copied:Titre")).toHaveLength(2);
+  });
+
+  it("clipboard API absent + execCommand refused → « Copie impossible »", async () => {
+    Object.defineProperty(globalThis.navigator, "clipboard", { value: undefined, configurable: true });
+    document.execCommand = jest.fn().mockReturnValue(false);
+    render(<CopyButton value="T" label="Copier le titre de l'article" title="Titre" />);
+    fireEvent.click(screen.getByRole("button", { name: "Copier le titre de l'article" }));
+    await act(async () => {});
+    expect(screen.getAllByText("bulkCopyFailed")).toHaveLength(2);
+  });
 });

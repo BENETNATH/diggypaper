@@ -3,8 +3,26 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 
-/**
- * One-click copy to the clipboard (spec 2026-11-21-liste-depot-copie R8): the icon
+/** Copy to the clipboard, with a legacy fallback when the Clipboard API is
+ * absent (non-secure context: HTTP on a non-localhost IP). */
+async function copyText(text: string): Promise<void> {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.setAttribute("readonly", "");
+  ta.style.position = "absolute";
+  ta.style.opacity = "0";
+  document.body.appendChild(ta);
+  ta.select();
+  const ok = document.execCommand("copy");
+  ta.remove();
+  if (!ok) throw new Error("copy refused");
+}
+
+/** One-click copy to the clipboard (spec 2026-11-21-liste-depot-copie R8): the icon
  * flips to a check and a local tooltip shows for 2 s — no global toast. Allowed
  * for every role (clipboard read, not a project action, R13).
  */
@@ -37,8 +55,7 @@ export function CopyButton({
   function copy(e: React.MouseEvent) {
     e.preventDefault(); // the row is a link: don't navigate
     e.stopPropagation();
-    void navigator.clipboard
-      .writeText(value)
+    void copyText(value)
       .then(() => setState("ok"))
       .catch(() => setState("error"));
     clearTimeout(timer.current);

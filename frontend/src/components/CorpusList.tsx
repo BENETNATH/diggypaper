@@ -117,7 +117,7 @@ export function CorpusList({
                   {sub && (
                     <p className="mt-0.5 text-xs text-muted">
                       {sub}
-                      {a.doi && a.doi_url && (
+                      {a.doi_url ? (
                         <>
                           {" · "}
                           <a
@@ -128,15 +128,29 @@ export function CorpusList({
                           >
                             DOI
                           </a>
-                          <CopyButton
-                            value={a.doi}
-                            label={tc("copyDoi")}
-                            title="DOI"
-                            size="sm"
-                            className="ml-0.5 align-[-2px] opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
-                          />
+                          {a.doi && (
+                            <CopyButton
+                              value={a.doi}
+                              label={tc("copyDoi")}
+                              title="DOI"
+                              size="sm"
+                              className="ml-0.5 align-[-2px] opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                            />
+                          )}
                         </>
-                      )}
+                      ) : a.pmid ? (
+                        <>
+                          {" · "}
+                          <a
+                            href={`https://pubmed.ncbi.nlm.nih.gov/${a.pmid}/`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-primary hover:underline"
+                          >
+                            PubMed
+                          </a>
+                        </>
+                      ) : null}
                     </p>
                   )}
                 </div>

@@ -32,21 +32,26 @@ export function biblioLine(a: {
   return [authors, a.journal, a.pub_date].filter(Boolean).join(" · ");
 }
 
-/** External links of an article: DOI and full text / PDF (when they exist). */
+/** External links of an article: DOI (or PubMed, when no DOI), full text / PDF. */
 export function ArticleLinks({
   article,
   className = "",
 }: {
-  article: { doi?: string | null; doi_url?: string | null; fulltext_url?: string | null };
+  article: {
+    doi?: string | null;
+    doi_url?: string | null;
+    fulltext_url?: string | null;
+    pmid?: string | null;
+  };
   className?: string;
 }) {
   const t = useTranslations("articles");
   const tc = useTranslations("common");
-  if (!article.doi_url && !article.fulltext_url) return null;
+  if (!article.doi_url && !article.fulltext_url && !article.pmid) return null;
   const cls = "text-primary hover:underline";
   return (
     <span className={`flex flex-wrap gap-x-3 text-xs ${className}`}>
-      {article.doi_url && (
+      {article.doi_url ? (
         <span className="inline-flex items-center gap-0.5">
           <a href={article.doi_url} target="_blank" rel="noopener noreferrer" className={cls}>
             DOI ↗
@@ -56,7 +61,16 @@ export function ArticleLinks({
             <CopyButton value={article.doi} label={tc("copyDoi")} title="DOI" size="sm" className="align-[-2px]" />
           )}
         </span>
-      )}
+      ) : article.pmid ? (
+        <a
+          href={`https://pubmed.ncbi.nlm.nih.gov/${article.pmid}/`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={cls}
+        >
+          PubMed ↗
+        </a>
+      ) : null}
       {article.fulltext_url && (
         <a href={article.fulltext_url} target="_blank" rel="noopener noreferrer" className={cls}>
           {t("openFulltext")} ↗
