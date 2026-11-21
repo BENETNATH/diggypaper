@@ -1,3 +1,4 @@
+import React from "react";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { CorpusList } from "@/components/CorpusList";
 import * as api from "@/lib/api";
@@ -22,6 +23,32 @@ jest.mock("@/lib/api", () => ({
   listArticles: jest.fn(),
   matchArticlePdf: jest.fn(),
 }));
+
+// next/link is mocked to model its production interception: the row's <Link>
+// preventDefaults child clicks and navigates to the article instead. The DOI/PubMed
+// anchors must stopPropagation before the row link sees them — the counter records
+// every click that reached the row link.
+jest.mock("next/link", () => ({
+  __esModule: true,
+  default: ({ href, children, ...rest }: { href: string; children?: React.ReactNode; [k: string]: unknown }) =>
+    React.createElement(
+      "a",
+      {
+        href,
+        ...rest,
+        onClick: (e: React.MouseEvent) => {
+          const w = window as unknown as { __rowLinkClicks?: number };
+          w.__rowLinkClicks = (w.__rowLinkClicks ?? 0) + 1;
+          e.preventDefault();
+        },
+      },
+      children
+    ),
+}));
+const rowLinkClicks = () => (window as unknown as { __rowLinkClicks?: number }).__rowLinkClicks;
+const setRowLinkClicks = (n: number) => {
+  (window as unknown as { __rowLinkClicks?: number }).__rowLinkClicks = n;
+};
 
 const listArticles = api.listArticles as jest.Mock;
 
@@ -251,5 +278,23 @@ describe("CorpusList — PDF drop zone & copy (spec 2026-11-21)", () => {
     const pubmed = screen.getByRole("link", { name: "PubMed" });
     expect(pubmed).toHaveAttribute("href", "https://pubmed.ncbi.nlm.nih.gov/596982/");
     expect(pubmed).toHaveAttribute("target", "_blank");
+  });
+
+  // Fix 2026-11-21 (bis): the whole row is a <Link> — without stopPropagation the row's
+  // Link intercepts the click (preventDefault + navigate) and the DOI never opens.
+  it("clicking the DOI does not reach the row link", async () => {
+    mount({ items: [A1] });
+    await screen.findByText(TITLE1);
+    setRowLinkClicks(0);
+    fireEvent.click(screen.getByRole("link", { name: "DOI" }));
+    expect(rowLinkClicks()).toBe(0);
+  });
+
+  it("clicking the PubMed fallback does not reach the row link", async () => {
+    mount({ items: [A3] });
+    await screen.findByText(TITLE3);
+    setRowLinkClicks(0);
+    fireEvent.click(screen.getByRole("link", { name: "PubMed" }));
+    expect(rowLinkClicks()).toBe(0);
   });
 });

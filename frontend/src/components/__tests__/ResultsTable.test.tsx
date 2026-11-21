@@ -67,6 +67,40 @@ describe("ResultsTable — one column per question (R3)", () => {
   });
 });
 
+// Fix 2026-11-21: the table meta line (biblio only) hid every identifier — a DOI link
+// (with copy) when the article has one, a PubMed link otherwise.
+describe("ResultsTable — identifier links (fix 2026-11-21)", () => {
+  it("row with a doi_url → the DOI opens in a new tab + its copy button", () => {
+    const a = {
+      ...ARTICLE,
+      source: "pubmed",
+      native_id: "596982",
+      pmid: "596982",
+      doi_url: "https://doi.org/10.1/x",
+    } as Article;
+    render(<ResultsTable articles={[a]} fields={FIELDS} hrefFor={() => "/x"} />);
+    const doi = screen.getByRole("link", { name: "DOI" });
+    expect(doi).toHaveAttribute("href", "https://doi.org/10.1/x");
+    expect(doi).toHaveAttribute("target", "_blank");
+    expect(screen.getByRole("button", { name: "copyDoi" })).toBeInTheDocument();
+  });
+
+  it("row without a doi_url but with a PMID → a PubMed link", () => {
+    const a = { ...ARTICLE, doi: null, doi_url: null, pmid: "596982" } as Article;
+    render(<ResultsTable articles={[a]} fields={FIELDS} hrefFor={() => "/x"} />);
+    const pubmed = screen.getByRole("link", { name: "PubMed" });
+    expect(pubmed).toHaveAttribute("href", "https://pubmed.ncbi.nlm.nih.gov/596982/");
+    expect(pubmed).toHaveAttribute("target", "_blank");
+  });
+
+  it("row with no identifier at all → the meta line stays biblio-only", () => {
+    const a = { ...ARTICLE, doi: null, doi_url: null, pmid: null, source: null } as Article;
+    render(<ResultsTable articles={[a]} fields={FIELDS} hrefFor={() => "/x"} />);
+    expect(screen.queryByRole("link", { name: "DOI" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "PubMed" })).not.toBeInTheDocument();
+  });
+});
+
 // spec 2026-11-09-triage-seuils-fonds-champs R3/R4 — colored cell + corner human icon
 describe("ResultsTable — colored cells and human icons (R3/R4)", () => {
   const BADGED: SchemaField[] = [{ key: "design", label: "Design in vivo ?", type: "boolean", badge: true }];

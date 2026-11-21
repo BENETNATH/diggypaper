@@ -188,6 +188,7 @@ export function ResultRow({
         href={a.doi_url}
         target="_blank"
         rel="noopener noreferrer"
+        onClick={(e) => e.stopPropagation()}
         className="text-primary hover:underline"
       >
         DOI
@@ -207,6 +208,7 @@ export function ResultRow({
       href={`https://pubmed.ncbi.nlm.nih.gov/${a.pmid}/`}
       target="_blank"
       rel="noopener noreferrer"
+      onClick={(e) => e.stopPropagation()}
       className="text-primary hover:underline"
     >
       PubMed

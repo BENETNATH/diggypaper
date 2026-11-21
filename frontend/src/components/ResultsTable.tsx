@@ -101,7 +101,45 @@ export function ResultsTable({
                   </button>
                 )}
               </div>
-              <p className="mt-0.5 truncate text-[11px] text-muted">{biblioLine(a)}</p>
+              <p className="mt-0.5 truncate text-[11px] text-muted">
+                {biblioLine(a)}
+                {/* Fix 2026-11-21: the table meta line hid every identifier — a DOI link
+                    (with copy) when the article has one, a PubMed link otherwise. */}
+                {a.doi_url ? (
+                  <>
+                    {" · "}
+                    <a
+                      href={a.doi_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary hover:underline"
+                    >
+                      DOI
+                    </a>
+                    {a.doi && (
+                      <CopyButton
+                        value={a.doi}
+                        label={tc("copyDoi")}
+                        title="DOI"
+                        size="sm"
+                        className="ml-0.5 align-[-2px] opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100"
+                      />
+                    )}
+                  </>
+                ) : a.pmid ? (
+                  <>
+                    {" · "}
+                    <a
+                      href={`https://pubmed.ncbi.nlm.nih.gov/${a.pmid}/`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary hover:underline"
+                    >
+                      PubMed
+                    </a>
+                  </>
+                ) : null}
+              </p>
             </td>
             {fields.map((f) => {
               const ans = a.answers?.find((r) => r.key === f.key);
