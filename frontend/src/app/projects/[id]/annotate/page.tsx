@@ -61,8 +61,12 @@ export default function AnnotatePage() {
   // queue=review: the cases to re-review (default after a ranking), restricted to the list's
   // answer filters; list: exactly the filtered/sorted list we just left; all: everything.
   const queueMode = searchParams.get("queue") ?? "review";
-  const searchId = useSearchId(projectId);
-  const { searches, current } = useSearches(projectId, searchId);
+  const rawSearchId = useSearchId(projectId);
+  const { searches, current } = useSearches(projectId, rawSearchId);
+  // R9: a new project has no default search — with no ?search= in the URL, the fetch must
+  // target the primary corpus (current); scope=None + a search-only parameter (run,
+  // status, …) would 400 "no analysis in this project".
+  const searchId = rawSearchId ?? current?.id;
   const apiError = useApiError();
   // Blind search: we re-review without seeing the model's answer (unbiased gold).
   const isBlind = current?.kind === "blind";

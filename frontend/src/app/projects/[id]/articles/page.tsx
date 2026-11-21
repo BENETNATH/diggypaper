@@ -64,8 +64,12 @@ function ResultsContent() {
   const { user } = useAuth();
   const locale = useLocale();
   const projectId = useParams<{ id: string }>().id;
-  const searchId = useSearchId(projectId);
-  const { searches, current } = useSearches(projectId, searchId);
+  const rawSearchId = useSearchId(projectId);
+  const { searches, current } = useSearches(projectId, rawSearchId);
+  // R9: a new project has no default search — with no ?search= in the URL, the fetch must
+  // target the primary corpus (current); scope=None + a search-only parameter (run,
+  // status, …) would 400 "no analysis in this project".
+  const searchId = rawSearchId ?? current?.id;
   const noCorpora = searches !== null && searches.length === 0;
   const router = useRouter();
   const pathname = usePathname();

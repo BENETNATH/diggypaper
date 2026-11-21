@@ -28,6 +28,8 @@ let mockKind = "standard";
 // (mockHasCorpora = true, the scoped default of the older tests) and corpus mode
 // (no search at all, URL without ?search=).
 let mockHasCorpora = true;
+let mockSearchId: string | undefined = "s1";
+let mockSearchDefault = true;
 let mockUrlParams = "article=a1&queue=review&search=s1";
 jest.mock("next/navigation", () => ({
   useParams: () => ({ id: "p1" }),
@@ -36,10 +38,10 @@ jest.mock("next/navigation", () => ({
   usePathname: () => "/projects/p1/annotate",
 }));
 jest.mock("@/lib/useSearch", () => ({
-  useSearchId: () => "s1",
+  useSearchId: () => mockSearchId,
   useSearches: jest.fn(() => ({
-    searches: mockHasCorpora ? [{ id: "s1", name: "S1", kind: mockKind }] : [],
-    current: mockHasCorpora ? { id: "s1", name: "S1", kind: mockKind } : undefined,
+    searches: mockHasCorpora ? [{ id: "s1", name: "S1", kind: mockKind, is_default: mockSearchDefault }] : [],
+    current: mockHasCorpora ? { id: "s1", name: "S1", kind: mockKind, is_default: mockSearchDefault } : undefined,
   })),
 }));
 jest.mock("@/lib/auth", () => ({ useAuth: jest.fn() }));
@@ -90,6 +92,8 @@ const article = {
 beforeEach(() => {
   mockKind = "standard";
   mockHasCorpora = true;
+  mockSearchId = "s1";
+  mockSearchDefault = true;
   mockUrlParams = "article=a1&queue=review&search=s1";
   mockUseAuth.mockReturnValue({ user: { role: "RESEARCHER" }, loading: false });
   listArticles.mockReset().mockResolvedValue({ items: [{ id: "a1" }], total: 1 });
@@ -215,5 +219,21 @@ describe("AnnotatePage — corpus mode (no search)", () => {
     } finally {
       if (defaultImpl) mockUseSearches.mockImplementation(defaultImpl);
     }
+  });
+});
+
+// R9: a new project has no default search — the URL without ?search= must target the
+// primary corpus (the only one), not scope=None: the review-queue fetch carries a
+// search-only parameter (status) that would 400 "no analysis in this project".
+describe("AnnotatePage — R9 (no default search, no ?search= in the URL)", () => {
+  it("one non-default corpus, no ?search= → the queue fetch targets the primary corpus", async () => {
+    mockSearchId = undefined;
+    mockSearchDefault = false;
+    mockUrlParams = "queue=review";
+    render(<AnnotatePage />);
+    // the queue fetch fires as soon as the search list is known
+    await waitFor(() => expect(listArticles).toHaveBeenCalled());
+    // the search parameter (7th arg) is the primary corpus, not undefined
+    expect(listArticles.mock.calls[0][6]).toBe("s1");
   });
 });

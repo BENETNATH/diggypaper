@@ -119,11 +119,14 @@ function mount(overrides: {
   corpora?: SearchInfo[];
   jobs?: InferenceJob[];
   articleCount?: number;
+  searchId?: string | null;
 }) {
   const role = overrides.role ?? "LEAD";
   const corpora = overrides.corpora ?? [corpus];
   mockUseAuth.mockReturnValue({ user: { role: "RESEARCHER" }, loading: false });
-  useSearchModule.useSearchId.mockReturnValue("s1");
+  useSearchModule.useSearchId.mockReturnValue(
+    overrides.searchId === undefined ? "s1" : overrides.searchId
+  );
   useSearchModule.useSearches.mockReturnValue({
     searches: corpora,
     current: corpora.find((s) => s.is_default) ?? corpora[0],
@@ -239,5 +242,19 @@ describe("articles page — spec 2026-11-20-2 F5 (run selector)", () => {
     expect(screen.queryByRole("combobox", { name: "runSelector" })).not.toBeInTheDocument();
     expect(listArticles).toHaveBeenCalledTimes(1);
     expect(lastRunArg()).toBeUndefined();
+  });
+});
+
+// R9: a new project has no default search — the URL without ?search= must fetch the
+// primary corpus (the only one), not scope=None: the fetch carries the run parameter,
+// a search-only value that would 400 "no analysis in this project" on scope=None.
+describe("articles page — R9 (no default search, no ?search= in the URL)", () => {
+  it("one non-default corpus, no ?search= → the list fetch targets the primary corpus", async () => {
+    const primary = { ...corpus, is_default: false } as SearchInfo;
+    mount({ corpora: [primary], jobs: [newest], searchId: null });
+    await screen.findByText("Titre 1");
+    expect(listArticles).toHaveBeenCalledTimes(1);
+    expect(listArticles.mock.calls[0][6]).toBe("s1"); // the search parameter
+    expect(lastRunArg()).toBe("j2"); // the run still applies, now inside the corpus scope
   });
 });
