@@ -4,13 +4,29 @@ import { useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { useApiError } from "@/lib/errorMsg";
 import { useAuth } from "@/lib/auth";
-import { updateProfile, changePassword, exportMyData, anonymizeMe } from "@/lib/api";
+import {
+  updateProfile,
+  changePassword,
+  exportMyData,
+  anonymizeMe,
+  generateApiKey,
+  revokeApiKey,
+} from "@/lib/api";
 import { RequireAuth } from "@/components/RequireAuth";
 import { Button } from "@/components/ui/Button";
 import { Field, Input, Select } from "@/components/ui/Field";
-import { Card } from "@/components/ui/Card";
+import { Badge, Card } from "@/components/ui/Card";
 import { ErrorBanner } from "@/components/ui/Feedback";
 import { Modal } from "@/components/ui/Modal";
+
+/** ISO date → DD/MM/YYYY in the displayed locale ("" if missing/invalid). */
+function formatCreated(iso: string | null | undefined, locale: string): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime())
+    ? ""
+    : new Intl.DateTimeFormat(locale, { day: "2-digit", month: "2-digit", year: "numeric" }).format(d);
+}
 
 function ProfileContent() {
   const t = useTranslations("profile");
@@ -27,6 +43,13 @@ function ProfileContent() {
   // audit 2026-11-10 P3-14: anonymization confirms through the Modal (was window.confirm).
   const [anonOpen, setAnonOpen] = useState(false);
   const [anonBusy, setAnonBusy] = useState(false);
+  // Personal API key (spec 2026-11-21): the generated key lives only in this state
+  // (shown once in the modal) — the API returns it in the 201 body only.
+  const [apiKey, setApiKey] = useState<string | null>(null);
+  const [genBusy, setGenBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [revokeOpen, setRevokeOpen] = useState(false);
+  const [revokeBusy, setRevokeBusy] = useState(false);
 
   // Seed the form from the logged-in user when they (or the displayed locale) change.
   const seedKey = user ? `${user.id}:${locale}` : "";
@@ -98,6 +121,44 @@ function ProfileContent() {
     }
   }
 
+  async function generateKey() {
+    setGenBusy(true);
+    setError(null);
+    try {
+      const data = await generateApiKey();
+      setCopied(false);
+      setApiKey(data.api_key);
+    } catch (e) {
+      setError(apiError(e) || t("apiError"));
+    } finally {
+      setGenBusy(false);
+    }
+  }
+
+  function closeKeyModal() {
+    setApiKey(null);
+    void refresh(); // the user now has a key: the card switches to "key active"
+  }
+
+  function copyKey() {
+    if (!apiKey) return;
+    void navigator.clipboard.writeText(apiKey).then(() => setCopied(true));
+  }
+
+  async function confirmRevoke() {
+    setRevokeBusy(true);
+    setError(null);
+    try {
+      await revokeApiKey();
+      setRevokeOpen(false);
+      await refresh(); // back to the no-key state
+    } catch (e) {
+      setError(apiError(e) || t("apiError"));
+    } finally {
+      setRevokeBusy(false);
+    }
+  }
+
   if (!user) return null;
 
   return (
@@ -147,6 +208,34 @@ function ProfileContent() {
         </form>
       </Card>
 
+      <Card title={t("apiTitle")}>
+        {user.api_key_set ? (
+          <>
+            <div className="mb-3 flex items-center gap-2">
+              <Badge color="green">{t("apiActive")}</Badge>
+              <span className="text-sm text-muted-foreground">
+                {t("apiCreated", { date: formatCreated(user.api_key_created_at, locale) })}
+              </span>
+            </div>
+            <div>
+              <Button variant="danger" onClick={() => setRevokeOpen(true)}>
+                {t("apiRevoke")}
+              </Button>
+            </div>
+            <p className="mt-2 text-xs text-muted">{t("apiRevokeHint")}</p>
+          </>
+        ) : (
+          <>
+            <p className="mb-3 text-sm text-muted">{t("apiDesc")}</p>
+            <div>
+              <Button loading={genBusy} onClick={() => void generateKey()}>
+                {t("apiGenerate")}
+              </Button>
+            </div>
+          </>
+        )}
+      </Card>
+
       <Card title={t("dataTitle")}>
         <p className="mb-3 text-sm text-muted">{t("dataHint")}</p>
         <div className="flex flex-wrap gap-2">
@@ -176,6 +265,49 @@ function ProfileContent() {
               </Button>
               <Button variant="danger" size="sm" loading={anonBusy} onClick={() => void confirmAnon()}>
                 {t("anonymize")}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {apiKey && (
+        <Modal title={t("apiGeneratedTitle")} onClose={closeKeyModal}>
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center gap-2 rounded-lg border border-border bg-surface-muted p-3">
+              <code className="flex-1 break-all font-mono text-xs text-foreground">{apiKey}</code>
+              <Button size="sm" variant="secondary" onClick={copyKey}>
+                {copied ? t("apiCopied") : t("apiCopy")}
+              </Button>
+            </div>
+            <div
+              className="flex gap-2.5 rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm text-muted-foreground"
+              role="alert"
+            >
+              <span aria-hidden className="font-bold text-warning">
+                !
+              </span>
+              <span>{t("apiGeneratedWarning")}</span>
+            </div>
+            <div className="flex justify-end">
+              <Button variant="secondary" onClick={closeKeyModal}>
+                {t("apiClose")}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {revokeOpen && (
+        <Modal title={t("apiRevokeTitle")} onClose={() => setRevokeOpen(false)}>
+          <div className="flex flex-col gap-4">
+            <p className="text-sm text-muted">{t("apiRevokeConfirm")}</p>
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" size="sm" onClick={() => setRevokeOpen(false)}>
+                {tc("cancel")}
+              </Button>
+              <Button variant="danger" size="sm" loading={revokeBusy} onClick={() => void confirmRevoke()}>
+                {t("apiRevoke")}
               </Button>
             </div>
           </div>

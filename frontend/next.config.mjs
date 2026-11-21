@@ -16,6 +16,15 @@ const nextConfig = {
         source: "/api/v1/:path*",
         destination: `${apiOrigin}/api/v1/:path*`,
       },
+      // OpenAPI contract (spec 2026-11-21 R6): agents fetch it same-origin.
+      {
+        source: "/openapi.json",
+        destination: `${apiOrigin}/openapi.json`,
+      },
+      {
+        source: "/docs",
+        destination: `${apiOrigin}/docs`,
+      },
     ];
   },
 };

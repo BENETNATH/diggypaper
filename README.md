@@ -312,6 +312,41 @@ See [`.env.example`](.env.example) (root) for the full list.
 
 ---
 
+## Using the API (agent)
+
+The whole API can be driven programmatically (imports, questions, inference,
+exports) with a **personal API key**, in addition to the browser cookie.
+
+1. **Generate** the key in the UI: *Profile → Personal API key → Generate the
+   API key*. The key (format `dgk_…`) is displayed **once** — store it. Revoking
+   is one click, and a new key can be generated immediately afterwards.
+2. **Send it** in the `X-Api-Key` header on every request (a valid cookie
+   always takes priority when both are present):
+
+   ```bash
+   curl -H "X-Api-Key: $DGK_KEY" https://your-diggypaper.example.com/api/v1/auth/me
+   ```
+
+3. **The contract**: `GET /openapi.json` (interactive docs at `/docs`), served
+   same-origin (Next.js rewrites / nginx → backend).
+
+Typical agent loop:
+
+```text
+POST   /api/v1/projects/{pid}/searches                          # create a search (question)
+POST   /api/v1/projects/{pid}/inference                         # launch inference (202 {job_id})
+GET    /api/v1/jobs/active                                      # poll the running jobs
+GET    /api/v1/projects/{pid}/inference?search=<sid>&active=true  # status of the search
+GET    /api/v1/projects/{pid}/export.xlsx?search=<sid>          # export (.bib / .ris / crate too)
+```
+
+**Limits**: auth endpoints are IP-rate-limited and inference is per-user
+rate-limited (HTTP 429 `rate_limited` beyond the limit). A key inherits its
+account's role and limits exactly: a member's key cannot do what the member
+cannot do.
+
+---
+
 ## Production (Docker)
 
 Base stack (nginx, frontend, backend, worker, postgres, redis) + model services

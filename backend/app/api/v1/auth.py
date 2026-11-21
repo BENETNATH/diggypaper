@@ -105,6 +105,9 @@ class UserOut(BaseModel):
     data_consent_given: bool
     can_create_projects: bool = Field(validation_alias="may_create_projects")
     created_at: datetime
+    api_key_set: bool
+    # serialized as ISO-8601 str in JSON (like created_at)
+    api_key_created_at: datetime | None = None
 
 
 @router.get("/config")
@@ -256,6 +259,41 @@ async def login(
 @router.get("/me")
 async def me(user: Annotated[User, Depends(get_current_user)]) -> UserOut:
     return UserOut.model_validate(user)
+
+
+class ApiKeyOut(BaseModel):
+    api_key: str
+
+
+@router.post("/me/api-key", status_code=201, response_model=ApiKeyOut)
+async def create_api_key(
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> ApiKeyOut:
+    """Personal API key (spec 2026-11-21 R2): one key per account — regenerate is
+    revoke + generate. The plaintext key exists ONLY in this 201 body: the DB
+    stores its sha256, never the key itself."""
+    if user.api_key_set:
+        raise HTTPException(status_code=409, detail="API key already set")
+    api_key = "dgk_" + secrets.token_urlsafe(24)
+    user.api_key_hash = _token_digest(api_key)
+    user.api_key_created_at = datetime.now(UTC)
+    await db.commit()
+    return ApiKeyOut(api_key=api_key)
+
+
+@router.delete("/me/api-key", status_code=204)
+async def revoke_api_key(
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> Response:
+    """Revokes the personal API key: both fields back to NULL (spec 2026-11-21 R3)."""
+    if not user.api_key_set:
+        raise HTTPException(status_code=404, detail="No API key")
+    user.api_key_hash = None
+    user.api_key_created_at = None
+    await db.commit()
+    return Response(status_code=204)
 
 
 class ProfileUpdate(BaseModel):

@@ -77,6 +77,9 @@ async def anonymize(
     user.full_name = None
     user.role = UserRole.RESEARCHER  # F2: downgrade (no residual admin access)
     user.anonymized_hash = anonymized_hash
+    # Audit 2026-11-21: a dead account keeps no usable credential material.
+    user.api_key_hash = None
+    user.api_key_created_at = None
     await db.commit()
     return Response(status_code=204)
 

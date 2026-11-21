@@ -1,11 +1,13 @@
 """FastAPI dependencies: DB session, current user, admin, mailer."""
 
+import hashlib
 import uuid
 from collections.abc import AsyncIterator
 from typing import Annotated
 
 import jwt as pyjwt
 from fastapi import Depends, HTTPException, Request
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import decode_token
@@ -14,6 +16,7 @@ from app.db.models import User, UserRole
 from app.emails import Mailer
 
 ACCESS_TOKEN_COOKIE = "access_token"
+API_KEY_HEADER = "X-Api-Key"
 
 
 async def get_db() -> AsyncIterator[AsyncSession]:
@@ -28,11 +31,8 @@ async def get_mailer(db: Annotated[AsyncSession, Depends(get_db)]) -> Mailer | N
     return await mailer_from_db(db)
 
 
-async def _load_user(request: Request, db: AsyncSession) -> User:
-    """Load the user from the access_token cookie (401 if missing/invalid/nonexistent)."""
-    token = request.cookies.get(ACCESS_TOKEN_COOKIE)
-    if not token:
-        raise HTTPException(status_code=401, detail="Not authenticated")
+async def _load_user_from_cookie(token: str, db: AsyncSession) -> User:
+    """Cookie path (401 if invalid/nonexistent, token version stale, or disabled)."""
     try:
         claims = decode_token(token)
     except pyjwt.PyJWTError:
@@ -53,6 +53,34 @@ async def _load_user(request: Request, db: AsyncSession) -> User:
     if user.is_active is False:  # account disabled by an admin: session cut immediately
         raise HTTPException(status_code=401, detail="Account disabled")
     return user
+
+
+async def _load_user_from_api_key(db: AsyncSession, api_key: str) -> User:
+    """Header path (spec 2026-11-21 R5): sha256 → unique-index lookup. Same controls
+    as the cookie (user missing, is_active=False → 401). The key is never stored."""
+    digest = hashlib.sha256(api_key.encode()).hexdigest()
+    user = (await db.execute(select(User).where(User.api_key_hash == digest))).scalar_one_or_none()
+    if user is None:
+        raise HTTPException(status_code=401, detail="Invalid API key")
+    if user.is_active is False:  # account disabled by an admin
+        raise HTTPException(status_code=401, detail="Account disabled")
+    return user
+
+
+async def _load_user(request: Request, db: AsyncSession) -> User:
+    """Load the user from the access_token cookie; if the cookie is absent/invalid,
+    fall back to the personal API key (header X-Api-Key, spec 2026-11-21 R5).
+    A valid cookie always takes priority over the header."""
+    token = request.cookies.get(ACCESS_TOKEN_COOKIE)
+    if token:
+        try:
+            return await _load_user_from_cookie(token, db)
+        except HTTPException:
+            pass  # invalid cookie: try the personal key before giving up
+    api_key = request.headers.get(API_KEY_HEADER)
+    if not api_key:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    return await _load_user_from_api_key(db, api_key)
 
 
 async def get_current_user(request: Request, db: Annotated[AsyncSession, Depends(get_db)]) -> User:

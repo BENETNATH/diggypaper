@@ -65,6 +65,25 @@ server {
         proxy_read_timeout 300s;
     }
 
+    # Contrat API pour les agents (openapi.json + Swagger UI) : servi par le
+    # backend FastAPI, jamais par le frontend (les rewrites Next ne font que le
+    # dev ; en conteneur l'origin localhost:8000 n'existe pas).
+    location = /openapi.json {
+        proxy_pass http://backend:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $fwd_proto;
+    }
+
+    location = /docs {
+        proxy_pass http://backend:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $fwd_proto;
+    }
+
     # Frontend Next.js
     location / {
         proxy_pass http://frontend:3000;

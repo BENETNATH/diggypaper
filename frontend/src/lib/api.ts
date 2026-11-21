@@ -19,6 +19,9 @@ export interface User {
   data_consent_given: boolean;
   can_create_projects: boolean;
   created_at: string;
+  /** Personal API key (spec 2026-11-21): presence only — the key itself is never returned. */
+  api_key_set: boolean;
+  api_key_created_at: string | null;
 }
 
 /** Ranking metric for an item (benchmark): recall by default. */
@@ -611,6 +614,15 @@ export async function exportMyData(): Promise<unknown> {
 
 export async function anonymizeMe(): Promise<void> {
   await request("/users/me/anonymize", { method: "DELETE" });
+}
+
+/** Personal API key (spec 2026-11-21): generates the key — the plaintext is returned ONLY here. */
+export async function generateApiKey(): Promise<{ api_key: string }> {
+  return request<{ api_key: string }>("/auth/me/api-key", { method: "POST" });
+}
+
+export async function revokeApiKey(): Promise<void> {
+  await request("/auth/me/api-key", { method: "DELETE" });
 }
 
 // --- Projets ----------------------------------------------------------------

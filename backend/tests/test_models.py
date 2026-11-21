@@ -107,6 +107,8 @@ def test_users_columns():
         "can_create_projects",
         "token_version",
         "created_at",
+        "api_key_hash",
+        "api_key_created_at",
     }
     assert c["id"].primary_key
     assert isinstance(c["id"].type, Uuid)
@@ -127,6 +129,14 @@ def test_users_columns():
     assert isinstance(c["created_at"].type, DateTime)
     assert c["created_at"].type.timezone
     assert c["created_at"].server_default is not None
+    # Personal API key (spec 2026-11-21 R1): sha256 hex, unique index, nullable
+    assert c["api_key_hash"].nullable
+    assert isinstance(c["api_key_hash"].type, String)
+    assert c["api_key_hash"].type.length == 64
+    assert c["api_key_hash"].unique
+    assert isinstance(c["api_key_created_at"].type, DateTime)
+    assert c["api_key_created_at"].type.timezone
+    assert c["api_key_created_at"].nullable
 
 
 async def test_users_email_unique(session):

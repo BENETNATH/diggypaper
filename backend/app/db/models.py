@@ -168,6 +168,10 @@ class User(Base):
     )
     # Incremented on password change / logout: revokes JWTs issued before.
     token_version: Mapped[int] = mapped_column(Integer, server_default=text("0"), default=0)
+    # Personal API key (spec 2026-11-21 R1): sha256 hex digest only — the plaintext
+    # key is returned once at generation and never stored or read back.
+    api_key_hash: Mapped[str | None] = mapped_column(String(64), unique=True)
+    api_key_created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -175,6 +179,10 @@ class User(Base):
     @property
     def may_create_projects(self) -> bool:
         return self.role == UserRole.ADMIN or bool(self.can_create_projects)
+
+    @property
+    def api_key_set(self) -> bool:
+        return self.api_key_hash is not None
 
     created_projects: Mapped[list["Project"]] = relationship(
         back_populates="creator", passive_deletes=True
