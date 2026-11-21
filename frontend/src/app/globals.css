@@ -27,25 +27,35 @@
 :root {
   /* Neutres froids (teinte ~250) */
   --background: oklch(0.985 0.002 250);
-  --foreground: oklch(0.24 0.02 260);
+  /* raw = canaux OKLCH seuls (spec 2026-11-21-tokens-alpha) : permet les
+     modificateurs d'opacité Tailwind (bg-x/NN) via oklch(var(--x-raw) / a). */
+  --foreground-raw: 0.24 0.02 260;
+  --foreground: oklch(var(--foreground-raw));
   --surface: oklch(1 0 0);
-  --surface-muted: oklch(0.962 0.004 250);
-  --border: oklch(0.9 0.006 250);
-  --muted: oklch(0.52 0.015 255);
+  --surface-muted-raw: 0.962 0.004 250;
+  --surface-muted: oklch(var(--surface-muted-raw));
+  --border-raw: 0.9 0.006 250;
+  --border: oklch(var(--border-raw));
+  --muted-raw: 0.52 0.015 255;
+  --muted: oklch(var(--muted-raw));
   --muted-foreground: oklch(0.44 0.02 258);
 
   /* Accent (bleu teinté) */
-  --primary: oklch(0.55 0.19 258);
+  --primary-raw: 0.55 0.19 258;
+  --primary: oklch(var(--primary-raw));
   --primary-hover: oklch(0.49 0.2 258);
   --primary-foreground: oklch(0.985 0 0);
 
   /* États */
-  --danger: oklch(0.55 0.2 25);
+  --danger-raw: 0.55 0.2 25;
+  --danger: oklch(var(--danger-raw));
   --danger-foreground: oklch(0.985 0 0);
   /* L=0.48: 5.80:1 on white, 4.65:1 on bg-success/15 (Badge green), 5.20:1 on bg-surface-muted (WCAG 1.4.3). */
-  --success: oklch(0.48 0.16 155);
+  --success-raw: 0.48 0.16 155;
+  --success: oklch(var(--success-raw));
   /* L=0.50: 6.12:1 on white, 5.29:1 on bg-warning/10, 4.55:1 on bg-warning/20 (Badge yellow), 5.48:1 on bg-surface-muted (WCAG 1.4.3). */
-  --warning: oklch(0.50 0.15 75);
+  --warning-raw: 0.50 0.15 75;
+  --warning: oklch(var(--warning-raw));
 
   /* Surlignage de preuve (EvidenceHighlighter) — teinte jaune/ambre */
   --highlight-bg: oklch(0.965 0.1 92);
@@ -56,7 +66,8 @@
   --cell-warn: oklch(0.55 0.15 75 / 0.15);
 
   /* Focus (WCAG 2.4.11 : ≥ 2px, contraste ≥ 3:1) */
-  --focus: oklch(0.55 0.19 258);
+  --focus-raw: 0.55 0.19 258;
+  --focus: oklch(var(--focus-raw));
 
   /* Fond assombri des modales/overlays (teinte du neutre, jamais de noir pur) */
   --overlay: oklch(0.2 0.02 260 / 0.4);
@@ -70,26 +81,35 @@
 @media (prefers-color-scheme: dark) {
   :root {
     --background: oklch(0.17 0.01 260);
-    --foreground: oklch(0.93 0.005 250);
+    --foreground-raw: 0.93 0.005 250;
+    --foreground: oklch(var(--foreground-raw));
     --surface: oklch(0.22 0.012 260);
-    --surface-muted: oklch(0.26 0.014 260);
-    --border: oklch(0.32 0.015 260);
-    --muted: oklch(0.7 0.01 255);
+    --surface-muted-raw: 0.26 0.014 260;
+    --surface-muted: oklch(var(--surface-muted-raw));
+    --border-raw: 0.32 0.015 260;
+    --border: oklch(var(--border-raw));
+    --muted-raw: 0.7 0.01 255;
+    --muted: oklch(var(--muted-raw));
     --muted-foreground: oklch(0.78 0.01 255);
     /* Kept as is: dark primary-foreground on this primary measures 5.96:1 (verified by
        WCAG computation), so the audit's 2.70:1 claim is a false positive; a lighter
        foreground would read white (3.16:1, fail) and a darker primary would break
        dark text-primary links. */
-    --primary: oklch(0.65 0.19 258);
+    --primary-raw: 0.65 0.19 258;
+    --primary: oklch(var(--primary-raw));
     --primary-hover: oklch(0.7 0.19 258);
     --primary-foreground: oklch(0.15 0.01 260);
-    --danger: oklch(0.65 0.2 25);
+    --danger-raw: 0.65 0.2 25;
+    --danger: oklch(var(--danger-raw));
     --danger-foreground: oklch(0.15 0.01 260);
-    --success: oklch(0.7 0.15 155);
-    --warning: oklch(0.8 0.14 75);
+    --success-raw: 0.7 0.15 155;
+    --success: oklch(var(--success-raw));
+    --warning-raw: 0.8 0.14 75;
+    --warning: oklch(var(--warning-raw));
     --highlight-bg: oklch(0.38 0.09 88);
     --highlight-fg: oklch(0.9 0.06 95);
-    --focus: oklch(0.7 0.19 258);
+    --focus-raw: 0.7 0.19 258;
+    --focus: oklch(var(--focus-raw));
     --overlay: oklch(0.05 0.01 260 / 0.5);
     /* Cellules de résultats colorées — alphas dark validés en maquette 04 */
     --cell-good: oklch(0.70 0.15 155 / 0.16);
