@@ -458,6 +458,47 @@ async def test_get_article_no_search_full_text_sections(client, session, researc
     assert "METH" in text
 
 
+async def test_get_article_search_scoped_full_text(client, session, researcher_user, do_login):
+    """Spec 2026-11-21 option A: the fiche shows the FULL document (every stored section)
+    even when the search is scoped to a subset of sections — the models keep reading the
+    search's own text_sections (via fill_prompt, not this payload). Here the search is
+    ["abstract"] yet the text must still contain the intro and methods sections."""
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project = Project(title="P", created_by=researcher_user.id, text_sections=["abstract"])
+    session.add(project)
+    await session.commit()
+    session.add(
+        ProjectMember(
+            project_id=project.id,
+            user_id=researcher_user.id,
+            role_in_project=ProjectMemberRole.LEAD,
+        )
+    )
+    article = Article(
+        project_id=project.id,
+        pmid="111",
+        title="A study",
+        abstract="ABSTRACT",
+        sections=[
+            {"kind": "introduction", "title": "Intro", "text": "INTRO"},
+            {"kind": "methods", "title": "Methods", "text": "METH"},
+        ],
+    )
+    session.add(article)
+    await session.commit()
+    search = await ensure_default_search(session, project)
+    await session.commit()
+    assert search.text_sections == ["abstract"]
+    resp = await client.get(
+        f"/api/v1/projects/{project.id}/articles/{article.id}?search={search.id}"
+    )
+    assert resp.status_code == 200
+    text = resp.json()["text"]
+    assert "ABSTRACT" in text
+    assert "INTRO" in text
+    assert "METH" in text
+
+
 async def test_get_prediction_no_search_null(client, session, researcher_user, do_login):
     """Corpus mode: no analysis → no prediction to show (200 null, not a 404) —
     even when legacy prediction rows exist."""

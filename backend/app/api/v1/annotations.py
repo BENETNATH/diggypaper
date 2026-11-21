@@ -67,7 +67,7 @@ async def _scope(
     return await resolve_search(db, project, search_id)
 
 
-def _article_payload(a: Article, kinds: list[str] | None = None) -> dict:
+def _article_payload(a: Article) -> dict:
     return {
         "id": str(a.id),
         "pmid": a.pmid,
@@ -76,8 +76,11 @@ def _article_payload(a: Article, kinds: list[str] | None = None) -> dict:
         "title": a.title,
         "abstract": a.abstract,
         "methods_text": a.methods_text,
-        # Text given to the models = sections chosen for the project (cf. text_sections).
-        "text": compose_text(a, kinds),
+        # The document shown on the fiche: every stored section. The models read the
+        # search's own text_sections separately (fill_prompt, app/tasks/inference.py) —
+        # scoping the display would hide deposited full text behind an abstract-only
+        # analysis (spec 2026-11-21, option A).
+        "text": compose_text(a, ["all"]),
         "has_fulltext": bool(a.sections),
         "fulltext_source": a.fulltext_source,
         "fulltext_note": a.fulltext_note,
@@ -112,12 +115,12 @@ async def get_article(
     user: UserDep,
     search: uuid.UUID | None = None,
 ) -> dict:
-    """Article alone (with methods_text) for the annotation viewer; the text "given to
-    the models" follows the sections of the search — corpus mode (no search): all
-    sections (spec 2026-11-20-fiche-article-corpus R1)."""
+    """Article alone (with methods_text) for the annotation viewer; the text is the full
+    document (every stored section) — corpus mode or not (spec 2026-11-21, option A)."""
     article = await _require_article(db, project_id, article_id, user)
-    scope = await _scope(db, project_id, search)
-    return _article_payload(article, ["all"] if scope is None else scope.text_sections)
+    # Validates the requested search (404 when foreign); the payload text is the full document.
+    await _scope(db, project_id, search)
+    return _article_payload(article)
 
 
 async def _require_lead_article(
@@ -214,11 +217,11 @@ async def search_fulltext(
 
         # RAG: the completed full-text is new — embed the sections (spec 2026-11-07 §6)
         vectorize_task.delay(str(project_id), [str(article.id)])
-    scope = await _scope(db, project_id, search)
+    await _scope(db, project_id, search)
     return {
         "found": source is not None,
         "source": source,
-        "article": _article_payload(article, ["all"] if scope is None else scope.text_sections),
+        "article": _article_payload(article),
     }
 
 
@@ -313,8 +316,8 @@ async def upload_fulltext(
         raise HTTPException(status_code=422, detail="pdf_mismatch")
     await apply_uploaded_pdf(db, article, sections, data)
     await db.commit()
-    scope = await _scope(db, project_id, search)
-    payload = _article_payload(article, ["all"] if scope is None else scope.text_sections)
+    await _scope(db, project_id, search)
+    payload = _article_payload(article)
     payload["pdf_check"] = {True: "match", False: "forced", None: "unverified"}[verdict]
     return payload
 
