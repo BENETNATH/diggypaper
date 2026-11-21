@@ -27,6 +27,12 @@ RRF_K = 60
 DEFAULT_LIMIT = 20
 MAX_LIMIT = 100
 
+#: Safety valve: max sections materialized into the API worker per request
+#: (deterministic order). The dense half stays in SQL (HNSW), so only the
+#: lexical scan is bounded; a corpus beyond the cap keeps working, the
+#: lexical half simply stops scanning past the cap.
+MAX_MATERIALIZED_SECTIONS = 5000
+
 #: Dense candidates per requested result (hybrid recall before the fusion).
 _CANDIDATE_FACTOR = 3
 _EXCERPT_LEN = 400
@@ -52,21 +58,34 @@ def _as_list(vec: object) -> list[float] | None:
 
 
 async def _project_sections(db: AsyncSession, project_id: uuid.UUID) -> list[dict]:
-    """All embeddable sections of the project:
+    """All embeddable sections of the project (capped at
+    ``MAX_MATERIALIZED_SECTIONS``, deterministic order):
     ``{"article", "index", "title", "text"}`` (synthetic Abstract included)."""
     articles = list(
-        (await db.execute(select(Article).where(Article.project_id == project_id))).scalars().all()
+        (
+            await db.execute(
+                select(Article)
+                .where(Article.project_id == project_id)
+                .order_by(Article.created_at, Article.id)
+            )
+        )
+        .scalars()
+        .all()
     )
     out: list[dict] = []
     for article in articles:
         sections = article.sections or []
         for i, section in enumerate(sections):
+            if len(out) >= MAX_MATERIALIZED_SECTIONS:
+                return out
             text = (section or {}).get("text") or ""
             if text.strip():
                 out.append(
                     {"article": article, "index": i, "title": section.get("title"), "text": text}
                 )
         if not sections and (article.abstract or "").strip():
+            if len(out) >= MAX_MATERIALIZED_SECTIONS:
+                return out
             out.append(
                 {"article": article, "index": 0, "title": "Abstract", "text": article.abstract}
             )

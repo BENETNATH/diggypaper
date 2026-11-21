@@ -19,6 +19,7 @@ from app.db.models import (
     ProjectMember,
     ProjectMemberRole,
     PromptTemplate,
+    Search,
     User,
     UserRole,
 )
@@ -113,6 +114,57 @@ async def test_trigger_benchmark_lead(client, session, researcher_user, do_login
     assert run is not None
     assert run.status == BenchmarkStatus.PENDING
     assert run.models_tested == [model_name]
+
+
+async def test_trigger_benchmark_blind_422(client, session, researcher_user, do_login, monkeypatch):
+    """A blind lot: benchmarking it would publish the model answers on the
+    masked articles -> 422 at the trigger (same spirit as "cannot schedule on
+    a blind search")."""
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project_id = await _create_project(client)
+    prompt_id, model_name = await _seed_benchmark_prereqs(session, project_id)
+    _mock_benchmark_task(monkeypatch)
+    project = await session.get(Project, uuid.UUID(project_id))
+    search = Search(project_id=project.id, name="blind-1", kind="blind", lot_all=True)
+    session.add(search)
+    await session.commit()
+    resp = await client.post(
+        f"/api/v1/projects/{project_id}/benchmarks",
+        json={"prompt_template_id": prompt_id, "models": [model_name], "search_id": str(search.id)},
+    )
+    assert resp.status_code == 422, resp.text
+    assert "blind" in resp.json()["detail"].lower()
+
+
+async def test_benchmark_blind_run_reads_and_reruns_404(client, session, researcher_user, do_login):
+    """A pre-release benchmark run on a blind search: its reads (aggregated
+    scores, per-article decisions) and its reruns are oracles on the masked
+    answers -> 404, never a hint (the run stays deletable: the purge path)."""
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project_id = await _create_project(client)
+    prompt_id, model_name = await _seed_benchmark_prereqs(session, project_id)
+    project = await session.get(Project, uuid.UUID(project_id))
+    search = Search(project_id=project.id, name="blind-1", kind="blind")
+    session.add(search)
+    await session.commit()
+    run = BenchmarkRun(
+        project_id=project.id,
+        search_id=search.id,
+        prompt_template_id=uuid.UUID(prompt_id),
+        models_tested=[model_name],
+        status=BenchmarkStatus.COMPLETED,
+    )
+    session.add(run)
+    await session.commit()
+    base = f"/api/v1/projects/{project_id}/benchmarks"
+    for path in (f"{base}/{run.id}", f"{base}/{run.id}/articles"):
+        resp = await client.get(path)
+        assert resp.status_code == 404, f"GET {path} -> {resp.status_code}"
+    for path in (f"{base}/{run.id}/rerun", f"{base}/{run.id}/retry-errors"):
+        resp = await client.post(path)
+        assert resp.status_code == 404, f"POST {path} -> {resp.status_code}"
+    resp = await client.delete(f"{base}/{run.id}")
+    assert resp.status_code == 204
 
 
 async def test_trigger_benchmark_admin(client, session, admin_user, do_login, monkeypatch):

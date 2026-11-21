@@ -1,6 +1,8 @@
 """Phase 3 multi-sources: exports that no longer lie for a non-PubMed article
 (spec 2026-10-29-sources-phase3 D6) — 100% offline."""
 
+import io
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import app.crate as crate
@@ -129,3 +131,60 @@ def test_prisma_identified_label_lists_sources():
 def test_app_version_reads_version_file():
     """The Diggypaper version is read from the VERSION file (semver, single source)."""
     assert crate.app_version() == "1.0.0"
+
+
+# --- Blind lot: the AI-answer distribution stays out of the exports ---------
+
+
+def _blind_inf_job():
+    """An analysis job of a blind search: its result_json is exactly the
+    distribution of the (masked) AI answers."""
+    return SimpleNamespace(
+        created_at=datetime(2026, 1, 1, 12, 0, tzinfo=UTC),
+        status=SimpleNamespace(value="COMPLETED"),
+        model_used="Kev-4B",
+        prefilter_model=None,
+        model_info=None,
+        result_json={"processed": 4, "auto_accepted": 2, "auto_rejected": 1, "needs_review": 1},
+    )
+
+
+def test_project_info_blind_result_masked():
+    """RO-Crate: on a blind lot the ``analysis.result`` (the AI-answers
+    distribution) never leaves the project."""
+    project = SimpleNamespace(
+        title="P",
+        description=None,
+        question="Q ?",
+        fields=[],
+        text_sections=False,
+        read_windows=None,
+    )
+    job = _blind_inf_job()
+    blind = crate.project_info(project, [], [], job, {}, None, blind=True)
+    assert blind["analysis"]["result"] is None
+    open_info = crate.project_info(project, [], [], job, {}, None)
+    assert open_info["analysis"]["result"]["auto_accepted"] == 2
+
+
+def test_build_workbook_blind_no_result_rows():
+    """xlsx: on a blind lot the "Project" sheet skips the analysis result
+    rows (the AI-answers distribution) but keeps the date and the models."""
+    from openpyxl import load_workbook
+
+    from app.api.v1.export import build_workbook
+
+    project = SimpleNamespace(
+        title="P",
+        question="Q ?",
+        fields=[],
+        text_sections=False,
+        read_windows=None,
+    )
+    job = _blind_inf_job()
+    for blind, expect_result in ((False, True), (True, False)):
+        data = build_workbook(project, [], {}, {}, [], job, "lead@lab.fr", blind=blind)
+        wb = load_workbook(io.BytesIO(data))
+        ws = wb["Project"]
+        cells = {str(c.value) for row in ws.iter_rows() for c in row if c.value is not None}
+        assert ("auto_accepted" in cells) is expect_result, blind

@@ -185,7 +185,15 @@ def extraction_csv(articles, keys: dict, preds: dict, annos: dict, fields: list[
     return b"\xef\xbb\xbf" + buf.getvalue().encode()
 
 
-def project_info(project, fields, import_jobs, inf_job, models: dict, prompt) -> dict:
+def project_info(
+    project,
+    fields,
+    import_jobs,
+    inf_job,
+    models: dict,
+    prompt,
+    blind: bool = False,
+) -> dict:
     """project.json: everything needed to redo the analysis (queries, models, prompt)."""
 
     def model_info(name, stage):
@@ -235,7 +243,9 @@ def project_info(project, fields, import_jobs, inf_job, models: dict, prompt) ->
             if inf_job.prefilter_model
             else None,
             "stage_2_model": model_info(inf_job.model_used, "main"),
-            "result": inf_job.result_json,
+            # blind lot: the result is the distribution of the masked AI
+            # answers — it never leaves the project
+            "result": None if blind else inf_job.result_json,
             "prompt": None
             if prompt is None
             else {

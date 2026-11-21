@@ -420,3 +420,17 @@ async def test_summary_english(client, session, researcher_user, do_login):
     )
     summary = resp.json()["summary"]
     assert "articles" in summary.lower() or "reviewed" in summary.lower()
+
+
+async def test_blind_search_404(client, session, researcher_user, do_login):
+    """Blind search: the agreement metrics would be an oracle on the masked
+    answers (same guard as the results index — 404, never a hint)."""
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project, search, arts = await _seed(session, researcher_user)
+    search.kind = "blind"
+    a = await _make_user(session, "rev-a@lab.fr")
+    b = await _make_user(session, "rev-b@lab.fr")
+    await _annotate(session, search, arts, a, b, DEC_A, DEC_B)
+    await session.commit()
+    resp = await client.get(f"/api/v1/projects/{project.id}/searches/{search.id}/agreement")
+    assert resp.status_code == 404

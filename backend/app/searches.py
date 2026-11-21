@@ -187,6 +187,15 @@ def lot_condition(search: Search):
     )
 
 
+async def job_blind(db: AsyncSession, job) -> bool:
+    """True if the job belongs to a blind search — its payload (breakdown,
+    result) would be an oracle on the masked answers."""
+    if job is None or getattr(job, "search_id", None) is None:
+        return False
+    search = await db.get(Search, job.search_id)
+    return search is not None and search.kind == "blind"
+
+
 async def lot_ids(db: AsyncSession, search: Search) -> list[uuid.UUID]:
     rows = await db.execute(select(Article.id).where(lot_condition(search)).order_by(Article.id))
     return list(rows.scalars().all())

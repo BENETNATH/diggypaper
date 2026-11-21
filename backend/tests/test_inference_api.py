@@ -18,6 +18,7 @@ from app.db.models import (
     ProjectMemberRole,
     ProjectStatus,
     PromptTemplate,
+    Search,
     User,
     UserRole,
 )
@@ -454,3 +455,64 @@ async def test_get_inference_status_exposes_model_info_snapshot(
     await session.commit()
     job = (await client.get(f"/api/v1/projects/{project_id}/inference")).json()["job"]
     assert job["model_info"] == info
+
+
+# --- blind search: the job payload is an oracle on the masked answers --------
+
+
+async def test_get_inference_blind_404(client, session, researcher_user, do_login):
+    """A job of a blind search: breakdown + result_json are an oracle on the
+    masked answers -> 404, never a hint (same guard as the results index)."""
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project_id, _ = await _create_frozen_project(client, session, researcher_user)
+    project = await session.get(Project, uuid.UUID(project_id))
+    search = Search(project_id=project.id, name="blind-1", kind="blind")
+    session.add(search)
+    await session.commit()
+    session.add(
+        InferenceJob(
+            project_id=project.id,
+            search_id=search.id,
+            model_used="Kev-4B",
+            status=InferenceJobStatus.RUNNING,
+            result_json={
+                "processed": 10,
+                "auto_accepted": 5,
+                "auto_rejected": 2,
+                "needs_review": 3,
+            },
+        )
+    )
+    await session.commit()
+    # scoped to the blind search
+    resp = await client.get(
+        f"/api/v1/projects/{project_id}/inference", params={"search": search.id}
+    )
+    assert resp.status_code == 404
+    # active polling (project-wide) reaches the same blind job
+    resp = await client.get(f"/api/v1/projects/{project_id}/inference", params={"active": "true"})
+    assert resp.status_code == 404
+
+
+async def test_cancel_inference_blind_404(client, session, researcher_user, do_login):
+    """Cancel returns the job payload: on a blind search that payload is an
+    oracle -> 404, and the job is left untouched."""
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project_id, _ = await _create_frozen_project(client, session, researcher_user)
+    project = await session.get(Project, uuid.UUID(project_id))
+    search = Search(project_id=project.id, name="blind-1", kind="blind")
+    session.add(search)
+    await session.commit()
+    job = InferenceJob(
+        project_id=project.id,
+        search_id=search.id,
+        model_used="Kev-4B",
+        status=InferenceJobStatus.RUNNING,
+    )
+    session.add(job)
+    await session.commit()
+    resp = await client.post(f"/api/v1/projects/{project_id}/inference/cancel")
+    assert resp.status_code == 404
+    job = await session.get(InferenceJob, job.id)
+    await session.refresh(job)
+    assert job.status == InferenceJobStatus.RUNNING

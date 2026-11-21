@@ -34,7 +34,7 @@ from app.db.models import (
 )
 from app.model_access import usable_models
 from app.schema import project_fields
-from app.searches import get_search, gold_condition, lot_condition
+from app.searches import get_search, gold_condition, job_blind, lot_condition
 from app.tasks.benchmark import benchmark_task, retry_benchmark_errors_task
 
 router = APIRouter(prefix="/projects", tags=["benchmarks"])
@@ -135,6 +135,10 @@ async def trigger_benchmark(
     ).scalar_one()
     if lot == 0:
         raise HTTPException(status_code=422, detail="the search has no articles")
+    if scope.kind == "blind":
+        # benchmarking a blind lot would run the models on the masked answers
+        # (the lot is the oracle) — refused
+        raise HTTPException(status_code=422, detail="blind searches cannot be benchmarked")
     calls = lot * len(models) * max(1, len(variants))
     if calls > BENCHMARK_MAX_CALLS:
         raise HTTPException(
@@ -213,6 +217,10 @@ async def rerun_benchmark(
     run = await db.get(BenchmarkRun, run_id)
     if run is None or run.project_id != project_id:
         raise HTTPException(status_code=404, detail="benchmark run not found")
+    if await job_blind(db, run):
+        # the run's scores are an oracle on the masked answers — 404,
+        # never a hint (same guard as the trigger)
+        raise HTTPException(status_code=404, detail="benchmark run not found")
     if run.status in (BenchmarkStatus.PENDING, BenchmarkStatus.RUNNING):
         raise HTTPException(status_code=409, detail="cannot rerun a benchmark in progress")
     active = (
@@ -257,6 +265,10 @@ async def retry_benchmark_errors(
     await _require_lead(db, project_id, user)
     run = await db.get(BenchmarkRun, run_id)
     if run is None or run.project_id != project_id:
+        raise HTTPException(status_code=404, detail="benchmark run not found")
+    if await job_blind(db, run):
+        # re-running the failed predictions would re-expose the masked
+        # answers — 404, never a hint (same guard as the trigger)
         raise HTTPException(status_code=404, detail="benchmark run not found")
     if run.status != BenchmarkStatus.COMPLETED:
         raise HTTPException(status_code=409, detail="only a completed benchmark can be retried")
@@ -328,6 +340,10 @@ async def get_benchmark(project_id: uuid.UUID, run_id: uuid.UUID, db: DbDep, use
     run = await db.get(BenchmarkRun, run_id)
     if run is None or run.project_id != project_id:
         raise HTTPException(status_code=404, detail="benchmark run not found")
+    if await job_blind(db, run):
+        # the run's results are an oracle on the masked answers — 404,
+        # never a hint (same guard as the trigger)
+        raise HTTPException(status_code=404, detail="benchmark run not found")
     rows = (
         (
             await db.execute(
@@ -383,6 +399,10 @@ async def benchmark_articles(
     if run is None or run.project_id != project_id:
         raise HTTPException(status_code=404, detail="benchmark run not found")
     scope = await get_search(db, project, run.search_id)
+    if scope.kind == "blind":
+        # the per-article decisions are the model answers on the masked lot —
+        # 404, never a hint (same guard as the trigger)
+        raise HTTPException(status_code=404, detail="benchmark run not found")
     fields = project_fields(scope)
     preds = (
         (

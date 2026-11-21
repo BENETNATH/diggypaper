@@ -110,6 +110,15 @@ Mise à jour : 2026-11-20. Commits cités : `git log --oneline`.
   qwen3:1.7b pour le gate (job 906766d9, 3 articles, seed 42).
 - Journals cibles (Couperin) : RSM (0 €, CUP illimité) n°1, SysRevs n°2 (fit exact).
 
+## À arbitrer (2026-11-21)
+- **Benchmarks blind : l'existence d'un run blind reste visible en liste**
+  (`GET /projects/{id}/benchmarks`) — métadonnées (`models_tested`, `variants`,
+  `options`, `progress`, `errors_total`) mais aucun score ni décision par
+  article. Verdict de la review sécurité de la release v1.0.0 (2026-11-21) :
+  LOW / par conception, pas de fuite d'oracle, pas corrigé. Si l'existence
+  elle-même du run doit être masquée aux membres : filtrer la liste par
+  `search.kind` (1 endpoint) + tests.
+
 ## À arbitrer (2026-11-20)
 - **Refresh full-text « Relancer la recherche du texte intégral » : membre ou lead ?**
   `search_fulltext` (annotations.py:182) n'exige que le rôle MEMBRE (rate-limit 10),

@@ -875,3 +875,30 @@ def test_text_to_sections_acknowledgments_stops():
     assert len(secs) == 1
     assert secs[0]["kind"] == "results"
     assert "Thanks" not in secs[0]["text"]
+
+
+def test_safe_fulltext_url_rejects_non_http_schemes():
+    from app.fulltext import safe_fulltext_url
+
+    assert safe_fulltext_url("https://source.org/x.pdf") == "https://source.org/x.pdf"
+    assert safe_fulltext_url("http://source.org/x.pdf") == "http://source.org/x.pdf"
+    assert safe_fulltext_url("javascript:alert(1)") is None
+    assert safe_fulltext_url("data:text/html,x") is None
+    assert safe_fulltext_url(None) is None
+    assert safe_fulltext_url("") is None
+
+
+async def test_complete_article_rejects_js_url(session, article_with_pdf, monkeypatch):
+    """A javascript: fulltext_url from a source is not persisted (stored-XSS
+    vector in the article link rendered by the frontend)."""
+    art = article_with_pdf
+    sections = [{"title": "Results", "kind": "results", "text": BODY}]
+    monkeypatch.setattr(
+        "app.fulltext.find_open_fulltext",
+        AsyncMock(return_value=(sections, "europepmc", "javascript:alert(1)", None)),
+    )
+    async with httpx.AsyncClient() as http:
+        assert await complete_article(session, art, "a@b.fr", http) == "europepmc"
+    await session.commit()
+    await session.refresh(art)
+    assert art.fulltext_url is None

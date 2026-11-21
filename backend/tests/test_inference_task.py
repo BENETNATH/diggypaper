@@ -1816,6 +1816,125 @@ async def test_run_inference_blind_search_no_results_indexing_trigger(
     assert calls == []
 
 
+async def test_run_inference_blind_search_email_no_answer_distribution(
+    engine, session, fake_redis, monkeypatch
+):
+    """Completion e-mail on a blind lot: the AI-answers distribution (an oracle
+    on the masked answers) never reaches the lead's inbox — only the
+    operational counters (same guard as the read paths)."""
+    import app.tasks.inference as task_mod
+    from app.db.models import Search, SearchArticle
+
+    project = Project(title="P", created_by=None, status=ProjectStatus.FROZEN)
+    session.add(project)
+    await session.commit()
+    await ensure_default_search(session, project)
+    prompt = PromptTemplate(
+        project_id=project.id,
+        version_number="v1.0",
+        system_prompt="SYS",
+        user_prompt_schema="Article Text:\n{methods_text}",
+    )
+    session.add(prompt)
+    session.add(ModelRegistry(name="Kev-4B", model_identifier="kef/kev-4b"))
+    search = Search(
+        project_id=project.id,
+        name="A",
+        lot_all=False,
+        kind="blind",
+        fields=[{"key": "k", "label": "K", "type": "boolean"}],
+    )
+    session.add(search)
+    await session.flush()
+    for i in range(2):
+        a = Article(project_id=project.id, pmid=str(100 + i), title=f"A{i}", methods_text=f"M{i}.")
+        session.add(a)
+        await session.flush()
+        session.add(SearchArticle(search_id=search.id, article_id=a.id))
+    job = InferenceJob(
+        project_id=project.id,
+        prompt_template_id=prompt.id,
+        model_used="Kev-4B",
+        search_id=search.id,
+        status=InferenceJobStatus.PENDING,
+    )
+    session.add(job)
+    await session.commit()
+
+    mails = []
+
+    async def fake_notify(project_id, job_type, stats, **kw):
+        mails.append((job_type, stats))
+
+    monkeypatch.setattr(task_mod, "notify_job_complete", fake_notify)
+    await _run_inference(
+        str(job.id), session_factory=_factory(engine), inference=FakeInference(), redis=fake_redis
+    )
+    assert len(mails) == 1, "the lead must still be told the job finished (the API is 404)"
+    job_type, stats = mails[0]
+    assert job_type == "inference"
+    for key in ("auto_accepted", "auto_rejected", "needs_review", "invalid_json", "prefiltered"):
+        assert key not in stats, key
+    assert stats.get("processed") == 2
+
+
+async def test_run_inference_open_search_email_full_stats(engine, session, fake_redis, monkeypatch):
+    """Control: on a non-blind search the completion e-mail keeps the full
+    distribution (the mask is blind-only)."""
+    import app.tasks.inference as task_mod
+    from app.db.models import Search, SearchArticle
+
+    project = Project(title="P", created_by=None, status=ProjectStatus.FROZEN)
+    session.add(project)
+    await session.commit()
+    await ensure_default_search(session, project)
+    prompt = PromptTemplate(
+        project_id=project.id,
+        version_number="v1.0",
+        system_prompt="SYS",
+        user_prompt_schema="Article Text:\n{methods_text}",
+    )
+    session.add(prompt)
+    session.add(ModelRegistry(name="Kev-4B", model_identifier="kef/kev-4b"))
+    search = Search(
+        project_id=project.id,
+        name="A",
+        lot_all=False,
+        fields=[{"key": "k", "label": "K", "type": "boolean"}],
+    )
+    session.add(search)
+    await session.flush()
+    for i in range(2):
+        a = Article(project_id=project.id, pmid=str(100 + i), title=f"A{i}", methods_text=f"M{i}.")
+        session.add(a)
+        await session.flush()
+        session.add(SearchArticle(search_id=search.id, article_id=a.id))
+    job = InferenceJob(
+        project_id=project.id,
+        prompt_template_id=prompt.id,
+        model_used="Kev-4B",
+        search_id=search.id,
+        status=InferenceJobStatus.PENDING,
+    )
+    session.add(job)
+    await session.commit()
+
+    mails = []
+
+    async def fake_notify(project_id, job_type, stats, **kw):
+        mails.append((job_type, stats))
+
+    monkeypatch.setattr(task_mod, "notify_job_complete", fake_notify)
+    await _run_inference(
+        str(job.id), session_factory=_factory(engine), inference=FakeInference(), redis=fake_redis
+    )
+    assert len(mails) == 1
+    job_type, stats = mails[0]
+    assert job_type == "inference"
+    assert stats["auto_rejected"] == 0
+    assert stats["processed"] == 2
+
+
 async def test_run_inference_without_search_no_results_indexing(
     engine, session, fake_redis, monkeypatch
 ):

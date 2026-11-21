@@ -318,3 +318,41 @@ async def test_vectorize_progress_missing_project_404(client, session, researche
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     r = await client.get(f"/api/v1/projects/{uuid.uuid4()}/vectorize-progress")
     assert r.status_code == 404, r.text
+
+
+async def test_project_sections_cap_bounds_materialization(session, researcher_user, monkeypatch):
+    """Safety valve: per-request section materialization stops at the cap, in a
+    deterministic order, so a large corpus cannot grow the API worker's memory
+    unboundedly (the dense half stays in SQL)."""
+    from datetime import UTC, datetime, timedelta
+
+    from app import semantic_search as ss
+
+    monkeypatch.setattr(ss, "MAX_MATERIALIZED_SECTIONS", 4)
+    project = Project(title="Cap", created_by=researcher_user.id)
+    session.add(project)
+    await session.commit()
+    session.add(
+        ProjectMember(
+            project_id=project.id,
+            user_id=researcher_user.id,
+            role_in_project=ProjectMemberRole.LEAD,
+        )
+    )
+    t0 = datetime(2026, 1, 1, tzinfo=UTC)
+    for n in range(3):
+        session.add(
+            Article(
+                project_id=project.id,
+                title=f"Art {n}",
+                created_at=t0 + timedelta(hours=n),
+                sections=[
+                    {"title": f"S{m}", "kind": "results", "text": f"Body {n}-{m}."}
+                    for m in range(2)
+                ],
+            )
+        )
+    await session.commit()
+    out = await ss._project_sections(session, project.id)
+    assert len(out) == 4
+    assert [s["title"] for s in out] == ["S0", "S1", "S0", "S1"]

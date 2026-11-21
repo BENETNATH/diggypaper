@@ -364,6 +364,10 @@ async def run_watch_pass(
     # to analyze or match — refuse before re-pushing the source (422 via the
     # API, logged by the beat).
     search = await db.get(Search, watch.search_id)
+    if search is not None and search.kind == "blind":
+        # a pass re-runs the inference on the masked lot: the model answers
+        # would be the oracle — the pass is skipped (same guard as creation)
+        return {"error": "blind_search"}
     if not _has_criteria(search):
         raise WatchCriteriaError(
             f"watch {watch.id}: search without criteria (no question, no fields)"
@@ -497,6 +501,11 @@ async def evaluate_watch_matches(
         if project is None:
             return {}
         search = await db.get(Search, job.search_id)
+        if search is not None and search.kind == "blind":
+            # the matched articles would be the model's positive answers on
+            # the masked lot — no match evaluation, no last_matched, no
+            # e-mail (same guard as the watch creation)
+            return {}
         primary = primary_field(search.fields if search else None)
         threshold = _threshold(watch)
         # The new articles of this pass (the pass search's frozen lot).

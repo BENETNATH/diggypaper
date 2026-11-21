@@ -16,14 +16,14 @@ jobs:
   release:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
 
       - name: Read version from backend/VERSION
         id: version
         run: echo "value=$(cat backend/VERSION | tr -d '[:space:]')" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub release
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3  # v3
         with:
           tag_name: v${{ steps.version.outputs.value }}
           name: Diggypaper v${{ steps.version.outputs.value }}

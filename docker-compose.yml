@@ -18,7 +18,10 @@ x-logging: &logging
 
 services:
   postgres:
-    image: pgvector/pgvector:pg18
+    # Pinned to an explicit version tag (pgvector 0.8.7 / Postgres 18) instead
+    # of the rolling "pg18" tag, so `docker compose pull` cannot silently swap
+    # the DB image. Change deliberately via a reviewed source update.
+    image: pgvector/pgvector:0.8.7-pg18
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-diggypaper}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD manquant dans .env}

@@ -142,6 +142,120 @@ async def test_create_watch_lead_201(client, watch_project):
     assert body["search"]["id"] == str(search.id) and body["match_threshold"] is None
 
 
+async def test_create_watch_blind_422(client, session, watch_project):
+    """A watch re-runs inference on its lot and matches on the answers — an
+    oracle on a masked lot."""
+    project, search, _ = watch_project
+    search.kind = "blind"
+    await session.commit()
+    r = await client.post(
+        f"/api/v1/projects/{project.id}/watches",
+        json={"source": "pubmed", "query": "rat phenotyping", "search_id": str(search.id)},
+    )
+    assert r.status_code == 422, r.text
+
+
+async def test_watch_blind_last_matched_masked(client, session, watch_project):
+    """A pre-release watch on a blind search: its last_matched (matched
+    articles + model confidences) is an oracle on the masked answers —
+    masked in the payload."""
+    project, search, user = watch_project
+    search.kind = "blind"
+    await session.commit()
+    w = Watch(
+        project_id=project.id,
+        search_id=search.id,
+        source="pubmed",
+        query="q",
+        created_by=user.id,
+        last_matched={
+            "matched": 2,
+            "matched_ids": ["x"],
+            "matched_details": [{"id": "x", "title": "T", "pmid": None, "confidence": 0.9}],
+        },
+    )
+    session.add(w)
+    await session.commit()
+    r = await client.get(f"/api/v1/projects/{project.id}/watches")
+    assert r.status_code == 200, r.text
+    item = next(i for i in r.json()["items"] if i["id"] == str(w.id))
+    assert item["last_matched"] is None
+
+
+async def test_run_watch_blind_422(client, session, watch_project):
+    """A pass re-runs the inference on the masked lot: running a pre-release
+    watch on a blind search is refused (same guard as creation)."""
+    project, search, user = watch_project
+    search.kind = "blind"
+    await session.commit()
+    w = Watch(
+        project_id=project.id,
+        search_id=search.id,
+        source="pubmed",
+        query="q",
+        created_by=user.id,
+    )
+    session.add(w)
+    await session.commit()
+    r = await client.post(f"/api/v1/projects/{project.id}/watches/{w.id}/run")
+    assert r.status_code == 422, r.text
+
+
+async def test_watch_pass_blind_skipped(session, watch_project):
+    """Beat path: a watch on a blind search never runs a pass (the model
+    answers would be the oracle on the masked lot)."""
+    project, search, user = watch_project
+    search.kind = "blind"
+    await session.commit()
+    w = Watch(
+        project_id=project.id,
+        search_id=search.id,
+        source="pubmed",
+        query="q",
+        created_by=user.id,
+    )
+    session.add(w)
+    await session.commit()
+    launcher = FakeLauncher()
+    res = await run_watch_pass(
+        session, w, client=None, adapter=FakeAdapter(["1"]), launch_inference=launcher
+    )
+    assert res == {"error": "blind_search"}
+    assert launcher.calls == []
+
+
+async def test_watch_match_eval_blind_skipped(session, watch_project):
+    """Post-inference hook: on a blind search no match evaluation, no
+    last_matched write, no e-mail (the matched articles would be the model's
+    positive answers on the masked lot)."""
+    project, search, user = watch_project
+    search.kind = "blind"
+    await session.commit()
+    w = Watch(
+        project_id=project.id,
+        search_id=search.id,
+        source="pubmed",
+        query="q",
+        created_by=user.id,
+    )
+    session.add(w)
+    await session.flush()
+    job = InferenceJob(
+        project_id=project.id,
+        search_id=search.id,
+        model_used="Kev-4B",
+        status=InferenceJobStatus.COMPLETED,
+    )
+    session.add(job)
+    await session.flush()
+    w.inference_job_id = job.id
+    await session.commit()
+    res = await evaluate_watch_matches(session, job)
+    assert res == {}
+    await session.refresh(w)
+    assert w.last_matched is None
+
+
 async def test_create_watch_unknown_source_422(client, watch_project):
     project, search, _ = watch_project
     r = await client.post(

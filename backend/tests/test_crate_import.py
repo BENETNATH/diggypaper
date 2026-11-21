@@ -665,6 +665,20 @@ def test_read_article_identity_is_consistent():
     assert (got["source"], got["native_id"]) == ("openalex", None)
 
 
+def test_read_article_fulltext_url_sanitized():
+    """A non-http fulltext_url in the crate would be a stored-XSS vector in the
+    article link rendered by the frontend: only http(s) survives."""
+    assert (
+        _read_meta({"pmid": "111", "fulltext_url": "javascript:alert(1)"})["fulltext_url"] is None
+    )
+    assert (
+        _read_meta({"pmid": "111", "fulltext_url": "data:text/html,<b>x</b>"})["fulltext_url"]
+        is None
+    )
+    url = "https://europepmc.org/articles/PMC111"
+    assert _read_meta({"pmid": "111", "fulltext_url": url})["fulltext_url"] == url
+
+
 def test_crate_source_cannot_inject_ris_records():
     """``source`` / ``native_id`` from the crate are control-character free, and RIS values
     never carry a line break: no forged record in the export."""

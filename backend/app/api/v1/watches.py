@@ -130,7 +130,9 @@ async def _full(db: AsyncSession, w: Watch) -> dict:
         "criteria": w.criteria,
         "combine": w.combine,
         "last_run_at": w.last_run_at.isoformat() if w.last_run_at else None,
-        "last_matched": w.last_matched,
+        # a watch on a blind search: last_matched (matched articles + model
+        # confidences) is an oracle on the masked answers — masked
+        "last_matched": w.last_matched if not (search and search.kind == "blind") else None,
         "status": w.status,
         "created_by": (author.full_name or author.email) if author else None,
         "created_at": w.created_at.isoformat() if w.created_at else None,
@@ -163,6 +165,10 @@ async def create_watch(
     search = await db.get(Search, payload.search_id)
     if search is None or search.project_id != project.id:
         raise HTTPException(status_code=404, detail="search not found")
+    if search.kind == "blind":
+        # a watch re-runs the inference and matches on the answers: on a blind
+        # lot the model answers are the oracle — refused
+        raise HTTPException(status_code=422, detail="blind searches cannot be watched")
     if not _has_criteria(search):
         raise HTTPException(status_code=422, detail="search_without_criteria")
     try:
@@ -242,6 +248,11 @@ async def run_watch_endpoint(
     project = await _require_project_member(db, project_id, user)
     await _require_lead_or_admin(db, project_id, user)
     w = await _get_watch(db, project, watch_id)
+    search = await db.get(Search, w.search_id)
+    if search is not None and search.kind == "blind":
+        # a pass re-runs the inference on the masked lot: the model answers
+        # would be the oracle — refused (same guard as creation)
+        raise HTTPException(status_code=422, detail="blind searches cannot be watched")
     try:
         await run_watch_now(db, w, launched_by=user)
     except WatchCriteriaError as err:

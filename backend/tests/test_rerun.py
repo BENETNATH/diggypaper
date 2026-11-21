@@ -495,3 +495,51 @@ async def test_search_jobs_other_project_404(client, session, do_login):
     await session.commit()
     resp = await client.get(f"/api/v1/projects/{foreign.id}/searches/{search.id}/jobs")
     assert resp.status_code == 404
+
+
+async def test_comparison_blind_404(client, session, do_login):
+    """Blind search: the comparison would be an oracle on the masked answers
+    (same guard as the results index — 404, never a hint)."""
+    user, project, search, prompt = await _seed(session, n_articles=3)
+    search.kind = "blind"
+    await session.commit()
+    await do_login("lead@lab.fr", "lead-pass-123", consent=True)
+    arts = (
+        (await session.execute(select(Article).where(Article.project_id == project.id)))
+        .scalars()
+        .all()
+    )
+    job_a, job_b = await _two_jobs(session, project, search, arts, agree_first=True)
+    resp = await client.get(
+        f"/api/v1/projects/{project.id}/searches/{search.id}/comparison",
+        params={"job_a": str(job_a.id), "job_b": str(job_b.id)},
+    )
+    assert resp.status_code == 404
+
+
+async def test_list_jobs_blind_masks_breakdown(client, session, do_login):
+    """Blind search: the AI-answers distribution stays hidden in the jobs list;
+    the raw count (not a distribution) remains visible."""
+    user, project, search, prompt = await _seed(session, n_articles=2)
+    search.kind = "blind"
+    await session.commit()
+    await do_login("lead@lab.fr", "lead-pass-123", consent=True)
+    arts = (
+        (await session.execute(select(Article).where(Article.project_id == project.id)))
+        .scalars()
+        .all()
+    )
+    seeds = await _two_jobs(session, project, search, arts, agree_first=True)
+    # A completed run's result_json IS the masked distribution — the guard
+    # must cover it, not only the live breakdown.
+    for j in seeds:
+        j.result_json = {"processed": 2, "auto_accepted": 1, "auto_rejected": 0, "needs_review": 1}
+    await session.commit()
+    resp = await client.get(f"/api/v1/projects/{project.id}/searches/{search.id}/jobs")
+    assert resp.status_code == 200, resp.text
+    jobs = resp.json()["jobs"]
+    assert len(jobs) == 2
+    for job in jobs:
+        assert job["breakdown"] == {}
+        assert job["result"] is None
+        assert job["n_predictions"] == 2

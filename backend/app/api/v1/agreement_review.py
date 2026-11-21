@@ -45,6 +45,10 @@ async def agreement(
     """Human-human + AI-human agreement metrics and the disagreement list."""
     project = await _require_project_member(db, project_id, user)
     scope = await get_search(db, project, search_id)
+    if scope.kind == "blind":
+        # Agreement metrics would be an oracle on the masked answers (404,
+        # never a hint — same guard as the results index).
+        raise HTTPException(status_code=404, detail="search not found")
     counts = await reviewer_counts(db, scope)
     users = {u.id: u for u, _ in counts}
 

@@ -312,6 +312,7 @@ async def _run_inference(
             # automatic on completion, same pattern as the corpus
             # (vectorize_task.delay). Best-effort: a failure here must never
             # break the finished job.
+            s_kind = None
             if job.search_id is not None:
                 s_kind = await session.scalar(select(Search.kind).where(Search.id == job.search_id))
                 if s_kind != "blind":
@@ -330,10 +331,20 @@ async def _run_inference(
 
             # E-mail notification (best-effort, never breaks the job).
             mailer = await _make_mailer(session)
+            if s_kind == "blind":
+                # The answer distribution is an oracle on the masked answers —
+                # the e-mail keeps only the operational counters (same guard
+                # as the read paths).
+                mail_stats = {
+                    "processed": stats.get("processed"),
+                    "duration_seconds": stats.get("duration_seconds"),
+                }
+            else:
+                mail_stats = stats
             await notify_job_complete(
                 str(job.project_id),
                 "inference",
-                stats,
+                mail_stats,
                 session_factory=factory,
                 mailer=mailer,
             )

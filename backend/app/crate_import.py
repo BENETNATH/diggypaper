@@ -21,7 +21,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from app.article_text import classify_title
-from app.fulltext import MAX_PDF_BYTES
+from app.fulltext import MAX_PDF_BYTES, safe_fulltext_url
 from app.inference import clean_meta
 from app.schema import check_fields
 
@@ -210,7 +210,7 @@ def read_article(zf: zipfile.ZipFile, key: str) -> dict:
         "pub_types": _strings(meta.get("pub_types")),
         "original_language": _clean(meta.get("language"), 30) or "en",
         "fulltext_source": _clean(meta.get("fulltext_source"), 50),
-        "fulltext_url": _clean(meta.get("fulltext_url"), 1000),
+        "fulltext_url": safe_fulltext_url(_clean(meta.get("fulltext_url"), 1000)),
         "sections": sections or None,
         "methods_text": " ".join(s["text"] for s in sections if s["kind"] == "methods") or None,
         "pdf": pdf,

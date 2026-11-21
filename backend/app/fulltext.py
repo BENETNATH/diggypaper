@@ -330,6 +330,12 @@ def match_scores(sections: list[dict], candidates: list[tuple]) -> list[tuple[fl
     return sorted(scored, key=lambda t: -t[0])
 
 
+def safe_fulltext_url(url: str | None) -> str | None:
+    """Only http(s) links are stored: any other scheme (e.g. javascript:) would be
+    a stored-XSS vector in the article link rendered by the frontend."""
+    return url if url and url.startswith(("http://", "https://")) else None
+
+
 async def _apply_fulltext(
     session: AsyncSession,
     art,
@@ -346,7 +352,11 @@ async def _apply_fulltext(
             await store_pdf(session, art.id, pdf)
         else:  # JATS: the old PDF no longer matches the adopted text
             await session.execute(delete(ArticleFile).where(ArticleFile.article_id == art.id))
-        art.sections, art.fulltext_source, art.fulltext_url = sections, source, url
+        art.sections, art.fulltext_source, art.fulltext_url = (
+            sections,
+            source,
+            safe_fulltext_url(url),
+        )
         art.fulltext_note = None
         # No methods inherited from the old source: this text's, or none.
         art.methods_text = " ".join(s["text"] for s in sections if s["kind"] == "methods") or None

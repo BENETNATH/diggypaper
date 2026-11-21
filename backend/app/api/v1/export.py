@@ -44,7 +44,14 @@ from app.db.models import (
     User,
 )
 from app.schema import project_fields
-from app.searches import ScopedProject, default_search, get_search, in_search, lot_condition
+from app.searches import (
+    ScopedProject,
+    default_search,
+    get_search,
+    in_search,
+    job_blind,
+    lot_condition,
+)
 from app.sources import source_label, source_name
 
 router = APIRouter(prefix="/projects", tags=["export"])
@@ -111,7 +118,9 @@ def _import_source(job) -> str:
     return "per-article sources" if job.kind in ("references", "crate") else "not recorded"
 
 
-def build_workbook(project, articles, preds, annos, import_jobs, inf_job, user_email) -> bytes:
+def build_workbook(
+    project, articles, preds, annos, import_jobs, inf_job, user_email, blind: bool = False
+) -> bytes:
     fields = project_fields(project)
     wb = Workbook()
 
@@ -214,7 +223,10 @@ def build_workbook(project, articles, preds, annos, import_jobs, inf_job, user_e
             )
         else:
             info.append(["Prefilter (stage 1)", inf_job.prefilter_model])
-        info += [[k, v] for k, v in res.items()]
+        # blind lot: the result rows are the distribution of the masked AI
+        # answers — they never leave the project
+        if not blind:
+            info += [[k, v] for k, v in res.items()]
     for r in info:
         ws3.append([_cell(v) for v in r])
     ws3.column_dimensions["A"].width, ws3.column_dimensions["B"].width = 34, 90
@@ -345,7 +357,15 @@ async def export_xlsx(
     articles, preds, annos, import_jobs, inf_job = await _load(db, project, search=scope, user=user)
     project = ScopedProject(project, scope)
     data = await asyncio.to_thread(
-        build_workbook, project, articles, preds, annos, import_jobs, inf_job, user.email
+        build_workbook,
+        project,
+        articles,
+        preds,
+        annos,
+        import_jobs,
+        inf_job,
+        user.email,
+        await job_blind(db, inf_job),
     )
     return Response(
         data,
@@ -532,10 +552,11 @@ async def write_crate(
         models = {m.name: m for m in rows.scalars()}
     ptid = inf_job.prompt_template_id if inf_job else None
     prompt = await db.get(PromptTemplate, ptid) if ptid else None
-    info = crate.project_info(project, fields, import_jobs, inf_job, models, prompt)
+    blind = await job_blind(db, inf_job)
+    info = crate.project_info(project, fields, import_jobs, inf_job, models, prompt, blind=blind)
     keys = crate.assign_keys(articles)
     xlsx = await asyncio.to_thread(
-        build_workbook, project, articles, preds, annos, import_jobs, inf_job, user_email
+        build_workbook, project, articles, preds, annos, import_jobs, inf_job, user_email, blind
     )
 
     files: dict[str, list[str]] = {}

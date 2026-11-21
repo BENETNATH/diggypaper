@@ -36,7 +36,7 @@ from app.db.models import (
     UserRole,
 )
 from app.model_access import usable_models
-from app.searches import get_search, in_search, job_in_search, resolve_search
+from app.searches import get_search, in_search, job_blind, job_in_search, resolve_search
 from app.tasks.inference import inference_task
 
 router = APIRouter(prefix="/projects", tags=["inference"])
@@ -159,7 +159,7 @@ async def _job_prediction_stats(db: AsyncSession, job_ids: list[uuid.UUID]) -> d
     return {jid: (t, m) for jid, (t, m) in stats.items()}
 
 
-def _job_payload(job: InferenceJob, preds: tuple[int, dict] = (0, {})) -> dict:
+def _job_payload(job: InferenceJob, preds: tuple[int, dict] = (0, {}), mask: bool = False) -> dict:
     n_predictions, breakdown = preds
     return {
         "id": str(job.id),
@@ -172,9 +172,9 @@ def _job_payload(job: InferenceJob, preds: tuple[int, dict] = (0, {})) -> dict:
         "name": job.name,  # None = run predating the feature (legacy)
         "definition_hash": job.definition_hash,  # frozen at creation (None: no hash on the search)
         "n_predictions": n_predictions,
-        "breakdown": breakdown,
+        "breakdown": {} if mask else breakdown,  # mask (blind): no distribution of the AI answers
         "status": job.status,
-        "result": job.result_json,
+        "result": None if mask else job.result_json,
         "error": job.error,
         "created_at": job.created_at.isoformat() if job.created_at else None,
         "completed_at": job.completed_at.isoformat() if job.completed_at else None,
@@ -407,6 +407,10 @@ async def compare_jobs(
     await _require_project_member(db, project_id, user)
     project = await db.get(Project, project_id)
     scope = await get_search(db, project, search_id)
+    if scope.kind == "blind":
+        # The comparison would be an oracle on the masked answers (404,
+        # never a hint — same guard as the results index).
+        raise HTTPException(status_code=404, detail="search not found")
     jobs = {}
     for jid in (job_a, job_b):
         job = await db.get(InferenceJob, jid)
@@ -493,7 +497,8 @@ async def list_search_jobs(
         .all()
     )
     stats = await _job_prediction_stats(db, [j.id for j in rows])
-    return {"jobs": [_job_payload(j, stats.get(j.id, (0, {}))) for j in rows]}
+    blind = scope.kind == "blind"  # blind: no distribution of the AI answers
+    return {"jobs": [_job_payload(j, stats.get(j.id, (0, {})), mask=blind) for j in rows]}
 
 
 @router.delete("/{project_id}/searches/{search_id}/jobs/{job_id}", status_code=204)
@@ -544,6 +549,10 @@ async def cancel_inference(project_id: uuid.UUID, db: DbDep, user: UserDep) -> d
     )
     if job is None:
         raise HTTPException(status_code=409, detail="no analysis in progress")
+    if await job_blind(db, job):
+        # The returned payload (breakdown, result) is an oracle on the masked
+        # answers — 404, never a hint (same guard as the results index).
+        raise HTTPException(status_code=404, detail="search not found")
     job.status = InferenceJobStatus.FAILED
     job.error = CANCELLED
     job.completed_at = datetime.now(UTC)
@@ -590,5 +599,9 @@ async def get_inference(
     )
     if job is None:
         return {"job": None}
+    if await job_blind(db, job):
+        # The payload (breakdown, result) is an oracle on the masked answers —
+        # 404, never a hint (same guard as the results index).
+        raise HTTPException(status_code=404, detail="search not found")
     stats = await _job_prediction_stats(db, [job.id])
     return {"job": _job_payload(job, stats.get(job.id, (0, {})))}

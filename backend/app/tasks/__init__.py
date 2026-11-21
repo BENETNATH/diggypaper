@@ -54,7 +54,7 @@ from app.db.models import (
     SearchArticle,
 )
 from app.europepmc import EuropePMCAdapter
-from app.fulltext import complete_article, long_enough, pmc_not_archived
+from app.fulltext import complete_article, long_enough, pmc_not_archived, safe_fulltext_url
 from app.hal import HalAdapter
 from app.openalex import OpenAlexAdapter
 from app.pubmed import (
@@ -753,7 +753,7 @@ def _apply_fulltext(target: dict | Article, ft: tuple) -> None:
         set_("sections", sections)
     set_("fulltext_source", source)
     if url:
-        set_("fulltext_url", url)
+        set_("fulltext_url", safe_fulltext_url(url))
     if note:
         set_("fulltext_note", note)
 
