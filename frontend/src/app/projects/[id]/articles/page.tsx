@@ -20,7 +20,7 @@ import {
 } from "@/lib/api";
 import { useApiError } from "@/lib/errorMsg";
 import { AnswerFilters, Answers } from "@/components/AnswerFilters";
-import { BulkPdfUpload } from "@/components/BulkPdfUpload";
+import { PdfDropzone } from "@/components/PdfDropzone";
 import { ExportMenu } from "@/components/ExportMenu";
 import { ResultRow } from "@/components/ResultRow";
 import { ResultsTable } from "@/components/ResultsTable";
@@ -368,6 +368,44 @@ function ResultsContent() {
   if (error) return <ErrorBanner message={error} onRetry={() => void load()} />;
   if (!articles) return <Skeleton rows={5} />;
 
+  // spec 2026-11-21 R6: the whole list card becomes the PDF drop zone (lead only,
+  // and only when there is something to drop on: articles or runs of the corpus).
+  // spec 2026-11-06-ux-refonte-v4 R3: ≥ 2 questions → one column per question.
+  const listCard =
+    fields.length >= 2 ? (
+      <Card className="p-1 sm:p-2">
+        <ResultsTable
+          articles={articles}
+          fields={fields}
+          accept={accept}
+          hrefFor={(a) => withSearch(`/projects/${projectId}/annotate?article=${a.id}&queue=${queue}`, searchId)}
+          canDelete={isLead}
+          selected={selected}
+          onToggleSelect={toggleSelect}
+          onDelete={(id) => requestDelete([id])}
+        />
+      </Card>
+    ) : (
+      <Card className="p-1 sm:p-2">
+        <ul className="divide-y divide-border/60">
+          {articles.map((a) => (
+            <ResultRow
+              key={a.id}
+              a={a}
+              fields={fields}
+              accept={accept}
+              href={withSearch(`/projects/${projectId}/annotate?article=${a.id}&queue=${queue}`, searchId)}
+              canDelete={isLead}
+              selected={selected}
+              onToggleSelect={toggleSelect}
+              onDelete={(id) => requestDelete([id])}
+            />
+          ))}
+        </ul>
+      </Card>
+    );
+  const showDrop = isLead && (articles.length > 0 || (runs?.length ?? 0) > 0);
+
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -536,7 +574,7 @@ function ResultsContent() {
 
       {pdfOpen && (
         <Modal title={t("bulkTitle")} onClose={() => setPdfOpen(false)}>
-          <BulkPdfUpload projectId={projectId} onDone={() => void load()} />
+          <PdfDropzone projectId={projectId} variant="inline" onDone={() => void load()} />
         </Modal>
       )}
       {prismaOpen && (
@@ -623,38 +661,12 @@ function ResultsContent() {
             ) : undefined
           }
         />
-      ) : fields.length >= 2 ? (
-        // spec 2026-11-06-ux-refonte-v4 R3: ≥ 2 questions → one column per question
-        <Card className="p-1 sm:p-2">
-          <ResultsTable
-            articles={articles}
-            fields={fields}
-            accept={accept}
-            hrefFor={(a) => withSearch(`/projects/${projectId}/annotate?article=${a.id}&queue=${queue}`, searchId)}
-            canDelete={isLead}
-            selected={selected}
-            onToggleSelect={toggleSelect}
-            onDelete={(id) => requestDelete([id])}
-          />
-        </Card>
+      ) : showDrop ? (
+        <PdfDropzone projectId={projectId} variant="overlay" onDone={() => void load()}>
+          {listCard}
+        </PdfDropzone>
       ) : (
-        <Card className="p-1 sm:p-2">
-          <ul className="divide-y divide-border/60">
-            {articles.map((a) => (
-              <ResultRow
-                key={a.id}
-                a={a}
-                fields={fields}
-                accept={accept}
-                href={withSearch(`/projects/${projectId}/annotate?article=${a.id}&queue=${queue}`, searchId)}
-                canDelete={isLead}
-                selected={selected}
-                onToggleSelect={toggleSelect}
-                onDelete={(id) => requestDelete([id])}
-              />
-            ))}
-          </ul>
-        </Card>
+        listCard
       )}
 
       {total > PER_PAGE && (

@@ -4,13 +4,23 @@ import * as api from "@/lib/api";
 import { Article } from "@/lib/api";
 
 // i18n keys returned as-is (same convention as the articles page tests).
-jest.mock("next-intl", () => ({
-  useLocale: () => "fr",
-  useTranslations: () => (key: string) => key,
-}));
+jest.mock("next-intl", () => {
+  const t = (key: string) => key;
+  // rich interpolation (PdfDropzone panel): a function value is invoked (as the runtime
+  // does) and its returned node is rendered after the key.
+  t.rich = (key: string, params?: Record<string, unknown>) => {
+    if (!params) return key;
+    const values = Object.values(params).map((v) =>
+      typeof v === "function" ? (v as (c: unknown) => unknown)(null) : v
+    );
+    return [key, ...values];
+  };
+  return { useLocale: () => "fr", useTranslations: () => t };
+});
 jest.mock("@/lib/api", () => ({
   ...jest.requireActual("@/lib/api"),
   listArticles: jest.fn(),
+  matchArticlePdf: jest.fn(),
 }));
 
 const listArticles = api.listArticles as jest.Mock;
@@ -25,6 +35,8 @@ const A1: Article = {
   journal: "J Neurosurg Res",
   pub_date: "2024-03-12",
   origin: "pubmed",
+  doi: "10.1/x",
+  doi_url: "https://doi.org/10.1/x",
   has_fulltext: true,
 } as unknown as Article;
 const A2: Article = {
@@ -178,5 +190,38 @@ describe("CorpusList", () => {
     await screen.findByText(TITLE1);
     expect(screen.queryByText("corpusCta")).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /corpusCtaAction/ })).not.toBeInTheDocument();
+  });
+});
+
+// spec 2026-11-21-liste-depot-copie R6/R11: PDF drop zone on the corpus view + one-click copy.
+describe("CorpusList — PDF drop zone & copy (spec 2026-11-21)", () => {
+  it("lead → the list card is the drop zone; member → no drop zone", async () => {
+    mount({ isLead: true });
+    await screen.findByText(TITLE1);
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    expect(input).not.toBeNull();
+    expect(input).toHaveAttribute("accept", ".pdf");
+    // R11: each row offers the title copy button; the row with a DOI adds the DOI link + copy button
+    expect(screen.getAllByRole("button", { name: "copyTitle" })).toHaveLength(2);
+    expect(screen.getByRole("button", { name: "copyDoi" })).toBeInTheDocument();
+  });
+
+  it("member → no drop zone", async () => {
+    mount({ isLead: false });
+    await screen.findByText(TITLE1);
+    expect(document.querySelector('input[type="file"]')).toBeNull();
+  });
+
+  it("lead + drop of a PDF → the list is reloaded (load called)", async () => {
+    (api.matchArticlePdf as jest.Mock).mockResolvedValue({ article_id: "a1", title: TITLE1, score: 0.9 });
+    mount({ isLead: true });
+    await screen.findByText(TITLE1);
+    const before = listArticles.mock.calls.length;
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.drop(input.parentElement!, {
+      dataTransfer: { types: ["Files"], files: [new File(["a.pdf"], "a.pdf", { type: "application/pdf" })] },
+    });
+    await waitFor(() => expect(listArticles.mock.calls.length).toBeGreaterThan(before));
+    expect(api.matchArticlePdf).toHaveBeenCalledTimes(1);
   });
 });

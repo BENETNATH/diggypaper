@@ -1,6 +1,7 @@
 "use client";
 
 import { useTranslations } from "next-intl";
+import { CopyButton } from "@/components/CopyButton";
 
 /** Certainty (0–1) of ONE model answer: colored pill + percentage. */
 export function Certainty({ value, className = "" }: { value: number | null | undefined; className?: string }) {
@@ -36,18 +37,25 @@ export function ArticleLinks({
   article,
   className = "",
 }: {
-  article: { doi_url?: string | null; fulltext_url?: string | null };
+  article: { doi?: string | null; doi_url?: string | null; fulltext_url?: string | null };
   className?: string;
 }) {
   const t = useTranslations("articles");
+  const tc = useTranslations("common");
   if (!article.doi_url && !article.fulltext_url) return null;
   const cls = "text-primary hover:underline";
   return (
     <span className={`flex flex-wrap gap-x-3 text-xs ${className}`}>
       {article.doi_url && (
-        <a href={article.doi_url} target="_blank" rel="noopener noreferrer" className={cls}>
-          DOI ↗
-        </a>
+        <span className="inline-flex items-center gap-0.5">
+          <a href={article.doi_url} target="_blank" rel="noopener noreferrer" className={cls}>
+            DOI ↗
+          </a>
+          {/* spec 2026-11-21 R12: copy the DOI string next to the fiche link. */}
+          {article.doi && (
+            <CopyButton value={article.doi} label={tc("copyDoi")} title="DOI" size="sm" className="align-[-2px]" />
+          )}
+        </span>
       )}
       {article.fulltext_url && (
         <a href={article.fulltext_url} target="_blank" rel="noopener noreferrer" className={cls}>

@@ -11,6 +11,15 @@ import { useSearchId, useSearches } from "@/lib/useSearch";
 // the tests do not depend on the message files.
 jest.mock("next-intl", () => {
   const t = (key: string) => key;
+  // rich interpolation (PdfDropzone panel): a function value is invoked (as the runtime
+  // does) and its returned node is rendered after the key.
+  t.rich = (key: string, params?: Record<string, unknown>) => {
+    if (!params) return key;
+    const values = Object.values(params).map((v) =>
+      typeof v === "function" ? (v as (c: unknown) => unknown)(null) : v
+    );
+    return [key, ...values];
+  };
   return { useLocale: () => "fr", useTranslations: () => t };
 });
 jest.mock("next/navigation", () => {
@@ -45,6 +54,7 @@ jest.mock("@/lib/api", () => ({
   listSearchJobs: jest.fn(),
   getOverview: jest.fn(),
   listProjects: jest.fn(),
+  matchArticlePdf: jest.fn(),
   prismaUrl: jest.fn(() => "/prisma.svg"),
   prismaPdfUrl: jest.fn(() => "/prisma.pdf"),
 }));
@@ -242,6 +252,37 @@ describe("articles page — spec 2026-11-20-2 F5 (run selector)", () => {
     expect(screen.queryByRole("combobox", { name: "runSelector" })).not.toBeInTheDocument();
     expect(listArticles).toHaveBeenCalledTimes(1);
     expect(lastRunArg()).toBeUndefined();
+  });
+});
+
+// spec 2026-11-21-liste-depot-copie R6: the whole list card is the PDF drop zone.
+// The zone is recognized by its hidden file input (gated on the page, not the component).
+describe("articles page — PDF drop zone on the list (R6)", () => {
+  it("lead + articles → the drop zone renders (hidden pdf input)", async () => {
+    mount({ role: "LEAD" });
+    await screen.findByText("Titre 1");
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    expect(input).not.toBeNull();
+    expect(input).toHaveAttribute("accept", ".pdf");
+  });
+
+  it("non-lead → the page does not render the drop zone", async () => {
+    mount({ role: "ANNOTATOR" });
+    await screen.findByText("Titre 1");
+    expect(document.querySelector('input[type="file"]')).toBeNull();
+  });
+
+  it("lead + drop of a PDF → the match call and the list reload (load called)", async () => {
+    (api.matchArticlePdf as jest.Mock).mockResolvedValue({ article_id: "a1", title: "Titre 1", score: 0.9 });
+    mount({ role: "LEAD" });
+    await screen.findByText("Titre 1");
+    const before = listArticles.mock.calls.length;
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.drop(input.parentElement!, {
+      dataTransfer: { types: ["Files"], files: [new File(["a.pdf"], "a.pdf", { type: "application/pdf" })] },
+    });
+    await waitFor(() => expect(listArticles.mock.calls.length).toBeGreaterThan(before));
+    expect(api.matchArticlePdf).toHaveBeenCalledTimes(1);
   });
 });
 

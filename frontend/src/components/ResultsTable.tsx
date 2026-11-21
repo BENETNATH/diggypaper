@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { Article, SchemaField } from "@/lib/api";
 import { AnswerCell, STATUS_DOT } from "@/components/ResultRow";
+import { CopyButton } from "@/components/CopyButton";
 import { deriveHumanFieldState } from "@/lib/resultCells";
 import { biblioLine } from "@/components/Certainty";
 import { HScroll } from "@/components/HScroll";
@@ -34,6 +35,7 @@ export function ResultsTable({
   onDelete?: (id: string) => void;
 }) {
   const t = useTranslations("articles");
+  const tc = useTranslations("common");
   // The table can be wider than its card (one column per question, min widths):
   // scroll horizontally inside the card, never outside the page background.
   return (
@@ -77,6 +79,14 @@ export function ResultsTable({
                 <Link href={hrefFor(a)} className="min-w-0 text-foreground hover:text-primary">
                   <span className="line-clamp-2 text-[13px] leading-snug">{a.title ?? t("untitled")}</span>
                 </Link>
+                {a.title && (
+                  <CopyButton
+                    value={a.title}
+                    label={tc("copyTitle")}
+                    title={tc("titleNoun")}
+                    className="opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100"
+                  />
+                )}
                 {canDelete && (
                   <button
                     type="button"

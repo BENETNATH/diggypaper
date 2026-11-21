@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { ArticleLinks, biblioLine } from "@/components/Certainty";
+import { CopyButton } from "@/components/CopyButton";
 import { sourceLabel } from "@/lib/source";
 import { AnnotationForm, Annotation } from "@/components/AnnotationForm";
 import { ModelRef } from "@/components/ModelRef";
@@ -404,8 +405,16 @@ export default function AnnotatePage() {
             >
               ← {t("backToCorpus")}
             </Link>
-            <h1 className="mt-1 text-lg font-semibold">
+            <h1 className="mt-1 flex items-start gap-1.5 text-lg font-semibold">
               {article.title ?? `Article ${article.pmid ?? article.id}`}
+              {article.title && (
+                <CopyButton
+                  value={article.title}
+                  label={tc("copyTitle")}
+                  title={tc("titleNoun")}
+                  className="mt-0.5 shrink-0"
+                />
+              )}
             </h1>
             {biblioLine(article) && (
               <p className="text-sm text-foreground/80">{biblioLine(article)}</p>
@@ -553,8 +562,16 @@ export default function AnnotatePage() {
           </Link>
           {stepper}
         </div>
-        <h1 className="mt-1 text-lg font-semibold">
+        <h1 className="mt-1 flex items-start gap-1.5 text-lg font-semibold">
           {article.title ?? `Article ${article.pmid ?? article.id}`}
+          {article.title && (
+            <CopyButton
+              value={article.title}
+              label={tc("copyTitle")}
+              title={tc("titleNoun")}
+              className="mt-0.5 shrink-0"
+            />
+          )}
         </h1>
         {biblioLine(article) && <p className="text-sm text-foreground/80">{biblioLine(article)}</p>}
         <p className="text-xs text-muted">

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { Article, SchemaField } from "@/lib/api";
 import { ArticleLinks, biblioLine } from "@/components/Certainty";
+import { CopyButton } from "@/components/CopyButton";
 import { cellIcon, cellTone, deriveHumanFieldState, initials } from "@/lib/resultCells";
 import { sourceLabel } from "@/lib/source";
 
@@ -176,16 +177,43 @@ export function ResultRow({
   onDelete?: (id: string) => void;
 }) {
   const t = useTranslations("articles");
+  const tc = useTranslations("common");
+  // spec 2026-11-21 R9: the bare DOI of the meta line becomes a « DOI » link + copy button.
+  const src = sourceLabel(a.source, a.native_id, t("sourceFile"));
+  const doiMeta =
+    !src && a.doi ? (
+      <>
+        {a.doi_url ? (
+          <a
+            href={a.doi_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-primary hover:underline"
+          >
+            DOI
+          </a>
+        ) : (
+          a.doi
+        )}
+        <CopyButton
+          value={a.doi}
+          label={tc("copyDoi")}
+          title="DOI"
+          size="sm"
+          className="ml-0.5 align-[-2px] opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100"
+        />
+      </>
+    ) : null;
   const meta = [
     biblioLine(a),
-    sourceLabel(a.source, a.native_id, t("sourceFile")) ?? a.doi ?? "",
+    src ?? doiMeta ?? a.doi ?? "",
     a.has_fulltext
       ? t("fulltext")
       : a.fulltext_note === "no_text_layer"
         ? t("noTextLayer")
         : t("abstractOnly"),
     a.origin === "citation" ? t("originCitation", { n: a.origin_seeds ?? 0 }) : "",
-  ].filter(Boolean);
+  ].filter(Boolean) as React.ReactNode[];
   const answers = a.answers ?? [];
   const reviewed = a.annotated;
   const isSelected = selected?.has(a.id) ?? false;
@@ -212,8 +240,25 @@ export function ResultRow({
             className="group/row flex flex-col gap-2 rounded-lg px-3 py-3 transition-colors duration-fast ease-out hover:bg-surface-muted/60 sm:flex-row sm:items-start sm:justify-between sm:gap-6"
           >
             <div className="min-w-0 flex-1">
-              <p className="line-clamp-2 text-[15px] leading-snug text-foreground">{a.title ?? t("untitled")}</p>
-              <p className="mt-1 truncate text-xs text-muted">{meta.join(" · ")}</p>
+              <div className="flex items-start gap-1.5">
+                <p className="min-w-0 line-clamp-2 text-[15px] leading-snug text-foreground">{a.title ?? t("untitled")}</p>
+                {a.title && (
+                  <CopyButton
+                    value={a.title}
+                    label={tc("copyTitle")}
+                    title={tc("titleNoun")}
+                    className="opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100"
+                  />
+                )}
+              </div>
+              <p className="mt-1 truncate text-xs text-muted">
+                {meta.map((m, i) => (
+                  <span key={i}>
+                    {i > 0 && " · "}
+                    {m}
+                  </span>
+                ))}
+              </p>
               {answers.length > 0 && (
                 <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
                   {answers.map((r) => (
@@ -269,7 +314,8 @@ export function ResultRow({
               )}
             </div>
           </Link>
-          <ArticleLinks article={a} className="px-3 pb-2 -mt-1" />
+          {/* The DOI lives in the meta line now (R9) — only the full text link stays here. */}
+          <ArticleLinks article={{ fulltext_url: a.fulltext_url }} className="px-3 pb-2 -mt-1" />
         </div>
       </div>
     </li>

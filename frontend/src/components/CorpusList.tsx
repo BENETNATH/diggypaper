@@ -6,6 +6,8 @@ import { useLocale, useTranslations } from "next-intl";
 import { listArticles, Article } from "@/lib/api";
 import { useApiError } from "@/lib/errorMsg";
 import { Button } from "@/components/ui/Button";
+import { CopyButton } from "@/components/CopyButton";
+import { PdfDropzone } from "@/components/PdfDropzone";
 import { EmptyState, ErrorBanner, Skeleton } from "@/components/ui/Feedback";
 
 const PER_PAGE = 50;
@@ -77,6 +79,88 @@ export function CorpusList({
     ? t("corpusCountFulltext", { n: articleCount, k: fulltextCount })
     : t("corpusCount", { n: articleCount });
 
+  const listCard = (
+    <div className="overflow-hidden rounded-xl bg-surface shadow-sm">
+      <ul className="divide-y divide-border/60">
+        {(articles ?? []).map((a) => {
+          const sub = [
+            a.first_author ? `${a.first_author} et al.` : null,
+            a.journal ?? null,
+            a.pub_date ? new Date(a.pub_date).toLocaleDateString(locale) : null,
+          ]
+            .filter(Boolean)
+            .join(" · ");
+          return (
+            <li key={a.id}>
+              <Link
+                href={`/projects/${projectId}/annotate?article=${a.id}`}
+                className="group flex items-center gap-3 px-3.5 py-3 hover:bg-surface-muted"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <p
+                      title={a.title ?? ""}
+                      className="min-w-0 truncate text-sm font-semibold text-foreground group-hover:text-primary"
+                    >
+                      {a.title || t("untitled")}
+                    </p>
+                    {a.title && (
+                      <CopyButton
+                        value={a.title}
+                        label={tc("copyTitle")}
+                        title={tc("titleNoun")}
+                        size="sm"
+                        className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                      />
+                    )}
+                  </div>
+                  {sub && (
+                    <p className="mt-0.5 text-xs text-muted">
+                      {sub}
+                      {a.doi && a.doi_url && (
+                        <>
+                          {" · "}
+                          <a
+                            href={a.doi_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-primary hover:underline"
+                          >
+                            DOI
+                          </a>
+                          <CopyButton
+                            value={a.doi}
+                            label={tc("copyDoi")}
+                            title="DOI"
+                            size="sm"
+                            className="ml-0.5 align-[-2px] opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                          />
+                        </>
+                      )}
+                    </p>
+                  )}
+                </div>
+                {a.origin && ORIGIN_KEY[a.origin] && (
+                  <span className="whitespace-nowrap rounded-full border border-border px-2 py-0.5 text-[11px] text-muted">
+                    {t(ORIGIN_KEY[a.origin])}
+                  </span>
+                )}
+                <span
+                  className={`whitespace-nowrap text-xs ${
+                    a.has_fulltext ? "font-semibold text-success" : "text-muted"
+                  }`}
+                >
+                  {a.has_fulltext ? "✓" : "—"}{" "}
+                  {a.has_fulltext ? t("corpusFulltext") : t("corpusAbstractOnly")}
+                </span>
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-baseline gap-2.5">
@@ -128,50 +212,14 @@ export function CorpusList({
         <EmptyState title={t("empty")} hint={text ? t("emptyFiltered") : t("emptyHint")} />
       ) : (
         <>
-          <div className="overflow-hidden rounded-xl bg-surface shadow-sm">
-            <ul className="divide-y divide-border/60">
-              {articles.map((a) => {
-                const sub = [
-                  a.first_author ? `${a.first_author} et al.` : null,
-                  a.journal ?? null,
-                  a.pub_date ? new Date(a.pub_date).toLocaleDateString(locale) : null,
-                ]
-                  .filter(Boolean)
-                  .join(" · ");
-                return (
-                  <li key={a.id}>
-                    <Link
-                      href={`/projects/${projectId}/annotate?article=${a.id}`}
-                      className="group flex items-center gap-3 px-3.5 py-3 hover:bg-surface-muted"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <p
-                          title={a.title ?? ""}
-                          className="truncate text-sm font-semibold text-foreground group-hover:text-primary"
-                        >
-                          {a.title || t("untitled")}
-                        </p>
-                        {sub && <p className="mt-0.5 text-xs text-muted">{sub}</p>}
-                      </div>
-                      {a.origin && ORIGIN_KEY[a.origin] && (
-                        <span className="whitespace-nowrap rounded-full border border-border px-2 py-0.5 text-[11px] text-muted">
-                          {t(ORIGIN_KEY[a.origin])}
-                        </span>
-                      )}
-                      <span
-                        className={`whitespace-nowrap text-xs ${
-                          a.has_fulltext ? "font-semibold text-success" : "text-muted"
-                        }`}
-                      >
-                        {a.has_fulltext ? "✓" : "—"}{" "}
-                        {a.has_fulltext ? t("corpusFulltext") : t("corpusAbstractOnly")}
-                      </span>
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
+          {/* spec 2026-11-21 R6: the whole card is the PDF drop zone for a lead. */}
+          {isLead ? (
+            <PdfDropzone projectId={projectId} variant="overlay" onDone={() => void load()}>
+              {listCard}
+            </PdfDropzone>
+          ) : (
+            listCard
+          )}
 
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="text-sm text-muted">
