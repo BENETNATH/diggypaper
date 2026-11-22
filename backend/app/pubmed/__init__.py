@@ -49,7 +49,6 @@ from app.sources import DateBounds
 logger = logging.getLogger(__name__)
 
 EUTILS_BASE = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
-PMC_OA_URL = "https://www.ncbi.nlm.nih.gov/pmc/utils/oa/oa.fcgi"
 
 #: Minimum interval between two NCBI calls (s): 3 req/s keyless, 10 req/s with key.
 _INTERVAL_NO_KEY = 1 / 3

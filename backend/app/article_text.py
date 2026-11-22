@@ -57,8 +57,3 @@ def fill_prompt(template: str | None, article, kinds: list[str] | None = None) -
         .replace("{article_text}", f"<article>\n{text}\n</article>")
         .replace("{methods_text}", article.methods_text or "")
     )
-
-
-def title_abstract(article) -> str:
-    """Stage 1 (prefilter) text: title + abstract."""
-    return "\n".join(x for x in (article.title, article.abstract) if x)

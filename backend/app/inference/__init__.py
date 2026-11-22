@@ -25,7 +25,7 @@ import httpx
 from cryptography.exceptions import InvalidTag
 
 from app.core.crypto import decrypt_secret
-from app.model_access import PinnedTransport, pinned_client
+from app.model_access import pinned_client
 from app.settings.service import get_setting
 
 logger = logging.getLogger(__name__)
@@ -58,11 +58,6 @@ _DIGEST = re.compile(r"^(sha256:)?[0-9a-f]{64}$")
 
 class InferenceError(Exception):
     """Sanitized inference error (short message, no URL or secret)."""
-
-
-# The IP-pinning transport (a validated IP, never re-resolved on connect) moved
-# to app.model_access next to ``check_public_url``; keep a private alias.
-_PinnedTransport = PinnedTransport
 
 
 def _client_for(timeout: float, pinned_ip: str | None) -> httpx.AsyncClient:

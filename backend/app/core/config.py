@@ -10,7 +10,6 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
-    database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/diggypaper"
     jwt_secret: str = "dev-secret-change-me-0123456789abcdef"  # ≥32 octets (HS256)
     access_token_expire_minutes: int = 60
     app_base_url: str = "http://localhost:8000"

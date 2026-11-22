@@ -108,24 +108,3 @@ export function useSearches(projectId: string, searchId?: string, refreshKey?: s
 
   return { searches, current: currentSearch(searches, searchId), reload };
 }
-
-
-/**
- * Changes the current search: remembers the choice and rewrites the current URL with `?search=`
- * (the opened article may not be in the new search's batch: we drop it).
- */
-export function useSelectSearch(projectId: string): (searchId: string) => void {
-  const router = useRouter();
-  const pathname = usePathname();
-  const sp = useSearchParams();
-  return useCallback(
-    (searchId: string) => {
-      storeSearchId(projectId, searchId);
-      const params = new URLSearchParams(sp.toString());
-      params.set("search", searchId);
-      params.delete("article");
-      router.replace(`${pathname}?${params.toString()}`);
-    },
-    [projectId, router, pathname, sp]
-  );
-}

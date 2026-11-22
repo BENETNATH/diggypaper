@@ -1020,20 +1020,6 @@ export async function deleteGold(projectId: string, goldId: string): Promise<voi
 
 // --- Prompts (MODULE 3) -----------------------------------------------------
 
-export async function listPrompts(projectId: string): Promise<PromptTemplate[]> {
-  const data = await request<{ items: PromptTemplate[] }>(
-    `/projects/${projectId}/prompts`
-  );
-  return data.items;
-}
-
-export async function getPrompt(
-  projectId: string,
-  promptId: string
-): Promise<PromptTemplate> {
-  return request<PromptTemplate>(`/projects/${projectId}/prompts/${promptId}`);
-}
-
 export async function createPrompt(
   projectId: string,
   payload: {
@@ -1046,23 +1032,6 @@ export async function createPrompt(
 ): Promise<PromptTemplate> {
   return request<PromptTemplate>(`/projects/${projectId}/prompts`, {
     method: "POST",
-    body: JSON.stringify(payload),
-  });
-}
-
-export async function updatePrompt(
-  projectId: string,
-  promptId: string,
-  payload: Partial<{
-    version_number: string;
-    title: string;
-    system_prompt: string;
-    user_prompt_schema: string;
-    status: string;
-  }>
-): Promise<PromptTemplate> {
-  return request<PromptTemplate>(`/projects/${projectId}/prompts/${promptId}`, {
-    method: "PATCH",
     body: JSON.stringify(payload),
   });
 }
@@ -1092,30 +1061,6 @@ export const addModelShare = (modelId: string, target: { email?: string; project
 
 export const removeModelShare = (modelId: string, shareId: string): Promise<void> =>
   request(`/models/${modelId}/shares/${shareId}`, { method: "DELETE" });
-
-export async function createModel(payload: {
-  name: string;
-  model_identifier: string;
-  backend_type?: string;
-  ram_usage_mb?: number;
-}): Promise<ModelInfo> {
-  return request<ModelInfo>("/models", { method: "POST", body: JSON.stringify(payload) });
-}
-
-export async function updateModel(
-  modelId: string,
-  payload: Partial<{
-    name: string;
-    model_identifier: string;
-    ram_usage_mb: number;
-    is_active: boolean;
-  }>
-): Promise<ModelInfo> {
-  return request<ModelInfo>(`/models/${modelId}`, {
-    method: "PATCH",
-    body: JSON.stringify(payload),
-  });
-}
 
 export async function deleteModel(modelId: string): Promise<void> {
   await request(`/models/${modelId}`, { method: "DELETE" });
@@ -1538,15 +1483,6 @@ export async function testSmtp(to?: string): Promise<{ sent: boolean; error?: st
 
 // --- Utilisateur (RGPD) -----------------------------------------------------
 
-export async function anonymize(): Promise<void> {
-  await request("/users/me/anonymize", { method: "DELETE" });
-}
-
-export async function exportData(): Promise<Record<string, unknown>> {
-  return request<Record<string, unknown>>("/users/me/export-data");
-}
-
-
 export interface OllamaCapability {
   mode: "docker" | "host" | "off";
   configured: boolean;
@@ -1755,12 +1691,6 @@ export interface SearchCreate {
 
 export const createSearch = (projectId: string, payload: SearchCreate): Promise<SearchInfo> =>
   request(`/projects/${projectId}/searches`, { method: "POST", body: JSON.stringify(payload) });
-
-export const renameSearch = (projectId: string, searchId: string, name: string): Promise<SearchInfo> =>
-  request(`/projects/${projectId}/searches/${searchId}`, { method: "PATCH", body: JSON.stringify({ name }) });
-
-export const deleteSearch = (projectId: string, searchId: string): Promise<void> =>
-  request(`/projects/${projectId}/searches/${searchId}`, { method: "DELETE" });
 
 // --- Watches (corpus watch / veille) -----------------------------------------
 

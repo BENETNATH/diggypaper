@@ -28,8 +28,6 @@ router = APIRouter(prefix="/projects", tags=["watches"])
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 UserDep = Annotated[User, Depends(get_current_user)]
 
-SOURCES = tuple(sorted(ADAPTERS))
-
 #: One manual pass = an import + an inference launch: same limit as the inference trigger.
 WATCH_RUN_RATE_LIMIT = 5
 

@@ -16,8 +16,6 @@ import json
 import re
 import zipfile
 import zlib
-from collections.abc import Iterator
-from datetime import UTC, datetime
 from pathlib import Path
 
 from app.article_text import classify_title
@@ -232,15 +230,3 @@ def project_definition(info: dict) -> dict:
         "fields": fields,
         "text_sections": _strings(sections),
     }
-
-
-def iter_articles(zf: zipfile.ZipFile) -> Iterator[tuple[str, dict]]:
-    for key in article_keys(zf):
-        try:
-            yield key, read_article(zf, key)
-        except CrateError:
-            continue  # a damaged folder does not prevent restoring the others
-
-
-def now() -> datetime:
-    return datetime.now(UTC)

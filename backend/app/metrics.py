@@ -7,7 +7,6 @@ A "decision" = dict ``{item: value, confidence_score: relevance, …}`` (format 
 
 from __future__ import annotations
 
-import json
 import math
 import re
 from collections import Counter
@@ -194,9 +193,9 @@ def disagrees(
     """Do the variants differ on this article (relevance or a non-text item)?
 
     A variant that errored (no decision) while another answered counts as a
-    divergence. Free-form answers (no non-text field to compare): the variants
-    diverge when the full answer — text under any key, or the structured JSON
-    shape — differs."""
+    divergence. Free-form answers (no non-text field to compare) do not count as
+    divergence by default: structured fields are required for a meaningful
+    disagreement signal."""
     errs = errors or [None] * len(outputs)
     seen = [o for o in outputs if o]
     if len(seen) < 2:
@@ -211,9 +210,3 @@ def disagrees(
         relevant(o) != relevant(first) or any(_norm(o.get(k)) != _norm(first.get(k)) for k in keys)
         for o in seen[1:]
     )
-
-
-def _free_text(decision: dict) -> str:
-    """Comparable text of a free-form decision (no schema field to compare):
-    its canonical JSON — any difference in the answer (text or shape) counts."""
-    return json.dumps(decision, sort_keys=True, ensure_ascii=False, default=str)

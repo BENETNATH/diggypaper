@@ -101,10 +101,6 @@ Answer ONLY with a JSON object: {{"reply": "<explanation or question>", "query":
 or null}}"""
 
 
-#: Compatibility: the original PubMed prompt (tests, existing calls).
-SYSTEM_PROMPT = system_prompt("pubmed")
-
-
 def build_prompt(messages: list[dict]) -> str:
     """Conversation → turn text (models are called in a single message)."""
     lines = ["<conversation>"]
