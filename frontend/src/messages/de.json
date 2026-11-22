@@ -791,6 +791,7 @@
     "ctaNewAnalysis": "Neue Analyse aus den {n} Ergebnissen",
     "ctaReview": "Die {n} unsicheren überprüfen",
     "ctaChat": "Über die Ergebnisse chatten",
+    "chatTitle": "Mit dem Korpus chatten",
     "ctaSeeAll": "Alle Ergebnisse ansehen",
     "ctaSeeDerived": "„{name}“ ansehen · {n} Artikel",
     "corporaEmpty": "Noch kein Fragen-Korpus",

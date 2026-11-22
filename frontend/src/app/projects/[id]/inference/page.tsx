@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useParams, useRouter, useSearchParams } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
@@ -39,6 +39,8 @@ import { Card, Badge, statusColor } from "@/components/ui/Card";
 import { EmptyState, ErrorBanner, Skeleton } from "@/components/ui/Feedback";
 import { JobProgress } from "@/components/JobProgress";
 import { Menu, MenuItem, MenuSeparator } from "@/components/ui/Menu";
+import { ChatRagPanel } from "@/components/ChatRagPanel";
+import { smoothScrollIntoView } from "@/lib/motion";
 import { cleanSelection, nextAutoName, runStatusKey, withSearch } from "@/lib/search";
 import {
   notifySearchesChanged,
@@ -103,6 +105,7 @@ function RunRow({
   locale,
   isLead,
   seeResultsHref,
+  onChat,
   submitting,
   onOverwrite,
   onNamed,
@@ -116,6 +119,7 @@ function RunRow({
   locale: string;
   isLead: boolean;
   seeResultsHref: string;
+  onChat: () => void;
   submitting: boolean;
   onOverwrite: (model: string) => void;
   onNamed: () => void;
@@ -183,6 +187,11 @@ function RunRow({
               {t("seeResults")}
             </Button>
           </Link>
+          {j.status === "COMPLETED" && (
+            <Button size="sm" variant="ghost" onClick={onChat}>
+              {t("ctaChat")}
+            </Button>
+          )}
           {isLead && (
             <RerunMenu job={j} models={models} submitting={submitting} onOverwrite={onOverwrite} onNamed={onNamed} />
           )}
@@ -254,6 +263,13 @@ function AnalyseContent() {
   const [createName, setCreateName] = useState<string | null>(null); // null: the derived auto name
   const [createSelection, setCreateSelection] = useState<Selection>({});
   const [count, setCount] = useState<number | null>(null);
+  // Chat RAG (spec 2026-11-07-chat-rag §5) : interroger tout le corpus du projet,
+  // ou le lot d'une recherche. Disclosure repliée par défaut (spec clarte-3 R3 :
+  // une page, une intention). Restauration 2026-11-22 (orphelinée par le rewrite
+  // analyses-runs 7da19f3).
+  const [chatRequest, setChatRequest] = useState<{ searchId: string; nonce: number } | null>(null);
+  const [chatOpen, setChatOpen] = useState(false);
+  const chatRef = useRef<HTMLDetailsElement>(null);
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -704,6 +720,11 @@ function AnalyseContent() {
                 locale={locale}
                 isLead={isLead}
                 seeResultsHref={`${withSearch(`/projects/${projectId}/articles`, current.id)}&run=${j.id}`}
+                onChat={() => {
+                  setChatRequest((p) => ({ searchId: current.id, nonce: (p?.nonce ?? 0) + 1 }));
+                  setChatOpen(true);
+                  smoothScrollIntoView(chatRef.current);
+                }}
                 submitting={submitting}
                 onOverwrite={(model) => void handleOverwrite(j, model)}
                 onNamed={() => {
@@ -891,6 +912,29 @@ function AnalyseContent() {
           </div>
         </Modal>
       )}
+
+      {/* Chat RAG (spec 2026-11-07-chat-rag §5) : visible aux membres — interroger
+          tout le corpus du projet, ou le lot d'une recherche. Disclosure repliée
+          par défaut (spec clarte-3 R3) : la page garde une seule intention. */}
+      <details
+        ref={chatRef}
+        className="scroll-mt-4 rounded-xl bg-surface p-4 shadow-sm"
+        open={chatOpen}
+        onToggle={(e) => setChatOpen(e.currentTarget.open)}
+      >
+        <summary className="cursor-pointer select-none text-base font-semibold text-foreground">
+          {t("chatTitle")}
+        </summary>
+        <div className="mt-3">
+          <ChatRagPanel
+            projectId={projectId}
+            models={models}
+            isLead={isLead}
+            searches={(searches ?? []).filter((s) => s.kind === "standard")}
+            resultsRequest={chatRequest}
+          />
+        </div>
+      </details>
     </div>
   );
 }

@@ -54,6 +54,26 @@ jest.mock("@/lib/api", () => ({
   cancelInference: jest.fn(),
 }));
 
+// Chat RAG (restauré 2026-11-22, orphelin du rewrite analyses-runs 7da19f3) :
+// on mocke le panneau — ses internes sont couverts par ChatRagPanel.test.tsx ;
+// ici on vérifie le câblage (disclosure + props + CTA par run terminée).
+const mockChatPanelCalls: Array<{
+  searches: { id: string; kind: string }[];
+  resultsRequest: { searchId: string; nonce: number } | null;
+}> = [];
+jest.mock("@/components/ChatRagPanel", () => ({
+  ChatRagPanel: (props: {
+    projectId: string;
+    models: unknown[];
+    isLead: boolean;
+    searches: { id: string; kind: string }[];
+    resultsRequest: { searchId: string; nonce: number } | null;
+  }) => {
+    mockChatPanelCalls.push({ searches: props.searches, resultsRequest: props.resultsRequest });
+    return <div data-testid="chat-panel">{`chat-rag-panel (${props.searches.length} corpus)`}</div>;
+  },
+}));
+
 const mockUseAuth = useAuth as unknown as jest.Mock;
 const nav = navModule as unknown as {
   replace: jest.Mock;
@@ -171,6 +191,9 @@ function mount(overrides: {
     </Suspense>
   );
 }
+
+// jsdom ne définit pas Element.prototype.scrollIntoView (le CTA chat scrolle vers la disclosure).
+Element.prototype.scrollIntoView = jest.fn();
 
 beforeEach(() => {
   nav.replace.mockClear();
@@ -451,5 +474,58 @@ describe("inference page — spec 2026-11-20-2 F6 (edit corpus)", () => {
     );
     // the project's searches refetch (the corpus changed)
     await waitFor(() => expect(listSearches.mock.calls.length).toBeGreaterThanOrEqual(2));
+  });
+});
+
+// Chat RAG (spec 2026-11-07-chat-rag §5) : la disclosure « Chatter avec le corpus »
+// a été orphelinée par le rewrite analyses-runs (7da19f3) — restauration 2026-11-22.
+describe("inference page — chat RAG (restauration)", () => {
+  beforeEach(() => {
+    mockChatPanelCalls.length = 0;
+  });
+
+  it("MEMBER: la disclosure s'affiche, repliée par défaut, avec le panneau (corpus)", async () => {
+    mount({ user: {}, roleInProject: "MEMBER", jobs: [completedJob] });
+    const summary = await screen.findByText("chatTitle");
+    const details = summary.closest("details")!;
+    expect(details).not.toHaveAttribute("open");
+    expect(screen.getByTestId("chat-panel")).toBeInTheDocument();
+    // le panneau reçoit les recherches standard (s1) et pas les tuning
+    expect((mockChatPanelCalls.at(-1)?.searches ?? []).map((x) => ({ id: x.id, kind: x.kind }))).toEqual([
+      { id: "s1", kind: "standard" },
+    ]);
+  });
+
+  it("le CTA d'un run COMPLETED ouvre la disclosure en mode résultats du lot", async () => {
+    mount({ user: {}, roleInProject: "MEMBER", jobs: [completedJob] });
+    const cta = await screen.findByRole("button", { name: /ctaChat/ });
+    expect(cta).toBeVisible();
+    fireEvent.click(cta);
+    const details = screen.getByText("chatTitle").closest("details")!;
+    expect(details).toHaveAttribute("open");
+    expect(mockChatPanelCalls.at(-1)?.resultsRequest).toEqual({ searchId: "s1", nonce: 1 });
+  });
+
+  it("deux clics CTA: le nonce s'incrémente (nouvelle demande au panneau)", async () => {
+    mount({ user: {}, roleInProject: "MEMBER", jobs: [completedJob] });
+    const cta = await screen.findByRole("button", { name: /ctaChat/ });
+    fireEvent.click(cta);
+    fireEvent.click(cta);
+    expect(mockChatPanelCalls.at(-1)?.resultsRequest).toEqual({ searchId: "s1", nonce: 2 });
+  });
+
+  it("run RUNNING: pas de CTA chat (résultats non disponibles)", async () => {
+    mount({ user: {}, roleInProject: "MEMBER", jobs: [runningJob] });
+    await screen.findByText("261120-2");
+    expect(screen.queryByRole("button", { name: /ctaChat/ })).not.toBeInTheDocument();
+  });
+
+  it("les recherches tuning ne sont pas offertes au panneau (corpus standard seulement)", async () => {
+    const tuning = { ...search, id: "s2", kind: "tuning" } as SearchInfo;
+    mount({ user: {}, roleInProject: "MEMBER", jobs: [completedJob], searches: [search, tuning] });
+    await screen.findByText("chatTitle");
+    expect((mockChatPanelCalls.at(-1)?.searches ?? []).map((x) => ({ id: x.id, kind: x.kind }))).toEqual([
+      { id: "s1", kind: "standard" },
+    ]);
   });
 });

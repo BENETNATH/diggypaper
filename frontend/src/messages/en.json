@@ -791,6 +791,7 @@
     "ctaNewAnalysis": "New analysis from the {n} results",
     "ctaReview": "Review the {n} uncertain",
     "ctaChat": "Chat about the results",
+    "chatTitle": "Chat with the corpus",
     "ctaSeeAll": "See all results",
     "ctaSeeDerived": "See “{name}” · {n} articles",
     "corporaEmpty": "No question corpus yet",
