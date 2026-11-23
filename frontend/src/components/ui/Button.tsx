@@ -1,7 +1,7 @@
 import { ButtonHTMLAttributes } from "react";
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: "primary" | "secondary" | "danger" | "ghost";
+  variant?: "primary" | "secondary" | "danger" | "success" | "ghost";
   size?: "sm" | "md" | "lg";
   loading?: boolean;
 }
@@ -12,13 +12,16 @@ const VARIANTS: Record<string, string> = {
   secondary:
     "bg-surface text-foreground border border-border hover:bg-surface-muted disabled:opacity-50",
   danger: "bg-danger text-danger-foreground hover:opacity-90 disabled:opacity-50",
+  // audit 2026-11-23 F-3: primary action "confirming" (annotation submit) —
+  // contrastes validés 5.53:1 light / 7.86:1 dark (primary-foreground on success).
+  success: "bg-success text-primary-foreground hover:opacity-90 disabled:opacity-50",
   ghost: "bg-transparent text-foreground hover:bg-surface-muted disabled:opacity-50",
 };
 
 // audit 2026-11-10 P2-9: touch targets ≥ 44 px on mobile (sm only; desktop keeps 32 px).
 const SIZES: Record<string, string> = {
   sm: "min-h-[44px] px-3 py-1 text-sm sm:min-h-[32px]",
-  md: "min-h-[40px] px-4 py-2 text-sm",
+  md: "min-h-[44px] px-4 py-2 text-sm sm:min-h-[40px]",
   lg: "min-h-[48px] px-5 py-2.5 text-base",
 };
 

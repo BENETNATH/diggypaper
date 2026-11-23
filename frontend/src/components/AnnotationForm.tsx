@@ -48,6 +48,7 @@ export function AnnotationForm({ fields, onSubmit, onError, initial, quotes: giv
   const [quoteInput, setQuoteInput] = useState("");
   const [reasoning, setReasoning] = useState((initial?.reasoning_summary as string) ?? "");
   const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   function addQuote() {
     const q = quoteInput.trim();
@@ -60,8 +61,9 @@ export function AnnotationForm({ fields, onSubmit, onError, initial, quotes: giv
     setQuotes((prev) => prev.filter((_, i) => i !== index));
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (submitting) return; // caveman-review 2026-11-10 pattern: double-click guard
     if (confidence < 0 || confidence > 1) {
       const msg = t("confidenceInvalid");
       setError(msg);
@@ -69,12 +71,17 @@ export function AnnotationForm({ fields, onSubmit, onError, initial, quotes: giv
       return;
     }
     setError(null);
-    onSubmit({
-      ...values,
-      confidence_score: confidence,
-      evidence_quotes: quotes,
-      reasoning_summary: reasoning,
-    });
+    setSubmitting(true);
+    try {
+      await onSubmit({
+        ...values,
+        confidence_score: confidence,
+        evidence_quotes: quotes,
+        reasoning_summary: reasoning,
+      });
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -167,9 +174,10 @@ export function AnnotationForm({ fields, onSubmit, onError, initial, quotes: giv
 
       {error && <p className="text-sm text-danger">{error}</p>}
 
-      <button type="submit" className="rounded bg-success px-4 py-2 text-primary-foreground">
+      {/* audit 2026-11-23 F-3: house Button (was raw, off-system) + verrou pendant l'envoi. */}
+      <Button type="submit" variant="success" loading={submitting}>
         {t("submitAnnotation")}
-      </button>
+      </Button>
     </form>
   );
 }

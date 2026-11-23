@@ -15,7 +15,7 @@ No pure grey/pure black — every neutral carries a tint (hue ≈ 250).
 | `--surface-muted` | oklch(0.962 0.004 250) | oklch(0.26 0.014 260) | hovers, skeleton, muted fills |
 | `--foreground` | oklch(0.24 0.02 260) | oklch(0.93 0.005 250) | text |
 | `--muted` / `--muted-foreground` | 0.52 / 0.44 | 0.70 / 0.78 | secondary text |
-| `--border` | oklch(0.9 0.006 250) | oklch(0.32 0.015 260) | borders |
+| `--border` | oklch(0.656 0.006 250) | oklch(0.514 0.015 260) | borders — field boundaries need ≥ 3:1 (WCAG 1.4.11) |
 | `--primary` / `--primary-foreground` | oklch(0.55 0.19 258) / white | oklch(0.65 0.19 258) / oklch(0.15 0.01 260) | CTA, links, active tab |
 | `--danger` | oklch(0.55 0.2 25) | oklch(0.65 0.2 25) | errors, destructive |
 | `--success` | oklch(0.48 0.16 155) | oklch(0.7 0.15 155) | confirmed, completed |
@@ -29,6 +29,10 @@ All text on any token background must reach **≥ 4.5:1** in both themes. Light-
 threshold on every surface they sit on (verified by WCAG computation: warning 6.12:1 on
 white, 5.29:1 on `bg-warning/10`, 4.55:1 on `bg-warning/20` (Badge yellow); success
 5.80:1 on white, 4.65:1 on `bg-success/15` (Badge green), 5.20:1 on `bg-surface-muted`).
+Non-text (WCAG 1.4.11): the **boundary of an input field** must reach ≥ 3:1 — that is
+what `--border` is for (0.656/0.514: 3.17/3.03:1 light, 3.08/3.39:1 dark, verified).
+Card edges (`surface` on `background`, 1.04–1.10:1) are the documented no-border policy
+(surface + `shadow-sm`), not a defect — do not "fix" them by adding borders.
 Dark-theme `--primary-foreground` on `--primary` measures 5.96:1 — the audit's 2.70:1
 claim is a false positive; do not "fix" it based on unverified ratios. Never introduce hardcoded Tailwind
 color classes (`text-emerald-500`, `bg-white`, …): they bypass the tokens and break the
@@ -87,6 +91,14 @@ Concrete consequences (do not reintroduce the reverse):
   `bg-surface` (theme-aware).
 - **`JobProgress`** (`JobProgress.tsx`) — analysis/import progress: counter, ETA, rate,
   named segments + legend.
+
+## Typography
+
+Geist VF (sans) + Geist Mono (code/keys/URLs), self-hosted via `next/font/local`
+(zero third-party font requests — RGPD). Variable fonts: one family per role,
+no per-weight loads. Scale: `text-xs` (12px) hints/legends/code, `text-sm`
+(14px) base UI, `text-base` (16px) only on the `lg` button. No other families,
+no other sizes (audit antislop 2026-11-23 F-5: the choice had to be documented).
 
 ## Motion
 

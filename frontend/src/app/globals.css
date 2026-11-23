@@ -34,7 +34,9 @@
   --surface: oklch(1 0 0);
   --surface-muted-raw: 0.962 0.004 250;
   --surface-muted: oklch(var(--surface-muted-raw));
-  --border-raw: 0.9 0.006 250;
+  /* L=0.656: 3.17:1 on surface, 3.03:1 on background (WCAG 1.4.11 non-text ≥ 3:1,
+     audit antislop 2026-11-23 F-2 — l'ancienne valeur 0.9 mesurait 1.29-1.35:1). */
+  --border-raw: 0.656 0.006 250;
   --border: oklch(var(--border-raw));
   --muted-raw: 0.52 0.015 255;
   --muted: oklch(var(--muted-raw));
@@ -86,7 +88,8 @@
     --surface: oklch(0.22 0.012 260);
     --surface-muted-raw: 0.26 0.014 260;
     --surface-muted: oklch(var(--surface-muted-raw));
-    --border-raw: 0.32 0.015 260;
+    /* L=0.514: 3.08:1 on surface, 3.39:1 on background (WCAG 1.4.11, audit F-2). */
+    --border-raw: 0.514 0.015 260;
     --border: oklch(var(--border-raw));
     --muted-raw: 0.7 0.01 255;
     --muted: oklch(var(--muted-raw));

@@ -195,7 +195,7 @@ export function QuestionEditor({
                 <label className="flex items-center gap-2 text-foreground">
                   <input
                     type="checkbox"
-                    className="h-4 w-4 rounded border-border text-primary focus:ring-2 focus:ring-focus/40"
+                    className="h-4 w-4 rounded border-border text-primary focus:ring-2 focus:ring-focus"
                     checked={!!f.badge}
                     onChange={() => patchField(i, { badge: !f.badge })}
                   />
@@ -209,7 +209,7 @@ export function QuestionEditor({
                     <input
                       type="radio"
                       name="primary-criterion"
-                      className="h-4 w-4 border-border text-primary focus:ring-2 focus:ring-focus/40"
+                      className="h-4 w-4 border-border text-primary focus:ring-2 focus:ring-focus"
                       checked={!!f.primary}
                       onChange={() => setPrimary(i)}
                     />

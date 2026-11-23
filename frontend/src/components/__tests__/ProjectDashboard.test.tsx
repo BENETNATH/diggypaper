@@ -177,7 +177,7 @@ describe("project dashboard — to-launch + KPI scope", () => {
     expect(cta.textContent).not.toContain("→");
     // the 0 % lines are masked until the first run: the lot line instead
     expect(screen.queryByText("0 %")).not.toBeInTheDocument();
-    expect(screen.getByText("Pas encore analysée — 5 articles dans le lot.")).toBeInTheDocument();
+    expect(screen.getByText("Pas encore analysée – 5 articles dans le lot.")).toBeInTheDocument();
     expect(screen.queryByText("Aucune question posée")).not.toBeInTheDocument();
     expect(screen.queryByText("Résultats")).not.toBeInTheDocument();
     expect(screen.queryByText("Relancer")).not.toBeInTheDocument();
@@ -318,7 +318,7 @@ describe("project dashboard — spec v4 R6: chaîne + outillage optionnel", () =
   it("« Outillage optionnel »: compact 2-link reminder, no cards (spec clarte-3 R5)", async () => {
     mount6([mk({ id: "a", name: "A", is_default: true })]);
     const heading = await screen.findByRole("heading", {
-      name: "Outillage optionnel — mesurer et comparer les modèles",
+      name: "Outillage optionnel – mesurer et comparer les modèles",
     });
     // surfaces policy: bg-surface-muted container, no border, no violet
     const section = heading.closest("section");
@@ -372,7 +372,7 @@ describe("project dashboard — spec v4 R6: chaîne + outillage optionnel", () =
     expect(screen.getByText("après l'import")).toBeInTheDocument();
     expect(screen.queryByText("Articles importés")).not.toBeInTheDocument();
     expect(
-      screen.queryByText("Outillage optionnel — mesurer et comparer les modèles")
+      screen.queryByText("Outillage optionnel – mesurer et comparer les modèles")
     ).not.toBeInTheDocument();
   });
 

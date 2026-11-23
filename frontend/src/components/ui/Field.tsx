@@ -43,7 +43,7 @@ export function Field({
 }
 
 const inputClass =
-  "w-full rounded-lg border border-border bg-surface px-3 py-2.5 text-sm text-foreground placeholder:text-muted transition-colors duration-fast ease-out focus:border-primary focus:outline-none focus:ring-2 focus:ring-focus/40";
+  "w-full rounded-lg border border-border bg-surface px-3 py-2.5 text-sm text-foreground placeholder:text-muted transition-colors duration-fast ease-out focus:border-primary focus:outline-none focus:ring-2 focus:ring-focus";
 
 export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
   return <input {...props} className={`${inputClass} ${props.className ?? ""}`} />;
@@ -64,11 +64,12 @@ export function Checkbox({
   ...rest
 }: InputHTMLAttributes<HTMLInputElement> & { label: ReactNode }) {
   return (
-    <label className="flex items-center gap-2">
+    // audit 2026-11-23 F-4: ring alpha 100 % (1.79:1 à 40 % seul, sous 3:1 WCAG 1.4.11).
+    <label className="flex min-h-[44px] items-center gap-2 md:min-h-0">
       <input
         type="checkbox"
         {...rest}
-        className="h-5 w-5 rounded border-border bg-surface text-primary focus:ring-2 focus:ring-focus/40"
+        className="h-5 w-5 rounded border-border bg-surface text-primary focus:ring-2 focus:ring-focus"
       />
       <span className="text-pretty text-sm text-foreground">{label}</span>
     </label>

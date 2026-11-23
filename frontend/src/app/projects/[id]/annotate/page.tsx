@@ -485,7 +485,7 @@ export default function AnnotatePage() {
           href={`/projects/${projectId}/articles`}
           className="font-medium text-primary hover:underline"
         >
-          {ta("corpusCount", { n: articleCount })} — {t("viewCorpus")} →
+          {ta("corpusCount", { n: articleCount })} – {t("viewCorpus")} →
         </Link>
       </div>
     );
@@ -743,7 +743,7 @@ export default function AnnotatePage() {
                 name: review.by ?? "?",
                 date: review.at ? new Date(review.at).toLocaleString(locale) : "",
               })}
-              {review.status && ` — ${t(`reviewStatus_${review.status}`)}`}
+              {review.status && ` – ${t(`reviewStatus_${review.status}`)}`}
               <span className="mt-1 block text-muted">{t("reviewEditHint")}</span>
               <span className="mt-2 flex flex-wrap items-center gap-2">
                 <Button type="button" size="sm" variant="secondary" loading={goldBusy} onClick={() => void addToGold()}>
