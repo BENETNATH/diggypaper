@@ -550,3 +550,94 @@ async def test_upload_dedup_unique_per_project(client, session, researcher_user,
     )
     with pytest.raises(IntegrityError):
         await session.commit()
+
+
+# ============================================================================
+# GET /projects/{id}/articles/{article_id}/pdf  (P-3: stored-PDF link)
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_pdf_download_returns_stored_file(client, session, researcher_user, do_login):
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project = Project(title="P", created_by=researcher_user.id)
+    await _make_project(session, project, researcher_user)
+    art = Article(
+        project_id=project.id, title="Mice", authors=["Hussain A", "Zee B"], pub_year=2026
+    )
+    session.add(art)
+    await session.flush()
+    session.add(ArticleFile(article_id=art.id, data=b"%PDF-1.4 body"))
+    await session.commit()
+
+    r = await client.get(f"/api/v1/projects/{project.id}/articles/{art.id}/pdf")
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "application/pdf"
+    # inline + the readable shared name (spec P-1/P-3)
+    assert r.headers["content-disposition"] == 'inline; filename="hussain et al. 2026 Mice.pdf"'
+    assert r.content == b"%PDF-1.4 body"
+
+
+@pytest.mark.asyncio
+async def test_pdf_download_unicode_filename_is_rfc5987(client, session, researcher_user, do_login):
+    # Non-ASCII name (ellipsis + μ): a raw latin-1 filename= header crashes the
+    # response — must come back percent-encoded (regression: staging 500).
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project = Project(title="P", created_by=researcher_user.id)
+    await _make_project(session, project, researcher_user)
+    art = Article(
+        project_id=project.id,
+        title="Effet du μ-récepteur sur la nociception aiguë chez la souris…",
+        authors=["Hussain A"],
+        pub_year=2026,
+    )
+    session.add(art)
+    await session.flush()
+    session.add(ArticleFile(article_id=art.id, data=b"%PDF-1.4 body"))
+    await session.commit()
+
+    r = await client.get(f"/api/v1/projects/{project.id}/articles/{art.id}/pdf")
+    assert r.status_code == 200
+    disp = r.headers["content-disposition"]
+    assert "filename*=UTF-8''" in disp
+    assert 'filename="' in disp  # ASCII fallback présent
+    assert r.content == b"%PDF-1.4 body"
+
+
+@pytest.mark.asyncio
+async def test_pdf_download_404_without_file(client, session, researcher_user, do_login):
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project = Project(title="P", created_by=researcher_user.id)
+    await _make_project(session, project, researcher_user)
+    art = Article(project_id=project.id, title="No file")
+    session.add(art)
+    await session.commit()
+    r = await client.get(f"/api/v1/projects/{project.id}/articles/{art.id}/pdf")
+    assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_pdf_download_404_unknown_article(client, session, researcher_user, do_login):
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project = Project(title="P", created_by=researcher_user.id)
+    await _make_project(session, project, researcher_user)
+    r = await client.get(f"/api/v1/projects/{project.id}/articles/{uuid.uuid4()}/pdf")
+    assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_pdf_download_requires_membership(client, session, do_login, researcher_user):
+    from app.db.models import UserRole
+    from tests.conftest import _make_user
+
+    project = Project(title="P", created_by=researcher_user.id)
+    await _make_project(session, project, researcher_user)
+    art = Article(project_id=project.id, title="X")
+    session.add(art)
+    await session.flush()
+    session.add(ArticleFile(article_id=art.id, data=b"%PDF"))
+    await session.commit()
+    await _make_user(session, "out@lab.fr", UserRole.RESEARCHER, "out-pass-123")
+    await do_login("out@lab.fr", "out-pass-123", consent=True)
+    r = await client.get(f"/api/v1/projects/{project.id}/articles/{art.id}/pdf")
+    assert r.status_code == 403

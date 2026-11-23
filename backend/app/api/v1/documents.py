@@ -235,12 +235,20 @@ async def download_article_pdf(
     ).scalar_one_or_none()
     if data is None:
         raise HTTPException(status_code=404, detail="No stored PDF")
+    from urllib.parse import quote
+
     from app.references import pdf_filename
 
+    name = pdf_filename(art)
+    if name.isascii():
+        disposition = f'inline; filename="{name}"'
+    else:  # RFC 5987 — les en-têtes sont latin-1, « … » / « μ » ne passent pas en filename=
+        fallback = name.encode("ascii", "ignore").decode().strip() or "article.pdf"
+        disposition = f"inline; filename=\"{fallback}\"; filename*=UTF-8''{quote(name)}"
     return Response(
         data,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'inline; filename="{pdf_filename(art)}"'},
+        headers={"Content-Disposition": disposition},
     )
 
 
