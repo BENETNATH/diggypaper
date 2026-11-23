@@ -6,14 +6,16 @@ import io
 import json
 import os
 import re
+import struct
 import uuid
 import zipfile
+import zlib
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from openpyxl import Workbook
 from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 from openpyxl.styles import Alignment, Font, PatternFill
@@ -374,6 +376,102 @@ async def export_xlsx(
     )
 
 
+# ZIP « stored » (PDF déjà compressés) : les en-têtes se calculent pendant le
+# flux, sans repasser dans les données — le zip est écrit membre par membre.
+_LOCAL = struct.Struct("<4sHHHHHIIIHH")
+_CENTRAL = struct.Struct("<4sHHHHHHIIIHHHHHII")
+_END = struct.Struct("<4sHHHHIIH")
+_DOS_TIME = (0, 0x0021)  # 1980-01-01 00:00:00, epoch du ZIP
+
+
+def _zip_member(name: str, data: bytes, offset: int) -> tuple[bytes, bytes]:
+    """(bloc local + nom + données, entrée du répertoire central) d'un membre « stored »."""
+    nb = name.encode("utf-8")
+    crc = zlib.crc32(data) & 0xFFFFFFFF
+    head = _LOCAL.pack(
+        b"PK\x03\x04", 20, 0x0800, 0, *_DOS_TIME, crc, len(data), len(data), len(nb), 0
+    )
+    central = (
+        _CENTRAL.pack(
+            b"PK\x01\x02",
+            20,
+            20,
+            0x0800,
+            0,
+            *_DOS_TIME,
+            crc,
+            len(data),
+            len(data),
+            len(nb),
+            0,
+            0,
+            0,
+            0,
+            0,
+            offset,
+        )
+        + nb
+    )
+    return head + nb + data, central
+
+
+@router.get("/{project_id}/export/pdfs")
+async def export_pdfs(
+    project_id: uuid.UUID, db: DbDep, user: UserDep, search: uuid.UUID | None = None
+) -> Response:
+    """ZIP des PDF conservés du lot, nommés comme le RO-Crate ; streaming paresseux
+    (un membre par article, rien n'est bufferisé en bloc). Zéro PDF → 404."""
+    project = await _require_project_member(db, project_id, user)
+    scope = await get_search(db, project, search)
+    where = lot_condition(scope)
+    articles = (
+        (
+            await db.execute(
+                select(Article).join(ArticleFile, ArticleFile.article_id == Article.id).where(where)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if not articles:
+        raise HTTPException(status_code=404, detail="no_pdf")
+    taken: set[str] = set()
+    names = {a.id: references.pdf_filename(a, taken) for a in articles}
+
+    async def stream():
+        centrals: list[bytes] = []
+        offset = 0
+        result = await db.execute(
+            select(Article.id, ArticleFile.data)
+            .join(ArticleFile, ArticleFile.article_id == Article.id)
+            .where(where)
+            .order_by(Article.created_at, Article.id)
+        )
+
+        def member(aid, data) -> bytes:
+            nonlocal offset
+            block, central = _zip_member(names[aid], data, offset)
+            centrals.append(central)
+            offset += len(block)
+            return block
+
+        # asyncpg : itération asynchrone ; aiosqlite (tests) : chunks synchrones
+        if hasattr(result, "__aiter__"):
+            async for aid, data in result:
+                yield member(aid, data)
+        else:
+            for aid, data in result:
+                yield member(aid, data)
+        cd = b"".join(centrals)
+        yield cd + _END.pack(b"PK\x05\x06", 0, 0, len(centrals), len(centrals), len(cd), offset, 0)
+
+    return StreamingResponse(
+        stream(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="pdfs-{_slug(project)}.zip"'},
+    )
+
+
 def _notes(articles, preds: dict, fields: list[dict]) -> dict:
     """Note per article: AI status, relevance and answers (to recover the sort in Zotero)."""
     out = {}
@@ -560,6 +658,7 @@ async def write_crate(
     )
 
     files: dict[str, list[str]] = {}
+    taken: set[str] = set()
     n_pdf = n_text = 0
     with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as z:
 
@@ -587,8 +686,9 @@ async def write_crate(
             ).scalar_one_or_none()
             if pdf:
                 n_pdf += 1
-                present.append("fulltext.pdf")
-                put(folder + "fulltext.pdf", pdf, stored=True)
+                pdf_name = references.pdf_filename(a, taken)
+                present.append(pdf_name)
+                put(folder + pdf_name, pdf, stored=True)
             files[key] = present
             if progress and i % 10 == 0:
                 await progress(i, len(articles))

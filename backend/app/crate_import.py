@@ -171,6 +171,21 @@ def sections_from_markdown(md: str) -> list[dict]:
     return sections
 
 
+def _pdf_member(zf: zipfile.ZipFile, key: str) -> str | None:
+    """Member of the article's PDF (readable name, or legacy ``fulltext.pdf``);
+    the folder→member index is built once on the ``ZipFile`` (a per-article scan would
+    be quadratic on a 5 000-article crate)."""
+    index = getattr(zf, "_crate_pdfs", None)
+    if index is None:
+        index = {}
+        for n in zf.namelist():
+            m = re.fullmatch(r"articles/([^/]+)/[^/]+\.pdf", n)
+            if m:
+                index.setdefault(m.group(1), n)
+        zf._crate_pdfs = index
+    return index.get(key)
+
+
 def read_article(zf: zipfile.ZipFile, key: str) -> dict:
     """One article from the crate: validated metadata, sections, optional PDF."""
     meta = _json(zf, f"articles/{key}/metadata.json")
@@ -181,11 +196,13 @@ def read_article(zf: zipfile.ZipFile, key: str) -> dict:
     except (CrateError, UnicodeDecodeError):
         pass
     pdf = None
-    try:
-        data = _read(zf, base + "fulltext.pdf", MAX_PDF_BYTES)
-        pdf = data if data.startswith(b"%PDF") else None
-    except CrateError:
-        pass
+    pdf_name = _pdf_member(zf, key)
+    if pdf_name:
+        try:
+            data = _read(zf, pdf_name, MAX_PDF_BYTES)
+            pdf = data if data.startswith(b"%PDF") else None
+        except CrateError:
+            pass
     date = _clean(meta.get("pub_date"), 20)
     pmid = _clean(meta.get("pmid"), 20)
     source = clean_meta(meta.get("source"), 50)  # no control characters (RIS export)

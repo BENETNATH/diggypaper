@@ -1,4 +1,4 @@
-import { addQuote, cleanQuote, highlightSegments } from "@/lib/highlight";
+import { addQuote, cleanQuote, highlightSegments, quoteFound } from "@/lib/highlight";
 
 describe("highlightSegments", () => {
   it("returns a single unhighlighted segment when there is no quote", () => {
@@ -10,7 +10,7 @@ describe("highlightSegments", () => {
     const segments = highlightSegments("Mice were randomized into groups.", ["randomized"]);
     expect(segments).toEqual([
       { text: "Mice were ", highlighted: false },
-      { text: "randomized", highlighted: true },
+      { text: "randomized", highlighted: true, quoteIdx: [0] },
       { text: " into groups.", highlighted: false },
     ]);
   });
@@ -21,24 +21,24 @@ describe("highlightSegments", () => {
     expect(segments).toEqual([{ text: "Mice were Randomized.", highlighted: false }]);
     // but "Randomized" matches "Randomized"
     const segments2 = highlightSegments("Mice were Randomized.", ["Randomized"]);
-    expect(segments2[1]).toEqual({ text: "Randomized", highlighted: true });
+    expect(segments2[1]).toEqual({ text: "Randomized", highlighted: true, quoteIdx: [0] });
   });
 
   it("surligne plusieurs citations distinctes", () => {
     const segments = highlightSegments("A and B and C.", ["A", "C"]);
     expect(segments).toEqual([
-      { text: "A", highlighted: true },
+      { text: "A", highlighted: true, quoteIdx: [0] },
       { text: " and B and ", highlighted: false },
-      { text: "C", highlighted: true },
+      { text: "C", highlighted: true, quoteIdx: [1] },
       { text: ".", highlighted: false },
     ]);
   });
 
   it("fusionne les citations chevauchantes", () => {
     const segments = highlightSegments("abcdef", ["abc", "cde"]);
-    // abc (0-3) + cde (2-5) → fusion 0-5 = "abcde"
+    // abc (0-3) + cde (2-5) → fusion 0-5 = "abcde", les deux quotes portées
     expect(segments).toEqual([
-      { text: "abcde", highlighted: true },
+      { text: "abcde", highlighted: true, quoteIdx: [0, 1] },
       { text: "f", highlighted: false },
     ]);
   });
@@ -55,13 +55,58 @@ describe("highlightSegments", () => {
   it("ignore les citations vides", () => {
     const segments = highlightSegments("text", ["", "text"]);
     expect(segments).toEqual([
-      { text: "text", highlighted: true },
+      { text: "text", highlighted: true, quoteIdx: [1] },
     ]);
   });
 
   it("ne surligne pas une citation absente", () => {
     const segments = highlightSegments("hello world", ["absent"]);
     expect(segments).toEqual([{ text: "hello world", highlighted: false }]);
+  });
+});
+
+describe("matching normalisé (spec 2026-11-23 P-4)", () => {
+  it("espace insécable : la quote sans insécable matche le texte", () => {
+    const text = "Mice were\u00a0randomized into groups.";
+    expect(quoteFound(text, "Mice were randomized")).toBe(true);
+    const marked = highlightSegments(text, ["Mice were randomized"]).filter((s) => s.highlighted);
+    expect(marked).toHaveLength(1);
+    // le <mark> contient le texte ORIGINAL (avec l'insécable)
+    expect(marked[0].text).toBe("Mice were\u00a0randomized");
+    expect(marked[0].quoteIdx).toEqual([0]);
+  });
+
+  it("retour à la ligne dans la quote", () => {
+    const text = "Mice were\nrandomized";
+    expect(quoteFound(text, "Mice were randomized")).toBe(true);
+    const marked = highlightSegments(text, ["Mice were randomized"]).filter((s) => s.highlighted);
+    expect(marked[0].text).toBe("Mice were\nrandomized");
+  });
+
+  it("guillemets courbes, tirets et points de suspension", () => {
+    expect(quoteFound("le “groupe A”", 'le "groupe A"')).toBe(true);
+    expect(quoteFound("l’effet", "l'effet")).toBe(true);
+    expect(quoteFound("a\u2013b\u2014c", "a-b-c")).toBe(true);
+    expect(quoteFound("wait\u2026 then", "wait... then")).toBe(true);
+  });
+
+  it("ligature fi (U+FB01) matche la forme décomposée", () => {
+    expect(quoteFound("the\ufb01rst group", "thefirst group")).toBe(true);
+  });
+
+  it("quote absente → pas de plage, quoteFound faux", () => {
+    const segments = highlightSegments("hello world", ["absent"]);
+    expect(segments).toEqual([{ text: "hello world", highlighted: false }]);
+    expect(quoteFound("hello world", "absent")).toBe(false);
+  });
+
+  it("quoteIdx fusionnée sur une plage issue de deux quotes", () => {
+    const segments = highlightSegments("abcdef", ["abc", "cde"]);
+    expect(segments[0]).toEqual({ text: "abcde", highlighted: true, quoteIdx: [0, 1] });
+  });
+
+  it("la casse reste distinguée (extraits verbatim)", () => {
+    expect(quoteFound("Mice were Randomized", "randomized")).toBe(false);
   });
 });
 

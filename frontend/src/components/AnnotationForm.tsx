@@ -4,6 +4,8 @@ import { useState } from "react";
 import { useTranslations } from "next-intl";
 import { SchemaField } from "@/lib/api";
 import { AnswerTextarea, DecisionFields, defaultValues, Values } from "@/components/DecisionFields";
+import { splitEvidence } from "@/lib/evidence";
+import { quoteFound } from "@/lib/highlight";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Field";
 
@@ -27,6 +29,8 @@ interface AnnotationFormProps {
   onQuotesChange?: (quotes: string[]) => void;
   /** Click on an excerpt: the page reveals it in the document (scroll to the highlight). */
   onQuoteClick?: (quote: string) => void;
+  /** Article text: a quote absent from it is flagged « non trouvée » (P-4) and does not scroll. */
+  text?: string;
 }
 
 /**
@@ -35,11 +39,11 @@ interface AnnotationFormProps {
  * Champs : use_ai_behavior, animal_sex, confidence_score, evidence_quotes,
  * reasoning_summary. Validation minimale (confidence ∈ [0,1]).
  */
-export function AnnotationForm({ fields, onSubmit, onError, initial, quotes: given, onQuotesChange, onQuoteClick }: AnnotationFormProps) {
+export function AnnotationForm({ fields, onSubmit, onError, initial, quotes: given, onQuotesChange, onQuoteClick, text }: AnnotationFormProps) {
   const t = useTranslations("annotate");
   const [values, setValues] = useState<Values>(() => defaultValues(fields, initial));
   const [confidence, setConfidence] = useState((initial?.confidence_score as number) ?? 0.5);
-  const [localQuotes, setLocalQuotes] = useState<string[]>((initial?.evidence_quotes as string[]) ?? []);
+  const [localQuotes, setLocalQuotes] = useState<string[]>(() => splitEvidence(initial?.evidence_quotes).all);
   const quotes = given ?? localQuotes;
   const setQuotes = (next: string[] | ((prev: string[]) => string[])) => {
     const value = typeof next === "function" ? next(quotes) : next;
@@ -47,6 +51,9 @@ export function AnnotationForm({ fields, onSubmit, onError, initial, quotes: giv
   };
   const [quoteInput, setQuoteInput] = useState("");
   const [reasoning, setReasoning] = useState((initial?.reasoning_summary as string) ?? "");
+  // Per-field model quotes (dict shape, P-5): up to 3 clickable bullets under each field.
+  const byField = splitEvidence(initial?.evidence_quotes).byField;
+  const hasFieldQuotes = Object.keys(byField).length > 0;
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -91,6 +98,33 @@ export function AnnotationForm({ fields, onSubmit, onError, initial, quotes: giv
         values={values}
         onChange={setValues}
         certainty={initial?.field_confidence as Record<string, number | null> | undefined}
+        extra={
+          hasFieldQuotes
+            ? (f) => {
+                const list = (byField[f.key] ?? []).slice(0, 3);
+                if (list.length === 0) return null;
+                return (
+                  <ul className="mt-1.5 list-disc pl-5 text-xs">
+                    {list.map((q, i) => (
+                      <li key={i} className="leading-snug">
+                        {onQuoteClick ? (
+                          <button
+                            type="button"
+                            onClick={() => onQuoteClick(q)}
+                            className="text-left text-primary underline-offset-2 hover:underline"
+                          >
+                            {q}
+                          </button>
+                        ) : (
+                          <span className="text-foreground/70">{q}</span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                );
+              }
+            : undefined
+        }
       />
 
       <div>
@@ -132,33 +166,37 @@ export function AnnotationForm({ fields, onSubmit, onError, initial, quotes: giv
           </Button>
         </div>
         <ul className="mt-2 flex flex-col gap-1">
-          {quotes.map((q, i) => (
-            <li
-              key={i}
-              className="flex items-center justify-between rounded bg-surface-muted p-2"
-            >
-              {onQuoteClick ? (
+          {quotes.map((q, i) => {
+            const found = !text || quoteFound(text, q);
+            return (
+              <li
+                key={i}
+                className="flex items-center justify-between rounded bg-surface-muted p-2"
+              >
+                {onQuoteClick ? (
+                  <button
+                    type="button"
+                    onClick={() => found && onQuoteClick(q)}
+                    className="min-w-0 flex-1 text-left text-sm text-foreground underline-offset-2 hover:text-primary hover:underline"
+                    title={found ? t("jumpToQuote") : t("quoteNotFound")}
+                  >
+                    {q}
+                  </button>
+                ) : (
+                  <span className="min-w-0 flex-1 text-sm">{q}</span>
+                )}
+                {!found && <span className="ml-2 shrink-0 text-xs text-muted">{t("quoteNotFound")}</span>}
                 <button
                   type="button"
-                  onClick={() => onQuoteClick(q)}
-                  className="min-w-0 flex-1 text-left text-sm text-foreground underline-offset-2 hover:text-primary hover:underline"
-                  title={t("jumpToQuote")}
+                  onClick={() => removeQuote(i)}
+                  className="ml-2 shrink-0 text-danger"
+                  aria-label={t("removeQuote")}
                 >
-                  {q}
+                  ×
                 </button>
-              ) : (
-                <span className="min-w-0 flex-1 text-sm">{q}</span>
-              )}
-              <button
-                type="button"
-                onClick={() => removeQuote(i)}
-                className="ml-2 shrink-0 text-danger"
-                aria-label={t("removeQuote")}
-              >
-                ×
-              </button>
-            </li>
-          ))}
+              </li>
+            );
+          })}
         </ul>
       </div>
 

@@ -14,6 +14,7 @@ import { SwipeableCard } from "@/components/SwipeableCard";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { addQuote } from "@/lib/highlight";
+import { splitEvidence } from "@/lib/evidence";
 import { articlesStoreKey, withSearch } from "@/lib/search";
 import { useSearchId, useSearches } from "@/lib/useSearch";
 import { useApiError } from "@/lib/errorMsg";
@@ -24,6 +25,7 @@ import {
   Article,
   ArticlePrediction,
   ArticleReview,
+  articlePdfUrl,
   getArticle,
   getArticleWithPrediction,
   getOverview,
@@ -234,7 +236,8 @@ export default function AnnotatePage() {
       const r = await submitAnnotation(projectId, articleId, {
         ...prediction.decision_json,
         confidence_score: prediction.confidence_score ?? 0.5,
-        evidence_quotes: prediction.evidence_quotes ?? [],
+        // annotation humaine = liste plate (le dict du modèle est aplatit, P-5)
+        evidence_quotes: splitEvidence(prediction.evidence_quotes).all,
       }, searchId, isBlind);
       setReview({ ...r, decision_json: prediction.decision_json, notes: null });
       setStatus("accepted");
@@ -253,7 +256,7 @@ export default function AnnotatePage() {
     ? (own as string[])
     : review || locked
       ? []
-      : prediction?.evidence_quotes ?? [];
+      : splitEvidence(prediction?.evidence_quotes).all; // union du dict par champ (P-5)
   const seedKey = `${articleId}|${JSON.stringify(seedQuotes)}`;
   const [prevSeedKey, setPrevSeedKey] = useState(seedKey);
   if (prevSeedKey !== seedKey) {
@@ -424,7 +427,16 @@ export default function AnnotatePage() {
                 ta("sourceNotRecorded")}{" "}
               · {article.has_fulltext ? ta("corpusFulltext") : ta("corpusAbstractOnly")}
             </p>
-            <ArticleLinks article={article} className="mt-0.5" />
+            <ArticleLinks
+              article={article}
+              pdfHref={
+                article.fulltext_source &&
+                ["upload", "ocr", "pdf:upload"].includes(article.fulltext_source)
+                  ? articlePdfUrl(projectId, article.id)
+                  : null
+              }
+              className="mt-0.5"
+            />
           </header>
           <main className="max-h-[calc(100vh_-_10rem)] overflow-y-auto p-4">
             <h2 className="mb-2 text-sm font-medium text-muted">
@@ -539,6 +551,8 @@ export default function AnnotatePage() {
   const shownPrediction = blindLocked ? null : prediction;
 
   // An existing re-review takes precedence over the AI's answer: we correct from it.
+  // evidence_quotes stays in its raw shape (dict → the form's per-field bullets, P-5);
+  // the highlight list is `quotes` (the flat union).
   const initialAnnotation = review?.decision_json
     ? { ...review.decision_json, field_confidence: shownPrediction?.decision_json?.field_confidence }
     : shownPrediction?.decision_json
@@ -577,7 +591,16 @@ export default function AnnotatePage() {
         <p className="text-xs text-muted">
           {sourceLabel(article.source, article.native_id, ta("sourceFile")) ?? ta("sourceNotRecorded")}
         </p>
-        <ArticleLinks article={article} className="mt-0.5" />
+        <ArticleLinks
+          article={article}
+          pdfHref={
+            article.fulltext_source &&
+            ["upload", "ocr", "pdf:upload"].includes(article.fulltext_source)
+              ? articlePdfUrl(projectId, article.id)
+              : null
+          }
+          className="mt-0.5"
+        />
         {shownPrediction && (
           <p className="text-sm text-muted">
             {t("model")}:{" "}
@@ -668,7 +691,7 @@ export default function AnnotatePage() {
                 {pdfError && <span className="text-danger">{pdfError}</span>}
               </div>
             </div>
-            {shownPrediction && !shownPrediction.evidence_quotes?.length && (
+            {shownPrediction && splitEvidence(shownPrediction.evidence_quotes).all.length === 0 && (
               <p className="mb-2 rounded bg-surface-muted p-2 text-xs text-muted">{t("noEvidence")}</p>
             )}
             <EvidenceHighlighter
@@ -763,6 +786,7 @@ export default function AnnotatePage() {
             onSubmit={handleSubmit}
             initial={initialAnnotation}
             quotes={quotes}
+            text={article.text ?? article.methods_text ?? ""}
             onQuotesChange={setQuotes}
             onQuoteClick={(q) => {
               setFocus((prev) => ({ quote: q, n: (prev?.n ?? 0) + 1 }));

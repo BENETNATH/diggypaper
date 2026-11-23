@@ -28,4 +28,33 @@ describe("ArticleLinks — fiche identifier links (fix 2026-11-21)", () => {
     const { container } = render(<ArticleLinks article={{}} />);
     expect(container.querySelector("a")).toBeNull();
   });
+
+  it("pdfHref → the stored-PDF link, before the external links (P-3)", () => {
+    render(
+      <ArticleLinks
+        article={{ doi: "10.1/x", doi_url: "https://doi.org/10.1/x", fulltext_url: "https://ft.example" }}
+        pdfHref="/api/v1/projects/p1/articles/a1/pdf"
+      />
+    );
+    const pdf = screen.getByRole("link", { name: "PDF ↗" });
+    expect(pdf).toHaveAttribute("href", "/api/v1/projects/p1/articles/a1/pdf");
+    expect(pdf).toHaveAttribute("target", "_blank");
+    // l'ancien libellé « Ouvrir le texte / PDF » devient « Article en ligne »
+    const online = screen.getByRole("link", { name: "openArticle ↗" });
+    expect(online).toHaveAttribute("href", "https://ft.example");
+    const links = screen.getAllByRole("link").map((l) => l.textContent);
+    expect(links.indexOf("PDF ↗")).toBeLessThan(links.indexOf("DOI ↗"));
+  });
+
+  it("no pdfHref → no PDF link (P-3)", () => {
+    render(
+      <ArticleLinks article={{ doi: "10.1/x", doi_url: "https://doi.org/10.1/x" }} pdfHref={null} />
+    );
+    expect(screen.queryByRole("link", { name: "PDF ↗" })).toBeNull();
+  });
+
+  it("pdfHref alone → the PDF link still renders (P-3)", () => {
+    render(<ArticleLinks article={{}} pdfHref="/api/v1/projects/p1/articles/a1/pdf" />);
+    expect(screen.getByRole("link", { name: "PDF ↗" })).toBeInTheDocument();
+  });
 });

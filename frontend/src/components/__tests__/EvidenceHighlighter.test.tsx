@@ -81,4 +81,47 @@ describe("EvidenceHighlighter", () => {
     global.requestAnimationFrame = origRaf;
     global.cancelAnimationFrame = origCaf;
   });
+
+  it("mark carries data-quote-idx (P-4)", () => {
+    const { container } = render(<EvidenceHighlighter text="alpha beta gamma" quotes={["beta", "gamma"]} />);
+    const marks = Array.from(container.querySelectorAll("mark"));
+    expect(marks).toHaveLength(2);
+    expect(marks[0].dataset.quoteIdx).toBe("0");
+    expect(marks[1].dataset.quoteIdx).toBe("1");
+  });
+
+  it("absent quote → no mark at all (P-4)", () => {
+    const { container } = render(<EvidenceHighlighter text="hello world" quotes={["absent"]} />);
+    expect(container.querySelector("mark")).toBeNull();
+  });
+
+  it("scrolls to the mark of a normalized (non-verbatim) quote (P-4)", () => {
+    const { raf, caf, flush } = stubRaf();
+    const origRaf = global.requestAnimationFrame;
+    const origCaf = global.cancelAnimationFrame;
+    global.requestAnimationFrame = raf as unknown as typeof global.requestAnimationFrame;
+    global.cancelAnimationFrame = caf as unknown as typeof global.cancelAnimationFrame;
+    Object.defineProperty(document, "scrollingElement", {
+      configurable: true,
+      get: () => document.documentElement,
+    });
+    const scrollTo = jest.fn();
+    (document.documentElement as unknown as HTMLElement).scrollTo = scrollTo;
+
+    // le texte a un espace insécable, la quote (modèle) un simple espace
+    const { container } = render(
+      <EvidenceHighlighter text={"alpha beta\u00a0gamma"} quotes={["beta gamma"]} focus={{ quote: "beta gamma", n: 1 }} />
+    );
+    const mark = container.querySelector("mark") as HTMLElement;
+    expect(mark).toBeTruthy();
+    expect(mark.textContent).toBe("beta\u00a0gamma"); // le mark garde le texte original
+    mark.getBoundingClientRect = () => MARK_RECT;
+    flush(3);
+
+    // le scroll ciblait ce mark (via data-quote-idx, plus le textContent)
+    expect(scrollTo).toHaveBeenCalledTimes(1);
+    expect(mark.classList.contains("evidence-flash")).toBe(true);
+    global.requestAnimationFrame = origRaf;
+    global.cancelAnimationFrame = origCaf;
+  });
 });

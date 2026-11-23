@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
 import { SchemaField } from "@/lib/api";
 import { Field, Select, Checkbox, Textarea } from "@/components/ui/Field";
@@ -53,12 +53,15 @@ export function DecisionFields({
   values,
   onChange,
   certainty,
+  extra,
 }: {
   fields: SchemaField[];
   values: Values;
   onChange: (next: Values) => void;
   /** Model certainty for each answer (field key → 0–1). */
   certainty?: Record<string, number | null>;
+  /** Extra content under each field (e.g. the per-field evidence quotes, P-5). */
+  extra?: (field: SchemaField) => ReactNode | null;
 }) {
   const t = useTranslations("annotate");
   const set = (key: string, v: unknown) => onChange({ ...values, [key]: v });
@@ -95,6 +98,7 @@ export function DecisionFields({
             </div>
           )}
           {renderField(f)}
+          {extra?.(f) ?? null}
         </div>
       ))}
     </div>

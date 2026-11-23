@@ -240,6 +240,7 @@ def biblio_payload(a: Article) -> dict:
         "pub_types": a.pub_types or [],
         "doi_url": f"https://doi.org/{a.doi}" if a.doi else None,
         "fulltext_url": a.fulltext_url,
+        "fulltext_source": a.fulltext_source,
     }
 
 

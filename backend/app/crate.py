@@ -4,7 +4,7 @@ Zip layout:
 ro-crate-metadata.json   JSON-LD graph (project, articles, authors, models, actions)
 README.md · project.json (question, fields, import queries, models + fingerprints, prompt)
 extraction.csv · results.xlsx   final extraction table
-articles/<key>/metadata.json · fulltext.md (or abstract.md) · fulltext.pdf (if kept)
+articles/<key>/metadata.json · fulltext.md (or abstract.md) · PDF (readable name, if kept)
 """
 
 from __future__ import annotations
@@ -368,9 +368,11 @@ def build_graph(project, articles, keys: dict, files: dict, info: dict, now: str
             "metadata.json": "Metadata, AI and human answers",
             "fulltext.md": "Full text",
             "abstract.md": "Abstract",
-            "fulltext.pdf": "PDF",
         }
-        graph += [file_entity(folder + f, names_[f], art_id) for f in present]
+        graph += [
+            file_entity(folder + f, names_.get(f, "PDF" if f.endswith(".pdf") else f), art_id)
+            for f in present
+        ]
 
     graph += [{"@id": i, "@type": "Person", "name": n} for n, i in people.items()]
     graph += [{"@id": i, "@type": "Periodical", "name": n} for n, i in journals.items()]
@@ -438,7 +440,7 @@ Export RO-Crate (Diggypaper) — {datetime.now(UTC):%Y-%m-%d}.
 - License: {get_settings().crate_license_name} for the metadata, answers and reviews;
   full texts and PDFs keep the license of their rights holders.
 - `articles/<key>/` : one folder per article ({n_articles}) — `metadata.json`, `fulltext.md`
-  ({n_text} with full text, otherwise `abstract.md`) and `fulltext.pdf` ({n_pdf} kept)
+  ({n_text} with full text, otherwise `abstract.md`) and the PDF ({n_pdf} kept, readable name)
 
 In `metadata.json`, each `human` entry keeps the annotator's identifier and the annotation
 date, the answers, the notes and the recorded `evidence_quotes` (null if absent).

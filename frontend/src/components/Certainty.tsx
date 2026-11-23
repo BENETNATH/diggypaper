@@ -35,6 +35,7 @@ export function biblioLine(a: {
 /** External links of an article: DOI (or PubMed, when no DOI), full text / PDF. */
 export function ArticleLinks({
   article,
+  pdfHref,
   className = "",
 }: {
   article: {
@@ -43,14 +44,21 @@ export function ArticleLinks({
     fulltext_url?: string | null;
     pmid?: string | null;
   };
+  /** Stored-PDF route (P-3): a « PDF » link before the external links when present. */
+  pdfHref?: string | null;
   className?: string;
 }) {
   const t = useTranslations("articles");
   const tc = useTranslations("common");
-  if (!article.doi_url && !article.fulltext_url && !article.pmid) return null;
+  if (!article.doi_url && !article.fulltext_url && !article.pmid && !pdfHref) return null;
   const cls = "text-primary hover:underline";
   return (
     <span className={`flex flex-wrap gap-x-3 text-xs ${className}`}>
+      {pdfHref ? (
+        <a href={pdfHref} target="_blank" rel="noopener noreferrer" className={cls}>
+          PDF ↗
+        </a>
+      ) : null}
       {article.doi_url ? (
         <span className="inline-flex items-center gap-0.5">
           <a href={article.doi_url} target="_blank" rel="noopener noreferrer" className={cls}>
@@ -73,7 +81,7 @@ export function ArticleLinks({
       ) : null}
       {article.fulltext_url && (
         <a href={article.fulltext_url} target="_blank" rel="noopener noreferrer" className={cls}>
-          {t("openFulltext")} ↗
+          {t("openArticle")} ↗
         </a>
       )}
     </span>

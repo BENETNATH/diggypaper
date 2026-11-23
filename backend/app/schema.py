@@ -151,7 +151,9 @@ def build_system_prompt(question: str | None, fields: list[dict]) -> str:
             "to the question),",
             '  "field_confidence": { one float (0.0 to 1.0) per answer above, keyed by the '
             "answer's field name: how certain you are of THAT answer },",
-            '  "evidence_quotes": [ string (exact verbatim quotes from the text) ],',
+            '  "evidence_quotes": { "<field key>": [ string (up to 3 exact verbatim quotes from '
+            "the text supporting THAT answer) ] },  // exact quotes from the text, or nothing for "
+            "an unsupported field,",
             '  "reasoning_summary": string',
             "}",
         ]
@@ -174,13 +176,21 @@ def build_system_prompt(question: str | None, fields: list[dict]) -> str:
     )
 
 
+def _quotes_set(q) -> set:
+    """Evidence quotes as a set: flat list (legacy) or per-field dict (spec 2026-11-23 P-5) —
+    the dict is flattened to the union of its values before the P/R/F1."""
+    if isinstance(q, dict):
+        return {x for v in q.values() if isinstance(v, list) for x in v}
+    return set(q or [])
+
+
 def compute_metrics(fields: list[dict], prediction: dict, truth: dict) -> dict:
     """Accuracy = fraction of exact fields; P/R/F1 on evidence_quotes (as before)."""
     keys = [f["key"] for f in fields]
     exact = sum(1 for k in keys if _norm(prediction.get(k)) == _norm(truth.get(k)))
     accuracy = exact / len(keys)
-    pred_q = set(prediction.get("evidence_quotes") or [])
-    gold_q = set(truth.get("evidence_quotes") or [])
+    pred_q = _quotes_set(prediction.get("evidence_quotes"))
+    gold_q = _quotes_set(truth.get("evidence_quotes"))
     if not gold_q:
         precision = recall = f1 = 1.0
     else:

@@ -54,3 +54,18 @@ describe("DecisionFields — empty choice shows a neutral placeholder", () => {
     expect(choice!.querySelector("option[value='']")).toBeTruthy();
   });
 });
+
+describe("DecisionFields — extra under each field (spec 2026-11-23 P-5)", () => {
+  it("extra is rendered under its field, and nothing when it returns null", () => {
+    render(
+      <DecisionFields
+        fields={FIELDS}
+        values={defaultValues(FIELDS)}
+        onChange={() => {}}
+        extra={(f) => (f.key === "relevant" ? <span>{f.key}-quote</span> : null)}
+      />
+    );
+    expect(screen.getByText("relevant-quote")).toBeInTheDocument();
+    expect(screen.queryByText("category-quote")).toBeNull();
+  });
+});

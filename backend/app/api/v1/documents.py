@@ -10,7 +10,7 @@ import logging
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -211,6 +211,37 @@ async def upload_document(
     user: UserDep,
 ):
     return await _upload_document(request, db, user, project_id)
+
+
+@router.get("/{project_id}/articles/{article_id}/pdf")
+async def download_article_pdf(
+    project_id: uuid.UUID,
+    article_id: uuid.UUID,
+    db: DbDep,
+    user: UserDep,
+):
+    """PDF conservé sur l'instance (upload ou copie ouverte), inline dans le
+    navigateur — 404 si l'article n'a pas de fichier."""
+    await _require_project_member(db, project_id, user)
+    art = (
+        await db.execute(
+            select(Article).where(Article.id == article_id, Article.project_id == project_id)
+        )
+    ).scalar_one_or_none()
+    if art is None:
+        raise HTTPException(status_code=404, detail="Article not found")
+    data = (
+        await db.execute(select(ArticleFile.data).where(ArticleFile.article_id == art.id))
+    ).scalar_one_or_none()
+    if data is None:
+        raise HTTPException(status_code=404, detail="No stored PDF")
+    from app.references import pdf_filename
+
+    return Response(
+        data,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{pdf_filename(art)}"'},
+    )
 
 
 # ============================================================================

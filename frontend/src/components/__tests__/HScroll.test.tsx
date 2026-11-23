@@ -116,6 +116,11 @@ describe("HScroll — spec 2026-11-19-hscroll-float", () => {
     expect(bar).toHaveAttribute("aria-label", "hscrollLabel"); // i18n mock returns keys as-is
   });
 
+  it("10. the scroller hides its native scrollbar (the floating bar is the only bar)", async () => {
+    const { scroller } = await setup();
+    expect(scroller).toHaveClass("no-native-scrollbar");
+  });
+
   it("9. ResultsTable renders the floating scrollbar when the table overflows", async () => {
     const FIELDS: SchemaField[] = [
       { key: "design", label: "Design in vivo ?", type: "boolean" },

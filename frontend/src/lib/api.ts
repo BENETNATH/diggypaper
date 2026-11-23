@@ -123,7 +123,8 @@ export interface ArticlePrediction {
   model_version?: string | null;
   decision_json: Record<string, unknown> | null;
   confidence_score: number | null;
-  evidence_quotes: string[] | null;
+  /** Flat list (legacy) or per-field dict (spec 2026-11-23 P-5). */
+  evidence_quotes: string[] | Record<string, string[]> | null;
   /** Per-field confidences (null: old predictions, spec 2026-11-09 §2). */
   field_confidences?: Record<string, number> | null;
   /** Latest human re-read for the per-field AI+human coupling (R4). */
@@ -1529,6 +1530,14 @@ export const removeMember = (projectId: string, userId: string): Promise<void> =
 /** Download link for the Excel workbook (the auth cookie is enough). */
 export const exportUrl = (projectId: string, searchId?: string): string =>
   `${API_BASE}/projects/${projectId}/export.xlsx${qs({ search: searchId })}`;
+
+/** Download link for the ZIP of the search's stored PDFs (same auth/scoping as the xlsx). */
+export const exportPdfsUrl = (projectId: string, searchId?: string): string =>
+  `${API_BASE}/projects/${projectId}/export/pdfs${qs({ search: searchId })}`;
+
+/** Stored-PDF route of one article (P-3): opens inline in a new tab. */
+export const articlePdfUrl = (projectId: string, articleId: string): string =>
+  `${API_BASE}/projects/${projectId}/articles/${articleId}/pdf`;
 
 /** RIS references (Zotero, EndNote, Mendeley...) or BibTeX, with the same filters as the list. */
 export function referencesUrl(

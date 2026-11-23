@@ -184,6 +184,14 @@
   .group:hover .hscroll-thumb {
     background-color: color-mix(in oklch, var(--muted-foreground) 65%, transparent);
   }
+  /* Masque la scrollbar native du scroller HScroll : la barre flottante
+     synchronisée est déjà la seule barre visible (pas de double barre). */
+  .no-native-scrollbar {
+    scrollbar-width: none;
+  }
+  .no-native-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
   /* Skeleton (frontend-design-pro : skeleton > spinner) */
   .skeleton {
     position: relative;

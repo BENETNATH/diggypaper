@@ -133,7 +133,7 @@ export function HScroll({ className, children }: HScrollProps) {
 
   return (
     <div>
-      <div ref={scrollerRef} id={id} className={`overflow-x-auto ${className ?? ""}`}>
+      <div ref={scrollerRef} id={id} className={`overflow-x-auto no-native-scrollbar ${className ?? ""}`}>
         {children}
       </div>
       {visible && (

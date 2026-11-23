@@ -34,8 +34,9 @@ export function EvidenceHighlighter({
   const [pick, setPick] = useState<{ quote: string; x: number; y: number } | null>(null);
 
   // Click on an excerpt from the form: the document scrolls to its highlight,
-  // which blinks for a while (the quote is verbatim, we look for it in
-  // the <mark> text; first match if it appears several times).
+  // which blinks for a while. The target <mark> is the first one whose
+  // data-quote-idx contains the clicked quote's index (the mark text is the
+  // original, not verbatim-identical to the quote — P-4).
   // On mobile the document panel appears in the same render (tab): we
   // retry on the next frame until the <mark> has a box (height = 0).
   // The scroll is computed explicitly on the scrollable ancestor (the section):
@@ -88,9 +89,9 @@ export function EvidenceHighlighter({
       const el = box.current;
       if (!el) return;
       const marks = Array.from(el.querySelectorAll("mark"));
+      const qi = (quotes ?? []).indexOf(focus.quote);
       const target =
-        marks.find((m) => m.textContent === focus.quote) ??
-        marks.find((m) => (m.textContent ?? "").includes(focus.quote));
+        qi >= 0 ? marks.find((m) => (m.dataset.quoteIdx ?? "").split(",").includes(String(qi))) : undefined;
       if (!target) return;
       if (target.getBoundingClientRect().height === 0) {
         raf = requestAnimationFrame(tryScroll);
@@ -126,7 +127,7 @@ export function EvidenceHighlighter({
       cancelAnimationFrame(raf);
       window.clearTimeout(flashTimer);
     };
-  }, [focus]);
+  }, [focus, quotes]);
 
   useEffect(() => {
     if (!onAdd) return;
@@ -157,7 +158,7 @@ export function EvidenceHighlighter({
     <div ref={box} className="whitespace-pre-wrap leading-relaxed">
       {segments.map((seg, i) =>
         seg.highlighted ? (
-          <mark key={i} className={markClassName}>
+          <mark key={i} className={markClassName} data-quote-idx={(seg.quoteIdx ?? []).join(",")}>
             {seg.text}
           </mark>
         ) : (

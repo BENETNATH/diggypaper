@@ -13,6 +13,47 @@ from app.sources import source_label, source_name
 RIS_MIME = "application/x-research-info-systems"
 BIBTEX_MIME = "application/x-bibtex"
 
+_PDF_BAD_CHARS = re.compile(r'[\\/:*?"<>|]')
+
+
+def _title_part(title: str | None) -> str:
+    """Titre borné à 100 caractères (frontière de mot), ponctuation de fin retirée,
+    « … » si tronqué."""
+    t = re.sub(r"\s+", " ", (title or "").strip()).rstrip(".,;:!?").strip()
+    if len(t) <= 100:
+        return t
+    cut = t[:100]
+    space = cut.rfind(" ")
+    if space > 0:
+        cut = cut[:space]
+    return cut.rstrip(".,;:!?").strip() + "…"
+
+
+def pdf_filename(article, taken: set[str] | None = None) -> str:
+    """Nom lisible du PDF conservé (« hussain et al. 2026 acute-nicotine….pdf »),
+    partagé par l'export ZIP et le RO-Crate.
+
+    ``taken`` : noms déjà posés dans le même lot → suffixes « (2) », « (3) »…
+    """
+    title = _title_part(article.title)
+    words = re.sub(r"\s+", " ", (article.authors or [""])[0]).split()
+    if not words:  # pas d'auteur : le nom démarre par le titre
+        name = title
+    else:
+        head = words[0].lower() + (" et al." if len(article.authors) > 1 else "")
+        if article.pub_year:
+            head += f" {article.pub_year}"
+        name = f"{head} {title}"
+    name = re.sub(r"\s{2,}", " ", _PDF_BAD_CHARS.sub("", name)).strip() or "article"
+    if taken is not None:
+        stem, n = name, 1
+        while f"{stem}.pdf" in taken:
+            n += 1
+            stem = f"{name} ({n})"
+        name = stem
+        taken.add(name + ".pdf")
+    return name + ".pdf"
+
 
 def _author(name: str) -> str:
     """ "van der Berg JA" → "van der Berg, JA" (last tokens = uppercase initials)."""

@@ -6,6 +6,7 @@ import { useApiError } from "@/lib/errorMsg";
 import {
   crateDownloadUrl,
   CrateExport,
+  exportPdfsUrl,
   exportUrl,
   getCrateExport,
   getProject,
@@ -87,6 +88,9 @@ export function ExportMenu({
     <Menu label={t("exportMenu")} busy={busy} closeOnClick={false}>
       <MenuItem href={exportUrl(projectId, searchId)} download>
         <span aria-hidden>⬇</span> {t("exportXlsx")}
+      </MenuItem>
+      <MenuItem href={exportPdfsUrl(projectId, searchId)} download>
+        <span aria-hidden>⬇</span> {t("exportPdfs")}
       </MenuItem>
       <MenuItem href={referencesUrl(projectId, "ris", status, answers, searchId, text, fulltext)} download>
         <span aria-hidden>⬇</span> {t("exportRis")}

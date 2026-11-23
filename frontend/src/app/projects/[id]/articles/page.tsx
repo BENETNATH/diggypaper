@@ -392,6 +392,7 @@ function ResultsContent() {
             <ResultRow
               key={a.id}
               a={a}
+              projectId={projectId}
               fields={fields}
               accept={accept}
               href={withSearch(`/projects/${projectId}/annotate?article=${a.id}&queue=${queue}`, searchId)}

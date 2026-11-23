@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { Article, SchemaField } from "@/lib/api";
 import { ArticleLinks, biblioLine } from "@/components/Certainty";
+import { articlePdfUrl } from "@/lib/api";
 import { CopyButton } from "@/components/CopyButton";
 import { cellIcon, cellTone, deriveHumanFieldState, initials } from "@/lib/resultCells";
 import { sourceLabel } from "@/lib/source";
@@ -158,6 +159,7 @@ export function AnswerCell({
 export function ResultRow({
   a,
   href,
+  projectId,
   fields,
   accept,
   canDelete = false,
@@ -167,6 +169,8 @@ export function ResultRow({
 }: {
   a: Article;
   href: string;
+  /** Project id (stored-PDF link, P-3). */
+  projectId?: string;
   /** The search's fields (badge option per question, R3). */
   fields?: SchemaField[];
   /** Project accept threshold (R3). */
@@ -326,7 +330,17 @@ export function ResultRow({
             </div>
           </Link>
           {/* The DOI lives in the meta line now (R9) — only the full text link stays here. */}
-          <ArticleLinks article={{ fulltext_url: a.fulltext_url }} className="px-3 pb-2 -mt-1" />
+          <ArticleLinks
+            article={{ fulltext_url: a.fulltext_url }}
+            pdfHref={
+              a.fulltext_source &&
+              ["upload", "ocr", "pdf:upload"].includes(a.fulltext_source) &&
+              projectId
+                ? articlePdfUrl(projectId, a.id)
+                : null
+            }
+            className="px-3 pb-2 -mt-1"
+          />
         </div>
       </div>
     </li>
