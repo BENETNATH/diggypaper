@@ -78,6 +78,7 @@ export interface Article {
   origin_seeds?: number | null;
   fulltext_source?: string | null;
   fulltext_note?: string | null;
+  has_pdf?: boolean;
   doi_url?: string | null;
   fulltext_url?: string | null;
   journal?: string | null;

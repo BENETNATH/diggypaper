@@ -429,12 +429,7 @@ export default function AnnotatePage() {
             </p>
             <ArticleLinks
               article={article}
-              pdfHref={
-                article.fulltext_source &&
-                ["upload", "ocr", "pdf:upload"].includes(article.fulltext_source)
-                  ? articlePdfUrl(projectId, article.id)
-                  : null
-              }
+              pdfHref={article.has_pdf ? articlePdfUrl(projectId, article.id) : null}
               className="mt-0.5"
             />
           </header>
@@ -593,12 +588,7 @@ export default function AnnotatePage() {
         </p>
         <ArticleLinks
           article={article}
-          pdfHref={
-            article.fulltext_source &&
-            ["upload", "ocr", "pdf:upload"].includes(article.fulltext_source)
-              ? articlePdfUrl(projectId, article.id)
-              : null
-          }
+          pdfHref={article.has_pdf ? articlePdfUrl(projectId, article.id) : null}
           className="mt-0.5"
         />
         {shownPrediction && (

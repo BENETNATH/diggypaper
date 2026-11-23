@@ -13,6 +13,7 @@ from sqlalchemy import select
 
 from app.db.models import (
     Article,
+    ArticleFile,
     ArticlePrediction,
     HumanAnnotation,
     Project,
@@ -94,6 +95,19 @@ async def test_get_article_returns_methods_text(client, session, researcher_user
     assert body["pmid"] == "111"
     assert body["title"] == "A study"
     assert body["methods_text"] == "Mice were randomized to groups."
+    # no stored PDF → has_pdf is False (P-3)
+    assert body["has_pdf"] is False
+
+
+async def test_get_article_reports_has_pdf(client, session, researcher_user, do_login):
+    """A stored ArticleFile flips has_pdf to True (P-3 « PDF » link, spec 2026-11-23)."""
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project, article = await _make_project_with_article(session, researcher_user)
+    session.add(ArticleFile(article_id=article.id, data=b"%PDF-1.4 body"))
+    await session.commit()
+    resp = await client.get(f"/api/v1/projects/{project.id}/articles/{article.id}")
+    assert resp.status_code == 200
+    assert resp.json()["has_pdf"] is True
 
 
 async def test_get_article_404_not_found(client, session, researcher_user, do_login):

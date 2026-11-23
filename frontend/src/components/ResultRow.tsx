@@ -332,13 +332,7 @@ export function ResultRow({
           {/* The DOI lives in the meta line now (R9) — only the full text link stays here. */}
           <ArticleLinks
             article={{ fulltext_url: a.fulltext_url }}
-            pdfHref={
-              a.fulltext_source &&
-              ["upload", "ocr", "pdf:upload"].includes(a.fulltext_source) &&
-              projectId
-                ? articlePdfUrl(projectId, a.id)
-                : null
-            }
+            pdfHref={a.has_pdf && projectId ? articlePdfUrl(projectId, a.id) : null}
             className="px-3 pb-2 -mt-1"
           />
         </div>

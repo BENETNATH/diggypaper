@@ -12,6 +12,7 @@ from test_tasks_import import _ncbi_handler
 from app.core.security import hash_password
 from app.db.models import (
     Article,
+    ArticleFile,
     ImportJob,
     ImportJobStatus,
     Project,
@@ -491,6 +492,24 @@ async def test_list_articles_paginated(client, session, researcher_user, do_logi
     assert len(data2["items"]) == 1
     # no duplicate across pages
     assert {a["pmid"] for a in data["items"]} & {a["pmid"] for a in data2["items"]} == set()
+
+
+async def test_list_articles_reports_has_pdf(client, session, researcher_user, do_login):
+    """The list payload carries has_pdf per article (stored ArticleFile) — P-3 link."""
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project_id = await _create_project(client, session=session)
+    project = await session.get(Project, uuid.UUID(project_id))
+    a_pdf = Article(project_id=project.id, pmid="200", title="With PDF")
+    a_no = Article(project_id=project.id, pmid="201", title="No PDF")
+    session.add_all([a_pdf, a_no])
+    await session.flush()
+    session.add(ArticleFile(article_id=a_pdf.id, data=b"%PDF-1.4 body"))
+    await session.commit()
+    resp = await client.get(f"/api/v1/projects/{project_id}/articles")
+    assert resp.status_code == 200
+    by_pmid = {a["pmid"]: a["has_pdf"] for a in resp.json()["items"]}
+    assert by_pmid["200"] is True
+    assert by_pmid["201"] is False
 
 
 async def test_list_articles_exposes_fulltext_note(client, session, researcher_user, do_login):

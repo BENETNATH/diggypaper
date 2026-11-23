@@ -210,6 +210,7 @@ async def test_list_articles_filters_by_answers(client, session, lead_project):
     assert bad.status_code == 422
     item = (await client.get(f"/api/v1/projects/{lead_project.id}/articles")).json()["items"][0]
     assert item["doi_url"].startswith("https://doi.org/10/")
+    assert "fulltext_source" in item  # P-3 : le lien PDF de la fiche en a besoin
 
 
 async def test_export_ro_crate_async(
@@ -287,14 +288,21 @@ async def test_export_ro_crate_async(
     z = zipfile.ZipFile(io.BytesIO(resp.content))
     names = set(z.namelist())
     assert {"ro-crate-metadata.json", "project.json", "extraction.csv", "results.xlsx"} <= names
-    assert "articles/pmid-42/fulltext.pdf" in names and "articles/pmid-42/fulltext.md" in names
+    # le PDF porte le nom lisible partagé avec l'export ZIP (2 auteurs, sans année)
+    assert "articles/pmid-42/doe et al. Mice.pdf" in names
+    assert "articles/pmid-42/fulltext.md" in names
     assert "articles/pmid-43/abstract.md" in names and "articles/pmid-43/fulltext.pdf" not in names
-    assert z.read("articles/pmid-42/fulltext.pdf") == b"%PDF-1.4 fake"
+    assert z.read("articles/pmid-42/doe et al. Mice.pdf") == b"%PDF-1.4 fake"
     rec = json.loads(z.read("articles/pmid-42/metadata.json"))
     assert rec["ai"]["certainty"]["use_ai_behavior"] == 0.9 and rec["last_author"] == "Roe R"
     graph = json.loads(z.read("ro-crate-metadata.json"))["@graph"]
     ids = {e["@id"] for e in graph}
-    assert {"./", "https://doi.org/10.1/x", "articles/pmid-42/fulltext.pdf", "#analysis"} <= ids
+    assert {
+        "./",
+        "https://doi.org/10.1/x",
+        "articles/pmid-42/doe et al. Mice.pdf",
+        "#analysis",
+    } <= ids
     root = next(e for e in graph if e["@id"] == "./")
     assert all(p["@id"] in ids for p in root["hasPart"])  # no orphan reference
     assert root["license"]["@id"] == "https://creativecommons.org/licenses/by/4.0/"

@@ -29,7 +29,15 @@ from app.api.v1.projects import (
     review_payload,
 )
 from app.article_text import compose_text
-from app.db.models import Article, ArticlePrediction, HumanAnnotation, Project, Search, User
+from app.db.models import (
+    Article,
+    ArticleFile,
+    ArticlePrediction,
+    HumanAnnotation,
+    Project,
+    Search,
+    User,
+)
 from app.schema import validate_decision
 from app.searches import in_search, resolve_search
 
@@ -67,7 +75,7 @@ async def _scope(
     return await resolve_search(db, project, search_id)
 
 
-def _article_payload(a: Article) -> dict:
+def _article_payload(a: Article, has_pdf: bool = False) -> dict:
     return {
         "id": str(a.id),
         "pmid": a.pmid,
@@ -84,7 +92,7 @@ def _article_payload(a: Article) -> dict:
         "has_fulltext": bool(a.sections),
         "fulltext_source": a.fulltext_source,
         "fulltext_note": a.fulltext_note,
-        **biblio_payload(a),
+        **biblio_payload(a, has_pdf=has_pdf),
         "original_language": a.original_language,
         "created_at": a.created_at.isoformat() if a.created_at else None,
     }
@@ -120,7 +128,12 @@ async def get_article(
     article = await _require_article(db, project_id, article_id, user)
     # Validates the requested search (404 when foreign); the payload text is the full document.
     await _scope(db, project_id, search)
-    return _article_payload(article)
+    has_pdf = (
+        await db.execute(
+            select(ArticleFile.id).where(ArticleFile.article_id == article.id).limit(1)
+        )
+    ).first() is not None
+    return _article_payload(article, has_pdf=has_pdf)
 
 
 async def _require_lead_article(
@@ -218,10 +231,15 @@ async def search_fulltext(
         # RAG: the completed full-text is new — embed the sections (spec 2026-11-07 §6)
         vectorize_task.delay(str(project_id), [str(article.id)])
     await _scope(db, project_id, search)
+    has_pdf = (
+        await db.execute(
+            select(ArticleFile.id).where(ArticleFile.article_id == article.id).limit(1)
+        )
+    ).first() is not None
     return {
         "found": source is not None,
         "source": source,
-        "article": _article_payload(article),
+        "article": _article_payload(article, has_pdf=has_pdf),
     }
 
 
@@ -317,7 +335,7 @@ async def upload_fulltext(
     await apply_uploaded_pdf(db, article, sections, data)
     await db.commit()
     await _scope(db, project_id, search)
-    payload = _article_payload(article)
+    payload = _article_payload(article, has_pdf=True)
     payload["pdf_check"] = {True: "match", False: "forced", None: "unverified"}[verdict]
     return payload
 

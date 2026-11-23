@@ -29,6 +29,7 @@ from app.cleanup import delete_projects
 from app.core.config import get_settings
 from app.db.models import (
     Article,
+    ArticleFile,
     ArticlePrediction,
     BenchmarkRun,
     HumanAnnotation,
@@ -226,8 +227,11 @@ async def latest_reviews(
     return out
 
 
-def biblio_payload(a: Article) -> dict:
-    """Date, journal, authors of an article (first/last author derived from the list)."""
+def biblio_payload(a: Article, has_pdf: bool = False) -> dict:
+    """Date, journal, authors of an article (first/last author derived from the list).
+
+    ``has_pdf`` : a PDF is stored for this article (P-3 « PDF » link) — computed by the
+    caller, batched for lists."""
     authors = a.authors or []
     return {
         "source": a.source,
@@ -241,7 +245,18 @@ def biblio_payload(a: Article) -> dict:
         "doi_url": f"https://doi.org/{a.doi}" if a.doi else None,
         "fulltext_url": a.fulltext_url,
         "fulltext_source": a.fulltext_source,
+        "has_pdf": has_pdf,
     }
+
+
+async def _stored_pdf_ids(db: AsyncSession, article_ids: list) -> set:
+    """IDs of the articles with a stored PDF, one query (P-3 ``has_pdf``)."""
+    if not article_ids:
+        return set()
+    res = await db.execute(
+        select(ArticleFile.article_id).where(ArticleFile.article_id.in_(article_ids))
+    )
+    return {row for (row,) in res.all()}
 
 
 def _answers(src, decision: dict | None, human: dict | None = None) -> list[dict]:
@@ -896,6 +911,7 @@ async def list_articles(
             .scalars()
             .all()
         )
+        pdf_ids = await _stored_pdf_ids(db, [a.id for a in rows])
         return {
             "items": [
                 {
@@ -911,7 +927,7 @@ async def list_articles(
                     "has_fulltext": bool(a.sections),
                     "fulltext_source": a.fulltext_source,
                     "fulltext_note": a.fulltext_note,
-                    **biblio_payload(a),
+                    **biblio_payload(a, has_pdf=a.id in pdf_ids),
                     "prediction_status": None,
                     "confidence": None,
                     "answers": [],
@@ -999,6 +1015,7 @@ async def list_articles(
         return mine is None or a.id in mine
 
     field_keys = [f["key"] for f in project_fields(scope)]
+    pdf_ids = await _stored_pdf_ids(db, [a.id for a, *_ in rows]) if rows else set()
     return {
         "items": [
             {
@@ -1014,7 +1031,7 @@ async def list_articles(
                 "has_fulltext": bool(a.sections),
                 "fulltext_source": a.fulltext_source,
                 "fulltext_note": a.fulltext_note,
-                **biblio_payload(a),
+                **biblio_payload(a, has_pdf=a.id in pdf_ids),
                 "prediction_status": st if visible(a) else None,
                 # the re-read's relevance (cursor) replaces the model's
                 "confidence": (

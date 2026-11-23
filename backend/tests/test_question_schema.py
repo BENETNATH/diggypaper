@@ -43,6 +43,33 @@ def test_build_system_prompt_neutral_without_question():
     assert build_system_prompt("   ", FIELDS) == prompt  # blank == absent
 
 
+def test_prompt_evidence_quotes_per_field():
+    """spec 2026-11-23 P-5: the model answers evidence_quotes as a dict, one
+    list per field (up to 3 verbatim quotes, nothing for an unsupported field)."""
+    prompt = build_system_prompt("Blinding?", FIELDS)
+    assert '"evidence_quotes": { "<field key>": [ string' in prompt
+    assert "up to 3" in prompt
+    assert "or nothing" in prompt
+
+
+def test_compute_metrics_flattens_dict_evidence_quotes():
+    """spec 2026-11-23 P-5: dict (per field) and flat list (legacy) give the
+    same P/R/F1 — no migration of existing predictions."""
+    truth = {"design": "RCT", "blinded": True, "evidence_quotes": ["q1"]}
+    flat = {"design": "RCT", "blinded": True, "evidence_quotes": ["q1", "q2"]}
+    m_flat = compute_metrics(FIELDS, flat, truth)
+    m_dict = compute_metrics(
+        FIELDS,
+        {
+            "design": "RCT",
+            "blinded": True,
+            "evidence_quotes": {"design": ["q1", "q2"], "blinded": []},
+        },
+        truth,
+    )
+    assert m_dict == m_flat
+
+
 def test_validate_metrics_prompt():
     ok = {"design": "RCT", "blinded": True, "confidence_score": 0.5}
     assert validate_decision(FIELDS, ok) == []

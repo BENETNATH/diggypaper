@@ -172,6 +172,10 @@ async def test_crate_keeps_human_evidence_under_a_project_scoped_pseudonym(sessi
 
 async def test_round_trip_restores_corpus_results_and_pdf(engine, session, tmp_path):
     path, source = await _exported_crate(session, tmp_path)
+    with zipfile.ZipFile(path) as z:
+        # le PDF est renommé (nom lisible, accent UTF-8) et plus en ``fulltext.pdf``
+        assert "articles/pmid-111/roe et al. 2024 Étude A.pdf" in z.namelist()
+        assert "articles/pmid-111/fulltext.pdf" not in z.namelist()
     new = Project(title="Sommeil", status=ProjectStatus.PROCESSING, created_by=source.created_by)
     session.add(new)
     importer = User(email="me@lab.fr", hashed_password="x")
@@ -647,6 +651,24 @@ def _read_meta(meta: dict) -> dict:
         z.writestr("articles/k/metadata.json", json.dumps(meta))
     with zipfile.ZipFile(buf) as z:
         return ci.read_article(z, "k")
+
+
+def _read_pdf(pdf_name: str | None) -> bytes | None:
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("articles/k/metadata.json", json.dumps({"pmid": "111"}))
+        if pdf_name:
+            z.writestr(f"articles/k/{pdf_name}", PDF)
+    with zipfile.ZipFile(buf) as z:
+        return ci.read_article(z, "k")["pdf"]
+
+
+def test_read_article_pdf_finds_readable_name_and_legacy_fallback():
+    """Le PDF exporté porte un nom lisible ; les crates déjà exportés gardent
+    ``fulltext.pdf`` — les deux doivent réimporter."""
+    assert _read_pdf("doe et al. 2025 Mice.pdf") == PDF
+    assert _read_pdf("fulltext.pdf") == PDF
+    assert _read_pdf(None) is None
 
 
 def test_read_article_identity_is_consistent():
