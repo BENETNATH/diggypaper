@@ -21,8 +21,10 @@ class Mailer:
             MAIL_USERNAME=settings.smtp_user,
             MAIL_PASSWORD=settings.smtp_password,
             MAIL_FROM=settings.smtp_from,
-            MAIL_STARTTLS=settings.smtp_use_tls,
-            MAIL_SSL_TLS=False,
+            # 465 = implicit TLS (pas de greeting ESMTP, un STARTTLS y timeout) ;
+            # tout autre port : STARTTLS seulement si le flag est actif.
+            MAIL_STARTTLS=settings.smtp_use_tls and settings.smtp_port != 465,
+            MAIL_SSL_TLS=settings.smtp_port == 465,
             USE_CREDENTIALS=bool(settings.smtp_user),
         )
         self._mail = FastMail(config)
