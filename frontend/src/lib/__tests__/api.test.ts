@@ -120,7 +120,7 @@ describe("401 session expired → /login?next=", () => {
       json: async () => ({ detail }),
     })) as unknown as typeof fetch;
 
-  it("a 401 from a non-login call redirects to /login?next=<encoded url> and stays pending", async () => {
+  it("a 401 from a data call redirects to /login?next=<encoded url> and stays pending", async () => {
     // the exact URL assigned to window.location.href by doRequest on 401
     expect(loginRedirectHref("/projects/p1/inference", "?search=s1")).toBe(
       `/login?next=${encodeURIComponent("/projects/p1/inference?search=s1")}`
@@ -128,10 +128,23 @@ describe("401 session expired → /login?next=", () => {
     const original = global.fetch;
     global.fetch = unauthorized("Not authenticated");
     try {
-      const p = me();
+      const p = getProject("p1");
       // the timeout sentinel wins only if the call never settles (no error raised)
       const outcome = await Promise.race([p, new Promise((r) => setTimeout(r, 25))]);
       expect(outcome).toBeUndefined();
+    } finally {
+      global.fetch = original;
+    }
+  });
+
+  it("a 401 from /auth/me raises ApiError instead of redirecting (guest state, not session expired)", async () => {
+    // AuthProvider calls /auth/me on every page (incl. public /register); a
+    // 401 there means "no session", and redirecting would kick invitees off
+    // /register?token=… before the form loads.
+    const original = global.fetch;
+    global.fetch = unauthorized("Not authenticated");
+    try {
+      await expect(me()).rejects.toThrow(ApiError);
     } finally {
       global.fetch = original;
     }
@@ -154,7 +167,7 @@ describe("401 session expired → /login?next=", () => {
       window.history.replaceState(null, "", "/login");
       // different path than the previous test: the GET dedup map would otherwise
       // hand back its never-settling promise
-      await expect(getProject("p1")).rejects.toThrow(ApiError);
+      await expect(getProject("p2")).rejects.toThrow(ApiError);
     } finally {
       global.fetch = original;
       window.history.replaceState(null, "", "/");

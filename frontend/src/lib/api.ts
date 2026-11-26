@@ -504,9 +504,12 @@ async function doRequest<T>(path: string, options?: RequestInit): Promise<T> {
   // page unmounts on navigation, so the call stays pending (no error raised).
   // Never on the login page itself: the AuthProvider's /auth/me 401 there would
   // otherwise loop /login?next=/login?next=…
+  // Never for /auth/me either (any page): a 401 there is the guest state, not an
+  // expired session — redirecting would kick invitees off /register?token=….
   if (
     resp.status === 401 &&
     !path.startsWith("/auth/login") &&
+    !path.startsWith("/auth/me") &&
     location.pathname !== "/login"
   ) {
     window.location.href = loginRedirectHref(location.pathname, location.search);
