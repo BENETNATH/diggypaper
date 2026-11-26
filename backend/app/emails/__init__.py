@@ -25,6 +25,9 @@ class Mailer:
             # tout autre port : STARTTLS seulement si le flag est actif.
             MAIL_STARTTLS=settings.smtp_use_tls and settings.smtp_port != 465,
             MAIL_SSL_TLS=settings.smtp_port == 465,
+            # Un SMTP injoignable ne doit pas faire attendre la réponse HTTP
+            # 60 s (défaut) : l'échec renvoie vite le lien à transmettre.
+            TIMEOUT=10,
             USE_CREDENTIALS=bool(settings.smtp_user),
         )
         self._mail = FastMail(config)

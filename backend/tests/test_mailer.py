@@ -45,6 +45,11 @@ def test_port_25_flag_on_starttls():
     assert (starttls, ssl_tls) == (True, False)
 
 
+def test_smtp_timeout_capped_at_10s():
+    # SMTP injoignable : l'échec doit revenir vite (pas le défaut de 60 s).
+    assert Mailer(_settings(587, True))._mail.config.TIMEOUT == 10
+
+
 def test_db_override_use_tls_with_port_465():
     mailer = Mailer.from_settings(_settings(587, False), {"use_tls": "true"})
     assert _flags(mailer) == (True, False)
