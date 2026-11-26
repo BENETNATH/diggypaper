@@ -539,6 +539,7 @@ dependencies = [
     { name = "email-validator" },
     { name = "fastapi" },
     { name = "fonttools" },
+    { name = "httpx" },
     { name = "openpyxl" },
     { name = "pgvector" },
     { name = "pillow" },
@@ -557,7 +558,6 @@ dependencies = [
 [package.optional-dependencies]
 dev = [
     { name = "aiosqlite" },
-    { name = "httpx" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "ruff" },
@@ -575,7 +575,7 @@ requires-dist = [
     { name = "email-validator", specifier = ">=2.0" },
     { name = "fastapi", specifier = ">=0.110" },
     { name = "fonttools", specifier = ">=4.50" },
-    { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27" },
+    { name = "httpx", specifier = ">=0.27" },
     { name = "openpyxl", specifier = ">=3.1" },
     { name = "pgvector", specifier = ">=0.3" },
     { name = "pillow", specifier = ">=10.0" },
