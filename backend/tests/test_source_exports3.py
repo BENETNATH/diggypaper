@@ -2,7 +2,9 @@
 (spec 2026-10-29-sources-phase3 D6) — 100% offline."""
 
 import io
+import re
 from datetime import UTC, datetime
+from pathlib import Path
 from types import SimpleNamespace
 
 import app.crate as crate
@@ -130,7 +132,9 @@ def test_prisma_identified_label_lists_sources():
 
 def test_app_version_reads_version_file():
     """The Diggypaper version is read from the VERSION file (semver, single source)."""
-    assert crate.app_version() == "1.0.0"
+    version = (Path(__file__).resolve().parent.parent / "VERSION").read_text().strip()
+    assert crate.app_version() == version
+    assert re.fullmatch(r"\d+\.\d+\.\d+", version)
 
 
 # --- Blind lot: the AI-answer distribution stays out of the exports ---------
