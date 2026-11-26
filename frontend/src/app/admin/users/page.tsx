@@ -187,6 +187,8 @@ function AdminContent() {
   const { user } = useAuth();
   const locale = useLocale();
   const [inviteEmail, setInviteEmail] = useState("");
+  const [inviting, setInviting] = useState(false);
+  const [resending, setResending] = useState<string | null>(null);
   const [users, setUsers] = useState<AdminUser[] | null>(null);
   const [invites, setInvites] = useState<AdminInvitation[]>([]);
   const [projects, setProjects] = useState<AdminProject[]>([]);
@@ -221,11 +223,14 @@ function AdminContent() {
 
   async function resend(i: AdminInvitation) {
     setNotice(null);
+    setResending(i.id);
     try {
       const r = await resendInvitation(i.id);
       setNotice({ text: r.email_sent ? t("resent", { email: i.email }) : t("resentNoMail", { email: i.email }), link: r.link });
     } catch (e) {
       setError(apiError(e));
+    } finally {
+      setResending(null);
     }
   }
 
@@ -280,16 +285,21 @@ function AdminContent() {
             e.preventDefault();
             setNotice(null);
             void act(async () => {
-              const r = await inviteCreator(inviteEmail.trim(), locale);
-              setNotice({ text: r.email_sent ? t("inviteSent", { email: inviteEmail }) : t("inviteNoMail", { email: inviteEmail }), link: r.link });
-              setInviteEmail("");
+              setInviting(true);
+              try {
+                const r = await inviteCreator(inviteEmail.trim(), locale);
+                setNotice({ text: r.email_sent ? t("inviteSent", { email: inviteEmail }) : t("inviteNoMail", { email: inviteEmail }), link: r.link });
+                setInviteEmail("");
+              } finally {
+                setInviting(false);
+              }
             });
           }}
         >
           <Field label={t("inviteEmail")} className="w-72">
             <Input type="email" required value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} />
           </Field>
-          <Button type="submit" size="sm">
+          <Button type="submit" size="sm" loading={inviting}>
             {t("inviteCreator")}
           </Button>
         </form>
@@ -346,7 +356,7 @@ function AdminContent() {
                   </p>
                 </div>
                 <div className="flex gap-2">
-                  <Button size="sm" variant="secondary" onClick={() => void resend(i)}>
+                  <Button size="sm" variant="secondary" loading={resending === i.id} onClick={() => void resend(i)}>
                     {t("resend")}
                   </Button>
                   <Button size="sm" variant="ghost" onClick={() => void act(() => revokeInvitation(i.id))}>
