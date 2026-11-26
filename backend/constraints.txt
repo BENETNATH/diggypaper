@@ -22,7 +22,6 @@ dnspython==2.9.2
 email-validator==2.3.0
 et_xmlfile==2.0.0
 fastapi==0.143.2
-fastapi-mail==1.6.8
 filelock==4.2.0
 fonttools==4.68.0
 fsspec==2026.9.0

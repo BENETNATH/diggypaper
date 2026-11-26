@@ -508,6 +508,41 @@ reach the internal network. For an instance exposed to untrusted users, keep
 egress filtering as defense in depth: filter the outbound of the
 `backend`/`worker` containers to your internal network (firewall / egress proxy).
 
+### E-mail: SMTP relay with a private CA
+
+Invitation and notification e-mails go out through SMTP (`SMTP_*` in `.env`, or
+the Settings page — DB values win over env). The backend **always** verifies the
+relay's TLS certificate, hostname included, against the system trust store. If
+your relay is an intranet server that serves a **private root CA** or an
+**incomplete chain** (leaf only) that the system store does not know, trust that
+root explicitly instead of disabling anything:
+
+1. On the host, keep the CA root in a PEM file outside the repository, e.g.
+   `/opt/diggypaper/ca/relay-root.crt` (root only — the relay serves its leaf,
+   the root alone is enough to verify the chain).
+2. Mount it read-only into the services that send mail:
+
+   ```yaml
+   # docker-compose.yml
+   backend:
+     volumes:
+       - ./ca:/opt/diggypaper/ca:ro
+   # worker: same volume, if the worker sends mail
+   ```
+3. Point the env var at it: `SMTP_CA_BUNDLE=/opt/diggypaper/ca/relay-root.crt`.
+
+The bundle is **added** to the system trust store (`create_default_context()` +
+`load_verify_locations`): public relays (Gmail, …) keep working with no
+configuration, and a wrong or untrusted certificate still fails — the app never
+disables certificate verification or hostname checking. `SMTP_CA_BUNDLE` is
+env-only: a file path is a deployment concern, never stored in the settings DB.
+
+TLS mode is derived from the port: **465 = implicit TLS** (no STARTTLS
+handshake — it would hang on a greeting that never comes), any other port uses
+**STARTTLS only when `SMTP_USE_TLS=true`** (plain otherwise). A dead relay
+fails fast: the SMTP timeout is capped at 10 s, so a failing send returns the
+invite link to forward instead of blocking the request for a minute.
+
 ### Models: what works, and what we deploy
 
 The triage uses a **generative model** that answers in JSON (decision, items, citations). Two

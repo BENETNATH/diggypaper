@@ -112,6 +112,8 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_USE_TLS: ${SMTP_USE_TLS:-true}  # port 465 = implicit TLS (flag ignored); other ports: STARTTLS only if true
+      SMTP_CA_BUNDLE: ${SMTP_CA_BUNDLE:-}  # container path of the PEM root CA (mounted); empty = system trust store
       FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:8080}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
@@ -156,6 +158,8 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_USE_TLS: ${SMTP_USE_TLS:-true}
+      SMTP_CA_BUNDLE: ${SMTP_CA_BUNDLE:-}
       IMPORT_MAX_ARTICLES: ${IMPORT_MAX_ARTICLES:-5000}
       TASK_SOFT_TIME_LIMIT: ${TASK_SOFT_TIME_LIMIT:-0}  # seconds; 0 = no limit
       CRATE_LICENSE_URL: ${CRATE_LICENSE_URL:-https://creativecommons.org/licenses/by/4.0/}
@@ -203,6 +207,8 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_USE_TLS: ${SMTP_USE_TLS:-true}
+      SMTP_CA_BUNDLE: ${SMTP_CA_BUNDLE:-}
       IMPORT_MAX_ARTICLES: ${IMPORT_MAX_ARTICLES:-5000}
       TASK_SOFT_TIME_LIMIT: ${TASK_SOFT_TIME_LIMIT:-0}
       RECOVER_INTERRUPTED: "0"  # the startup recovery is done by « worker »

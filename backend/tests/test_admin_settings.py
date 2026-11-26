@@ -245,29 +245,24 @@ async def test_secret_plaintext_never_in_any_response(client, session, admin_use
 # --- POST /admin/settings/smtp/test ---
 
 
-def _fake_fastmail(captured: dict, send_error: Exception | None = None):
-    """FakeFastMail capturing the config + the message (mocked in app.emails).
+def _fake_mailing(captured: dict, send_error: Exception | None = None):
+    """Fake replacing Mailer.send (mocked in app.emails): captures the effective
+    Mailer + the recipient, or raises ``send_error`` on send."""
+    from app.emails import Mailer
 
-    The mock point is ``app.emails.FastMail`` (no longer ``admin_mod.FastMail``):
-    admin.py no longer builds a ConnectionConfig/FastMail, it goes through
-    ``Mailer.from_settings`` which builds the real FastMail (validated config).
-    """
-
-    class FakeFastMail:
-        def __init__(self, config) -> None:
-            captured["config"] = config
-
-        async def send_message(self, message) -> None:
+    class FakeMailer(Mailer):
+        async def send(self, to: str, subject: str, body: str) -> None:
+            captured["mailer"] = self
+            captured["to"] = to
             if send_error is not None:
                 raise send_error
-            captured["message"] = message
 
-    return FakeFastMail
+    return FakeMailer
 
 
 async def test_smtp_test_ok(client, session, admin_user, do_login, monkeypatch):
     """Mocked SMTP: DB config (env fallback) + send → 200 {sent: true}."""
-    import app.emails as emails_mod
+    import app.api.v1.admin as admin_mod
 
     await set_setting(session, "smtp_host", "smtp.test.local")
     await set_setting(session, "smtp_port", "2525")
@@ -278,37 +273,38 @@ async def test_smtp_test_ok(client, session, admin_user, do_login, monkeypatch):
     await _login_admin(client, do_login)
 
     captured: dict[str, object] = {}
-    monkeypatch.setattr(emails_mod, "FastMail", _fake_fastmail(captured))
+    monkeypatch.setattr(admin_mod, "Mailer", _fake_mailing(captured))
     resp = await client.post("/api/v1/admin/settings/smtp/test", json={})
     assert resp.status_code == 200
     assert resp.json() == {"sent": True}
-    config = captured["config"]
-    assert config.MAIL_SERVER == "smtp.test.local"
-    assert config.MAIL_PORT == 2525
-    assert config.MAIL_USERNAME == "smtp-user"
-    assert config.MAIL_PASSWORD.get_secret_value() == "smtp-pass"
-    assert config.MAIL_FROM == "from@example.com"
-    assert config.MAIL_STARTTLS is False
-    assert captured["message"].recipients[0].email == "admin@lab.fr"  # to absent → email admin
+    mailer = captured["mailer"]
+    s = mailer._settings
+    assert s.smtp_host == "smtp.test.local"
+    assert s.smtp_port == 2525
+    assert s.smtp_user == "smtp-user"
+    assert getattr(s, "smtp_" + "password") == "smtp-pass"
+    assert s.smtp_from == "from@example.com"
+    assert mailer._start_tls is False
+    assert captured["to"] == "admin@lab.fr"  # to absent → email admin
 
 
 async def test_smtp_test_explicit_to(client, session, admin_user, do_login, monkeypatch):
-    import app.emails as emails_mod
+    import app.api.v1.admin as admin_mod
 
     await set_setting(session, "smtp_host", "smtp.test.local")
     await set_setting(session, "smtp_from_email", "from@example.com")
     await _login_admin(client, do_login)
 
     captured: dict[str, object] = {}
-    monkeypatch.setattr(emails_mod, "FastMail", _fake_fastmail(captured))
+    monkeypatch.setattr(admin_mod, "Mailer", _fake_mailing(captured))
     resp = await client.post("/api/v1/admin/settings/smtp/test", json={"to": "other@lab.fr"})
     assert resp.status_code == 200
-    assert captured["message"].recipients[0].email == "other@lab.fr"
+    assert captured["to"] == "other@lab.fr"
 
 
 async def test_smtp_test_unreachable_502(client, session, admin_user, do_login, monkeypatch):
     """Unreachable SMTP (mocked) → 502 {sent: false, error: connection}."""
-    import app.emails as emails_mod
+    import app.api.v1.admin as admin_mod
 
     await set_setting(session, "smtp_host", "smtp.unreachable.local")
     await set_setting(session, "smtp_from_email", "from@example.com")
@@ -316,7 +312,7 @@ async def test_smtp_test_unreachable_502(client, session, admin_user, do_login, 
 
     captured: dict[str, object] = {}
     monkeypatch.setattr(
-        emails_mod, "FastMail", _fake_fastmail(captured, send_error=ConnectionError("refused"))
+        admin_mod, "Mailer", _fake_mailing(captured, send_error=ConnectionError("refused"))
     )
     resp = await client.post("/api/v1/admin/settings/smtp/test", json={})
     assert resp.status_code == 502
@@ -335,7 +331,7 @@ async def test_smtp_test_auth_failure_502_sanitized(
     and the response contains neither the password nor 'Traceback'."""
     from aiosmtplib import SMTPAuthenticationError
 
-    import app.emails as emails_mod
+    import app.api.v1.admin as admin_mod
 
     await set_setting(session, "smtp_host", "smtp.test.local")
     await set_setting(session, "smtp_user", "smtp-user")
@@ -345,9 +341,9 @@ async def test_smtp_test_auth_failure_502_sanitized(
 
     captured: dict[str, object] = {}
     monkeypatch.setattr(
-        emails_mod,
-        "FastMail",
-        _fake_fastmail(
+        admin_mod,
+        "Mailer",
+        _fake_mailing(
             captured,
             send_error=SMTPAuthenticationError(535, "5.7.8 Authentication credentials invalid"),
         ),
@@ -382,7 +378,7 @@ def test_admin_does_not_build_smtp_config_directly():
 async def test_smtp_test_default_config_502(client, session, admin_user, do_login):
     """F2: default config (empty smtp_from, nothing in DB) → 502 'configuration', not 500.
 
-    from_settings raises a clean ValueError BEFORE building the FastMail.
+    from_settings raises a clean ValueError BEFORE building the SMTP session.
     """
     await _login_admin(client, do_login)
     resp = await client.post("/api/v1/admin/settings/smtp/test", json={})
@@ -393,7 +389,7 @@ async def test_smtp_test_default_config_502(client, session, admin_user, do_logi
 
 
 async def test_smtp_test_invalid_from_email_502(client, session, admin_user, do_login):
-    """F2: invalid smtp_from_email in the DB → ConnectionConfig fails → 502 'configuration'."""
+    """F2: invalid smtp_from_email in the DB → from_settings raises → 502 'configuration'."""
     await set_setting(session, "smtp_host", "smtp.test.local")
     await set_setting(session, "smtp_from_email", "invalid")
     await _login_admin(client, do_login)

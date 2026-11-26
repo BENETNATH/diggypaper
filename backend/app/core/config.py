@@ -27,6 +27,10 @@ class Settings(BaseSettings):
     smtp_password: str = ""
     smtp_from: str = ""
     smtp_use_tls: bool = True
+    # Extra CA bundle (PEM file) for relays serving a private root or an
+    # incomplete chain absent from the system store. Deployment concern :
+    # the file is mounted, never committed. Empty = system store only.
+    smtp_ca_bundle: str = ""
     # F3: empty by default = no CORS (the deployment is same-origin behind nginx).
     cors_origins: list[str] = []
     # First-admin bootstrap (idempotent): if defined and no admin exists, the account

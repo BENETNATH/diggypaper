@@ -14,7 +14,9 @@ dependencies = [
     "pydantic-settings>=2.0",
     "pyjwt>=2.8",
     "argon2-cffi>=23.1",
-    "fastapi-mail>=1.0",
+    # SMTP direct (aiosmtplib) : contrôle du contexte TLS (bundle CA optionnel)
+    # que fastapi-mail n'exposait pas.
+    "aiosmtplib>=5.1",
     "email-validator>=2.0",
     "cryptography>=42.0",
     "celery>=5.3",

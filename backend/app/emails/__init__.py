@@ -1,36 +1,56 @@
-"""Envoi d'emails via FastAPI-Mail (SMTP, config depuis env ou settings DB)."""
+"""Envoi d'emails via aiosmtplib (SMTP, config depuis env ou settings DB)."""
 
-from fastapi_mail import ConnectionConfig, FastMail, MessageSchema, MessageType
+import ssl
+from email.message import EmailMessage
+from pathlib import Path
+
+import aiosmtplib
+from email_validator import EmailNotValidError, validate_email
 
 from app.core.config import Settings
 
 _TRUTHY = ("1", "true", "yes", "on")
 
+# Un SMTP injoignable ne doit pas faire attendre la réponse HTTP 60 s
+# (défaut) : l'échec renvoie vite le lien à transmettre.
+SMTP_TIMEOUT = 10.0
+
+
+def build_ssl_context(ca_bundle: str | None) -> ssl.SSLContext:
+    """Contexte client : store de confiance système + bundle optionnel.
+
+    ``ca_bundle`` (``SMTP_CA_BUNDLE``) couvre les relais servant une racine
+    privée ou une chaîne incomplète absente du store standard — sans jamais
+    désactiver la vérification. Un fichier absent ou invalide est signalé en
+    ``ValueError`` (config), jamais ignoré.
+    """
+    context = ssl.create_default_context()
+    if ca_bundle:
+        if not Path(ca_bundle).is_file():
+            raise ValueError(f"SMTP_CA_BUNDLE not found: {ca_bundle!r}")
+        try:
+            context.load_verify_locations(cafile=ca_bundle)
+        except ssl.SSLError as exc:
+            raise ValueError(f"SMTP_CA_BUNDLE is not a valid PEM: {ca_bundle!r}") from exc
+    return context
+
 
 class Mailer:
-    """Injectable FastAPI-Mail wrapper (mocked in tests via get_mailer).
+    """Injectable aiosmtplib wrapper (mocked in tests via get_mailer).
 
     The SMTP config comes from the env (``Settings``). ``from_settings`` allows
     overriding it from the DB settings (Module 7): DB first, env as fallback.
+    ``smtp_ca_bundle`` is env-only : a file path is a deployment concern, not
+    a value stored in settings.
     """
 
     def __init__(self, settings: Settings) -> None:
-        config = ConnectionConfig(
-            MAIL_SERVER=settings.smtp_host,
-            MAIL_PORT=settings.smtp_port,
-            MAIL_USERNAME=settings.smtp_user,
-            MAIL_PASSWORD=settings.smtp_password,
-            MAIL_FROM=settings.smtp_from,
-            # 465 = implicit TLS (pas de greeting ESMTP, un STARTTLS y timeout) ;
-            # tout autre port : STARTTLS seulement si le flag est actif.
-            MAIL_STARTTLS=settings.smtp_use_tls and settings.smtp_port != 465,
-            MAIL_SSL_TLS=settings.smtp_port == 465,
-            # Un SMTP injoignable ne doit pas faire attendre la réponse HTTP
-            # 60 s (défaut) : l'échec renvoie vite le lien à transmettre.
-            TIMEOUT=10,
-            USE_CREDENTIALS=bool(settings.smtp_user),
-        )
-        self._mail = FastMail(config)
+        self._settings = settings
+        # 465 = TLS implicite (pas de greeting ESMTP, un STARTTLS y timeout) ;
+        # tout autre port : STARTTLS seulement si le flag est actif.
+        self._use_tls = settings.smtp_port == 465
+        self._start_tls = settings.smtp_use_tls and settings.smtp_port != 465
+        self._context = build_ssl_context(settings.smtp_ca_bundle or None)
 
     @classmethod
     def from_settings(
@@ -60,6 +80,10 @@ class Mailer:
         from_email = pick("smtp_from_email", settings.smtp_from)
         if not from_email:
             raise ValueError("smtp_from_email not configured")
+        try:
+            validate_email(from_email, check_deliverability=False)
+        except EmailNotValidError as exc:
+            raise ValueError(f"smtp_from_email is invalid ({from_email!r})") from exc
         raw_tls = db.get("use_tls")
         if raw_tls not in (None, ""):
             use_tls = raw_tls.strip().lower() in _TRUTHY
@@ -79,9 +103,25 @@ class Mailer:
         )
 
     async def send(self, to: str, subject: str, body: str) -> None:
-        await self._mail.send_message(
-            MessageSchema(recipients=[to], subject=subject, body=body, subtype=MessageType.plain)
-        )
+        s = self._settings
+        creds = {"username": s.smtp_user, "password": s.smtp_password} if s.smtp_user else {}
+        async with aiosmtplib.SMTP(
+            hostname=s.smtp_host,
+            port=s.smtp_port,
+            start_tls=self._start_tls,
+            use_tls=self._use_tls,
+            timeout=SMTP_TIMEOUT,
+            tls_context=self._context,
+            **creds,
+        ) as session:
+            msg = EmailMessage()
+            msg["From"] = s.smtp_from
+            msg["To"] = to
+            msg["Subject"] = subject
+            msg.set_content(body)
+            await session.mail(s.smtp_from)
+            await session.rcpt(to)
+            await session.data(msg.as_bytes())
 
 
 _SMTP_KEYS = ("smtp_host", "smtp_port", "smtp_user", "smtp_password", "smtp_from_email", "use_tls")

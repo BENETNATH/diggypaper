@@ -53,7 +53,7 @@ def _smtp_error_category(exc: Exception) -> str:
         return "authentication"
     if isinstance(exc, (ConnectionError, TimeoutError, ConnectionRefusedError)):
         return "connection"
-    if isinstance(exc, ValueError):  # config invalide (from_settings / ConnectionConfig)
+    if isinstance(exc, ValueError):  # config invalide (from_settings)
         return "configuration"
     return "other"
 
