@@ -10,6 +10,7 @@ import {
   login,
   loginRedirectHref,
   me,
+  register,
   rerunSearch,
   triggerInference,
 } from "@/lib/api";
@@ -155,6 +156,16 @@ describe("401 session expired → /login?next=", () => {
     global.fetch = unauthorized("Invalid or expired invitation token");
     try {
       await expect(login("a@b.c", "password-123")).rejects.toThrow(ApiError);
+    } finally {
+      global.fetch = original;
+    }
+  });
+
+  it("a 401 from /auth/register raises ApiError (invalid invite token handled by the page)", async () => {
+    const original = global.fetch;
+    global.fetch = unauthorized("Invalid or expired invitation token");
+    try {
+      await expect(register("bad-token", "password-123")).rejects.toThrow(ApiError);
     } finally {
       global.fetch = original;
     }

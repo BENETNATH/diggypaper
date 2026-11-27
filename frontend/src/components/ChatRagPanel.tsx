@@ -16,6 +16,7 @@ import {
 import { useSearchId } from "@/lib/useSearch";
 import { withSearch } from "@/lib/search";
 import { useVectorizeProgress } from "@/hooks/useVectorizeProgress";
+import { useApiError } from "@/lib/errorMsg";
 import { IndexProgress } from "@/components/IndexProgress";
 import { Button } from "@/components/ui/Button";
 import { ErrorBanner, Skeleton } from "@/components/ui/Feedback";
@@ -103,6 +104,7 @@ function CitationsList({
  */
 export function ChatRagPanel({ projectId, models, isLead, searches = [], resultsRequest }: Props) {
   const t = useTranslations("chatRag");
+  const apiError = useApiError();
   const searchId = useSearchId(projectId);
   const defaultModel = models.find((m) => m.backend_type === "OLLAMA") ?? models[0];
   const [model, setModel] = useState("");
@@ -262,11 +264,13 @@ export function ChatRagPanel({ projectId, models, isLead, searches = [], results
       );
       setCurrent((c) => (c ? { ...c, streaming: false } : c));
     } catch (e) {
+      // aborted on purpose (clear / mode or scope change / new results request): not an error
+      if (e instanceof DOMException && e.name === "AbortError") return;
       setCurrent((c) => (c ? { ...c, streaming: false } : c));
       if (e instanceof ApiError) {
         if (e.detail.startsWith("model_busy")) setError(t("modelBusy"));
         else if (e.detail.startsWith("corpus_empty")) setError(t("emptyCorpus"));
-        else setError(e.detail);
+        else setError(apiError(e));
       } else {
         setError(t("error"));
       }

@@ -30,10 +30,6 @@ const MAX_SIZE = 25 * 1024 * 1024; // 25 MB
 
 const OCR_STATES: FileState[] = ["done", "ocrRunning", "ocrDone", "ocrError"];
 
-function tokenFromCookie(): string | undefined {
-  return document.cookie.split("; ").find((c) => c.startsWith("token="))?.split("=")[1];
-}
-
 export function DocumentUpload({
   projectId,
   onSettled,
@@ -45,6 +41,8 @@ export function DocumentUpload({
   const t = useTranslations("project");
   const [files, setFiles] = useState<FileItem[]>([]);
   const [dragOver, setDragOver] = useState(false);
+  // Names of the files refused by addFiles (wrong extension or > MAX_SIZE).
+  const [rejected, setRejected] = useState<string[]>([]);
   const [ocr, setOcr] = useState<{ running: boolean; done: number; total: number }>({ running: false, done: 0, total: 0 });
   const inputRef = useRef<HTMLInputElement>(null);
   const queueRef = useRef<FileItem[]>([]);
@@ -72,8 +70,6 @@ export function DocumentUpload({
         const url = `/api/v1/projects/${projectId}/documents?filename=${encodeURIComponent(item.file.name)}`;
         xhr.open("POST", url);
         xhr.setRequestHeader("Content-Type", item.file.type || "application/octet-stream");
-        const token = tokenFromCookie();
-        if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
 
         await new Promise<void>((resolve, reject) => {
           xhr.upload.onprogress = (e) => {
@@ -111,12 +107,13 @@ export function DocumentUpload({
 
   const addFiles = (newFiles: FileList | File[]) => {
     const valid: FileItem[] = [];
+    const refused: string[] = [];
     for (const f of Array.from(newFiles)) {
       const ext = f.name.split(".").pop()?.toLowerCase();
-      if (ext !== "txt" && ext !== "pdf") continue;
-      if (f.size > MAX_SIZE) continue;
-      valid.push({ file: f, state: "pending", progress: 0 });
+      if ((ext !== "txt" && ext !== "pdf") || f.size > MAX_SIZE) refused.push(f.name);
+      else valid.push({ file: f, state: "pending", progress: 0 });
     }
+    setRejected(refused);
     if (valid.length === 0) return;
     queueRef.current.push(...valid);
     setFiles((prev) => [...prev, ...valid]);
@@ -137,8 +134,6 @@ export function DocumentUpload({
     (articleId: string): Promise<number> => {
       const xhr = new XMLHttpRequest();
       xhr.open("POST", `/api/v1/projects/${projectId}/articles/${articleId}/ocr`);
-      const token = tokenFromCookie();
-      if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
       return new Promise((resolve) => {
         xhr.onload = () => resolve(xhr.status);
         xhr.onerror = () => resolve(0);
@@ -238,6 +233,12 @@ export function DocumentUpload({
           }}
         />
       </div>
+
+      {rejected.length > 0 && (
+        <p role="alert" className="text-xs text-danger">
+          {t("uploadRejected", { names: rejected.join(", ") })}
+        </p>
+      )}
 
       {/* Progress bar */}
       {totalAll > 0 && (

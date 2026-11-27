@@ -86,14 +86,14 @@ function ProjectsContent() {
         {canCreate && (
           <div className="flex items-center gap-2">
             <label
-              className={`cursor-pointer rounded-lg border border-border px-3 py-2 text-sm text-foreground hover:bg-surface-muted ${importing ? "pointer-events-none opacity-60" : ""}`}
+              className={`cursor-pointer rounded-lg border border-border px-3 py-2 text-sm text-foreground hover:bg-surface-muted focus-within:ring-2 focus-within:ring-focus ${importing ? "pointer-events-none opacity-60" : ""}`}
               title={t("importCrateHelp")}
             >
               {importing ? t("importCrateBusy") : t("importCrate")}
               <input
                 type="file"
                 accept=".zip,application/zip"
-                className="hidden"
+                className="sr-only"
                 disabled={importing}
                 onChange={(e) => {
                   void handleCrate(e.target.files?.[0]);

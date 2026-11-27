@@ -20,7 +20,8 @@
     "adminOnly": "Access restricted to administrators.",
     "skipToContent": "Skip to main content",
     "versionNotRecordedHelp": "The model version was not recorded for this job.",
-    "hscrollLabel": "Horizontal table scroll"
+    "hscrollLabel": "Horizontal table scroll",
+    "pageNotFound": "Page not found."
   },
   "jobs": {
     "status_PENDING": "Pending",
@@ -175,6 +176,9 @@
     "stopShort": "Stop",
     "stopTitle": "Stop the analysis (articles already analysed are kept)",
     "stopConfirm": "Stop the running analysis?",
+    "importStopTitle": "Stop the import (articles already imported are kept)",
+    "importStopConfirm": "Stop the running import? Articles already imported are kept.",
+    "importStopFailed": "The import has not started yet (queued): try again in a moment.",
     "kpiArticles": "Articles",
     "kpiFulltext": "Full text",
     "kpiAnalysed": "Analysed",
@@ -263,7 +267,9 @@
     "outsideChainHint": "Blind samples and tuning runs: specific analyses, outside the standard chain.",
     "watches": "Watch",
     "onbTitle": "Setup steps",
-    "corporaTitle": "Question corpora"
+    "corporaTitle": "Question corpora",
+    "stepsNav": "Project steps",
+    "uploadRejected": "Files skipped (only .txt / .pdf, 25 MB max): {names}"
   },
   "import": {
     "title": "Corpus import",

@@ -20,7 +20,8 @@
     "adminOnly": "Zugriff nur für Administratoren.",
     "skipToContent": "Zum Hauptinhalt springen",
     "versionNotRecordedHelp": "Die Modellversion wurde für diesen Job nicht erfasst.",
-    "hscrollLabel": "Horizontales Scrollen der Tabelle"
+    "hscrollLabel": "Horizontales Scrollen der Tabelle",
+    "pageNotFound": "Seite nicht gefunden."
   },
   "jobs": {
     "status_PENDING": "Ausstehend",
@@ -175,6 +176,9 @@
     "stopShort": "Stopp",
     "stopTitle": "Analyse stoppen (bereits analysierte Artikel bleiben erhalten)",
     "stopConfirm": "Laufende Analyse stoppen?",
+    "importStopTitle": "Import stoppen (bereits importierte Artikel bleiben erhalten)",
+    "importStopConfirm": "Laufenden Import stoppen? Bereits importierte Artikel bleiben erhalten.",
+    "importStopFailed": "Der Import hat noch nicht begonnen (in der Warteschlange): bitte gleich erneut versuchen.",
     "kpiArticles": "Artikel",
     "kpiFulltext": "Volltext",
     "kpiAnalysed": "Analysiert",
@@ -263,7 +267,9 @@
     "outsideChainHint": "Blindtest-Stichproben und Feinabstimmungen: spezifische Analysen, außerhalb der Standardkette.",
     "watches": "Beobachtung",
     "onbTitle": "Einrichtungs-Schritte",
-    "corporaTitle": "Fragen-Korpora"
+    "corporaTitle": "Fragen-Korpora",
+    "stepsNav": "Projektschritte",
+    "uploadRejected": "Dateien übersprungen (nur .txt / .pdf, max. 25 MB): {names}"
   },
   "import": {
     "title": "Korpus-Import",

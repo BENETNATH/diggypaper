@@ -20,7 +20,8 @@
     "adminOnly": "Acceso restringido a administradores.",
     "skipToContent": "Saltar al contenido principal",
     "versionNotRecordedHelp": "La versión del modelo no se registró en este job.",
-    "hscrollLabel": "Desplazamiento horizontal de la tabla"
+    "hscrollLabel": "Desplazamiento horizontal de la tabla",
+    "pageNotFound": "Página no encontrada."
   },
   "jobs": {
     "status_PENDING": "Pendiente",
@@ -175,6 +176,9 @@
     "stopShort": "Parar",
     "stopTitle": "Detener el análisis (los artículos ya analizados se conservan)",
     "stopConfirm": "¿Detener el análisis en curso?",
+    "importStopTitle": "Detener la importación (los artículos ya importados se conservan)",
+    "importStopConfirm": "¿Detener la importación en curso? Los artículos ya importados se conservan.",
+    "importStopFailed": "La importación aún no ha comenzado (en cola): inténtelo de nuevo en un momento.",
     "kpiArticles": "Artículos",
     "kpiFulltext": "Texto completo",
     "kpiAnalysed": "Analizados",
@@ -263,7 +267,9 @@
     "outsideChainHint": "Muestras a ciegas y ajustes finos: análisis específicos, fuera de la cadena estándar.",
     "watches": "Vigilancia",
     "onbTitle": "Pasos de configuración",
-    "corporaTitle": "Corpus de preguntas"
+    "corporaTitle": "Corpus de preguntas",
+    "stepsNav": "Pasos del proyecto",
+    "uploadRejected": "Archivos ignorados (solo .txt / .pdf, máx. 25 MB): {names}"
   },
   "import": {
     "title": "Importación del corpus",

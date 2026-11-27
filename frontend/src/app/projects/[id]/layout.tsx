@@ -4,7 +4,7 @@ import { ReactNode, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, usePathname, useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { cancelInference, deleteProject, getOverview, getProject, getInference, listJobs, listWatches, ImportJob, InferenceJob, Project, ProjectOverview } from "@/lib/api";
+import { ApiError, cancelImport, cancelInference, deleteProject, getOverview, getProject, getInference, listJobs, listWatches, ImportJob, InferenceJob, Project, ProjectOverview } from "@/lib/api";
 import { Menu, MenuItem, MenuSeparator } from "@/components/ui/Menu";
 import { ProgressBar, Toast } from "@/components/ui/Feedback";
 import { Button } from "@/components/ui/Button";
@@ -171,8 +171,11 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
         const j = js.find((x) => x.kind === "fulltext" && (x.status === "PENDING" || x.status === "RUNNING")) ?? null;
         setFt(j);
         if (j) timer = setTimeout(tick, 3000);
-      } catch {
-        /* ignored */
+      } catch (e) {
+        // transient failure (network, 5xx): keep polling; a 4xx (member removed,
+        // project deleted) is permanent. Cleanup sets `stopped`.
+        const permanent = e instanceof ApiError && e.status < 500;
+        if (!stopped && !permanent) timer = setTimeout(tick, 3000);
       }
     };
     void tick();
@@ -209,6 +212,8 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
   }, [id, pathname, analysing]);
   // spec clarte-3 R8: stop + delete confirm through the design-system Modal (was window.confirm/alert).
   const [stopOpen, setStopOpen] = useState(false);
+  const [importStopOpen, setImportStopOpen] = useState(false);
+  const [importStopFailed, setImportStopFailed] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteFailed, setDeleteFailed] = useState(false);
@@ -224,6 +229,15 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
       setInf(await getInference(id, undefined, true));
     } catch {
       /* the real state is re-read on the next tick */
+    }
+  }
+  async function stopImport() {
+    try {
+      await cancelImport(id);
+      setProject(await getProject(id));
+    } catch (e) {
+      // 409: a queued RO-Crate import has no job row yet — nothing to stop for now.
+      if (e instanceof ApiError && e.status === 409) setImportStopFailed(true);
     }
   }
   async function handleDelete() {
@@ -378,6 +392,16 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
                 {t("importBannerLink")} →
               </Link>
             )}
+            {isLead && (
+              <button
+                type="button"
+                onClick={() => setImportStopOpen(true)}
+                className="ml-2 rounded-md border border-danger/40 px-2 py-0.5 text-danger hover:bg-danger/10"
+                title={t("importStopTitle")}
+              >
+                ■ {t("stopShort")}
+              </button>
+            )}
           </p>
         </div>
       )}
@@ -402,7 +426,7 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
       {/* spec clarte-2 R1/R3: 4 numbered core steps + separator + visible legend +
           measure group; every tab is a navigable Link (no blocked render), aria-current kept */}
       <nav
-        aria-label="steps"
+        aria-label={t("stepsNav")}
         className="-mx-4 flex gap-1 overflow-x-auto border-b border-border px-4 md:mx-0 md:px-0"
       >
         {STEPS.core.filter((s) => !s.leadOnly || isLead).map((s, i) => (
@@ -454,7 +478,26 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
 
       {children}
 
+      {importStopFailed && <Toast message={t("importStopFailed")} onDismiss={() => setImportStopFailed(false)} />}
       {deleteFailed && <Toast message={t("deleteFailed")} onDismiss={() => setDeleteFailed(false)} />}
+      {importStopOpen && (
+        <Modal title={t("stopShort")} onClose={() => setImportStopOpen(false)}>
+          <div className="flex flex-col gap-4">
+            <p className="text-sm text-muted">{t("importStopConfirm")}</p>
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" size="sm" onClick={() => setImportStopOpen(false)}>
+                {tc("cancel")}
+              </Button>
+              <Button variant="danger" size="sm" onClick={() => {
+                setImportStopOpen(false);
+                void stopImport();
+              }}>
+                {t("stopShort")}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
       {stopOpen && (
         <Modal title={t("stopShort")} onClose={() => setStopOpen(false)}>
           <div className="flex flex-col gap-4">

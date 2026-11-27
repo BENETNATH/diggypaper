@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import { useTranslations } from "next-intl";
 import { SchemaField } from "@/lib/api";
 import { AnswerTextarea, DecisionFields, defaultValues, Values } from "@/components/DecisionFields";
@@ -43,6 +43,7 @@ export function AnnotationForm({ fields, onSubmit, onError, initial, quotes: giv
   const t = useTranslations("annotate");
   const [values, setValues] = useState<Values>(() => defaultValues(fields, initial));
   const [confidence, setConfidence] = useState((initial?.confidence_score as number) ?? 0.5);
+  const confidenceId = useId();
   const [localQuotes, setLocalQuotes] = useState<string[]>(() => splitEvidence(initial?.evidence_quotes).all);
   const quotes = given ?? localQuotes;
   const setQuotes = (next: string[] | ((prev: string[]) => string[])) => {
@@ -128,10 +129,11 @@ export function AnnotationForm({ fields, onSubmit, onError, initial, quotes: giv
       />
 
       <div>
-        <label className="block text-sm font-medium">
+        <label htmlFor={confidenceId} className="block text-sm font-medium">
           {t("confidence")} ({confidence.toFixed(2)})
         </label>
         <input
+          id={confidenceId}
           type="range"
           min={0}
           max={1}

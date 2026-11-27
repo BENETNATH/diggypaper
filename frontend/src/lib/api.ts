@@ -494,24 +494,35 @@ export function loginRedirectHref(pathname: string, search: string): string {
   return `/login?next=${encodeURIComponent(pathname + search)}`;
 }
 
+/** Guest-flow auth endpoints whose 401 is a business error, not an expired session. */
+const NO_401_REDIRECT = ["/auth/login", "/auth/register", "/auth/password-reset/"];
+
+/** Spec 2026-11-20 R6: session expired → hard redirect to the login page. */
+function shouldRedirectOn401(path: string): boolean {
+  return (
+    !NO_401_REDIRECT.some((p) => path.startsWith(p)) &&
+    path !== "/auth/me" &&
+    location.pathname !== "/login"
+  );
+}
+
 async function doRequest<T>(path: string, options?: RequestInit): Promise<T> {
+  const { headers, ...rest } = options ?? {};
   const resp = await fetch(`${API_BASE}${path}`, {
     credentials: "include",
-    headers: { "Content-Type": "application/json", ...(options?.headers ?? {}) },
-    ...options,
+    ...rest,
+    headers: { "Content-Type": "application/json", ...(headers ?? {}) },
   });
   // Spec 2026-11-20 R6: session expired → hard redirect to the login page; the
   // page unmounts on navigation, so the call stays pending (no error raised).
   // Never on the login page itself: the AuthProvider's /auth/me 401 there would
   // otherwise loop /login?next=/login?next=…
-  // Never for /auth/me either (any page): a 401 there is the guest state, not an
-  // expired session — redirecting would kick invitees off /register?token=….
-  if (
-    resp.status === 401 &&
-    !path.startsWith("/auth/login") &&
-    !path.startsWith("/auth/me") &&
-    location.pathname !== "/login"
-  ) {
+  // Never for /auth/me itself (any page; /auth/me/api-key still redirects): a 401
+  // there is the guest state, not an expired session — redirecting would kick invitees off /register?token=….
+  // Never for /auth/register (invalid/expired invite token → the page's own message)
+  // nor login / password-reset. Logged-in /auth/* calls (change-password, api-key,
+  // invite) still redirect.
+  if (resp.status === 401 && shouldRedirectOn401(path)) {
     window.location.href = loginRedirectHref(location.pathname, location.search);
     return new Promise<T>(() => {});
   }
@@ -1264,6 +1275,10 @@ export async function triggerInference(
 export const cancelInference = (projectId: string): Promise<unknown> =>
   request(`/projects/${projectId}/inference/cancel`, { method: "POST" });
 
+/** Stops the running import (LEAD/admin): articles already imported are kept. */
+export const cancelImport = (projectId: string): Promise<unknown> =>
+  request(`/projects/${projectId}/import/cancel`, { method: "POST" });
+
 export const cancelBenchmark = (projectId: string, runId: string): Promise<unknown> =>
   request(`/projects/${projectId}/benchmarks/${runId}/cancel`, { method: "POST" });
 
@@ -1861,6 +1876,10 @@ export async function streamChat(
     body: JSON.stringify(body),
     signal,
   });
+  if (resp.status === 401 && shouldRedirectOn401(`/projects/${projectId}/chat`)) {
+    window.location.href = loginRedirectHref(location.pathname, location.search);
+    return new Promise<undefined>(() => {});
+  }
   if (!resp.ok || !resp.body) {
     let detail = resp.statusText;
     try {

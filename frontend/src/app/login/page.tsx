@@ -13,16 +13,25 @@ import { Field, Input, Checkbox } from "@/components/ui/Field";
 import { Card } from "@/components/ui/Card";
 import { ErrorBanner } from "@/components/ui/Feedback";
 
+function sameOriginPath(next: string | null): string | null {
+  if (!next) return null;
+  try {
+    const u = new URL(next, window.location.origin);
+    return u.origin === window.location.origin ? u.pathname + u.search + u.hash : null;
+  } catch {
+    return null;
+  }
+}
+
 export default function LoginPage() {
   const t = useTranslations("auth");
   const apiError = useApiError();
   const { login } = useAuth();
   const router = useRouter();
   // R7 (spec 2026-11-20): open-redirect guard — `next` is honoured only if it
-  // starts with "/" but not with "//".
+  // resolves to this origin (a prefix check misses `/\evil.com`, `/\t/evil.com`).
   const searchParams = useSearchParams();
   const next = searchParams.get("next");
-  const safeNext = next && next.startsWith("/") && !next.startsWith("//") ? next : null;
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -65,6 +74,7 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const u = await login(email, password, consent || undefined);
+      const safeNext = sameOriginPath(next); // window: client-only, not at render (SSR)
       // New device (no remembered language choice): we take the account's language.
       if (!readLocaleCookie() && u.language_preference) {
         writeLocaleCookie(u.language_preference);
@@ -134,6 +144,8 @@ export default function LoginPage() {
           <Link href="/register" className="text-center text-sm text-primary hover:underline">
             {t("registerWithCode")}
           </Link>
+        </form>
+        <div className="mt-4 flex flex-col gap-4">
           {/* Forgot password: inline form, generic result (never reveals existence). */}
           {forgotSent && <p className="text-sm text-success">{t("forgotSent")}</p>}
           {forgotError && (
@@ -169,7 +181,7 @@ export default function LoginPage() {
               {t("forgotPassword")}
             </button>
           )}
-        </form>
+        </div>
       </Card>
     </div>
   );

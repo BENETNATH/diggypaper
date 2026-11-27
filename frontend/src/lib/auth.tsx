@@ -14,6 +14,8 @@ import { User } from "@/lib/api";
 interface AuthContextValue {
   user: User | null;
   loading: boolean;
+  /** /auth/me failed for another reason than 401 (network, 5xx, 429): session state unknown. */
+  error: boolean;
   login: (email: string, password: string, consent?: boolean) => Promise<User>;
   register: (token: string, password: string, fullName?: string) => Promise<User>;
   logout: () => void;
@@ -30,16 +32,20 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
   const refresh = useCallback(() => {
     return api
       .me()
       .then((u) => {
         setUser(u);
+        setError(false);
         setLoading(false);
       })
-      .catch(() => {
+      .catch((e) => {
         setUser(null);
+        // only a 401 means "logged out"; anything else must not bounce to /login
+        setError(!(e instanceof api.ApiError && e.status === 401));
         setLoading(false);
       });
   }, []);
@@ -73,7 +79,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, loading, login, register, logout, refresh }}
+      value={{ user, loading, error, login, register, logout, refresh }}
     >
       {children}
     </AuthContext.Provider>

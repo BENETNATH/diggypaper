@@ -45,11 +45,10 @@ export function usePolling<T>(
           return;
         }
       } catch (e) {
+        // transient failure (network, 5xx): report it but keep polling
         setError((e as Error).message);
-        setLoading(false);
-        return;
       }
-      timer.current = setTimeout(tick, intervalMs);
+      if (!stopped.current) timer.current = setTimeout(tick, intervalMs);
     }
 
     void tick();

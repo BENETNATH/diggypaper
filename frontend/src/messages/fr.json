@@ -20,7 +20,8 @@
     "titleNoun": "Titre",
     "adminOnly": "Accès réservé aux administrateurs.",
     "skipToContent": "Aller au contenu principal",
-    "hscrollLabel": "Défilement horizontal du tableau"
+    "hscrollLabel": "Défilement horizontal du tableau",
+    "pageNotFound": "Page introuvable."
   },
   "jobs": {
     "status_PENDING": "En attente",
@@ -175,6 +176,9 @@
     "stopShort": "Arrêt",
     "stopTitle": "Arrêter l'analyse (les articles déjà analysés sont conservés)",
     "stopConfirm": "Arrêter l'analyse en cours ?",
+    "importStopTitle": "Arrêter l'import (les articles déjà importés sont conservés)",
+    "importStopConfirm": "Arrêter l'import en cours ? Les articles déjà importés sont conservés.",
+    "importStopFailed": "L'import n'a pas encore démarré (en file d'attente) : réessayez dans un instant.",
     "kpiArticles": "Articles",
     "kpiFulltext": "Texte intégral",
     "kpiAnalysed": "Analysés",
@@ -263,7 +267,9 @@
     "outsideChainHint": "Échantillons à l'aveugle et mises au point : des analyses spécifiques, hors de la chaîne standard.",
     "watches": "Veille",
     "onbTitle": "Parcours d'installation",
-    "corporaTitle": "Corpus de questions"
+    "corporaTitle": "Corpus de questions",
+    "stepsNav": "Étapes du projet",
+    "uploadRejected": "Fichiers ignorés (uniquement .txt / .pdf, 25 Mo max) : {names}"
   },
   "import": {
     "title": "Import du corpus",

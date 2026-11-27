@@ -25,6 +25,7 @@ jest.mock("@/lib/api", () => ({
   listJobs: jest.fn(),
   listSearches: jest.fn(),
   cancelInference: jest.fn(),
+  cancelImport: jest.fn(),
   deleteProject: jest.fn(),
   getOverview: jest.fn().mockResolvedValue({ articles: 0, fulltext: 0, analysed: 0, reviewed: 0, gold: 0, searches: [] }),
   listWatches: jest.fn().mockResolvedValue([]),
@@ -202,7 +203,7 @@ describe("project layout (spec clarte-2)", () => {
     const { container } = mount();
     // the lead-only Import tab appears once the project loads
     await screen.findByRole("link", { name: /import/ });
-    const nav = container.querySelector('nav[aria-label="steps"]');
+    const nav = container.querySelector('nav[aria-label="stepsNav"]');
     expect(nav).not.toBeNull();
     // no italic anywhere (the « optionnel » is no longer carried by a font style)
     expect(nav?.querySelector(".italic")).toBeNull();
@@ -226,7 +227,7 @@ describe("project layout (spec clarte-2)", () => {
     listWatches.mockResolvedValue([]);
     const { container } = mount();
     await screen.findByRole("link", { name: /import/ });
-    const nav = container.querySelector('nav[aria-label="steps"]');
+    const nav = container.querySelector('nav[aria-label="stepsNav"]');
     expect(nav?.textContent).not.toContain("counterRefs");
     expect(nav?.textContent).not.toContain("counterDraws");
     expect(nav?.textContent).not.toContain("counterActive");
@@ -238,7 +239,7 @@ describe("project layout (spec clarte-2)", () => {
     listWatches.mockResolvedValue([]);
     const { container } = mount({ role_in_project: "ANNOTATOR" });
     await screen.findByRole("link", { name: /overview/ });
-    const nav = container.querySelector('nav[aria-label="steps"]');
+    const nav = container.querySelector('nav[aria-label="stepsNav"]');
     // member: 3 core tabs (import hidden) + gold only in the measure group
     expect(nav?.querySelectorAll("a")).toHaveLength(4);
     expect(nav?.querySelector('a[href*="/team"]')).toBeNull();
@@ -265,7 +266,7 @@ describe("project layout (spec clarte-2)", () => {
     listWatches.mockResolvedValue([]);
     const { container } = mount({ status: "FROZEN", article_count: 0, role_in_project: "ANNOTATOR" });
     await screen.findByRole("link", { name: /overview/ });
-    const nav = container.querySelector('nav[aria-label="steps"]');
+    const nav = container.querySelector('nav[aria-label="stepsNav"]');
     // member: overview + inference + articles + gold — all links, none greyed out
     expect(nav?.querySelectorAll("a")).toHaveLength(4);
     expect(nav?.querySelector(".opacity-50")).toBeNull();
@@ -318,12 +319,49 @@ describe("project layout (spec clarte-3 R8: critical confirms in Modal)", () => 
     listWatches.mockResolvedValue([]);
     cancelInference.mockResolvedValue(undefined);
     mount();
-    fireEvent.click(await screen.findByText("■ stopShort"));
+    fireEvent.click(await screen.findByTitle("stopTitle"));
     const dialog = screen.getByRole("dialog");
     expect(within(dialog).getByText("stopConfirm")).toBeInTheDocument();
     fireEvent.click(within(dialog).getByRole("button", { name: "stopShort" }));
     await waitFor(() => expect(cancelInference).toHaveBeenCalledWith("p1"));
     expect(confirmSpy).not.toHaveBeenCalled();
     confirmSpy.mockRestore();
+  });
+
+  it("stop import: the import banner stop opens the Modal; confirm cancels then re-reads the project", async () => {
+    const cancelImport = api.cancelImport as jest.Mock;
+    mockState.pathname = "/projects/p1/articles";
+    getOverview.mockResolvedValue(noCounters);
+    listWatches.mockResolvedValue([]);
+    cancelImport.mockResolvedValue({ cancelled: 1, status: "FROZEN" });
+    mount();
+    fireEvent.click(await screen.findByTitle("importStopTitle"));
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText("importStopConfirm")).toBeInTheDocument();
+    getProject.mockClear();
+    fireEvent.click(within(dialog).getByRole("button", { name: "stopShort" }));
+    await waitFor(() => expect(cancelImport).toHaveBeenCalledWith("p1"));
+    await waitFor(() => expect(getProject).toHaveBeenCalledWith("p1"));
+  });
+
+  it("stop import: a 409 (crate import still queued) shows a Toast", async () => {
+    const cancelImport = api.cancelImport as jest.Mock;
+    mockState.pathname = "/projects/p1/articles";
+    getOverview.mockResolvedValue(noCounters);
+    listWatches.mockResolvedValue([]);
+    cancelImport.mockRejectedValue(new api.ApiError(409, "no import in progress"));
+    mount();
+    fireEvent.click(await screen.findByTitle("importStopTitle"));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "stopShort" }));
+    expect(await screen.findByText("importStopFailed")).toBeInTheDocument();
+  });
+
+  it("stop import: hidden for a non-lead member", async () => {
+    mockState.pathname = "/projects/p1/articles";
+    getOverview.mockResolvedValue(noCounters);
+    listWatches.mockResolvedValue([]);
+    mount({ role_in_project: "ANNOTATOR" });
+    expect(await screen.findByText("importBannerStart")).toBeInTheDocument();
+    expect(screen.queryByTitle("importStopTitle")).toBeNull();
   });
 });

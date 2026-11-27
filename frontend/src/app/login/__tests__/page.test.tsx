@@ -73,6 +73,18 @@ describe("LoginPage — ?next= return after login", () => {
     expect(useRouter().push).not.toHaveBeenCalledWith("//evil.com");
   });
 
+  it.each([
+    ["backslash", "/%5Cevil.com"],
+    ["tab", "/%09/evil.com"],
+  ])("F4b: a %s-obfuscated external ?next falls back to /projects", async (_name, raw) => {
+    (useSearchParams as jest.Mock).mockReturnValue(new URLSearchParams(`next=${raw}`));
+    successfulLogin();
+    render(<LoginPage />);
+    await submitLogin();
+    await waitFor(() => expect(useRouter().push).toHaveBeenCalledWith("/projects"));
+    expect(useRouter().push).not.toHaveBeenCalledWith(expect.stringContaining("evil"));
+  });
+
   it("F5: without ?next, goes to /projects (existing behavior)", async () => {
     successfulLogin();
     render(<LoginPage />);

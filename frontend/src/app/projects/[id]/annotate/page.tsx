@@ -463,12 +463,12 @@ export default function AnnotatePage() {
                     {searching ? t("searching") : t("searchFulltext")}
                   </button>
                 ) : null}
-                <label className="cursor-pointer font-medium text-primary hover:underline">
+                <label className="cursor-pointer rounded font-medium text-primary hover:underline focus-within:ring-2 focus-within:ring-focus">
                   {pdfBusy ? t("pdfBusy") : article.has_fulltext ? t("replacePdf") : t("addPdf")}
                   <input
                     type="file"
                     accept="application/pdf"
-                    className="hidden"
+                    className="sr-only"
                     disabled={pdfBusy || searching}
                     onChange={(e) => void handlePdf(e.target.files?.[0])}
                   />
@@ -667,12 +667,12 @@ export default function AnnotatePage() {
                     {searching ? t("searching") : t("searchFulltext")}
                   </button>
                 ) : null}
-                <label className="cursor-pointer font-medium text-primary hover:underline">
+                <label className="cursor-pointer rounded font-medium text-primary hover:underline focus-within:ring-2 focus-within:ring-focus">
                   {pdfBusy ? t("pdfBusy") : article.has_fulltext ? t("replacePdf") : t("addPdf")}
                   <input
                     type="file"
                     accept="application/pdf"
-                    className="hidden"
+                    className="sr-only"
                     disabled={pdfBusy || searching}
                     onChange={(e) => void handlePdf(e.target.files?.[0])}
                   />

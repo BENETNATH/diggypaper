@@ -81,12 +81,12 @@ export function ReferencesImport({ projectId, onStarted }: { projectId: string; 
         />
       )}
       <div className="flex flex-wrap items-center gap-3 text-sm">
-        <label className="cursor-pointer font-medium text-primary hover:underline">
+        <label className="cursor-pointer rounded font-medium text-primary hover:underline focus-within:ring-2 focus-within:ring-focus">
           {t("refsFile")}
           <input
             type="file"
             accept=".bib,.bibtex,.ris,.json,.csv,.txt,text/plain,application/json"
-            className="hidden"
+            className="sr-only"
             onChange={(e) => {
               void pickFile(e.target.files?.[0]);
               e.target.value = "";
