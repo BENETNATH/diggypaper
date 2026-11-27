@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM python:3.12.16-slim@sha256:191083cdf6c7bda8c76158983163ead5d5cf7b77cf3033e805bb0f5296f51b4b
 
 # Build-time commit SHA (passed from docker compose): lets the /ci-status endpoint
 # report the CI state of the exact commit running.
@@ -24,7 +24,7 @@ WORKDIR /app
 # Installé AVANT le package pour contrôler la wheel (l'index PyPI ne sert que
 # la variante CUDA) ; les pins du reste viennent de constraints.txt.
 ARG TORCH_VARIANT=cpu
-RUN pip install --upgrade pip \
+RUN pip install "pip==26.3" \
     && if [ "${TORCH_VARIANT}" = "cuda" ]; then \
          pip install --no-deps "torch==2.9.1+cu128" --index-url https://download.pytorch.org/whl/cu128; \
        else \

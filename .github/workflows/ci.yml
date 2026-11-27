@@ -21,7 +21,8 @@ jobs:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: backend/constraints.txt
-      # constraints.txt: tested versions (same file as the Docker image)
+      # constraints.txt: tested versions (same file as the Docker image) — uv.lock must agree
+      - run: python ../scripts/check_lock_constraints.py
       - run: pip install -c constraints.txt -e ".[dev]"
       - run: ruff check .
       - run: ruff format --check .
@@ -47,3 +48,11 @@ jobs:
       - run: npm run lint
       - run: npx jest
       - run: npm run build
+
+  # Dockerfile errors (base image, build stages, standalone output) fail CI, not the deploy.
+  docker:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+      - run: docker build --build-arg COMMIT_SHA=${{ github.sha }} backend
+      - run: docker build frontend
