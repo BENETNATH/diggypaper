@@ -359,7 +359,7 @@ reverse proxy TLS (establishment)            ← HTTPS, certificate, HSTS
         ├── /api/v1/*  ──►  backend (FastAPI/uvicorn, :8000)
         └── /*         ──►  frontend (Next.js, :3000)
 
-backend ──►  postgres (16)  ·  redis (7)  ◄──  worker (Celery, general tasks)
+backend ──►  postgres (18)  ·  redis (7)  ◄──  worker (Celery, general tasks)
                                                      └──  worker-ingest (imports, 1 process)
 backend / worker ──►  ollama (optional)  ·  external API of your choice
 ```
@@ -387,6 +387,12 @@ The Alembic migrations are applied at backend startup; the worker waits for it t
 be ready. The services restart themselves after a reboot (`restart: unless-stopped`) and
 the Docker logs are limited (5 × 10 MB per service).
 
+**Replicas.** `worker` embeds celery beat (`-B`, periodic tasks: disk alert, inactive
+projects, corpus watch): run it as a **single replica**, otherwise every replica fires the
+periodic tasks again. Its schedule file lives on the `celerybeat` volume, so a redeploy does not
+push the periodic tasks back. `backend` can be scaled (migrations are serialized by a
+Postgres advisory lock); `worker-ingest` must stay at 1 process (NCBI cap).
+
 > **Windows** : clone with LF line endings (the repo enforces them for the `*.sh` files via
 > `.gitattributes`). An `entrypoint.sh` in CRLF fails the backend with
 > «exec ./entrypoint.sh: no such file or directory».
@@ -402,12 +408,14 @@ Diggypaper does not handle TLS itself: place it behind your establishment's reve
 | `COOKIE_SECURE` | `true` (default) — the session cookie is sent over HTTPS only. `false` only for a local HTTP trial |
 | `NGINX_BIND` | `127.0.0.1` (default) if the proxy runs on the **same machine** ; `0.0.0.0` (or the IP of an interface) if it is on another machine — filter the port by firewall then |
 | `NGINX_PORT` | local port of nginx (default `8080`) |
-| `TRUSTED_PROXY_CIDR` | address or network of the proxy, as seen from nginx (e.g. `172.16.0.0/12` if the proxy is on the same machine, via the Docker gateway). **Required** : without it, all requests appear to come from the proxy and the per-IP rate limiting is applied to everyone at once |
+| `TRUSTED_PROXY_CIDR` | address or network of the proxy, as seen from nginx (e.g. `172.16.0.0/12` if the proxy is on the same machine, via the Docker gateway — not `127.0.0.1`; `127.0.0.1` only if nginx is exposed directly). Asked by `scripts/setup_env.py`. **Required** : without it, all requests appear to come from the proxy and the per-IP rate limiting is applied to everyone at once |
 
 The proxy must forward `Host`, `X-Forwarded-For` and `X-Forwarded-Proto`, and set
 `Strict-Transport-Security`. nginx (internal) adds the headers `X-Content-Type-Options`,
 `X-Frame-Options`, `Referrer-Policy`, `Content-Security-Policy` and masks its version;
-it **never trusts** an `X-Forwarded-For` coming from a client (it replaces it with the real IP).
+it **never trusts** an `X-Forwarded-For` or `X-Forwarded-Proto` coming from a client (only from
+`TRUSTED_PROXY_CIDR`). The proxy must accept large bodies and long requests (RO-Crate import:
+up to 1100 MB, 600 s) and must not buffer responses (the RAG chat streams over SSE).
 Example block for a front nginx:
 
 ```nginx
@@ -416,13 +424,16 @@ server {
     server_name diggypaper.exemple.fr;
     # ssl_certificate … ; ssl_certificate_key …
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
-    client_max_body_size 30m;
+    client_max_body_size 1100m;          # RO-Crate import
     location / {
         proxy_pass http://127.0.0.1:8080;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-Forwarded-Proto https;
-        proxy_read_timeout 300s;
+        proxy_read_timeout 600s;
+        proxy_send_timeout 600s;
+        proxy_buffering off;             # SSE (RAG chat)
+        proxy_request_buffering off;     # large uploads streamed
     }
 }
 ```
@@ -464,8 +475,7 @@ After `git pull`, before `docker compose up -d --build` :
 |----------|------|
 | `WORKER_CONCURRENCY` | background tasks in parallel (analyses, exports, benchmarks) — default `3` ; imports run on `worker-ingest` (1 process, queue `ingest`) to stay under the NCBI cap |
 | `IMPORT_MAX_ARTICLES` | cap on articles per import — default `5000` ; `0` = unlimited (beyond 10,000 results, the query is split by publication date, the most recent first) |
-| `TASK_SOFT_TIME_LIMIT` | max duration of a task in seconds — `0` = none |
-| `*_MEM_LIMIT` | `OLLAMA_`, `WORKER_`, `INGEST_`, `BACKEND_`, `FRONTEND_` : memory caps (defaults 24g, 8g, 2g, 2g, 1g) |
+| `*_MEM_LIMIT` | `OLLAMA_`, `WORKER_`, `INGEST_`, `BACKEND_`, `FRONTEND_`, `POSTGRES_`, `REDIS_`, `NGINX_` : memory caps (defaults 24g, 8g, 2g, 2g, 1g, 4g, 512m, 256m) |
 | `DISK_ALERT_PERCENT` / `DISK_ALERT_FREE_GB` | disk alert (e-mail to the admins, banner) — defaults `85`% / `5` GB |
 | `PROJECT_RETENTION_DAYS` | days of inactivity before warning the leads of a project — `0` (default) = never automatic deletion |
 | `PROJECT_RETENTION_GRACE_DAYS` | grace period before deletion, after the warning — default `14` |
@@ -495,6 +505,28 @@ Scheduling: `0 2 * * * cd /path/to/diggypaper && scripts/backup.sh >> backups/ba
 encrypted API keys of the database are unreadable. The RO-Crate export serves reproducibility,
 not backup (it includes neither accounts, nor models, nor shares; it can be
 re-imported, but the team and the gold stay behind). `docker compose down -v` **erases** the volumes.
+
+**Encryption (optional).** With [age](https://age-encryption.org) installed on the host,
+`BACKUP_AGE_RECIPIENT=age1… scripts/backup.sh` writes `…sql.gz.age` (the dump is checked
+before encryption, then the plain file is deleted). Restore with the private key:
+`BACKUP_AGE_IDENTITY=/path/to/key.txt scripts/restore.sh backups/….sql.gz.age`. Keep the
+identity file off the machine, like `.env`. Unset = unencrypted, as before.
+
+**Test a restore every month** (a backup never restored is not a backup):
+
+```bash
+# 1st of the month, 4 h: restore the latest backup into a scratch database, then drop it
+# (encrypted backups: also set BACKUP_AGE_IDENTITY=/path/to/key.txt)
+0 4 1 * * cd /path/to/diggypaper && { f=$(ls -t backups/diggypaper-*.sql.gz* | head -n 1) && TARGET_DB=restore_test scripts/restore.sh "$f" && docker compose exec -T postgres sh -c 'dropdb -U "$POSTGRES_USER" restore_test'; } >> backups/restore-test.log 2>&1
+```
+
+### PostgreSQL major upgrade
+
+The data volume only works with the major version that created it (currently 18). To change
+the major version (the `pgvector/pgvector:…-pgNN` image): `scripts/backup.sh`, then
+`docker compose down`, remove the `pgdata` volume (`docker volume rm <project>_pgdata`),
+change the image tag, `docker compose up -d postgres` and `scripts/restore.sh <backup>`.
+Test the restore beforehand with `TARGET_DB`.
 
 ### Outbound network
 

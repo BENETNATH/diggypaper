@@ -1,6 +1,10 @@
 # Settings (all optional, see .env.example): NGINX_BIND / NGINX_PORT, TRUSTED_PROXY_CIDR,
 # WORKER_CONCURRENCY, IMPORT_MAX_ARTICLES, *_MEM_LIMIT, COOKIE_SECURE, APP_BASE_URL…
 #
+# « worker » embeds celery beat (-B): run it as a SINGLE replica (each replica would fire
+# the periodic tasks again). « worker-ingest » too (NCBI throttle per process, startup
+# recovery per queue). Only backend can be scaled.
+#
 # OPTIONAL model services (profiles): by default only the application, the database and the
 # task queue start (sufficient with an external model: OpenAI-compatible API). Enable those
 # you need in .env, e.g. COMPOSE_PROFILES=ollama. The mode is carried by the pair
@@ -22,6 +26,8 @@ services:
     # of the rolling "pg18" tag, so `docker compose pull` cannot silently swap
     # the DB image. Change deliberately via a reviewed source update.
     image: pgvector/pgvector:0.8.7-pg18
+    shm_size: 1g  # parallel queries / pgvector HNSW builds (Docker default: 64 MB)
+    mem_limit: ${POSTGRES_MEM_LIMIT:-4g}
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-diggypaper}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD manquant dans .env}
@@ -30,6 +36,7 @@ services:
       - pgdata:/var/lib/postgresql
     restart: unless-stopped
     logging: *logging
+    security_opt: ["no-new-privileges:true"]  # gosu/su-exec only drop privileges: allowed
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-diggypaper}"]
       interval: 5s
@@ -37,12 +44,20 @@ services:
       retries: 10
 
   redis:
-    image: redis:7-alpine
+    image: redis:7.4.12-alpine@sha256:7f7d30b7fdd09467bac58198a1f166dd69789d348d4fe859cccb20e0cf287fbe
     restart: unless-stopped
+    mem_limit: ${REDIS_MEM_LIMIT:-512m}
     logging: *logging
-    command: redis-server --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD manquant dans .env}
+    security_opt: ["no-new-privileges:true"]
+    # Password via env -> config file at start: absent from the command line (docker inspect, ps).
+    # REDISCLI_AUTH is also read by redis-cli (healthcheck).
+    environment:
+      REDISCLI_AUTH: ${REDIS_PASSWORD:?REDIS_PASSWORD manquant dans .env}
+    command: ["sh", "-c", 'umask 077 && printf "requirepass %s\n" "$$REDISCLI_AUTH" > /tmp/redis.conf && chown redis /tmp/redis.conf && exec docker-entrypoint.sh redis-server /tmp/redis.conf']
+    volumes:
+      - redisdata:/data  # queued tasks survive a recreate
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "--no-auth-warning", "ping"]
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -56,6 +71,7 @@ services:
       - ollama:/root/.ollama
     restart: unless-stopped
     logging: *logging
+    security_opt: ["no-new-privileges:true"]
     mem_limit: ${OLLAMA_MEM_LIMIT:-24g}
     # GPU — uncomment according to the hardware (docs.ollama.com/docker); in « host » mode the GPU
     # is that of the machine's Ollama installation (no exposure in this compose).
@@ -81,6 +97,7 @@ services:
         TORCH_VARIANT: ${TORCH_VARIANT:-cpu}
     restart: unless-stopped
     logging: *logging
+    security_opt: ["no-new-privileges:true"]
     mem_limit: ${BACKEND_MEM_LIMIT:-2g}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8000/api/v1/health', timeout=4)"]
@@ -117,6 +134,11 @@ services:
       FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:8080}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      CORS_ORIGINS: ${CORS_ORIGINS:-[]}  # JSON array; empty = no CORS (same-origin behind nginx)
+      DISK_ALERT_PERCENT: ${DISK_ALERT_PERCENT:-85}  # disk status (Settings page)
+      DISK_ALERT_FREE_GB: ${DISK_ALERT_FREE_GB:-5}
+      PROJECT_RETENTION_DAYS: ${PROJECT_RETENTION_DAYS:-0}
+      PROJECT_RETENTION_GRACE_DAYS: ${PROJECT_RETENTION_GRACE_DAYS:-14}
     depends_on:
       postgres:
         condition: service_healthy
@@ -134,11 +156,22 @@ services:
         TORCH_VARIANT: ${TORCH_VARIANT:-cpu}
     restart: unless-stopped
     logging: *logging
+    security_opt: ["no-new-privileges:true"]
     mem_limit: ${WORKER_MEM_LIMIT:-8g}
     # WORKER_CONCURRENCY: tasks in parallel (analyses, exports, benchmarks); 3 by default.
     # The imports (NCBI) do not go through here: see « worker-ingest ».
-    command: ["celery", "-A", "app.celery_app.celery_app", "worker", "-B", "-s", "/tmp/celerybeat-schedule", "--loglevel=info", "--concurrency=${WORKER_CONCURRENCY:-3}"]
+    # Beat schedule on a volume: a recreate (deploy) keeps the last run times instead of
+    # pushing every periodic task back by a full interval.
+    command: ["celery", "-A", "app.celery_app.celery_app", "worker", "-B", "-s", "/app/celerybeat/celerybeat-schedule", "--loglevel=info", "--concurrency=${WORKER_CONCURRENCY:-3}"]
+    stop_grace_period: 60s  # let running tasks finish (Docker default: SIGKILL after 10 s)
+    healthcheck: &worker-healthcheck
+      test: ["CMD-SHELL", "celery -A app.celery_app.celery_app inspect ping -d celery@$$HOSTNAME --timeout 10 > /dev/null"]
+      interval: 60s
+      timeout: 30s
+      retries: 3
+      start_period: 60s
     volumes:
+      - celerybeat:/app/celerybeat
       - exports:/app/exports
       - hfcache:/app/.cache  # RAG: embedding model weights (same cache as the backend)
     environment:
@@ -161,9 +194,12 @@ services:
       SMTP_USE_TLS: ${SMTP_USE_TLS:-true}
       SMTP_CA_BUNDLE: ${SMTP_CA_BUNDLE:-}
       IMPORT_MAX_ARTICLES: ${IMPORT_MAX_ARTICLES:-5000}
-      TASK_SOFT_TIME_LIMIT: ${TASK_SOFT_TIME_LIMIT:-0}  # seconds; 0 = no limit
       CRATE_LICENSE_URL: ${CRATE_LICENSE_URL:-https://creativecommons.org/licenses/by/4.0/}
       CRATE_LICENSE_NAME: ${CRATE_LICENSE_NAME:-CC BY 4.0}
+      DISK_ALERT_PERCENT: ${DISK_ALERT_PERCENT:-85}  # maintenance task (beat, every 6 h)
+      DISK_ALERT_FREE_GB: ${DISK_ALERT_FREE_GB:-5}
+      PROJECT_RETENTION_DAYS: ${PROJECT_RETENTION_DAYS:-0}
+      PROJECT_RETENTION_GRACE_DAYS: ${PROJECT_RETENTION_GRACE_DAYS:-14}
     depends_on:
       postgres:
         condition: service_healthy
@@ -177,8 +213,8 @@ services:
   # Ingestion worker: sole consumer of the « ingest » queue (PubMed/Europe PMC/
   # OpenAlex imports, full-text completion), with a single process. The NCBI throttle is per process
   # (3 req/s without key, 10 with): several processes would multiply it beyond the NCBI cap.
-  # No « -B » (beat stays on « worker ») and no recovery of interrupted jobs
-  # (RECOVER_INTERRUPTED=0: otherwise this worker would mark the other's analyses FAILED).
+  # No « -B » (beat stays on « worker »). At startup it recovers only the interrupted
+  # imports of its own « ingest » queue (each worker recovers the jobs of its queues).
   worker-ingest:
     build:
       context: ./backend
@@ -188,8 +224,11 @@ services:
         TORCH_VARIANT: ${TORCH_VARIANT:-cpu}
     restart: unless-stopped
     logging: *logging
+    security_opt: ["no-new-privileges:true"]
     mem_limit: ${INGEST_MEM_LIMIT:-2g}
     command: ["celery", "-A", "app.celery_app.celery_app", "worker", "--loglevel=info", "--concurrency=1", "-Q", "ingest"]
+    stop_grace_period: 60s
+    healthcheck: *worker-healthcheck
     volumes:
       - exports:/app/exports
     environment:
@@ -210,8 +249,6 @@ services:
       SMTP_USE_TLS: ${SMTP_USE_TLS:-true}
       SMTP_CA_BUNDLE: ${SMTP_CA_BUNDLE:-}
       IMPORT_MAX_ARTICLES: ${IMPORT_MAX_ARTICLES:-5000}
-      TASK_SOFT_TIME_LIMIT: ${TASK_SOFT_TIME_LIMIT:-0}
-      RECOVER_INTERRUPTED: "0"  # the startup recovery is done by « worker »
     depends_on:
       postgres:
         condition: service_healthy
@@ -226,16 +263,25 @@ services:
     build: ./frontend
     restart: unless-stopped
     logging: *logging
+    security_opt: ["no-new-privileges:true"]
     mem_limit: ${FRONTEND_MEM_LIMIT:-1g}
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/').then(r => process.exit(r.status < 500 ? 0 : 1), () => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     environment:
       DEFAULT_LANGUAGE: ${DEFAULT_LANGUAGE:-fr}
       # Origin the server components use to reach the backend (footer version fetch).
       API_ORIGIN: http://backend:8000
 
   nginx:
-    image: nginx:1.27-alpine
+    image: nginx:1.30.8-alpine@sha256:8eb04fe3b385090e9aa02961f77398ad09b6bf33ab07f6669a5bb7acce22c0d3
     restart: unless-stopped
+    mem_limit: ${NGINX_MEM_LIMIT:-256m}
     logging: *logging
+    security_opt: ["no-new-privileges:true"]
     ports:
       # Only exposed service. 127.0.0.1 by default: visible from the machine's reverse proxy;
       # NGINX_BIND=0.0.0.0 (or an interface's IP) if the proxy is on another machine.
@@ -244,14 +290,21 @@ services:
       TRUSTED_PROXY_CIDR: ${TRUSTED_PROXY_CIDR:-127.0.0.1}
     volumes:
       - ./nginx/nginx.conf.template:/etc/nginx/templates/default.conf.template:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/api/v1/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     depends_on:
       backend:
         condition: service_healthy
       frontend:
-        condition: service_started
+        condition: service_healthy
 
 volumes:
+  celerybeat:
   exports:
   hfcache:
   pgdata:
+  redisdata:
   ollama:

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Generate diggypaper's .env from .env.example.
 
-Auto-generates the secrets (JWT_SECRET, ANON_SALT, ENCRYPTION_KEY), asks for
-the key values (port, admin, SMTP), preserves the .env.example comments and
+Auto-generates the secrets (JWT_SECRET, ANON_SALT, ENCRYPTION_KEY, POSTGRES_PASSWORD,
+REDIS_PASSWORD), asks for the key values (port, public URL, trusted proxy, admin, SMTP), preserves the .env.example comments and
 writes .env with chmod 600. Refuses to overwrite an existing .env without
 --force.
 
@@ -30,6 +30,9 @@ def _gen_secrets() -> dict[str, str]:
         "JWT_SECRET": secrets.token_urlsafe(48),
         "ANON_SALT": secrets.token_urlsafe(32),
         "ENCRYPTION_KEY": secrets.token_hex(32),
+        # URL-safe: embedded as-is in DATABASE_URL / REDIS_URL by docker-compose.yml.
+        "POSTGRES_PASSWORD": secrets.token_urlsafe(32),
+        "REDIS_PASSWORD": secrets.token_urlsafe(32),
     }
 
 
@@ -47,7 +50,19 @@ def _interactive() -> dict[str, str]:
         port = _ask("Nginx port (integer)", "8080")
     vals["NGINX_PORT"] = port
 
-    vals["APP_BASE_URL"] = _ask("Public URL of the app", "http://localhost:8000")
+    vals["APP_BASE_URL"] = _ask(
+        "Public https URL of the app, as opened by users (e.g. https://diggypaper.example.org)",
+        f"http://localhost:{port}",
+    )
+    if not vals["APP_BASE_URL"].startswith("https://"):
+        print("  [WARN] Not https: e-mail links will be wrong in production, and with")
+        print("         COOKIE_SECURE=true (default) login only works over HTTPS.")
+
+    print("  Trusted proxy (TRUSTED_PROXY_CIDR), as seen from nginx:")
+    print("    172.16.0.0/12 = TLS reverse proxy on this host (arrives via the Docker gateway)")
+    print("    127.0.0.1     = nginx directly exposed, no proxy (X-Forwarded-* ignored)")
+    print("    or the proxy's IP/network if it runs on another machine")
+    vals["TRUSTED_PROXY_CIDR"] = _ask("Trusted proxy CIDR", "172.16.0.0/12")
     vals["ADMIN_EMAIL"] = _ask("Bootstrap admin email (empty = disabled)", "")
 
     gen = input("  Generate a random admin password? [Y/n]: ").strip().lower()
@@ -75,7 +90,8 @@ def _interactive() -> dict[str, str]:
 def _defaults() -> dict[str, str]:
     return {
         "NGINX_PORT": "8080",
-        "APP_BASE_URL": "http://localhost:8000",
+        "APP_BASE_URL": "http://localhost:8080",
+        "TRUSTED_PROXY_CIDR": "172.16.0.0/12",
         "ADMIN_EMAIL": "",
         "ADMIN_PASSWORD": secrets.token_urlsafe(12),
     }
@@ -121,7 +137,9 @@ def main() -> None:
     ENV.write_text("\n".join(out) + "\n")
     ENV.chmod(0o600)
     print(f"[OK] {ENV} created (chmod 600).")
-    print("  Generated secrets: JWT_SECRET, ANON_SALT, ENCRYPTION_KEY")
+    print("  Generated secrets: JWT_SECRET, ANON_SALT, ENCRYPTION_KEY, POSTGRES_PASSWORD, REDIS_PASSWORD")
+    if args.yes:
+        print("  APP_BASE_URL=http://localhost:8080: set the public https URL in .env for production")
     if args.yes:
         print("  ADMIN_PASSWORD: generated (stored in .env, chmod 600)")
 

@@ -35,10 +35,24 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
+# Clé fixe arbitraire : des réplicas backend concurrents s'attendent au lieu de jouer les
+# mêmes migrations en parallèle (verrou de session, relâché ci-dessous ou à la déconnexion).
+_MIGRATION_LOCK_KEY = 4_211_901_337
+
+
 def do_run_migrations(connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata)
-    with context.begin_transaction():
-        context.run_migrations()
+    locked = connection.dialect.name == "postgresql"
+    if locked:
+        connection.exec_driver_sql(f"SELECT pg_advisory_lock({_MIGRATION_LOCK_KEY})")
+        connection.commit()  # verrou de session : clôt la transaction implicite
+    try:
+        context.configure(connection=connection, target_metadata=target_metadata)
+        with context.begin_transaction():
+            context.run_migrations()
+    finally:
+        if locked:
+            connection.exec_driver_sql(f"SELECT pg_advisory_unlock({_MIGRATION_LOCK_KEY})")
+            connection.commit()
 
 
 async def run_async_migrations() -> None:
