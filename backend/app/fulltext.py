@@ -59,7 +59,9 @@ _HEADING = re.compile(
     r"^\s*(?:\d+(?:\.\d+)*\.?\s+|[IVX]+\.\s+)?"
     r"(abstract|introduction|background|materials?\s+and\s+methods?|methods?|"
     r"patients\s+and\s+methods|experimental\s+procedures|results?(?:\s+and\s+discussion)?|"
-    r"discussion|conclusions?|references|acknowledg\w+|bibliography)\s*:?\s*$",
+    # quantificateurs possessifs au suffixe : backtracking interdit sur les
+    # espaces (ReDoS quadratic sinon — code-scanning #8, vérifié empiriquement).
+    r"discussion|conclusions?|references|acknowledg\w+|bibliography)\s*+:?\s*+$",
     re.IGNORECASE,
 )
 _STOP = ("references", "bibliography", "acknowledg")

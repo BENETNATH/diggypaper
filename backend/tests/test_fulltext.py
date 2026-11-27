@@ -826,6 +826,19 @@ def test_text_to_sections_no_headings_single_section():
     assert "plain text" in secs[0]["text"]
 
 
+def test_text_to_sections_heading_regex_linear_on_pathological_line():
+    """ReDoS guard (#8) : 'method' + 10^5 espaces + 1 char ne doit pas bloquer."""
+    import time
+
+    from app.fulltext import text_to_sections
+
+    lines = ["method" + " " * 100_000 + "x", "Results", "Fast enough."]
+    t0 = time.perf_counter()
+    secs = text_to_sections(lines)
+    assert time.perf_counter() - t0 < 1.0
+    assert [s["kind"] for s in secs] == ["other", "results"]
+
+
 def test_text_to_sections_stops_at_bibliography():
     from app.fulltext import text_to_sections
 

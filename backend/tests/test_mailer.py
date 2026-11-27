@@ -147,7 +147,7 @@ def _tls_handshake_error(
     server_pem: Path, server_key_pem: Path, client_ctx: ssl.SSLContext
 ) -> ssl.SSLError | None:
     """Erreur côté client, ou None si le handshake (incluant hostname) a réussi."""
-    server_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    server_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER, minimum_version=ssl.TLSVersion.TLSv1_2)
     server_ctx.load_cert_chain(certfile=str(server_pem), keyfile=str(server_key_pem))
     listener = socket.socket()
     listener.bind(("127.0.0.1", 0))

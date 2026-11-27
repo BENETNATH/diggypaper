@@ -25,6 +25,7 @@ def build_ssl_context(ca_bundle: str | None) -> ssl.SSLContext:
     ``ValueError`` (config), jamais ignoré.
     """
     context = ssl.create_default_context()
+    context.minimum_version = ssl.TLSVersion.TLSv1_2  # défaut historique : TLSv1
     if ca_bundle:
         if not Path(ca_bundle).is_file():
             raise ValueError(f"SMTP_CA_BUNDLE not found: {ca_bundle!r}")
