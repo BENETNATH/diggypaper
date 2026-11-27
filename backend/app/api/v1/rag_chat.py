@@ -192,6 +192,11 @@ async def chat(
         for s in included
     ]
 
+    user_id = user.id
+    # The stream needs no DB: end the transaction now so the pooled
+    # connection is released (not held for the whole, possibly slow, SSE).
+    await db.commit()
+
     async def generate():
         parts: list[str] = []
         try:
@@ -217,12 +222,16 @@ async def chat(
             yield _sse("citations", [c for c in citations if c["n"] in cited])
         yield _sse("done", {"full_text": text, "model": payload.model, "n_citations": len(cited)})
         logger.info(
-            "rag-chat: user=%s project=%s model=%s q=%r citations=%d",
-            user.id,
+            "rag-chat: user=%s project=%s model=%s q_len=%d citations=%d",
+            user_id,
             project_id,
             payload.model,
-            payload.question[:80],
+            len(payload.question),
             len(cited),
         )
 
-    return StreamingResponse(generate(), media_type="text/event-stream")
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
+    )

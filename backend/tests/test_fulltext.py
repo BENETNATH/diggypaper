@@ -75,12 +75,14 @@ def make_pdf_npages(n: int, lines: list[str] | None = None) -> bytes:
 
 
 def test_pdf_page_count_counts_pages():
-    """spec 2026-11-06-ux-refonte-v4 R2: the page count drives the OCR time estimate."""
-    from app.fulltext import pdf_page_count
+    """spec 2026-11-06-ux-refonte-v4 R2: the page count drives the OCR time estimate;
+    capped at MAX_PDF_PAGES (the pages the OCR processes), one reader for both."""
+    from app.fulltext import MAX_PDF_PAGES, pdf_sections_and_pages
 
-    assert pdf_page_count(make_pdf(["hello"])) == 1
-    assert pdf_page_count(make_pdf_npages(3)) == 3
-    assert pdf_page_count(make_pdf_npages(47)) == 47
+    assert pdf_sections_and_pages(make_pdf(["hello"]))[1] == 1
+    assert pdf_sections_and_pages(make_pdf_npages(3))[1] == 3
+    assert pdf_sections_and_pages(make_pdf_npages(47))[1] == 47
+    assert pdf_sections_and_pages(make_pdf_npages(MAX_PDF_PAGES + 5))[1] == MAX_PDF_PAGES
 
 
 def test_pdf_to_sections_splits_imrad_and_stops_at_references():

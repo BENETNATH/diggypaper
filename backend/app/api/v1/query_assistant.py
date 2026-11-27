@@ -86,12 +86,12 @@ async def assist(project_id: uuid.UUID, payload: AssistRequest, db: DbDep, user:
     if not isinstance(answer, dict):
         raise HTTPException(status_code=502, detail="model_error:invalid_json")
     logger.info(
-        "query-assistant: user=%s project=%s model=%s source=%s msg=%r",
+        "query-assistant: user=%s project=%s model=%s source=%s msg_len=%d",
         user.id,
         project_id,
         payload.model,
         payload.source,
-        payload.messages[-1].content[:80],
+        len(payload.messages[-1].content),
     )
     result = qa.constrain(answer, payload.source) | {"check": None}
     if result["query"]:

@@ -100,11 +100,12 @@ def text_to_sections(lines: list[str]) -> list[dict]:
     return sections
 
 
-def pdf_to_sections(data: bytes) -> list[dict]:
-    """PDF text → [{title, kind, text}] split at the usual headings (IMRaD)."""
+def pdf_to_sections(data) -> list[dict]:
+    """PDF text (bytes or an open PdfReader) → [{title, kind, text}] split at the
+    usual headings (IMRaD)."""
     from pypdf import PdfReader
 
-    reader = PdfReader(io.BytesIO(data))
+    reader = PdfReader(io.BytesIO(data)) if isinstance(data, bytes) else data
     lines: list[str] = []
     for page in reader.pages[:MAX_PDF_PAGES]:
         # NUL is forbidden in Postgres JSONB ("unsupported Unicode escape sequence")
@@ -112,11 +113,14 @@ def pdf_to_sections(data: bytes) -> list[dict]:
     return text_to_sections(lines)
 
 
-def pdf_page_count(data: bytes) -> int:
-    """Number of pages of a PDF (spec 2026-11-06-ux-refonte-v4 R2: OCR estimate)."""
+def pdf_sections_and_pages(data: bytes) -> tuple[list[dict], int]:
+    """(sections, page count) from ONE PdfReader: the page tree is parsed once, not
+    twice. The count (spec 2026-11-06-ux-refonte-v4 R2: OCR estimate) is capped at
+    MAX_PDF_PAGES, the number of pages the OCR actually processes."""
     from pypdf import PdfReader
 
-    return len(PdfReader(io.BytesIO(data)).pages)
+    reader = PdfReader(io.BytesIO(data))
+    return pdf_to_sections(reader), min(len(reader.pages), MAX_PDF_PAGES)
 
 
 async def _get_json(http: httpx.AsyncClient, url: str, params: dict | None = None) -> dict | None:

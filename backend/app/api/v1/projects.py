@@ -8,6 +8,7 @@ PubMed query, the status and the result/error are kept there (MODULE 6,
 reproducibility). No in-memory dict, no blocking ``AsyncResult`` call.
 """
 
+import asyncio
 import json
 import logging
 import uuid
@@ -24,7 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user, get_db
 from app.api.v1.auth import _rate_limit_dependency
 from app.article_text import DEFAULT_KINDS, KINDS
-from app.celery_app import celery_app
+from app.celery_app import _release_projects, celery_app
 from app.cleanup import delete_projects
 from app.core.config import get_settings
 from app.db.models import (
@@ -394,24 +395,31 @@ async def list_projects(db: DbDep, user: UserDep) -> dict:
     # Member counts per project: ONE GROUP BY over project_members (no N+1),
     # spec 2026-11-20-projets-quick-actions R5 (the « Partagé » chip needs it).
     member_counts: dict[uuid.UUID, int] = {}
+    article_counts: dict[uuid.UUID, int] = {}
     if projects:
+        ids = [p.id for p in projects]
         counts = (
             await db.execute(
                 select(ProjectMember.project_id, func.count())
-                .where(ProjectMember.project_id.in_([p.id for p in projects]))
+                .where(ProjectMember.project_id.in_(ids))
                 .group_by(ProjectMember.project_id)
             )
         ).all()
         member_counts = dict(counts)
+        # Same for the article counts (was one COUNT(*) per project).
+        article_counts = dict(
+            (
+                await db.execute(
+                    select(Article.project_id, func.count())
+                    .where(Article.project_id.in_(ids))
+                    .group_by(Article.project_id)
+                )
+            ).all()
+        )
 
     items = []
     for project in projects:
-        article_count = (
-            await db.execute(
-                select(func.count()).select_from(Article).where(Article.project_id == project.id)
-            )
-        ).scalar_one()
-        payload = _project_payload(project, article_count=article_count)
+        payload = _project_payload(project, article_count=article_counts.get(project.id, 0))
         role = member_roles.get(project.id)
         payload["role_in_project"] = role.value if role is not None else None
         payload["member_count"] = member_counts.get(project.id, 0)
@@ -663,6 +671,50 @@ async def complete_fulltext(project_id: uuid.UUID, db: DbDep, user: UserDep) -> 
     await _require_no_active_job(db, project.id)
     job = complete_fulltext_task.delay(str(project.id), user_id=str(user.id))
     return {"job_id": job.id, "status": "PENDING"}
+
+
+IMPORT_CANCELLED = "cancelled"  # job.error of a manually stopped import (status FAILED)
+
+
+@router.post("/{project_id}/import/cancel")
+async def cancel_import(project_id: uuid.UUID, db: DbDep, user: UserDep) -> dict:
+    """Stops the import (or full-text search) in progress: job FAILED « cancelled »,
+    Celery task revoked, project back to FROZEN/DRAFT (same rule as the worker
+    restart recovery, ``celery_app._release_projects``). Articles already imported
+    are kept (a re-import deduplicates)."""
+    project = await _require_project_member(db, project_id, user)
+    await _require_lead_or_admin(db, project_id, user)
+    jobs = (
+        (
+            await db.execute(
+                select(ImportJob).where(
+                    ImportJob.project_id == project_id,
+                    ImportJob.status.in_([ImportJobStatus.PENDING, ImportJobStatus.RUNNING]),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if not jobs:
+        raise HTTPException(status_code=409, detail="no import in progress")
+    now = datetime.now(UTC)
+    for job in jobs:
+        job.status = ImportJobStatus.FAILED
+        job.error = IMPORT_CANCELLED
+        job.completed_at = now
+    await db.flush()
+    await _release_projects(db, [project_id])
+    await db.commit()
+    await db.refresh(project)
+    for job in jobs:
+        if not job.job_id:
+            continue
+        try:  # sync broker publish: off the event loop; best effort (job already FAILED)
+            await asyncio.to_thread(celery_app.control.revoke, job.job_id, terminate=True)
+        except Exception:  # noqa: BLE001
+            logger.warning("import cancel: revoke failed for task %s", job.job_id, exc_info=True)
+    return {"cancelled": len(jobs), "status": project.status.value}
 
 
 @router.post(

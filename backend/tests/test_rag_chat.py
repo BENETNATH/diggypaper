@@ -563,6 +563,25 @@ async def test_chat_happy_path_sse(client, session, researcher_user, do_login, m
     assert all("title" in c and "excerpt" in c and "article_id" in c for c in citations)
 
 
+async def test_chat_sse_headers_no_proxy_buffering(
+    client, session, researcher_user, do_login, monkeypatch
+):
+    """Audit prod: nginx must not buffer the SSE (tokens arrive live)."""
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project_id = await _chat_project(session, researcher_user)
+
+    async def fake_stream(self, model, messages):
+        yield "ok [1]"
+
+    monkeypatch.setattr(OpenAICompatibleService, "chat_stream", fake_stream)
+    body = {"question": "Quoi ?", "model": "Kev-4B"}
+    async with client.stream("POST", f"/api/v1/projects/{project_id}/chat", json=body) as resp:
+        assert resp.status_code == 200
+        assert resp.headers["x-accel-buffering"] == "no"
+        assert resp.headers["cache-control"] == "no-cache"
+        _ = [line async for line in resp.aiter_lines()]
+
+
 async def test_chat_stream_limit_sse_error_no_done(
     client, session, researcher_user, do_login, monkeypatch
 ):

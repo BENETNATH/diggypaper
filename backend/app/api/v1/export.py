@@ -24,7 +24,7 @@ from sqlalchemy import false, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import crate, prisma, references
-from app.api.deps import get_current_user, get_db
+from app.api.deps import get_current_user, get_db, rate_limit_user
 from app.api.v1.projects import (
     STATUS_PATTERN,
     _require_lead_or_admin,
@@ -382,6 +382,7 @@ _LOCAL = struct.Struct("<4sHHHHHIIIHH")
 _CENTRAL = struct.Struct("<4sHHHHHHIIIHHHHHII")
 _END = struct.Struct("<4sHHHHIIH")
 _DOS_TIME = (0, 0x0021)  # 1980-01-01 00:00:00, epoch du ZIP
+_ZIP32_MAX = 0xFFFFFFFF  # sans ZIP64 : offsets et tailles sur 32 bits
 
 
 def _zip_member(name: str, data: bytes, offset: int) -> tuple[bytes, bytes]:
@@ -415,19 +416,25 @@ def _zip_member(name: str, data: bytes, offset: int) -> tuple[bytes, bytes]:
     return head + nb + data, central
 
 
-@router.get("/{project_id}/export/pdfs")
+@router.get(
+    "/{project_id}/export/pdfs",
+    dependencies=[Depends(rate_limit_user("export_pdfs", 10))],
+)
 async def export_pdfs(
     project_id: uuid.UUID, db: DbDep, user: UserDep, search: uuid.UUID | None = None
 ) -> Response:
     """ZIP des PDF conservés du lot, nommés comme le RO-Crate ; streaming paresseux
-    (un membre par article, rien n'est bufferisé en bloc). Zéro PDF → 404."""
+    (un PDF chargé à la fois, rien n'est bufferisé en bloc). Zéro PDF → 404."""
     project = await _require_project_member(db, project_id, user)
     scope = await get_search(db, project, search)
     where = lot_condition(scope)
     articles = (
         (
             await db.execute(
-                select(Article).join(ArticleFile, ArticleFile.article_id == Article.id).where(where)
+                select(Article)
+                .join(ArticleFile, ArticleFile.article_id == Article.id)
+                .where(where)
+                .order_by(Article.created_at, Article.id)
             )
         )
         .scalars()
@@ -437,31 +444,33 @@ async def export_pdfs(
         raise HTTPException(status_code=404, detail="no_pdf")
     taken: set[str] = set()
     names = {a.id: references.pdf_filename(a, taken) for a in articles}
+    # Pas de ZIP64 : offsets/tailles sur 32 bits et 65 535 membres au plus.
+    data_size = await db.scalar(
+        select(func.sum(func.length(ArticleFile.data)))
+        .join(Article, ArticleFile.article_id == Article.id)
+        .where(where)
+    )
+    zip_size = (
+        (data_size or 0)
+        + sum(_LOCAL.size + _CENTRAL.size + 2 * len(n.encode()) for n in names.values())
+        + _END.size
+    )
+    if len(names) > 0xFFFF or zip_size > _ZIP32_MAX:
+        raise HTTPException(status_code=413, detail="zip_too_large")
 
     async def stream():
         centrals: list[bytes] = []
         offset = 0
-        result = await db.execute(
-            select(Article.id, ArticleFile.data)
-            .join(ArticleFile, ArticleFile.article_id == Article.id)
-            .where(where)
-            .order_by(Article.created_at, Article.id)
-        )
-
-        def member(aid, data) -> bytes:
-            nonlocal offset
-            block, central = _zip_member(names[aid], data, offset)
+        # Une requête par PDF : un SELECT global serait prébufferisé en entier
+        # par la session async (tous les PDF du lot en RAM).
+        for aid, name in names.items():
+            data = await db.scalar(select(ArticleFile.data).where(ArticleFile.article_id == aid))
+            if data is None:  # supprimé pendant le flux
+                continue
+            block, central = _zip_member(name, data, offset)
             centrals.append(central)
             offset += len(block)
-            return block
-
-        # asyncpg : itération asynchrone ; aiosqlite (tests) : chunks synchrones
-        if hasattr(result, "__aiter__"):
-            async for aid, data in result:
-                yield member(aid, data)
-        else:
-            for aid, data in result:
-                yield member(aid, data)
+            yield block
         cd = b"".join(centrals)
         yield cd + _END.pack(b"PK\x05\x06", 0, 0, len(centrals), len(centrals), len(cd), offset, 0)
 
@@ -747,7 +756,11 @@ async def _latest_export(db: AsyncSession, project_id: uuid.UUID, search=None) -
     )
 
 
-@router.post("/{project_id}/export/crate", status_code=202)
+@router.post(
+    "/{project_id}/export/crate",
+    status_code=202,
+    dependencies=[Depends(rate_limit_user("export_crate", 10))],
+)
 async def start_crate_export(
     project_id: uuid.UUID, db: DbDep, user: UserDep, search: uuid.UUID | None = None
 ) -> dict:

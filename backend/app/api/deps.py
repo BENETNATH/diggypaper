@@ -104,14 +104,16 @@ async def get_current_user_or_anonymized(
 
 
 def get_client_ip(request: Request) -> str:
-    """Client IP (F7/F8, spec \u00a77): first IP of X-Forwarded-For if present (set by
-    nginx), else request.client.host. In prod, nginx must set X-Forwarded-For
-    reliably (the 1st hop is trusted)."""
+    """Client IP (F7/F8, spec \u00a77): LAST IP of X-Forwarded-For if present, else
+    request.client.host. The last entry is the one appended by the nearest proxy
+    (nginx, which overwrites the header with $remote_addr); the first is
+    client-controlled whenever a proxy appends, so trusting it lets anyone rotate
+    the rate-limit key."""
     xff = request.headers.get("x-forwarded-for")
     if xff:
-        first = xff.split(",")[0].strip()
-        if first:
-            return first
+        last = xff.split(",")[-1].strip()
+        if last:
+            return last
     if request.client is not None:
         return request.client.host
     return "unknown"

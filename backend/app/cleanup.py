@@ -37,6 +37,11 @@ async def delete_user(db: AsyncSession, user: User) -> None:
         .values(user_id=None, annotator_hash=anon)
     )
     await db.execute(delete(Invitation).where(func.lower(Invitation.email) == user.email.lower()))
+    # Pending invitations it issued: its authority goes with the account (before the
+    # delete — the FK SET NULL would lose invited_by).
+    await db.execute(
+        delete(Invitation).where(Invitation.invited_by == user.id, Invitation.accepted_at.is_(None))
+    )
     await db.delete(user)
 
 

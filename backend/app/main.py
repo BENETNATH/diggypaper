@@ -1,11 +1,18 @@
 """App factory : middleware (CORS, i18n) + router v1 (prefix /api/v1)."""
 
+import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
+from typing import Annotated
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.deps import get_db
 from app.api.v1 import (
     admin,
     admin_users,
@@ -56,7 +63,23 @@ async def lifespan(app: FastAPI):
     yield
 
 
+async def _redis_ping(url: str) -> None:
+    from redis import asyncio as redis_asyncio
+
+    r = redis_asyncio.from_url(url, socket_connect_timeout=2, socket_timeout=2)
+    try:
+        await r.ping()
+    finally:
+        await r.aclose()
+
+
 def create_app() -> FastAPI:
+    # app.* loggers have no handler under uvicorn (it only configures its own):
+    # root handler once. No-op if one exists already (pytest caplog, re-entry).
+    logging.basicConfig(
+        level=os.environ.get("LOG_LEVEL", "INFO"),
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+    )
     settings = get_settings()
     # F5: fail-fast on the dev default secrets (JWT_SECRET / ANON_SALT).
     validate_settings(settings)
@@ -100,8 +123,17 @@ def create_app() -> FastAPI:
     app.include_router(semantic_search.router, prefix="/api/v1")
 
     @app.get("/api/v1/health", include_in_schema=False)
-    async def health() -> dict:
-        return {"status": "ok"}
+    async def health(db: Annotated[AsyncSession, Depends(get_db)]) -> JSONResponse:
+        """Liveness + dependencies (DB, Redis if configured): 503 if one is down."""
+        try:
+            async with asyncio.timeout(3):
+                await db.execute(text("SELECT 1"))
+                if url := os.environ.get("REDIS_URL"):
+                    await _redis_ping(url)
+        except Exception:  # noqa: BLE001 - any failure = unhealthy
+            logger.warning("health check failed", exc_info=True)
+            return JSONResponse({"status": "unavailable"}, status_code=503)
+        return JSONResponse({"status": "ok"})
 
     @app.get("/api/v1/version", include_in_schema=False)
     async def version() -> dict:
@@ -109,7 +141,7 @@ def create_app() -> FastAPI:
         return {"version": app_version()}
 
     @app.get("/api/v1/ci-status", include_in_schema=False)
-    async def ci_status() -> dict:
+    def ci_status() -> dict:  # sync: ci_state does blocking HTTP → threadpool
         """CI state of the running commit (green/red/unknown) — public, shown in the footer.
 
         Uses the build-time COMMIT_SHA (unknown in dev); the public GitHub API is

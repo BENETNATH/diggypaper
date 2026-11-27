@@ -11,14 +11,14 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, EmailStr
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db, rate_limit_user
 from app.api.v1.projects import _require_project_member
 from app.cleanup import purge_orphans
 from app.core.config import get_settings
-from app.db.models import Project, ProjectMember, ProjectMemberRole, User, UserRole
+from app.db.models import Invitation, Project, ProjectMember, ProjectMemberRole, User, UserRole
 from app.emails import mailer_from_db
 from app.i18n import default_lang, t
 from app.invitations import render_invitation, upsert_invitation
@@ -148,6 +148,14 @@ async def remove_member(
         if leads <= 1:
             raise HTTPException(status_code=409, detail="cannot remove the last lead")
     await db.delete(member)
+    # Its pending invitations to this project lose their authority with it.
+    await db.execute(
+        delete(Invitation).where(
+            Invitation.project_id == project_id,
+            Invitation.invited_by == user_id,
+            Invitation.accepted_at.is_(None),
+        )
+    )
     await db.flush()
     await purge_orphans(db, [user_id])  # no more project: the account disappears
     await db.commit()

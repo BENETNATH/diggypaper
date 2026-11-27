@@ -129,12 +129,13 @@ def _require_owner_or_admin(m: ModelRegistry, user: User) -> None:
         raise HTTPException(status_code=403, detail="not allowed")
 
 
-def _check_url(url: str, user: User) -> None:
-    """A non-admin cannot point the server at the internal network."""
+async def _check_url(url: str, user: User) -> None:
+    """A non-admin cannot point the server at the internal network (blocking DNS
+    resolution: off the event loop)."""
     if user.role == UserRole.ADMIN:
         return
     try:
-        check_public_url(url)
+        await asyncio.to_thread(check_public_url, url)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from None
 
@@ -412,7 +413,7 @@ async def list_external(payload: ExternalModelList, user: UserDep) -> dict:
     public URL for non-admins, sanitized errors).
     """
     _check_url_secrets(payload.base_url)
-    _check_url(payload.base_url, user)
+    await _check_url(payload.base_url, user)
     svc = OpenAICompatibleService(
         payload.base_url, payload.api_key, timeout=30, public_only=user.role != UserRole.ADMIN
     )
@@ -429,9 +430,14 @@ async def test_external(payload: ExternalModel, user: UserDep) -> dict:
     _check_url_secrets(payload.base_url)
     if "#" in payload.model:
         raise HTTPException(status_code=422, detail="model must not contain '#'")
-    _check_url(payload.base_url, user)
+    await _check_url(payload.base_url, user)
+    # attempts=1: a dead model must fail the test button fast (no retry backoff).
     svc = OpenAICompatibleService(
-        payload.base_url, payload.api_key, timeout=30, public_only=user.role != UserRole.ADMIN
+        payload.base_url,
+        payload.api_key,
+        timeout=30,
+        attempts=1,
+        public_only=user.role != UserRole.ADMIN,
     )
     try:
         await svc.infer(payload.model, 'Reply with the JSON {"ok": true}.', "ping")
@@ -440,13 +446,17 @@ async def test_external(payload: ExternalModel, user: UserDep) -> dict:
     return {"ok": True}
 
 
-@router.post("/external", status_code=201)
+@router.post(
+    "/external",
+    status_code=201,
+    dependencies=[Depends(rate_limit_user("model_register", 10))],
+)
 async def register_external(payload: ExternalModel, db: DbDep, user: UserDep) -> dict:
     """External model: owned by its creator (an admin creates a platform model)."""
     _check_url_secrets(payload.base_url)
     if "#" in payload.model:
         raise HTTPException(status_code=422, detail="model must not contain '#'")
-    _check_url(payload.base_url, user)
+    await _check_url(payload.base_url, user)
     name = payload.name.strip()
     if not name:
         raise HTTPException(status_code=422, detail="model name is required")

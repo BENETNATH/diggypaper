@@ -8,14 +8,15 @@ reference sections that exist in the project.
 
 from __future__ import annotations
 
+import asyncio
 import math
 import re
 import uuid
 from collections import Counter
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import aliased
+from sqlalchemy.orm import aliased, load_only
 
 from app import embeddings
 from app.db.models import Article, ArticlePrediction, Search, SectionEmbedding
@@ -65,6 +66,16 @@ async def _project_sections(db: AsyncSession, project_id: uuid.UUID) -> list[dic
         (
             await db.execute(
                 select(Article)
+                .options(
+                    load_only(
+                        Article.id,
+                        Article.title,
+                        Article.pmid,
+                        Article.doi,
+                        Article.sections,
+                        Article.abstract,
+                    )
+                )
                 .where(Article.project_id == project_id)
                 .order_by(Article.created_at, Article.id)
             )
@@ -118,6 +129,12 @@ async def _dense_topk(
         if search_id is not None:
             where.append(SectionEmbedding.search_id == search_id)
         distance = SectionEmbedding.embedding.cosine_distance(q_vec)
+        # The HNSW index is global and the project filter applies after the
+        # index scan: with the default ef_search (40) a small project could
+        # get few/no candidates. Iterative scan (pgvector >= 0.8) keeps
+        # scanning until the filtered LIMIT is filled; relaxed order → the
+        # rows are re-sorted below.
+        await db.execute(text("SET LOCAL hnsw.iterative_scan = relaxed_order"))
         rows = (
             await db.execute(
                 select(SectionEmbedding, distance)
@@ -138,6 +155,7 @@ async def _dense_topk(
                 continue
             seen.add(key)
             out.append((se.article_id, se.section_index, 1.0 - float(dist)))
+        out.sort(key=lambda x: x[2], reverse=True)
         return out
     if sections is None:
         sections = await _project_sections(db, project_id)
@@ -189,6 +207,11 @@ def _lexical_rank(sections: list[dict], query_tokens: list[str]) -> list[tuple[u
             scored.append((key, score))
     scored.sort(key=lambda x: x[1], reverse=True)
     return [key for key, _ in scored]
+
+
+def _embed_query(model: str | None, query: str) -> list[float]:
+    """Query vector (sync: the first call loads the torch model)."""
+    return embeddings.get_embedder(model).embed(query)
 
 
 def _rrf(rankings: list[list[tuple[uuid.UUID, int]]]) -> dict[tuple[uuid.UUID, int], float]:
@@ -320,10 +343,11 @@ async def semantic_search(
         if not sections or not query_tokens:
             return {"results": [], "indexed": indexed}
         model = await _stored_embedding_model(db, project_id, search.id)
-        q_vec = embeddings.get_embedder(model).embed(query)
+        # Model load + encode and BM25 are CPU-bound: off the event loop.
+        q_vec = await asyncio.to_thread(_embed_query, model, query)
         k = min(limit * _CANDIDATE_FACTOR, MAX_LIMIT)
         dense = await _dense_topk(db, project_id, q_vec, k, search_id=search.id, sections=sections)
-        lexical = _lexical_rank(sections, query_tokens)
+        lexical = await asyncio.to_thread(_lexical_rank, sections, query_tokens)
         fused = _rrf([[(a, i) for a, i, _ in dense], lexical])
         results = []
         by_key = {(s["article"].id, s["index"]): s for s in sections}
@@ -370,10 +394,11 @@ async def semantic_search(
     if not sections or not query_tokens:
         return {"results": [], "indexed": indexed}
 
-    q_vec = embeddings.get_embedder(await _stored_embedding_model(db, project_id)).embed(query)
+    model = await _stored_embedding_model(db, project_id)
+    q_vec = await asyncio.to_thread(_embed_query, model, query)
     k = min(limit * _CANDIDATE_FACTOR, MAX_LIMIT)
     dense = await _dense_topk(db, project_id, q_vec, k, article_ids)
-    lexical = _lexical_rank(sections, query_tokens)
+    lexical = await asyncio.to_thread(_lexical_rank, sections, query_tokens)
     fused = _rrf([[(a, i) for a, i, _ in dense], lexical])
 
     by_key = {(s["article"].id, s["index"]): s for s in sections}

@@ -30,8 +30,7 @@ UserDep = Annotated[User, Depends(get_current_user)]
 async def _upload_document(request: Request, db: AsyncSession, user: User, project_id: uuid.UUID):
     from app.fulltext import (
         MAX_PDF_BYTES,
-        pdf_page_count,
-        pdf_to_sections,
+        pdf_sections_and_pages,
         text_to_sections,
     )
 
@@ -54,8 +53,7 @@ async def _upload_document(request: Request, db: AsyncSession, user: User, proje
         if not data.startswith(b"%PDF"):
             raise HTTPException(status_code=422, detail="not a valid PDF (missing magic)")
         try:
-            sections = await asyncio.to_thread(pdf_to_sections, data)
-            page_count = await asyncio.to_thread(pdf_page_count, data)
+            sections, page_count = await asyncio.to_thread(pdf_sections_and_pages, data)
         except Exception:
             raise HTTPException(status_code=422, detail="unreadable PDF") from None
     else:  # txt

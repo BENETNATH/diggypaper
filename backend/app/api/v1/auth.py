@@ -157,6 +157,19 @@ async def _commit_user(db: AsyncSession) -> None:
         raise HTTPException(status_code=409, detail="User already exists") from None
 
 
+async def _inviter_still_lead(db: AsyncSession, invitation: Invitation | None) -> bool:
+    """True if the project invitation's sender is still an active admin or LEAD of it."""
+    if invitation is None or invitation.invited_by is None or invitation.project_id is None:
+        return False
+    inviter = await db.get(User, invitation.invited_by)
+    if inviter is None or inviter.is_active is False or inviter.anonymized_hash is not None:
+        return False
+    if inviter.role == UserRole.ADMIN:
+        return True
+    member = await db.get(ProjectMember, (invitation.project_id, inviter.id))
+    return member is not None and member.role_in_project == ProjectMemberRole.LEAD
+
+
 @router.post(
     "/register",
     status_code=201,
@@ -181,6 +194,10 @@ async def register(
             invitation = None
         if invitation is None:
             raise HTTPException(status_code=401, detail="Invalid or expired invitation token")
+    if claims.get("project_id") and not await _inviter_still_lead(db, invitation):
+        # The inviter's authority is re-checked now, not frozen in the 7-day JWT:
+        # removed / demoted / deleted since → the link is as dead as a revoked one.
+        raise HTTPException(status_code=401, detail="Invalid or expired invitation token")
     existing = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
     if existing is not None:
         raise HTTPException(status_code=409, detail="User already exists")
