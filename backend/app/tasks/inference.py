@@ -628,6 +628,10 @@ async def _do_inference(
         status = (
             await session.execute(select(InferenceJob.status).where(InferenceJob.id == job.id))
         ).scalar_one_or_none()
+        # Ends the read transaction: otherwise it stays "idle in transaction" during the
+        # model call (blocks a migration's ALTER TABLE). Nothing pending here (each article
+        # ends with a commit) and expire_on_commit=False keeps the loaded objects usable.
+        await session.commit()
         return status == InferenceJobStatus.FAILED
 
     for article in articles:

@@ -1,7 +1,7 @@
 """Background RO-Crate export: zip written to EXPORT_DIR, email at the end.
 
 Same schema as inference: sync Celery wrapper → thread + ``asyncio.run``. Zips
-older than 7 days are purged at each new export.
+older than 7 days are purged at each new export and by the periodic maintenance.
 """
 
 import asyncio

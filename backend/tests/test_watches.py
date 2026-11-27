@@ -1221,3 +1221,103 @@ async def test_real_launcher_persists_job_link(session, watch_project, monkeypat
     await session.refresh(w)
     assert str(w.inference_job_id) == res["job_id"]
     assert delays == [res["job_id"]]
+
+
+# --- Audit fixes (worker side) ----------------------------------------------
+
+
+def _watch(project, search, query="q"):
+    return Watch(
+        project_id=project.id,
+        search_id=search.id,
+        source="pubmed",
+        query=query,
+        created_by=search.created_by,
+    )
+
+
+async def test_pass_reads_the_real_source_key_setting(session, watch_project, monkeypatch):
+    """The API key comes from the source's real setting (ncbi_api_key / openalex_api_key)."""
+    from app.tasks import ADAPTERS
+
+    project, search, _ = watch_project
+    w = _watch(project, search)
+    session.add(w)
+    await session.commit()
+    asked, built = [], []
+
+    async def fake_get_setting(db, key, *a, **kw):
+        asked.append(key)
+        return "K"
+
+    def factory(client, api_key):
+        built.append(api_key)
+        return FakeAdapter([])
+
+    monkeypatch.setattr("app.settings.service.get_setting", fake_get_setting)
+    monkeypatch.setitem(ADAPTERS, "pubmed", factory)
+    await run_watch_pass(session, w, launch_inference=FakeLauncher())
+    assert asked == ["ncbi_api_key"] and built == ["K"]
+
+
+def test_watch_task_runs_on_the_ingest_queue():
+    from app.tasks import INGEST_QUEUE
+    from app.tasks.watch import watch_task
+
+    assert watch_task.queue == INGEST_QUEUE
+
+
+async def test_run_all_one_session_per_watch(engine, session, watch_project, monkeypatch):
+    """A pass that fails on a DB error neither poisons nor commits into the next one."""
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+    from app.tasks.watch import _run_all
+
+    project, search, _ = watch_project
+    w1, w2 = _watch(project, search, query="one"), _watch(project, search, query="two")
+    session.add_all([w1, w2])
+    await session.commit()
+    first, second = sorted([w1.id, w2.id])
+    ran = []
+
+    async def fake_pass(db, w):
+        ran.append(w.id)
+        w.query = "changed"
+        if w.id == first:
+            db.add(Article(project_id=uuid.uuid4(), title="x"))  # FK violation
+            await db.flush()
+        await db.commit()
+
+    monkeypatch.setattr("app.tasks.watch.run_watch_pass", fake_pass)
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    assert await _run_all(factory) == {"watches": 1, "errors": 1}
+    assert ran == [first, second]
+    original = {w1.id: "one", w2.id: "two"}
+    async with factory() as s:
+        assert (await s.get(Watch, first)).query == original[first]  # rolled back
+        assert (await s.get(Watch, second)).query == "changed"
+
+
+async def test_pass_dying_after_import_retries_its_articles(session, watch_project):
+    """Per-article commits: articles imported by a pass that died before the analysis
+    launch are analyzed by the next pass (not skipped as already present)."""
+    project, search, _ = watch_project
+    w = _watch(project, search)
+    session.add(w)
+    await session.commit()
+
+    async def broken_launcher(*a, **kw):
+        raise RuntimeError("broker down")
+
+    with pytest.raises(RuntimeError):
+        await run_watch_pass(
+            session, w, adapter=FakeAdapter(["1", "2"]), launch_inference=broken_launcher
+        )
+    n = (await session.execute(select(Article).where(Article.project_id == project.id))).all()
+    assert len(n) == 2  # committed per article
+    launcher = FakeLauncher()
+    res = await run_watch_pass(
+        session, w, adapter=FakeAdapter(["1", "2"]), launch_inference=launcher
+    )
+    assert res["imported"] == 2 and len(launcher.calls[0][1]) == 2
+    assert "pending" not in w.last_matched

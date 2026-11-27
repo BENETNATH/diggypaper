@@ -26,7 +26,7 @@ from app.db.models import (
 from app.inference import clean_meta
 from app.schema import project_fields
 from app.searches import definition_hash, ensure_default_search
-from app.tasks import _make_session_factory, _session_factory_override
+from app.tasks import _already_ran, _make_session_factory, _session_factory_override
 
 logger = logging.getLogger(__name__)
 _BATCH = 25
@@ -69,6 +69,8 @@ async def _import_crate(
         engine, session_factory = _make_session_factory()
     try:
         async with session_factory() as session:
+            if await _already_ran(session, job_id):
+                return {}  # redelivered: never re-run (the zip is removed in finally)
             project = await session.get(Project, uuid.UUID(project_id))
             if project is None:
                 raise LookupError(f"project not found: {project_id}")

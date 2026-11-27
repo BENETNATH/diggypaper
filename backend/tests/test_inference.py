@@ -13,6 +13,16 @@ from app.inference import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _no_retry_sleep(monkeypatch):
+    """infer retries transient errors with a backoff: no real sleep in tests."""
+
+    async def _instant(_seconds):
+        return None
+
+    monkeypatch.setattr("app.inference._sleep", _instant)
+
+
 def _llm_handler(content: str, status: int = 200):
     """MockTransport: returns a /chat/completions response with `content`."""
 

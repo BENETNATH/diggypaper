@@ -52,6 +52,24 @@ async def _throttle(model_key: str) -> None:
         await asyncio.sleep(wait)
 
 
+#: Transient failures retried by ``infer`` (timeout, connection, 429/5xx): one blip
+#: must not fail a multi-hour job. Same policy as ``app.pubmed`` (Retry-After honored).
+_ATTEMPTS = 3
+_RETRY_STATUS = frozenset({429, 500, 502, 503, 504})
+_RETRY_BACKOFF_SECONDS = 2.0  # 2 s then 4 s
+_RETRY_AFTER_MAX = 60.0  # a worker does not sleep an hour over a header
+
+#: Mocked in tests (no real sleep).
+_sleep = asyncio.sleep
+
+
+def _retry_wait(attempt: int, resp: httpx.Response | None = None) -> float:
+    after = resp.headers.get("Retry-After", "") if resp is not None else ""
+    if after.isdigit():
+        return min(float(after), _RETRY_AFTER_MAX)
+    return _RETRY_BACKOFF_SECONDS * 2**attempt
+
+
 _CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
 _DIGEST = re.compile(r"^(sha256:)?[0-9a-f]{64}$")
 
@@ -88,7 +106,9 @@ class OpenAICompatibleService:
         public_only: bool = False,
         extra_body: dict | None = None,
         native_ollama: bool = False,
+        attempts: int = _ATTEMPTS,
     ) -> None:
+        self._attempts = max(1, attempts)  # infer: total attempts on a transient failure
         self._public_only = public_only  # user's model: never an internal address
         self._base_url = base_url.rstrip("/")
         self.base_url = self._base_url
@@ -118,7 +138,8 @@ class OpenAICompatibleService:
         """Calls the model and returns the parsed JSON object (spec §5).
 
         Raises ``InferenceError`` if the response is not valid JSON, on timeout
-        or HTTP error (message without the URL).
+        or HTTP error (message without the URL). Timeout / connection error / 429 /
+        5xx are retried first (``attempts`` in total, backoff, ``Retry-After``).
         """
         headers = {"Content-Type": "application/json"}
         if self._api_key:
@@ -157,12 +178,23 @@ class OpenAICompatibleService:
         owned = self._http is None
         client = self._http or _client_for(self._timeout, pinned_ip)
         try:
-            try:
-                resp = await client.post(url, json=body, headers=headers)
-            except httpx.TimeoutException as exc:
-                raise InferenceError("timeout") from exc
-            except httpx.HTTPError as exc:
-                raise InferenceError("connection_error") from exc
+            for attempt in range(self._attempts):
+                last = attempt == self._attempts - 1
+                try:
+                    resp = await client.post(url, json=body, headers=headers)
+                except httpx.TimeoutException as exc:
+                    if last:
+                        raise InferenceError("timeout") from exc
+                    await _sleep(_retry_wait(attempt))
+                    continue
+                except httpx.HTTPError as exc:
+                    if last:
+                        raise InferenceError("connection_error") from exc
+                    await _sleep(_retry_wait(attempt))
+                    continue
+                if resp.status_code not in _RETRY_STATUS or last:
+                    break
+                await _sleep(_retry_wait(attempt, resp))
             if resp.status_code >= 400:
                 raise InferenceError(f"HTTP {resp.status_code}")
             try:

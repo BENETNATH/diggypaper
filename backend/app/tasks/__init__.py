@@ -34,7 +34,7 @@ from datetime import UTC, date, datetime
 
 import httpx
 from celery import current_task
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, or_, select, update
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.dialects.postgresql import insert as _pg_insert
 from sqlalchemy.dialects.sqlite import insert as _sqlite_insert
@@ -176,6 +176,15 @@ def _make_session_factory():
 INGEST_QUEUE = "ingest"
 
 
+async def _already_ran(session: AsyncSession, job_id: str | None) -> bool:
+    """acks_late redelivery (task killed mid-way, then the broker's visibility timeout):
+    the first run already created its ImportJob — exit instead of re-running it unasked."""
+    if job_id is None:
+        return False
+    found = await session.execute(select(ImportJob.id).where(ImportJob.job_id == job_id).limit(1))
+    return found.first() is not None
+
+
 @celery_app.task(name="diggypaper.import_pubmed", queue=INGEST_QUEUE)
 def import_pubmed_task(
     project_id: str,
@@ -275,6 +284,8 @@ async def _import_pubmed(
             raise LookupError(f"invalid project id: {project_id}") from exc
 
         async with factory() as session:
+            if await _already_ran(session, job_id):
+                return {}
             # Row lock (ignored on SQLite) held until the first commit, which sets PROCESSING
             # together with the job INSERT: two queued imports cannot both pass the guard.
             project = await session.get(Project, project_uuid, with_for_update=True)
@@ -891,31 +902,56 @@ async def _record_failure(
 
 
 async def backfill_metadata(session: AsyncSession, project_id: uuid.UUID, client) -> int:
-    """Journal / date / authors of the articles before their import (efetch)."""
-    arts = [
-        a
-        for a in (await session.execute(select(Article).where(Article.project_id == project_id)))
-        .scalars()
-        .all()
-        if a.pmid and a.pub_date is None and a.journal is None
-    ]
+    """Journal / date / authors of the articles before their import (efetch).
+
+    Filtered in SQL, ids only: the ORM rows (sections JSONB) of a whole project would
+    sit in the identity map (expire_on_commit=False) — OOM on the 2 GB ingest worker."""
+    rows = (
+        await session.execute(
+            select(Article.id, Article.pmid).where(
+                Article.project_id == project_id,
+                Article.pmid.is_not(None),
+                Article.pmid != "",
+                Article.pub_date.is_(None),
+                Article.journal.is_(None),
+            )
+        )
+    ).all()
     api_key = await get_setting(session, "ncbi_api_key")
     done = 0
-    for batch in _chunks(arts, _EFETCH_BATCH):
+    for batch in _chunks(rows, _EFETCH_BATCH):
         try:
             metas = {
-                m["pmid"]: m for m in await fetch_metadata([a.pmid for a in batch], api_key, client)
+                m["pmid"]: m for m in await fetch_metadata([p for _, p in batch], api_key, client)
             }
         except Exception:
             logger.exception("metadata backfill batch failed")
             continue
-        for a in batch:
-            if a.pmid in metas:
-                for k, v in _biblio(metas[a.pmid]).items():
-                    setattr(a, k, v)
+        for aid, pmid in batch:
+            if pmid in metas:
+                await session.execute(
+                    update(Article).where(Article.id == aid).values(**_biblio(metas[pmid]))
+                )
                 done += 1
         await session.commit()
     return done
+
+
+async def _ids_without_fulltext(session: AsyncSession, project_id: uuid.UUID) -> list:
+    """Ids of the project's articles without a usable full text — sections read by
+    chunks, never as ORM rows (bounded memory, see ``backfill_metadata``)."""
+    ids = (
+        (await session.execute(select(Article.id).where(Article.project_id == project_id)))
+        .scalars()
+        .all()
+    )
+    todo = []
+    for chunk in _chunks(ids, _EFETCH_BATCH):
+        rows = await session.execute(
+            select(Article.id, Article.sections).where(Article.id.in_(chunk))
+        )
+        todo += [aid for aid, sections in rows if not long_enough(sections or [])]
+    return todo
 
 
 @celery_app.task(name="diggypaper.complete_fulltext", queue=INGEST_QUEUE)
@@ -956,6 +992,8 @@ async def _complete_fulltext(
     client = http if http is not None else httpx.AsyncClient(timeout=45.0)
     try:
         async with factory() as session:
+            if await _already_ran(session, job_id):
+                return {}
             project = await session.get(Project, uuid.UUID(project_id))
             if project is None:
                 raise LookupError(f"project not found: {project_id}")
@@ -976,15 +1014,7 @@ async def _complete_fulltext(
             session.add(job)
             await session.commit()
             await backfill_metadata(session, project.id, client)
-            todo = [
-                a
-                for a in (
-                    await session.execute(select(Article).where(Article.project_id == project.id))
-                )
-                .scalars()
-                .all()
-                if not long_enough(a.sections or [])
-            ]
+            todo = await _ids_without_fulltext(session, project.id)
             found, sources = 0, {}
             completed_ids: list[str] = []
 
@@ -1001,21 +1031,26 @@ async def _complete_fulltext(
             job.result_json = state("fulltext")
             await session.commit()
             try:
-                for art in todo:
-                    pmid = art.pmid  # a rollback of a replacement can expire the ORM object
-                    try:
-                        source = await complete_article(session, art, email, client)
-                    except Exception:
-                        logger.exception("open fulltext failed for pmid %s", pmid)
-                        source = None
+                for aid in todo:
+                    art = await session.get(Article, aid)  # one article in memory at a time
+                    source = None
+                    if art is not None:  # None: deleted meanwhile
+                        pmid = art.pmid  # a rollback of a replacement can expire the ORM object
+                        try:
+                            source = await complete_article(session, art, email, client)
+                        except Exception:
+                            logger.exception("open fulltext failed for pmid %s", pmid)
                     if source:
                         found += 1
                         key = source.split(":")[0]
                         sources[key] = sources.get(key, 0) + 1
-                        completed_ids.append(str(art.id))
+                        completed_ids.append(str(aid))
                     done += 1
                     job.result_json = state("fulltext")
                     await session.commit()
+                    # Drops the article (sections, PDF) from the identity map; the job stays.
+                    session.expunge_all()
+                    session.add(job)
             except Exception as exc:
                 await session.rollback()
                 job.status = ImportJobStatus.FAILED

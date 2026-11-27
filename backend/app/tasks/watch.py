@@ -42,10 +42,12 @@ from app.searches import in_search
 from app.sources import DateBounds
 from app.tasks import (
     ADAPTERS,
+    INGEST_QUEUE,
     _chunks,
     _insert_article,
     _make_session_factory,
     _session_factory_override,
+    _source_key_setting,
 )
 
 logger = logging.getLogger(__name__)
@@ -195,21 +197,38 @@ async def _import_fresh(
     adapter,
 ) -> list[uuid.UUID]:
     """Imports the fresh ids with ``origin="watch"`` (reusing ``_insert_article``).
-    Returns the ids of the articles actually inserted."""
+    Returns the ids of the project's articles carrying these ids.
+
+    One commit per article: no transaction held open across the network calls
+    (full text, 60 s timeout each). Ids already present (a pass that died midway,
+    retried) are not fetched again."""
+    existing = set(
+        (
+            await db.execute(
+                select(Article.native_id).where(
+                    Article.project_id == project.id,
+                    Article.source == source,
+                    Article.native_id.in_(fresh),
+                )
+            )
+        ).scalars()
+    )
+    todo = [nid for nid in fresh if nid not in existing]
     by_id: dict[str, dict] = {}
-    for batch in _chunks(fresh, 50):
+    for batch in _chunks(todo, 50):
         try:
             metas = await adapter.fetch_metadata(batch)
         except Exception:
             logger.exception("watch: metadata fetch failed (%d ids)", len(batch))
             continue
         by_id.update({m["native_id"]: m for m in metas if m.get("native_id")})
-    for nid in fresh:
+    for nid in todo:
         meta = by_id.get(nid)
         if meta is None:
             continue
         meta |= {"source": source, "native_id": nid, "origin": "watch"}
         await _insert_article(db, project.id, meta, client, adapter)
+        await db.commit()
     if not fresh:
         return []
     rows = (
@@ -379,8 +398,7 @@ async def run_watch_pass(
         if adapter is None:
             from app.settings.service import get_setting
 
-            key = _source_key(watch.source)
-            api_key = await get_setting(db, key) if key else None
+            api_key = await get_setting(db, _source_key_setting(watch.source))
             if watch.source not in ADAPTERS:
                 return {"error": "unknown_source"}
             adapter = ADAPTERS[watch.source](client, api_key)
@@ -400,6 +418,9 @@ async def run_watch_pass(
             ).all()
         }
         fresh = [nid for nid in new_ids if (watch.source, str(nid)) not in present]
+        # Ids of a previous pass that died midway (imported, never analyzed): retried.
+        pending = (watch.last_matched or {}).get("pending") or []
+        fresh += [nid for nid in pending if nid not in fresh]
 
         watch.last_run_at = datetime.now(UTC)
         if not fresh:
@@ -419,6 +440,10 @@ async def run_watch_pass(
                 "search_id": None,
             }
 
+        # The import commits per article: the ids stay "pending" until the pass records
+        # its outcome (last_matched rewritten below), so a crash does not lose them.
+        watch.last_matched = {**(watch.last_matched or {}), "pending": fresh}
+        await db.commit()
         importer = import_fresh or _import_fresh
         article_ids = await importer(db, project, watch.source, fresh, client, adapter)
         if article_ids:
@@ -465,11 +490,6 @@ async def run_watch_pass(
     finally:
         if owns_client:
             await client.aclose()
-
-
-def _source_key(source: str) -> str | None:
-    """The DB setting key carrying the source API key (empty = keyless source)."""
-    return {"pubmed": "pubmed_api_key", "europepmc": "europepmc_api_key"}.get(source)
 
 
 # --- API-triggered immediate pass -------------------------------------------
@@ -696,7 +716,7 @@ async def _watch_email(
         return
     try:
         await mailer.send(lead.email, subject, body)
-        logger.info("watch %s: alert sent to %s (%d matched)", watch.id, lead.email, len(matched))
+        logger.info("watch %s: alert sent to user %s (%d matched)", watch.id, lead.id, len(matched))
     except Exception:
         logger.exception("watch %s: e-mail send failed (best-effort)", watch.id)
 
@@ -712,32 +732,41 @@ async def _run_all(session_factory=None) -> dict:
     summary = {"watches": 0, "errors": 0}
     try:
         async with sf() as session:
-            watches = (
+            ids = (
                 (
                     await session.execute(
-                        select(Watch).where(Watch.status == WatchStatus.ACTIVE).order_by(Watch.id)
+                        select(Watch.id)
+                        .where(Watch.status == WatchStatus.ACTIVE)
+                        .order_by(Watch.id)
                     )
                 )
                 .scalars()
                 .all()
             )
-            for w in watches:
-                try:
+        for wid in ids:
+            # One session per watch: a failed pass is rolled back on close, never
+            # committed by (nor poisoning with PendingRollbackError) the next one.
+            try:
+                async with sf() as session:
+                    w = await session.get(Watch, wid)
+                    if w is None or w.status != WatchStatus.ACTIVE:
+                        continue  # deleted / paused meanwhile
                     await run_watch_pass(session, w)
-                    summary["watches"] += 1
-                except Exception:
-                    summary["errors"] += 1
-                    logger.exception("watch %s: pass failed", w.id)
+                summary["watches"] += 1
+            except Exception:
+                summary["errors"] += 1
+                logger.exception("watch %s: pass failed", wid)
     finally:
         if engine is not None:
             await engine.dispose()
     return summary
 
 
-@celery_app.task(name="diggypaper.watch")
+@celery_app.task(name="diggypaper.watch", queue=INGEST_QUEUE)
 def watch_task() -> dict:
-    """Celery beat (1 pass/day): runs every active watch. One worker → no
-    inter-pass lock; a pass never overlaps itself (Celery beat behavior)."""
+    """Celery beat (1 pass/day): runs every active watch. On the ingest queue (single
+    process): the per-process NCBI throttle holds. One worker → no inter-pass lock; a
+    pass never overlaps itself (Celery beat behavior)."""
     result = asyncio.run(_run_all())
     logger.info("watch beat: %s", result)
     return result

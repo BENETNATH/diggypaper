@@ -724,6 +724,7 @@ async def _cancelled(session: AsyncSession, run: BenchmarkRun) -> bool:
     status = (
         await session.execute(select(BenchmarkRun.status).where(BenchmarkRun.id == run.id))
     ).scalar_one_or_none()
+    await session.commit()  # no transaction left idle during the model call (migrations)
     return status == BenchmarkStatus.FAILED
 
 
