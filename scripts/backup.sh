@@ -8,6 +8,8 @@
 # Usage (depuis la racine du dépôt) :  scripts/backup.sh
 # Planifier (cron, tous les jours à 2 h) :
 #   0 2 * * * cd /chemin/diggypaper && scripts/backup.sh >> backups/backup.log 2>&1
+# Chiffrement (optionnel, recommandé pour les copies hors machine) : BACKUP_AGE_RECIPIENT=age1…
+# (clé publique age) -> fichier .sql.gz.age ; restore.sh le déchiffre avec BACKUP_AGE_IDENTITY.
 set -eu
 umask 077  # le dump contient des hash de mots de passe et des secrets chiffrés : lisible par vous seul
 cd "$(dirname "$0")/.."
@@ -16,6 +18,7 @@ DIR="${BACKUP_DIR:-./backups}"
 KEEP_DAYS="${KEEP_DAYS:-14}"
 mkdir -p "$DIR"
 OUT="$DIR/diggypaper-$(date +%Y%m%d-%H%M%S).sql.gz"
+RECIPIENT="${BACKUP_AGE_RECIPIENT:-}"
 
 # pipefail absent de sh : on écrit d'abord dans un fichier temporaire, puis on renomme.
 docker compose exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" --no-owner --clean --if-exists "$POSTGRES_DB"' \
@@ -25,6 +28,12 @@ if [ "$(gzip -dc "$OUT.part" | tail -n 5 | grep -c 'PostgreSQL database dump com
     echo "ECHEC : dump incomplet" >&2
     exit 1
 fi
-mv "$OUT.part" "$OUT"
-find "$DIR" -name 'diggypaper-*.sql.gz' -mtime +"$KEEP_DAYS" -delete
+if [ -n "$RECIPIENT" ]; then
+    age -r "$RECIPIENT" -o "$OUT.age" "$OUT.part"
+    rm -f "$OUT.part"
+    OUT="$OUT.age"
+else
+    mv "$OUT.part" "$OUT"
+fi
+find "$DIR" -name 'diggypaper-*.sql.gz*' -mtime +"$KEEP_DAYS" -delete
 echo "OK : $OUT ($(du -h "$OUT" | cut -f1)), sauvegardes > ${KEEP_DAYS} j supprimées"

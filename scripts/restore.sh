@@ -2,6 +2,7 @@
 # Restaure une sauvegarde (scripts/backup.sh) : REMPLACE toute la base courante.
 #
 # Usage :  scripts/restore.sh backups/diggypaper-AAAAMMJJ-HHMMSS.sql.gz
+# Sauvegarde chiffrée (.sql.gz.age) : BACKUP_AGE_IDENTITY=<fichier d'identité age> scripts/restore.sh <fichier>
 # Pour vérifier une sauvegarde sans toucher à la base en service :
 #   TARGET_DB=essai scripts/restore.sh <fichier>   (base « essai » créée à côté, à supprimer ensuite)
 set -eu
@@ -9,7 +10,23 @@ cd "$(dirname "$0")/.."
 
 FILE="${1:?usage: scripts/restore.sh <sauvegarde.sql.gz>}"
 [ -f "$FILE" ] || { echo "Fichier introuvable : $FILE" >&2; exit 1; }
-gzip -t "$FILE"
+case "$FILE" in
+    *.age) : "${BACKUP_AGE_IDENTITY:?sauvegarde chiffrée : définir BACKUP_AGE_IDENTITY (identité age)}" ;;
+esac
+dump() {
+    case "$FILE" in
+        *.age) age -d -i "$BACKUP_AGE_IDENTITY" "$FILE" | gzip -dc ;;
+        *) gzip -dc "$FILE" ;;
+    esac
+}
+# Lisible (déchiffrement, CRC gzip) et complète, AVANT de supprimer quoi que ce soit.
+# gzip -t : seul contrôle du CRC (sans pipefail, `gzip -dc | tail` ne voit pas l'erreur).
+case "$FILE" in
+    *.age) age -d -i "$BACKUP_AGE_IDENTITY" "$FILE" | gzip -t ;;
+    *) gzip -t "$FILE" ;;
+esac || { echo "Sauvegarde corrompue (CRC gzip) : $FILE" >&2; exit 1; }
+dump | tail -n 5 | grep -q 'PostgreSQL database dump complete' \
+    || { echo "Sauvegarde illisible ou incomplète : $FILE" >&2; exit 1; }
 
 PROD_DB="$(docker compose exec -T postgres sh -c 'printf %s "$POSTGRES_DB"')"
 if [ -n "${TARGET_DB:-}" ] && [ "$TARGET_DB" = "$PROD_DB" ]; then
@@ -21,13 +38,13 @@ if [ -z "${TARGET_DB:-}" ]; then
     printf "Remplacer TOUTE la base courante par %s ? (oui/non) " "$FILE"
     read -r ans
     [ "$ans" = "oui" ] || { echo "Annulé."; exit 1; }
-    docker compose stop nginx frontend backend worker
+    docker compose stop nginx frontend backend worker worker-ingest
 fi
 
 PSQL='psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER"'
 DB_EXPR="${TARGET_DB:-\$POSTGRES_DB}"
 docker compose exec -T postgres sh -c "$PSQL -d postgres -c \"DROP DATABASE IF EXISTS \\\"$DB_EXPR\\\" WITH (FORCE)\" -c \"CREATE DATABASE \\\"$DB_EXPR\\\" OWNER \\\"\$POSTGRES_USER\\\"\""
-gzip -dc "$FILE" | docker compose exec -T postgres sh -c "$PSQL -q -d \"$DB_EXPR\" -o /dev/null"
+dump | docker compose exec -T postgres sh -c "$PSQL -q -d \"$DB_EXPR\" -o /dev/null"
 
 if [ -z "${TARGET_DB:-}" ]; then
     docker compose up -d
